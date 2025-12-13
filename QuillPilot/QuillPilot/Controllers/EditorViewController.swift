@@ -56,9 +56,6 @@ class EditorViewController: NSViewController {
         pageContainer.layer?.shadowRadius = 10
 
         
-        // Fix page width to US Letter (8.5" = 612pt)
-        pageContainer.translatesAutoresizingMaskIntoConstraints = false
-        pageContainer.widthAnchor.constraint(equalToConstant: 612).isActive = true
 let textFrame = pageContainer.bounds.insetBy(dx: standardMargin, dy: standardMargin)
         textView = NSTextView(frame: textFrame)
         textView.minSize = NSSize(width: textFrame.width, height: textFrame.height)
@@ -91,17 +88,10 @@ let textFrame = pageContainer.bounds.insetBy(dx: standardMargin, dy: standardMar
 
         documentView = NSView()
         documentView.wantsLayer = true
-        documentView.translatesAutoresizingMaskIntoConstraints = false
         documentView.addSubview(pageContainer)
-        
-        // Position pageContainer within documentView
-        NSLayoutConstraint.activate([
-            pageContainer.topAnchor.constraint(equalTo: documentView.topAnchor),
-            pageContainer.centerXAnchor.constraint(equalTo: documentView.centerXAnchor),
-            pageContainer.heightAnchor.constraint(greaterThanOrEqualToConstant: 3000),
-            documentView.widthAnchor.constraint(greaterThanOrEqualTo: pageContainer.widthAnchor),
-            documentView.heightAnchor.constraint(greaterThanOrEqualTo: pageContainer.heightAnchor, constant: 100)
-        ])
+        documentView.frame = NSRect(x: 0, y: 0,
+            width: pageContainer.bounds.width,
+            height: pageContainer.bounds.height + 100)
 
         scrollView.documentView = documentView
         view.addSubview(scrollView)
@@ -875,19 +865,24 @@ case "Book Subtitle":
     private func updatePageCentering() {
         guard let scrollView else { return }
 
-        // Center within the *inset* content area so the page truly aligns with the ruler.
+        // Center the 612pt page within the editor column, respecting scrollView contentInsets.
         let insets = scrollView.contentInsets
         let visibleWidth = scrollView.contentView.bounds.width
         let availableWidth = max(0, visibleWidth - insets.left - insets.right)
 
         let pageWidth: CGFloat = 612
-        let centerOffset = max((availableWidth - pageWidth) / 2, 0) + insets.left
-        pageContainer.frame.origin.x = centerOffset
+        let pageX = insets.left + max((availableWidth - pageWidth) / 2, 0)
 
-        let docWidth = max(visibleWidth, pageWidth + insets.left + insets.right)
-        documentView.frame = NSRect(x: 0, y: 0,
-                                    width: docWidth,
-                                    height: pageContainer.frame.height + 100)
+        // Keep documentView at x=0; position the page inside it.
+        pageContainer.frame.origin.x = pageX
+
+        let docWidth = max(visibleWidth, pageX + pageWidth + insets.right)
+        documentView.frame = NSRect(
+            x: 0,
+            y: 0,
+            width: docWidth,
+            height: max(pageContainer.frame.height, 3000) + 100
+        )
     }
 
     override func viewDidLayout() {

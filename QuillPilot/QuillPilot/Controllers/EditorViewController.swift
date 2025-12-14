@@ -119,21 +119,65 @@ class EditorViewController: NSViewController {
     }
 
     func toggleBold() {
+        guard let textStorage = textView.textStorage else { return }
         guard let selectedRange = textView.selectedRanges.first?.rangeValue else { return }
+
         let fontManager = NSFontManager.shared
-        if let currentFont = textView.font {
-            let newFont = fontManager.convert(currentFont, toHaveTrait: .boldFontMask)
-            textView.setFont(newFont, range: selectedRange)
+
+        if selectedRange.length == 0 {
+            // Toggle for typing attributes
+            if let currentFont = textView.typingAttributes[.font] as? NSFont {
+                let traits = fontManager.traits(of: currentFont)
+                let newFont = traits.contains(.boldFontMask)
+                    ? fontManager.convert(currentFont, toNotHaveTrait: .boldFontMask)
+                    : fontManager.convert(currentFont, toHaveTrait: .boldFontMask)
+                textView.typingAttributes[.font] = newFont
+            }
+            return
         }
+
+        // Apply to selected text, preserving font size
+        textStorage.beginEditing()
+        textStorage.enumerateAttribute(.font, in: selectedRange, options: []) { value, range, _ in
+            guard let currentFont = value as? NSFont else { return }
+            let traits = fontManager.traits(of: currentFont)
+            let newFont = traits.contains(.boldFontMask)
+                ? fontManager.convert(currentFont, toNotHaveTrait: .boldFontMask)
+                : fontManager.convert(currentFont, toHaveTrait: .boldFontMask)
+            textStorage.addAttribute(.font, value: newFont, range: range)
+        }
+        textStorage.endEditing()
     }
 
     func toggleItalic() {
+        guard let textStorage = textView.textStorage else { return }
         guard let selectedRange = textView.selectedRanges.first?.rangeValue else { return }
+
         let fontManager = NSFontManager.shared
-        if let currentFont = textView.font {
-            let newFont = fontManager.convert(currentFont, toHaveTrait: .italicFontMask)
-            textView.setFont(newFont, range: selectedRange)
+
+        if selectedRange.length == 0 {
+            // Toggle for typing attributes
+            if let currentFont = textView.typingAttributes[.font] as? NSFont {
+                let traits = fontManager.traits(of: currentFont)
+                let newFont = traits.contains(.italicFontMask)
+                    ? fontManager.convert(currentFont, toNotHaveTrait: .italicFontMask)
+                    : fontManager.convert(currentFont, toHaveTrait: .italicFontMask)
+                textView.typingAttributes[.font] = newFont
+            }
+            return
         }
+
+        // Apply to selected text, preserving font size
+        textStorage.beginEditing()
+        textStorage.enumerateAttribute(.font, in: selectedRange, options: []) { value, range, _ in
+            guard let currentFont = value as? NSFont else { return }
+            let traits = fontManager.traits(of: currentFont)
+            let newFont = traits.contains(.italicFontMask)
+                ? fontManager.convert(currentFont, toNotHaveTrait: .italicFontMask)
+                : fontManager.convert(currentFont, toHaveTrait: .italicFontMask)
+            textStorage.addAttribute(.font, value: newFont, range: range)
+        }
+        textStorage.endEditing()
     }
 
     func toggleUnderline() {
@@ -229,6 +273,19 @@ class EditorViewController: NSViewController {
     func insertPageBreak() {
         // Use form feed as a lightweight page-break marker.
         textView.insertText("\u{000C}", replacementRange: textView.selectedRange())
+    }
+
+    func insertColumnBreak() {
+        guard let textStorage = textView.textStorage else { return }
+        let range = textView.selectedRange()
+
+        // Insert a line break that forces text to next column in the same text block row
+        let separator = "\n"
+        let attrs = textView.typingAttributes
+        let breakString = NSAttributedString(string: separator, attributes: attrs)
+
+        textStorage.insert(breakString, at: range.location)
+        textView.setSelectedRange(NSRange(location: range.location + separator.count, length: 0))
     }
 
     func scrollToTop() {
@@ -377,6 +434,33 @@ class EditorViewController: NSViewController {
     func setPlainTextContent(_ text: String) {
         let attributed = NSAttributedString(string: text, attributes: textView.typingAttributes)
         setAttributedContent(attributed)
+    }
+
+    func clearAll() {
+        // Reset to single column first
+        setColumnCount(1)
+
+        // Clear all text
+        textView.string = ""
+
+        // Reset to default formatting
+        let font = NSFont(name: "Times New Roman", size: 12) ?? NSFont.systemFont(ofSize: 12)
+        textView.font = font
+
+        let paragraphStyle = NSMutableParagraphStyle()
+        paragraphStyle.lineHeightMultiple = 2.0
+        paragraphStyle.paragraphSpacing = 12
+        paragraphStyle.firstLineHeadIndent = standardIndentStep
+        textView.defaultParagraphStyle = paragraphStyle.copy() as? NSParagraphStyle
+
+        textView.typingAttributes = [
+            .font: font,
+            .foregroundColor: currentTheme.textColor,
+            .paragraphStyle: paragraphStyle.copy() as Any
+        ]
+
+        delegate?.textDidChange()
+        updatePageCentering()
     }
 
     func applyStyle(named styleName: String) {
@@ -949,6 +1033,64 @@ case "Book Subtitle":
         return (words.count, chars)
     }
 
+    func getColumnCount() -> Int {
+        return textView.textContainer?.layoutManager?.textContainers.count ?? 1
+    }
+
+    func setColumnCount(_ columns: Int) {
+        guard columns >= 2, columns <= 4 else { return }
+        guard let textStorage = textView.textStorage else { return }
+
+        let currentRange = textView.selectedRange()
+
+        // Create text table for columns
+        let textTable = NSTextTable()
+        textTable.numberOfColumns = columns
+        textTable.layoutAlgorithm = .automaticLayoutAlgorithm
+        textTable.collapsesBorders = false
+
+        // Light brown border color
+        let borderColor = NSColor(red: 0.48, green: 0.44, blue: 0.36, alpha: 0.5) // #7a6f5d with transparency
+
+        // Create attributed string with table blocks for each column
+        let result = NSMutableAttributedString()
+
+        for i in 0..<columns {
+            let textBlock = NSTextTableBlock(table: textTable, startingRow: 0, rowSpan: 1, startingColumn: i, columnSpan: 1)
+
+            // Add borders to each column
+            textBlock.setBorderColor(borderColor, for: .minX)
+            textBlock.setBorderColor(borderColor, for: .maxX)
+            textBlock.setBorderColor(borderColor, for: .minY)
+            textBlock.setBorderColor(borderColor, for: .maxY)
+
+            // Set border width
+            textBlock.setWidth(1.0, type: .absoluteValueType, for: .border)
+
+            // Add padding for better spacing
+            textBlock.setWidth(8.0, type: .absoluteValueType, for: .padding, edge: .minX)
+            textBlock.setWidth(8.0, type: .absoluteValueType, for: .padding, edge: .maxX)
+            textBlock.setWidth(8.0, type: .absoluteValueType, for: .padding, edge: .minY)
+            textBlock.setWidth(8.0, type: .absoluteValueType, for: .padding, edge: .maxY)
+
+            let paragraphStyle = NSMutableParagraphStyle()
+            paragraphStyle.textBlocks = [textBlock]
+
+            var attrs = textView.typingAttributes
+            attrs[.paragraphStyle] = paragraphStyle
+
+            let columnContent = NSAttributedString(string: "Column \(i + 1) content...\n", attributes: attrs)
+            result.append(columnContent)
+        }
+
+        // Add final newline to exit table
+        let finalNewline = NSAttributedString(string: "\n", attributes: textView.typingAttributes)
+        result.append(finalNewline)
+
+        textStorage.insert(result, at: currentRange.location)
+        textView.setSelectedRange(NSRange(location: currentRange.location + 1, length: 0))
+    }
+
     func applyTheme(_ theme: AppTheme) {
         currentTheme = theme
         view.layer?.backgroundColor = theme.pageAround.cgColor
@@ -1025,23 +1167,23 @@ case "Book Subtitle":
         let baseFont = (textView.typingAttributes[.font] as? NSFont) ?? textView.font ?? NSFont.systemFont(ofSize: 16)
         guard let selectedRange = textView.selectedRanges.first?.rangeValue else { return }
 
-        if selectedRange.length == 0 {
-            let newFont = transform(baseFont)
-            textView.font = newFont
-            textView.typingAttributes[.font] = newFont
-            return
-        }
+        // If no selection, apply to the current paragraph (not the whole document)
+        let fullText = (textStorage.string as NSString)
+        let targetRange = selectedRange.length == 0 ? fullText.paragraphRange(for: selectedRange) : selectedRange
 
         textStorage.beginEditing()
-        textStorage.enumerateAttribute(.font, in: selectedRange, options: []) { value, range, _ in
+        textStorage.enumerateAttribute(.font, in: targetRange, options: []) { value, range, _ in
             let current = (value as? NSFont) ?? baseFont
             let newFont = transform(current)
             textStorage.addAttribute(.font, value: newFont, range: range)
         }
         textStorage.endEditing()
 
-        let newTypingFont = transform(baseFont)
-        textView.typingAttributes[.font] = newTypingFont
+        // Update typing attributes only for future typing at cursor position
+        if selectedRange.length == 0 {
+            let newTypingFont = transform(baseFont)
+            textView.typingAttributes[.font] = newTypingFont
+        }
     }
 
     private func togglePrefixList(isPrefixed: (String) -> Bool, makePrefix: (Int) -> String) {
@@ -1063,14 +1205,56 @@ case "Book Subtitle":
         for (idx, para) in paragraphs.enumerated().reversed() {
             guard !para.text.isEmpty else { continue }
             if allPrefixed {
+                // Remove prefix and hanging indent
                 if isPrefixed(para.text) {
-                    let prefixLen = (para.text.hasPrefix("• ") ? 2 : (para.text.firstIndex(of: ".") ?? para.text.startIndex).utf16Offset(in: para.text) + 2)
+                    // Calculate prefix length including the tab character we inserted
+                    var prefixLen = (para.text.hasPrefix("• ") ? 2 : (para.text.firstIndex(of: ".") ?? para.text.startIndex).utf16Offset(in: para.text) + 2)
+                    // Also remove the tab if present
+                    if para.text.count > prefixLen && para.text[para.text.index(para.text.startIndex, offsetBy: prefixLen)] == "\t" {
+                        prefixLen += 1
+                    }
                     let removeRange = NSRange(location: para.range.location, length: min(prefixLen, para.range.length))
                     textStorage.replaceCharacters(in: removeRange, with: "")
+
+                    // Remove hanging indent
+                    let adjustedRange = NSRange(location: para.range.location, length: max(0, para.range.length - prefixLen))
+                    if adjustedRange.length > 0 {
+                        textStorage.enumerateAttribute(.paragraphStyle, in: adjustedRange, options: []) { value, range, _ in
+                            let current = (value as? NSParagraphStyle) ?? textView.defaultParagraphStyle ?? NSParagraphStyle.default
+                            guard let mutable = current.mutableCopy() as? NSMutableParagraphStyle else { return }
+                            mutable.headIndent = standardIndentStep
+                            mutable.firstLineHeadIndent = standardIndentStep
+                            textStorage.addAttribute(.paragraphStyle, value: mutable.copy() as! NSParagraphStyle, range: range)
+                        }
+                    }
                 }
             } else {
+                // Add prefix
                 let prefix = makePrefix(idx)
                 textStorage.replaceCharacters(in: NSRange(location: para.range.location, length: 0), with: prefix)
+
+                // Add tab after bullet/number to align text properly
+                let tabInsertLocation = para.range.location + prefix.count
+                textStorage.replaceCharacters(in: NSRange(location: tabInsertLocation, length: 0), with: "\t")
+
+                // Set up hanging indent with tab stop
+                let adjustedRange = NSRange(location: para.range.location, length: para.range.length + prefix.count + 1)
+                textStorage.enumerateAttribute(.paragraphStyle, in: adjustedRange, options: []) { value, range, _ in
+                    let current = (value as? NSParagraphStyle) ?? textView.defaultParagraphStyle ?? NSParagraphStyle.default
+                    guard let mutable = current.mutableCopy() as? NSMutableParagraphStyle else { return }
+
+                    // Set up tab stop for alignment
+                    let tabLocation = standardIndentStep + 18 // Tab position after bullet
+                    let tabStop = NSTextTab(textAlignment: .left, location: tabLocation, options: [:])
+                    mutable.tabStops = [tabStop]
+                    mutable.defaultTabInterval = 0
+
+                    // Hanging indent: first line at standard indent, wrapped lines at tab position
+                    mutable.firstLineHeadIndent = standardIndentStep
+                    mutable.headIndent = tabLocation
+
+                    textStorage.addAttribute(.paragraphStyle, value: mutable.copy() as! NSParagraphStyle, range: range)
+                }
             }
         }
         textStorage.endEditing()

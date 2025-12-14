@@ -158,16 +158,7 @@ class DocumentInfoPanel: NSView {
         let gradeLevel = 0.39 * (Double(wordCount) / Double(sentenceCount)) + 11.8 * (Double(syllableCount) / Double(wordCount)) - 15.59
 
         let grade = Int(max(0, min(18, gradeLevel)))
-
-        if grade <= 5 {
-            return "Grade \(grade) (Elementary)"
-        } else if grade <= 8 {
-            return "Grade \(grade) (Middle School)"
-        } else if grade <= 12 {
-            return "Grade \(grade) (High School)"
-        } else {
-            return "Grade \(grade) (College)"
-        }
+        return "Grade \(grade)"
     }
 
     private func countSyllables(word: String) -> Int {

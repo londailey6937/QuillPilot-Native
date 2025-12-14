@@ -34,7 +34,9 @@ protocol FormattingToolbarDelegate: AnyObject {
     func formattingToolbarDidToggleNumbering(_ toolbar: FormattingToolbar)
 
     func formattingToolbarDidInsertPageBreak(_ toolbar: FormattingToolbar)
+    func formattingToolbarDidInsertColumnBreak(_ toolbar: FormattingToolbar)
     func formattingToolbarDidColumns(_ toolbar: FormattingToolbar)
+    func formattingToolbarDidClearAll(_ toolbar: FormattingToolbar)
 }
 
 class MainWindowController: NSWindowController {
@@ -289,8 +291,45 @@ extension MainWindowController: FormattingToolbarDelegate {
         mainContentViewController.insertPageBreak()
     }
 
+    func formattingToolbarDidInsertColumnBreak(_ toolbar: FormattingToolbar) {
+        mainContentViewController.editorViewController.insertColumnBreak()
+    }
+
     func formattingToolbarDidColumns(_ toolbar: FormattingToolbar) {
-        presentErrorAlert(message: "Columns not supported", details: "Multi-column layout isn't implemented yet.")
+        // Prompt for number of columns
+        let alert = NSAlert()
+        alert.messageText = "Multi-Column Layout"
+        alert.informativeText = "Enter the number of columns (1-3):"
+        alert.alertStyle = .informational
+
+        let input = NSTextField(frame: NSRect(x: 0, y: 0, width: 200, height: 24))
+        input.stringValue = "\(mainContentViewController.editorViewController.getColumnCount())"
+        input.placeholderString = "1, 2, or 3"
+        alert.accessoryView = input
+
+        alert.addButton(withTitle: "OK")
+        alert.addButton(withTitle: "Cancel")
+
+        if alert.runModal() == .alertFirstButtonReturn {
+            if let columns = Int(input.stringValue), columns >= 1, columns <= 3 {
+                mainContentViewController.editorViewController.setColumnCount(columns)
+            } else {
+                presentErrorAlert(message: "Invalid Input", details: "Please enter a number between 1 and 3.")
+            }
+        }
+    }
+
+    func formattingToolbarDidClearAll(_ toolbar: FormattingToolbar) {
+        let alert = NSAlert()
+        alert.messageText = "Clear All"
+        alert.informativeText = "This will remove all text and formatting. This action cannot be undone."
+        alert.alertStyle = .warning
+        alert.addButton(withTitle: "Clear All")
+        alert.addButton(withTitle: "Cancel")
+
+        if alert.runModal() == .alertFirstButtonReturn {
+            mainContentViewController.editorViewController.clearAll()
+        }
     }
 }
 
@@ -636,6 +675,15 @@ class FormattingToolbar: NSView {
         func addHeader(_ title: String) {
             let item = NSMenuItem(title: title, action: nil, keyEquivalent: "")
             item.isEnabled = false
+
+            // Create attributed title with background color
+            let attributes: [NSAttributedString.Key: Any] = [
+                .font: NSFont.boldSystemFont(ofSize: 11),
+                .foregroundColor: NSColor.white,
+                .backgroundColor: NSColor(hex: "#7a6f5d") ?? NSColor.darkGray
+            ]
+            item.attributedTitle = NSAttributedString(string: "  \(title)", attributes: attributes)
+
             stylesMenu.addItem(item)
         }
 
@@ -717,6 +765,7 @@ class FormattingToolbar: NSView {
         stylePopup.translatesAutoresizingMaskIntoConstraints = false
         stylePopup.target = self
         stylePopup.action = #selector(styleChanged(_:))
+        stylePopup.toolTip = "Paragraph Style"
 
         // Font family popup
         fontPopup = registerControl(NSPopUpButton(frame: .zero, pullsDown: false))
@@ -724,15 +773,19 @@ class FormattingToolbar: NSView {
         fontPopup.translatesAutoresizingMaskIntoConstraints = false
         fontPopup.target = self
         fontPopup.action = #selector(fontFamilyChanged(_:))
+        fontPopup.toolTip = "Font Family"
 
         // Font size controls
         let decreaseSizeBtn = registerControl(NSButton(title: "−", target: self, action: #selector(decreaseFontSizeTapped)))
+        decreaseSizeBtn.toolTip = "Decrease Font Size"
         sizePopup = registerControl(NSPopUpButton(frame: .zero, pullsDown: false))
         sizePopup.addItems(withTitles: ["8", "9", "10", "11", "12", "14", "16", "18", "20", "24", "28", "32"])
         sizePopup.selectItem(at: 4) // 12pt default
         sizePopup.target = self
         sizePopup.action = #selector(fontSizeChanged(_:))
+        sizePopup.toolTip = "Font Size"
         let increaseSizeBtn = registerControl(NSButton(title: "+", target: self, action: #selector(increaseFontSizeTapped)))
+        increaseSizeBtn.toolTip = "Increase Font Size"
 
         // Text styling
         let boldBtn = createToolbarButton("B", weight: .bold)
@@ -740,10 +793,13 @@ class FormattingToolbar: NSView {
         let underlineBtn = createToolbarButton("U", isUnderlined: true)
         boldBtn.target = self
         boldBtn.action = #selector(boldTapped)
+        boldBtn.toolTip = "Bold"
         italicBtn.target = self
         italicBtn.action = #selector(italicTapped)
+        italicBtn.toolTip = "Italic"
         underlineBtn.target = self
         underlineBtn.action = #selector(underlineTapped)
+        underlineBtn.toolTip = "Underline"
 
         // Alignment
                 let alignLeftBtn = createToolbarButton("≡")
@@ -752,34 +808,54 @@ class FormattingToolbar: NSView {
                 let justifyBtn = createToolbarButton("≣")
                 alignLeftBtn.target = self
                 alignLeftBtn.action = #selector(alignLeftTapped)
+                alignLeftBtn.toolTip = "Align Left"
                 alignCenterBtn.target = self
                 alignCenterBtn.action = #selector(alignCenterTapped)
+                alignCenterBtn.toolTip = "Align Center"
                 alignRightBtn.target = self
                 alignRightBtn.action = #selector(alignRightTapped)
+                alignRightBtn.toolTip = "Align Right"
                 justifyBtn.target = self
                 justifyBtn.action = #selector(justifyTapped)
+                justifyBtn.toolTip = "Justify"
 
         // Lists
         let bulletsBtn = createToolbarButton("•")
         let numberingBtn = createToolbarButton("1.")
         bulletsBtn.target = self
         bulletsBtn.action = #selector(bulletsTapped)
+        bulletsBtn.toolTip = "Bulleted List"
         numberingBtn.target = self
         numberingBtn.action = #selector(numberingTapped)
+        numberingBtn.toolTip = "Numbered List"
 
         // Layout
         let columnsBtn = createToolbarButton("⫼") // Column icon
         let pageBreakBtn = createToolbarButton("⤓") // Page break icon
+        let columnBreakBtn = createToolbarButton("⏎") // Column break icon
         columnsBtn.target = self
         columnsBtn.action = #selector(columnsTapped)
+        columnsBtn.toolTip = "Insert Columns"
         pageBreakBtn.target = self
         pageBreakBtn.action = #selector(pageBreakTapped)
+        pageBreakBtn.toolTip = "Page Break"
+        columnBreakBtn.target = self
+        columnBreakBtn.action = #selector(columnBreakTapped)
+        columnBreakBtn.toolTip = "Column Break"
+
+        // Clear all button
+        let clearBtn = createToolbarButton("⌧") // Clear icon
+        clearBtn.target = self
+        clearBtn.action = #selector(clearAllTapped)
+        clearBtn.toolTip = "Clear All"
 
         // Indentation
         let outdentBtn = registerControl(NSButton(title: "⇤", target: self, action: #selector(outdentTapped)))
         outdentBtn.bezelStyle = .texturedRounded
+        outdentBtn.toolTip = "Decrease Indent"
         let indentBtn = registerControl(NSButton(title: "⇥", target: self, action: #selector(indentTapped)))
         indentBtn.bezelStyle = .texturedRounded
+        indentBtn.toolTip = "Increase Indent"
 
         // Add all to stack view (all aligned left)
         let toolbarStack = NSStackView(views: [
@@ -787,9 +863,9 @@ class FormattingToolbar: NSView {
             boldBtn, italicBtn, underlineBtn,
             alignLeftBtn, alignCenterBtn, alignRightBtn, justifyBtn,
             bulletsBtn, numberingBtn,
-            columnsBtn, pageBreakBtn,
+            columnsBtn, columnBreakBtn, pageBreakBtn,
             outdentBtn, indentBtn,
-
+            clearBtn
         ])
         toolbarStack.orientation = .horizontal
         toolbarStack.spacing = 8
@@ -902,6 +978,14 @@ class FormattingToolbar: NSView {
 
     @objc private func pageBreakTapped() {
         delegate?.formattingToolbarDidInsertPageBreak(self)
+    }
+
+    @objc private func columnBreakTapped() {
+        delegate?.formattingToolbarDidInsertColumnBreak(self)
+    }
+
+    @objc private func clearAllTapped() {
+        delegate?.formattingToolbarDidClearAll(self)
     }
 
     @objc private func fontFamilyChanged(_ sender: NSPopUpButton) {

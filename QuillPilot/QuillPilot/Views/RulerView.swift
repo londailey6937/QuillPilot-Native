@@ -17,6 +17,7 @@ protocol RulerViewDelegate: AnyObject {
 class EnhancedRulerView: NSView {
 
     weak var delegate: RulerViewDelegate?
+    private let rulerZoom: CGFloat = 1.4  // Match editor zoom
 
     private var leftMarginHandle: MarginHandle!
     private var rightMarginHandle: MarginHandle!
@@ -94,9 +95,9 @@ class EnhancedRulerView: NSView {
 
         markingsColor.set()
 
-        // Draw tick marks every 0.5 inch (36 points)
-        for i in 0..<18 {
-            let x = CGFloat(i) * 36
+        // Draw tick marks every 0.5 inch (36 points * zoom)
+        for i in 0...17 {
+            let x = CGFloat(i) * 36 * rulerZoom
             let tickHeight: CGFloat = (i % 2 == 0) ? 8 : 4
 
             let path = NSBezierPath()
@@ -113,6 +114,13 @@ class EnhancedRulerView: NSView {
                     .foregroundColor: NSColor(hex: "#666666") ?? .gray
                 ]
                 label.draw(at: NSPoint(x: x + centerOffset - 5, y: rulerHeight/2 - 5), withAttributes: attrs)
+            } else if i == 17 {  // Special case for 8.5"
+                let label = "8.5"
+                let attrs: [NSAttributedString.Key: Any] = [
+                    .font: NSFont.systemFont(ofSize: fontSize - 1),
+                    .foregroundColor: NSColor(hex: "#666666") ?? .gray
+                ]
+                label.draw(at: NSPoint(x: x + centerOffset - 8, y: rulerHeight/2 - 5), withAttributes: attrs)
             }
         }
     }

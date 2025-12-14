@@ -69,7 +69,7 @@ class EditorViewController: NSViewController {
         textView.maxSize = NSSize(width: textFrame.width, height: CGFloat.greatestFiniteMagnitude)
         textView.isVerticallyResizable = true
         textView.isHorizontallyResizable = false
-        textView.autoresizingMask = []  // Remove autoresizing to prevent constraint conflicts
+        textView.autoresizingMask = [.width, .height]
         textView.textContainer?.containerSize = NSSize(width: textFrame.width, height: CGFloat.greatestFiniteMagnitude)
         textView.textContainer?.widthTracksTextView = true
         textView.isRichText = true
@@ -1053,10 +1053,6 @@ case "Book Subtitle":
 extension EditorViewController: NSTextViewDelegate {
     func textDidChange(_ notification: Notification) {
         delegate?.textDidChange()
-        // Post notification to update stats panel
-        if let text = textView?.string {
-            NotificationCenter.default.post(name: NSNotification.Name("TextContentChanged"), object: text)
-        }
         // Update page height dynamically as text is typed/pasted
         updatePageCentering()
     }

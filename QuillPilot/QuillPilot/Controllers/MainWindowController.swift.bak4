@@ -188,7 +188,7 @@ class MainWindowController: NSWindowController {
         printOperation.showsProgressPanel = true
         
         if let window = window {
-            printOperation.run()
+            printOperation.runModal(for: window, delegate: nil, didRun: nil, contextInfo: nil)
         }
     }
 
@@ -912,7 +912,7 @@ class ContentViewController: NSViewController {
     var onTitleChange: ((String) -> Void)?
 
     private var outlineViewController: OutlineViewController!
-    var editorViewController: EditorViewController!
+    private var editorViewController: EditorViewController!
     private var analysisViewController: AnalysisViewController!
     private var backToTopButton: NSButton!
 

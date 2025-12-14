@@ -166,32 +166,6 @@ class MainWindowController: NSWindowController {
         mainContentViewController.applyTheme(theme)
     }
 
-
-    // MARK: - Print
-    @objc func printDocument(_ sender: Any?) {
-        guard let textView = mainContentViewController.editorViewController.textView else {
-            return
-        }
-        
-        let printInfo = NSPrintInfo.shared
-        printInfo.horizontalPagination = .fit
-        printInfo.verticalPagination = .automatic
-        printInfo.isHorizontallyCentered = true
-        printInfo.isVerticallyCentered = false
-        printInfo.topMargin = 72
-        printInfo.bottomMargin = 72
-        printInfo.leftMargin = 72
-        printInfo.rightMargin = 72
-        
-        let printOperation = NSPrintOperation(view: textView, printInfo: printInfo)
-        printOperation.showsPrintPanel = true
-        printOperation.showsProgressPanel = true
-        
-        if let window = window {
-            printOperation.run()
-        }
-    }
-
     deinit {
         if let themeObserver {
             NotificationCenter.default.removeObserver(themeObserver)
@@ -439,7 +413,7 @@ class HeaderView: NSView {
 
     private var logoView: AnimatedLogoView!
     private var titleLabel: NSTextField!
-    var specsPanel: DocumentInfoPanel!
+    private var specsPanel: DocumentInfoPanel!
     private var themeToggle: NSButton!
     private var loginButton: NSButton!
 
@@ -912,7 +886,7 @@ class ContentViewController: NSViewController {
     var onTitleChange: ((String) -> Void)?
 
     private var outlineViewController: OutlineViewController!
-    var editorViewController: EditorViewController!
+    private var editorViewController: EditorViewController!
     private var analysisViewController: AnalysisViewController!
     private var backToTopButton: NSButton!
 

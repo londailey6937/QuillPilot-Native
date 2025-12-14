@@ -10,7 +10,7 @@ import Cocoa
 
 class SplitViewController: NSSplitViewController {
 
-    var editorViewController: EditorViewController!
+    private var editorViewController: EditorViewController!
     private var analysisViewController: AnalysisViewController!
     private var analysisEngine: AnalysisEngine!
 

@@ -912,7 +912,7 @@ class ContentViewController: NSViewController {
     var onTitleChange: ((String) -> Void)?
 
     private var outlineViewController: OutlineViewController!
-    var editorViewController: EditorViewController!
+    private var editorViewController: EditorViewController!
     private var analysisViewController: AnalysisViewController!
     private var backToTopButton: NSButton!
 

@@ -8,6 +8,11 @@
 
 import Cocoa
 
+// Flipped view so y=0 is at the top (standard for scroll views)
+class FlippedView: NSView {
+    override var isFlipped: Bool { return true }
+}
+
 protocol EditorViewControllerDelegate: AnyObject {
     func textDidChange()
     func titleDidChange(_ title: String)
@@ -38,32 +43,33 @@ class EditorViewController: NSViewController {
     }
 
     private func setupTextView() {
+        // Outer scroll view for scrolling the entire page view
         scrollView = NSScrollView()
         scrollView.hasVerticalScroller = false
         scrollView.hasHorizontalScroller = false
         scrollView.borderType = .noBorder
         scrollView.translatesAutoresizingMaskIntoConstraints = false
         scrollView.drawsBackground = true
-        // Keep the page flush with the ruler (no top inset).
         scrollView.contentInsets = NSEdgeInsets(top: 0, left: 12, bottom: 50, right: 12)
 
-        pageContainer = NSView(frame: NSRect(x: 0, y: 0, width: 612, height: 3000))
+        // Page container grows to fit all content (starts at US Letter height)
+        pageContainer = NSView(frame: NSRect(x: 0, y: 0, width: 612, height: 10000))
         pageContainer.wantsLayer = true
         pageContainer.layer?.borderWidth = 1
-        pageContainer.layer?.masksToBounds = false
+        pageContainer.layer?.masksToBounds = false  // Don't clip - let page grow
         pageContainer.layer?.shadowOpacity = 0.35
         pageContainer.layer?.shadowOffset = NSSize(width: 0, height: 2)
         pageContainer.layer?.shadowRadius = 10
 
-        
-let textFrame = pageContainer.bounds.insetBy(dx: standardMargin, dy: standardMargin)
+        // Create text view that grows with content
+        let textFrame = pageContainer.bounds.insetBy(dx: standardMargin, dy: standardMargin)
         textView = NSTextView(frame: textFrame)
         textView.minSize = NSSize(width: textFrame.width, height: textFrame.height)
-        textView.maxSize = NSSize(width: textFrame.width, height: .greatestFiniteMagnitude)
+        textView.maxSize = NSSize(width: textFrame.width, height: CGFloat.greatestFiniteMagnitude)
         textView.isVerticallyResizable = true
         textView.isHorizontallyResizable = false
-        textView.autoresizingMask = [.width]
-        textView.textContainer?.containerSize = NSSize(width: textFrame.width, height: .greatestFiniteMagnitude)
+        textView.autoresizingMask = [.width, .height]
+        textView.textContainer?.containerSize = NSSize(width: textFrame.width, height: CGFloat.greatestFiniteMagnitude)
         textView.textContainer?.widthTracksTextView = true
         textView.isRichText = true
         textView.importsGraphics = true
@@ -79,19 +85,18 @@ let textFrame = pageContainer.bounds.insetBy(dx: standardMargin, dy: standardMar
         textView.font = font
 
         let paragraphStyle = NSMutableParagraphStyle()
-        paragraphStyle.lineHeightMultiple = 2.0  // Double-spacing for manuscript format
+        paragraphStyle.lineHeightMultiple = 2.0
         paragraphStyle.paragraphSpacing = 12
-        paragraphStyle.firstLineHeadIndent = standardIndentStep  // 0.5" first-line indent
+        paragraphStyle.firstLineHeadIndent = standardIndentStep
         textView.defaultParagraphStyle = paragraphStyle.copy() as? NSParagraphStyle
 
+        // Add text view directly to page (text scrolls via outer scroll view)
         pageContainer.addSubview(textView)
 
-        documentView = NSView()
+        // Document view holds the page - use FlippedView so y=0 is at top
+        documentView = FlippedView()
         documentView.wantsLayer = true
         documentView.addSubview(pageContainer)
-        documentView.frame = NSRect(x: 0, y: 0,
-            width: pageContainer.bounds.width,
-            height: pageContainer.bounds.height + 100)
 
         scrollView.documentView = documentView
         view.addSubview(scrollView)
@@ -226,6 +231,10 @@ let textFrame = pageContainer.bounds.insetBy(dx: standardMargin, dy: standardMar
     }
 
     func scrollToTop() {
+        // Force scroll to absolute top by setting clip view origin to zero
+        scrollView.contentView.scroll(to: NSPoint.zero)
+        scrollView.reflectScrolledClipView(scrollView.contentView)
+        // Also try the text view method as backup
         textView.scrollToBeginningOfDocument(nil)
     }
 
@@ -296,10 +305,10 @@ let textFrame = pageContainer.bounds.insetBy(dx: standardMargin, dy: standardMar
         // - 1" margins all around
         // - 0.5" first-line indent
         // - Title page: title centered, author name below, contact info lower left
-        
+
         let attributed = attributedContent()
         let mutable = NSMutableAttributedString(attributedString: attributed)
-        
+
         // Create Shunn paragraph style
         let shunnStyle = NSMutableParagraphStyle()
         shunnStyle.alignment = .left
@@ -309,19 +318,19 @@ let textFrame = pageContainer.bounds.insetBy(dx: standardMargin, dy: standardMar
         shunnStyle.lineSpacing = 12  // Double spacing
         shunnStyle.paragraphSpacing = 0
         shunnStyle.paragraphSpacingBefore = 0
-        
+
         // Apply Shunn formatting to all body text
         let fullRange = NSRange(location: 0, length: mutable.length)
         let shunnFont = NSFont(name: "Courier", size: 12) ?? NSFont(name: "Times New Roman", size: 12) ?? NSFont.systemFont(ofSize: 12)
-        
+
         mutable.addAttribute(.font, value: shunnFont, range: fullRange)
         mutable.addAttribute(.paragraphStyle, value: shunnStyle.copy(), range: fullRange)
-        
+
         // Generate RTF
         guard let data = mutable.rtf(from: fullRange, documentAttributes: [:]) else {
             throw NSError(domain: "QuillPilot", code: 1, userInfo: [NSLocalizedDescriptionKey: "Failed to generate Shunn manuscript RTF."])
         }
-        
+
         return data
     }
     func pdfData() -> Data {
@@ -331,6 +340,8 @@ let textFrame = pageContainer.bounds.insetBy(dx: standardMargin, dy: standardMar
     func setAttributedContent(_ attributed: NSAttributedString) {
         textView.textStorage?.setAttributedString(attributed)
         refreshTypingAttributesUsingDefaultParagraphStyle()
+        // Force immediate layout and page resize to accommodate all content
+        updatePageCentering()
         scrollToTop()
         delegate?.textDidChange()
     }
@@ -356,7 +367,7 @@ let textFrame = pageContainer.bounds.insetBy(dx: standardMargin, dy: standardMar
                 let base = NSFont(name: "Times New Roman", size: 24) ?? current
                 return base
             }
-        
+
             // Sync title to header
             if let range = textView.selectedRanges.first as? NSRange, range.length == 0 {
                 let paragraphRange = (textView.string as NSString).paragraphRange(for: range)
@@ -865,24 +876,32 @@ case "Book Subtitle":
     private func updatePageCentering() {
         guard let scrollView else { return }
 
-        // Center the 612pt page within the editor column, respecting scrollView contentInsets.
-        let insets = scrollView.contentInsets
+        // Center the 612pt page within the editor column
         let visibleWidth = scrollView.contentView.bounds.width
-        let availableWidth = max(0, visibleWidth - insets.left - insets.right)
-
         let pageWidth: CGFloat = 612
-        let pageX = insets.left + max((availableWidth - pageWidth) / 2, 0)
+        let pageX = max((visibleWidth - pageWidth) / 2, 0)
 
-        // Keep documentView at x=0; position the page inside it.
-        pageContainer.frame.origin.x = pageX
+        // Calculate page height based on ALL text content
+        var pageHeight: CGFloat = 792
+        if let layoutManager = textView.layoutManager,
+           let textContainer = textView.textContainer {
+            // Force layout of entire text range to get accurate height
+            let textRange = NSRange(location: 0, length: textView.string.count)
+            layoutManager.ensureLayout(forCharacterRange: textRange)
+            let usedRect = layoutManager.usedRect(for: textContainer)
+            let neededHeight = ceil(usedRect.height + standardMargin * 2)
+            pageHeight = max(neededHeight, 792)
+        }
 
-        let docWidth = max(visibleWidth, pageX + pageWidth + insets.right)
-        documentView.frame = NSRect(
-            x: 0,
-            y: 0,
-            width: docWidth,
-            height: max(pageContainer.frame.height, 3000) + 100
-        )
+        // Always update frame to ensure dynamic growth
+        pageContainer.frame = NSRect(x: pageX, y: 0, width: pageWidth, height: pageHeight)
+        textView.frame = pageContainer.bounds.insetBy(dx: standardMargin, dy: standardMargin)
+        updateShadowPath()
+
+        // Document view encompasses the page with buffer for scrolling
+        let docWidth = max(visibleWidth, pageX + pageWidth + 20)
+        let docHeight = pageHeight + 1000
+        documentView.frame = NSRect(x: 0, y: 0, width: docWidth, height: docHeight)
     }
 
     override func viewDidLayout() {
@@ -1033,15 +1052,7 @@ case "Book Subtitle":
 extension EditorViewController: NSTextViewDelegate {
     func textDidChange(_ notification: Notification) {
         delegate?.textDidChange()
-
-        let contentHeight = textView.layoutManager?.usedRect(for: textView.textContainer!).height ?? 0
-        let minPageHeight: CGFloat = 792
-        let neededHeight = max(minPageHeight, contentHeight + 144)
-
-        if pageContainer.frame.height < neededHeight {
-            pageContainer.frame.size.height = neededHeight
-            documentView.frame.size.height = neededHeight + 100
-            updateShadowPath()
-        }
+        // Update page height dynamically as text is typed/pasted
+        updatePageCentering()
     }
 }

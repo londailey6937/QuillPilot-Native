@@ -1080,11 +1080,46 @@ case "Book Subtitle":
 extension EditorViewController: NSTextViewDelegate {
     func textDidChange(_ notification: Notification) {
         delegate?.textDidChange()
-        // Post notification to update stats panel
-        if let text = textView?.string {
-            NotificationCenter.default.post(name: NSNotification.Name("TextContentChanged"), object: text)
-        }
+
+        // Check if current paragraph is the title and update if so
+        checkAndUpdateTitle()
+
         // Update page height dynamically as text is typed/pasted
         updatePageCentering()
+    }
+
+    private func checkAndUpdateTitle() {
+        guard let textStorage = textView?.textStorage,
+              let selectedRange = textView?.selectedRanges.first as? NSRange else {
+            return
+        }
+
+        // Get the current paragraph
+        let paragraphRange = (textView.string as NSString).paragraphRange(for: selectedRange)
+
+        // Check if this paragraph has "Book Title" formatting (centered, 24pt Times New Roman)
+        var isBookTitle = false
+        textStorage.enumerateAttributes(in: paragraphRange, options: []) { attributes, range, stop in
+            if let font = attributes[.font] as? NSFont,
+               let paragraphStyle = attributes[.paragraphStyle] as? NSParagraphStyle {
+                // Check for Book Title characteristics: centered alignment, Times New Roman font, 24pt size
+                let isCentered = paragraphStyle.alignment == .center
+                let isTimesNewRoman = font.familyName == "Times New Roman" || font.fontName.contains("TimesNewRoman")
+                let isCorrectSize = font.pointSize == 24
+
+                if isCentered && isTimesNewRoman && isCorrectSize {
+                    isBookTitle = true
+                    stop.pointee = true
+                }
+            }
+        }
+
+        // If this is the title paragraph, extract and update
+        if isBookTitle {
+            let titleText = (textView.string as NSString).substring(with: paragraphRange).trimmingCharacters(in: .whitespacesAndNewlines)
+            if !titleText.isEmpty {
+                delegate?.titleDidChange(titleText)
+            }
+        }
     }
 }

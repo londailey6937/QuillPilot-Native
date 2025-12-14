@@ -11,6 +11,7 @@ import Cocoa
 class DocumentInfoPanel: NSView {
 
     private var titleField: NSTextField!
+    private var wordCountLabel: NSTextField!
     private var charactersLabel: NSTextField!
     private var readingLevelLabel: NSTextField!
     private var genreLabel: NSTextField!
@@ -42,6 +43,9 @@ class DocumentInfoPanel: NSView {
         titleField.delegate = self
         titleField.translatesAutoresizingMaskIntoConstraints = false
 
+        // Word count
+        wordCountLabel = createStatLabel("Words: 0")
+
         // Characters count
         charactersLabel = createStatLabel("Characters: 0")
 
@@ -51,8 +55,8 @@ class DocumentInfoPanel: NSView {
         // Genre
         genreLabel = createStatLabel("Genre: Detecting...")
 
-        // Horizontal stack for stats (characters | reading level | genre)
-        let statsStack = NSStackView(views: [charactersLabel, readingLevelLabel, genreLabel])
+        // Horizontal stack for stats (word count | characters | reading level | genre)
+        let statsStack = NSStackView(views: [wordCountLabel, charactersLabel, readingLevelLabel, genreLabel])
         statsStack.orientation = .horizontal
         statsStack.spacing = 16
         statsStack.distribution = .equalSpacing
@@ -87,6 +91,10 @@ class DocumentInfoPanel: NSView {
     }
 
     func updateStats(text: String) {
+        // Word count
+        let words = text.components(separatedBy: .whitespacesAndNewlines).filter { !$0.isEmpty }
+        wordCountLabel.stringValue = "Words: \(words.count)"
+
         // Characters count
         let charCount = text.count
         charactersLabel.stringValue = "Characters: \(charCount)"

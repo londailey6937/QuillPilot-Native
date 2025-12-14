@@ -22,6 +22,7 @@ class EditorViewController: NSViewController {
 
     private let standardMargin: CGFloat = 72
     private let standardIndentStep: CGFloat = 36
+    var editorZoom: CGFloat = 1.4  // 140% zoom for better readability on large displays
 
     var textView: NSTextView!
 
@@ -53,7 +54,7 @@ class EditorViewController: NSViewController {
         scrollView.contentInsets = NSEdgeInsets(top: 0, left: 12, bottom: 50, right: 12)
 
         // Page container grows to fit all content (starts at US Letter height)
-        pageContainer = NSView(frame: NSRect(x: 0, y: 0, width: 612, height: 10000))
+        pageContainer = NSView(frame: NSRect(x: 0, y: 0, width: 612 * editorZoom, height: 10000 * editorZoom))
         pageContainer.wantsLayer = true
         pageContainer.layer?.borderWidth = 1
         pageContainer.layer?.masksToBounds = false  // Don't clip - let page grow
@@ -62,7 +63,7 @@ class EditorViewController: NSViewController {
         pageContainer.layer?.shadowRadius = 10
 
         // Create text view that grows with content
-        let textFrame = pageContainer.bounds.insetBy(dx: standardMargin, dy: standardMargin)
+        let textFrame = pageContainer.bounds.insetBy(dx: standardMargin * editorZoom, dy: standardMargin * editorZoom)
         textView = NSTextView(frame: textFrame)
         textView.minSize = NSSize(width: textFrame.width, height: textFrame.height)
         textView.maxSize = NSSize(width: textFrame.width, height: CGFloat.greatestFiniteMagnitude)
@@ -251,11 +252,11 @@ class EditorViewController: NSViewController {
         let rightMargin = max(0, right)
 
         let availableWidth = max(36, pageContainer.bounds.width - leftMargin - rightMargin)
-        let availableHeight = max(36, pageContainer.bounds.height - (standardMargin * 2))
+        let availableHeight = max(36, pageContainer.bounds.height - (standardMargin * 2 * editorZoom))
 
         let newFrame = NSRect(
             x: leftMargin,
-            y: standardMargin,
+            y: standardMargin * editorZoom,
             width: availableWidth,
             height: availableHeight
         )
@@ -878,24 +879,24 @@ case "Book Subtitle":
 
         // Center the 612pt page within the editor column
         let visibleWidth = scrollView.contentView.bounds.width
-        let pageWidth: CGFloat = 612
+        let pageWidth: CGFloat = 612 * editorZoom
         let pageX = max((visibleWidth - pageWidth) / 2, 0)
 
         // Calculate page height based on ALL text content
-        var pageHeight: CGFloat = 792
+        var pageHeight: CGFloat = 792 * editorZoom
         if let layoutManager = textView.layoutManager,
            let textContainer = textView.textContainer {
             // Force layout of entire text range to get accurate height
             let textRange = NSRange(location: 0, length: textView.string.count)
             layoutManager.ensureLayout(forCharacterRange: textRange)
             let usedRect = layoutManager.usedRect(for: textContainer)
-            let neededHeight = ceil(usedRect.height + standardMargin * 2)
-            pageHeight = max(neededHeight, 792)
+            let neededHeight = ceil(usedRect.height + standardMargin * 2 * editorZoom)
+            pageHeight = max(neededHeight, 792 * editorZoom)
         }
 
         // Always update frame to ensure dynamic growth
         pageContainer.frame = NSRect(x: pageX, y: 0, width: pageWidth, height: pageHeight)
-        textView.frame = pageContainer.bounds.insetBy(dx: standardMargin, dy: standardMargin)
+        textView.frame = pageContainer.bounds.insetBy(dx: standardMargin * editorZoom, dy: standardMargin * editorZoom)
         updateShadowPath()
 
         // Document view encompasses the page with buffer for scrolling

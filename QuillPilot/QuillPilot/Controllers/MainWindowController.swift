@@ -84,7 +84,7 @@ class MainWindowController: NSWindowController {
 
         // Create ruler - 30px tall
         rulerView = EnhancedRulerView()
-        rulerView.pageWidth = 612 // Match page container width
+        rulerView.pageWidth = 857 // Match page container width
         rulerView.translatesAutoresizingMaskIntoConstraints = false
         containerView.addSubview(rulerView)
 

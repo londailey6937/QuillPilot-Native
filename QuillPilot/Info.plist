@@ -26,5 +26,9 @@
 	<string></string>
 	<key>NSHumanReadableCopyright</key>
 	<string>Copyright © 2025 QuillPilot. All rights reserved.</string>
+	<key>NSPrintingOrientation</key>
+	<string>NSPortrait</string>
+	<key>NSPrintingPaperName</key>
+	<string>na-letter</string>
 </dict>
 </plist>

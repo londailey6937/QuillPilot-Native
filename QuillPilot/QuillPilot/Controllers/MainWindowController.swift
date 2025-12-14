@@ -14,7 +14,9 @@ protocol FormattingToolbarDelegate: AnyObject {
     func formattingToolbarDidOutdent(_ toolbar: FormattingToolbar)
     func formattingToolbarDidSave(_ toolbar: FormattingToolbar)
 
-    func formattingToolbar(_ toolbar: FormattingToolbar, didSelectStyle styleName: String)
+    func formattingToolbar(_ toolbar
+
+                           : FormattingToolbar, didSelectStyle styleName: String)
 
     func formattingToolbarDidToggleBold(_ toolbar: FormattingToolbar)
     func formattingToolbarDidToggleItalic(_ toolbar: FormattingToolbar)
@@ -93,6 +95,9 @@ class MainWindowController: NSWindowController {
         mainContentViewController.onTitleChange = { [weak self] title in
             self?.headerView.setDocumentTitle(title)
         }
+        mainContentViewController.onStatsUpdate = { [weak self] text in
+            self?.headerView.specsPanel.updateStats(text: text)
+        }
         let contentView = mainContentViewController.view
         contentView.translatesAutoresizingMaskIntoConstraints = false
         containerView.addSubview(contentView)
@@ -150,13 +155,7 @@ class MainWindowController: NSWindowController {
             self.applyTheme(theme)
         }
 
-        // Observe text changes to update document stats panel
-        NotificationCenter.default.addObserver(forName: NSNotification.Name("TextContentChanged"), object: nil, queue: .main) { [weak self] notification in
-            guard let self = self, let text = notification.object as? String else { return }
-            self.headerView.specsPanel.updateStats(text: text)
-        }
-
-        // Update stats panel with initial text
+        // Update stats panel with initial text once the editor is ready
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [weak self] in
             guard let self = self,
                   let text = self.mainContentViewController.editorViewController.textView?.string else {
@@ -178,35 +177,49 @@ class MainWindowController: NSWindowController {
 
     // MARK: - Print
     @objc func printDocument(_ sender: Any?) {
-        guard let textView = mainContentViewController.editorViewController.textView else {
+        guard let editorVC = mainContentViewController?.editorViewController else {
+            presentErrorAlert(message: "Print Failed", details: "Editor not available")
             return
         }
 
-        // Create a temporary text view for printing with the current content
-        let printTextView = NSTextView(frame: NSRect(x: 0, y: 0, width: 612, height: 792))
-        printTextView.textStorage?.setAttributedString(textView.attributedString())
+        // Generate clean PDF without background/borders for printing
+        let pdfData = editorVC.printPDFData()
 
-        let printInfo = NSPrintInfo.shared
-        printInfo.horizontalPagination = .fit
-        printInfo.verticalPagination = .automatic
-        printInfo.isHorizontallyCentered = true
-        printInfo.isVerticallyCentered = false
-        printInfo.topMargin = 72
-        printInfo.bottomMargin = 72
-        printInfo.leftMargin = 72
-        printInfo.rightMargin = 72
+        // Save PDF to temporary file
+        let tempDir = FileManager.default.temporaryDirectory
+        let tempFile = tempDir.appendingPathComponent("QuillPilot_Print_\(UUID().uuidString).pdf")
 
-        let printOperation = NSPrintOperation(view: printTextView, printInfo: printInfo)
-        printOperation.showsPrintPanel = true
-        printOperation.showsProgressPanel = true
+        do {
+            try pdfData.write(to: tempFile)
 
-        printOperation.run()
+            // Open the PDF with the system print dialog
+            NSWorkspace.shared.open(tempFile)
+
+            // Clean up after a delay
+            DispatchQueue.main.asyncAfter(deadline: .now() + 5) {
+                try? FileManager.default.removeItem(at: tempFile)
+            }
+        } catch {
+            presentErrorAlert(message: "Print Failed", details: "Could not generate printable document: \(error.localizedDescription)")
+        }
     }
 
     deinit {
         if let themeObserver {
             NotificationCenter.default.removeObserver(themeObserver)
         }
+    }
+}
+
+// MARK: - Menu Item Validation
+extension MainWindowController: NSMenuItemValidation {
+    func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
+        if menuItem.action == #selector(printDocument(_:)) {
+            let isValid = mainContentViewController != nil
+            NSLog("MainWindowController validateMenuItem for Print: \(isValid)")
+            return isValid
+        }
+        return true
     }
 }
 
@@ -921,6 +934,7 @@ class FormattingToolbar: NSView {
 // MARK: - Content View Controller (3-column layout)
 class ContentViewController: NSViewController {
     var onTitleChange: ((String) -> Void)?
+    var onStatsUpdate: ((String) -> Void)?
 
     private var outlineViewController: OutlineViewController!
     var editorViewController: EditorViewController!
@@ -1396,7 +1410,9 @@ private enum DocxTextExtractor {
 // MARK: - EditorViewController Delegate
 extension ContentViewController: EditorViewControllerDelegate {
     func textDidChange() {
-        // Text changed
+        if let text = editorViewController?.textView?.string {
+            onStatsUpdate?(text)
+        }
     }
 
     func titleDidChange(_ title: String) {

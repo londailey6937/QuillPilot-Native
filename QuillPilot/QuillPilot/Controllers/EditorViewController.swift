@@ -25,8 +25,8 @@ class EditorViewController: NSViewController {
     var editorZoom: CGFloat = 1.4  // 140% zoom for better readability on large displays
 
     var textView: NSTextView!
+    var pageContainer: NSView!  // Exposed for printing
 
-    private var pageContainer: NSView!
     private var scrollView: NSScrollView!
     private var documentView: NSView!
     private var currentTheme: AppTheme = ThemeManager.shared.currentTheme
@@ -336,6 +336,33 @@ class EditorViewController: NSViewController {
     }
     func pdfData() -> Data {
         pageContainer.dataWithPDF(inside: pageContainer.bounds)
+    }
+
+    func printPDFData() -> Data {
+        // Create a clean text view without background for printing
+        let printWidth: CGFloat = 612
+        let printHeight: CGFloat = 792
+        let margin = standardMargin
+
+        let printView = NSView(frame: NSRect(x: 0, y: 0, width: printWidth, height: printHeight))
+
+        let printTextView = NSTextView(frame: printView.bounds.insetBy(dx: margin, dy: margin))
+        printTextView.backgroundColor = .white
+        printTextView.textStorage?.setAttributedString(textView.attributedString())
+        printTextView.isHorizontallyResizable = false
+        printTextView.isVerticallyResizable = true
+        printTextView.textContainer?.containerSize = NSSize(width: printTextView.frame.width, height: CGFloat.greatestFiniteMagnitude)
+
+        // Force layout
+        printTextView.layoutManager?.ensureLayout(for: printTextView.textContainer!)
+        let usedRect = printTextView.layoutManager?.usedRect(for: printTextView.textContainer!) ?? .zero
+        let totalHeight = max(printHeight, usedRect.height + margin * 2)
+
+        printView.frame.size.height = totalHeight
+        printTextView.frame = printView.bounds.insetBy(dx: margin, dy: margin)
+        printView.addSubview(printTextView)
+
+        return printView.dataWithPDF(inside: printView.bounds)
     }
 
     func setAttributedContent(_ attributed: NSAttributedString) {

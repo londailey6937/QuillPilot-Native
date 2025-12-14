@@ -54,9 +54,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     @objc private func printDocument(_ sender: Any?) {
-        Task { @MainActor [weak self] in
-            self?.mainWindowController?.printDocument(sender)
+        NSLog("AppDelegate.printDocument called")
+        NSLog("mainWindowController exists: \(mainWindowController != nil)")
+
+        guard let controller = mainWindowController else {
+            NSLog("ERROR: mainWindowController is nil in AppDelegate")
+            return
         }
+
+        NSLog("About to call mainWindowController.printDocument")
+        controller.printDocument(sender)
+        NSLog("Finished calling mainWindowController.printDocument")
     }
 
     private func setupMenuBar() {
@@ -137,6 +145,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         window.orderFrontRegardless()
         window.makeKeyAndOrderFront(orderingSource)
         NSApp.activate(ignoringOtherApps: true)
+    }
+}
+
+// MARK: - Menu Item Validation
+extension AppDelegate: NSMenuItemValidation {
+    func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
+        if menuItem.action == #selector(printDocument(_:)) {
+            let isValid = mainWindowController != nil
+            NSLog("Validating Print menu item: \(isValid)")
+            return isValid
+        }
+        if menuItem.action == #selector(saveDocument(_:)) || menuItem.action == #selector(openDocument(_:)) {
+            return mainWindowController != nil
+        }
+        return true
     }
 }
 

@@ -53,6 +53,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
+    @objc private func printDocument(_ sender: Any?) {
+        Task { @MainActor [weak self] in
+            self?.mainWindowController?.printDocument(sender)
+        }
+    }
+
     private func setupMenuBar() {
         let mainMenu = NSMenu()
 
@@ -82,6 +88,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let saveItem = NSMenuItem(title: "Save…", action: #selector(saveDocument(_:)), keyEquivalent: "s")
         saveItem.target = self
         fileMenu.addItem(saveItem)
+
+        let printItem = NSMenuItem(title: "Print…", action: #selector(printDocument(_:)), keyEquivalent: "p")
+        printItem.target = self
+        fileMenu.addItem(printItem)
         fileMenu.addItem(.separator())
         // Edit Menu
         let editMenuItem = NSMenuItem()

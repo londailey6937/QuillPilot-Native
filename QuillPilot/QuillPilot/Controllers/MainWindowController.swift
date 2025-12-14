@@ -155,6 +155,15 @@ class MainWindowController: NSWindowController {
             guard let self = self, let text = notification.object as? String else { return }
             self.headerView.specsPanel.updateStats(text: text)
         }
+
+        // Update stats panel with initial text
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [weak self] in
+            guard let self = self,
+                  let text = self.mainContentViewController.editorViewController.textView?.string else {
+                return
+            }
+            self.headerView.specsPanel.updateStats(text: text)
+        }
     }
 
     private func applyTheme(_ theme: AppTheme) {
@@ -172,7 +181,11 @@ class MainWindowController: NSWindowController {
         guard let textView = mainContentViewController.editorViewController.textView else {
             return
         }
-        
+
+        // Create a temporary text view for printing with the current content
+        let printTextView = NSTextView(frame: NSRect(x: 0, y: 0, width: 612, height: 792))
+        printTextView.textStorage?.setAttributedString(textView.attributedString())
+
         let printInfo = NSPrintInfo.shared
         printInfo.horizontalPagination = .fit
         printInfo.verticalPagination = .automatic
@@ -182,14 +195,12 @@ class MainWindowController: NSWindowController {
         printInfo.bottomMargin = 72
         printInfo.leftMargin = 72
         printInfo.rightMargin = 72
-        
-        let printOperation = NSPrintOperation(view: textView, printInfo: printInfo)
+
+        let printOperation = NSPrintOperation(view: printTextView, printInfo: printInfo)
         printOperation.showsPrintPanel = true
         printOperation.showsProgressPanel = true
-        
-        if let window = window {
-            printOperation.run()
-        }
+
+        printOperation.run()
     }
 
     deinit {
@@ -1387,7 +1398,7 @@ extension ContentViewController: EditorViewControllerDelegate {
     func textDidChange() {
         // Text changed
     }
-    
+
     func titleDidChange(_ title: String) {
         onTitleChange?(title)
     }

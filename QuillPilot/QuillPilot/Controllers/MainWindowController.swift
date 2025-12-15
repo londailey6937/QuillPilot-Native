@@ -40,6 +40,7 @@ protocol FormattingToolbarDelegate: AnyObject {
 }
 
 class MainWindowController: NSWindowController {
+    private var activePrintOperation: NSPrintOperation?
 
     private var headerView: HeaderView!
     private var toolbarView: FormattingToolbar!
@@ -185,26 +186,69 @@ class MainWindowController: NSWindowController {
 
 
     // MARK: - Print
+    @MainActor
     @objc func printDocument(_ sender: Any?) {
         guard let editorVC = mainContentViewController?.editorViewController else {
             presentErrorAlert(message: "Print Failed", details: "Editor not available")
             return
         }
 
-        // Use native print panel on the page container view
-        let printInfo = NSPrintInfo.shared.copy() as! NSPrintInfo
-        printInfo.horizontalPagination = .automatic
-        printInfo.verticalPagination = .automatic
-        printInfo.topMargin = 0
-        printInfo.bottomMargin = 0
-        printInfo.leftMargin = 0
-        printInfo.rightMargin = 0
+        guard let window = window else {
+            presentErrorAlert(message: "Print Failed", details: "No window available for printing")
+            return
+        }
 
-        // pageContainer is already laid out; print directly
-        let printOperation = NSPrintOperation(view: editorVC.pageContainer, printInfo: printInfo)
+        guard let pageContainer = editorVC.pageContainer else {
+            presentErrorAlert(message: "Print Failed", details: "Document view unavailable")
+            return
+        }
+
+        let hasWindow = pageContainer.window != nil
+        NSLog("Preparing print. pageContainer frame: \(pageContainer.frame) bounds: \(pageContainer.bounds) inWindow: \(hasWindow)")
+        guard hasWindow else {
+            presentErrorAlert(message: "Print Failed", details: "Document view is not in a window")
+            return
+        }
+
+        // Ask AppKit to present the native print panel for the laid-out pageContainer
+        let printInfoCopy = NSPrintInfo.shared.copy() as! NSPrintInfo
+        printInfoCopy.jobDisposition = .spool
+
+        let printers = NSPrinter.printerNames
+        NSLog("Available printers: \(printers)")
+
+        // Try the user-reported printer name first
+        if let userPrinter = NSPrinter(name: "HP LaserJet M110w (8C17D0)") {
+            printInfoCopy.printer = userPrinter
+            NSLog("Using user-specified printer: HP LaserJet M110w (8C17D0)")
+        } else if let hp = printers.first(where: { $0.localizedCaseInsensitiveContains("HP") }) ?? printers.first,
+                  let chosen = NSPrinter(name: hp) {
+            printInfoCopy.printer = chosen
+            NSLog("Using discovered printer: \(hp)")
+        } else {
+            NSLog("No printer assigned; proceeding with default printInfo.printer")
+        }
+
+        let printOperation = NSPrintOperation(view: pageContainer, printInfo: printInfoCopy)
         printOperation.showsPrintPanel = true
         printOperation.showsProgressPanel = true
-        printOperation.run()
+        printOperation.printPanel.options = [.showsPreview, .showsPrintSelection, .showsPageSetupAccessory, .showsOrientation, .showsPaperSize, .showsScaling]
+
+        activePrintOperation = printOperation // keep alive while printing
+        let printerName = printOperation.printInfo.printer.name
+        NSLog("Starting print operation (printer: \(printerName), shows panel: \(printOperation.showsPrintPanel), shows progress: \(printOperation.showsProgressPanel))")
+        let success = printOperation.run()
+        NSLog("NSPrintOperation.run returned: \(success)")
+        if !success {
+            presentPrintFailureFallback(for: pageContainer)
+        }
+        activePrintOperation = nil
+    }
+
+    // Provide standard print: responder that forwards to printDocument
+    @MainActor
+    @objc func print(_ sender: Any?) {
+        printDocument(sender)
     }
 
     func showHeaderFooterSettings() {
@@ -249,12 +293,46 @@ class MainWindowController: NSWindowController {
 // MARK: - Menu Item Validation
 extension MainWindowController: NSMenuItemValidation {
     func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
-        if menuItem.action == #selector(printDocument(_:)) {
+        if menuItem.action == #selector(print(_:)) || menuItem.action == #selector(printDocument(_:)) {
             let isValid = mainContentViewController != nil
             NSLog("MainWindowController validateMenuItem for Print: \(isValid)")
             return isValid
         }
         return true
+    }
+}
+
+// MARK: - Print fallback
+private extension MainWindowController {
+    func presentPrintFailureFallback(for view: NSView) {
+        guard let window else { return }
+
+        let alert = NSAlert()
+        alert.alertStyle = .warning
+        alert.messageText = "Printing Unavailable"
+        alert.informativeText = "macOS reported that printing is unavailable. You can save a PDF instead."
+        alert.addButton(withTitle: "Save PDF…")
+        alert.addButton(withTitle: "Cancel")
+
+        let response = alert.runModal()
+        guard response == .alertFirstButtonReturn else { return }
+
+        let savePanel = NSSavePanel()
+        savePanel.canCreateDirectories = true
+        savePanel.isExtensionHidden = false
+        savePanel.title = "Save PDF"
+        savePanel.allowedContentTypes = [.pdf]
+        savePanel.nameFieldStringValue = "QuillPilot.pdf"
+
+        savePanel.beginSheetModal(for: window) { panelResponse in
+            guard panelResponse == .OK, let url = savePanel.url else { return }
+            let data = view.dataWithPDF(inside: view.bounds)
+            do {
+                try data.write(to: url, options: .atomic)
+            } catch {
+                self.presentErrorAlert(message: "Save failed", details: error.localizedDescription)
+            }
+        }
     }
 }
 

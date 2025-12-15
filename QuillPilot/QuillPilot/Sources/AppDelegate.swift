@@ -53,6 +53,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
+    @MainActor
     @objc private func printDocument(_ sender: Any?) {
         NSLog("AppDelegate.printDocument called")
         NSLog("mainWindowController exists: \(mainWindowController != nil)")
@@ -65,6 +66,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NSLog("About to call mainWindowController.printDocument")
         controller.printDocument(sender)
         NSLog("Finished calling mainWindowController.printDocument")
+    }
+
+    // Support standard print: action so Cmd+P finds a responder
+    @MainActor
+    @objc func print(_ sender: Any?) {
+        printDocument(sender)
     }
 
     private func setupMenuBar() {
@@ -97,7 +104,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         saveItem.target = self
         fileMenu.addItem(saveItem)
 
-        let printItem = NSMenuItem(title: "Print…", action: #selector(printDocument(_:)), keyEquivalent: "p")
+        let printItem = NSMenuItem(title: "Print…", action: #selector(print(_:)), keyEquivalent: "p")
         printItem.target = self
         fileMenu.addItem(printItem)
         fileMenu.addItem(.separator())
@@ -165,7 +172,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 // MARK: - Menu Item Validation
 extension AppDelegate: NSMenuItemValidation {
     func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
-        if menuItem.action == #selector(printDocument(_:)) {
+        if menuItem.action == #selector(printDocument(_:)) || menuItem.action == #selector(print(_:)) {
             let isValid = mainWindowController != nil
             NSLog("Validating Print menu item: \(isValid)")
             return isValid

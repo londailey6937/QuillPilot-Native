@@ -1672,6 +1672,231 @@ case "Book Subtitle":
         textView.setSelectedRange(NSRange(location: currentRange.location + 1, length: 0))
     }
 
+    func deleteColumnAtCursor() {
+        guard let textStorage = textView.textStorage else { return }
+        let cursorPosition = textView.selectedRange().location
+        guard cursorPosition < textStorage.length else { return }
+
+        // Get the paragraph style at cursor position
+        let attrs = textStorage.attributes(at: cursorPosition, effectiveRange: nil)
+        guard let paragraphStyle = attrs[.paragraphStyle] as? NSParagraphStyle,
+              let textBlocks = paragraphStyle.textBlocks as? [NSTextTableBlock],
+              let currentBlock = textBlocks.first else {
+            NSLog("No table column found at cursor position")
+            return
+        }
+
+        let table = currentBlock.table
+        let columnToDelete = currentBlock.startingColumn
+        let totalColumns = table.numberOfColumns
+
+        NSLog("Deleting column \(columnToDelete) from table with \(totalColumns) columns")
+
+        // Find all paragraphs in the table first
+        let fullString = textStorage.string as NSString
+        var tableRanges: [(range: NSRange, column: Int, content: NSAttributedString)] = []
+        var searchLocation = 0
+
+        while searchLocation < textStorage.length {
+            let attrs = textStorage.attributes(at: searchLocation, effectiveRange: nil)
+            if let ps = attrs[.paragraphStyle] as? NSParagraphStyle,
+               let blocks = ps.textBlocks as? [NSTextTableBlock],
+               let block = blocks.first,
+               block.table == table {
+                let pRange = fullString.paragraphRange(for: NSRange(location: searchLocation, length: 0))
+                let content = textStorage.attributedSubstring(from: pRange)
+                tableRanges.append((range: pRange, column: block.startingColumn, content: content))
+                searchLocation = NSMaxRange(pRange)
+            } else {
+                searchLocation += 1
+            }
+        }
+
+        guard !tableRanges.isEmpty else { return }
+
+        // Find the full table range
+        let tableStart = tableRanges.first!.range.location
+        let tableEnd = NSMaxRange(tableRanges.last!.range)
+        let fullTableRange = NSRange(location: tableStart, length: tableEnd - tableStart)
+
+        // If this would leave only one column or fewer, convert to body text
+        if totalColumns <= 2 {
+            NSLog("Converting table to body text (only \(totalColumns - 1) column(s) would remain)")
+
+            // Create standard body text paragraph style
+            let bodyParagraphStyle = NSMutableParagraphStyle()
+            bodyParagraphStyle.alignment = .left
+            bodyParagraphStyle.lineHeightMultiple = 2.0
+            bodyParagraphStyle.paragraphSpacing = 0
+            bodyParagraphStyle.firstLineHeadIndent = 36
+
+            let bodyText = NSMutableAttributedString()
+            let bodyFont = NSFont(name: "Times New Roman", size: 12) ?? NSFont.systemFont(ofSize: 12)
+
+            // Collect content from all columns except the deleted one and convert to body text
+            for column in 0..<totalColumns {
+                if column == columnToDelete {
+                    continue
+                }
+
+                if let columnContent = tableRanges.first(where: { $0.column == column })?.content {
+                    let mutableContent = NSMutableAttributedString(attributedString: columnContent)
+                    // Remove table paragraph style and apply body text style
+                    mutableContent.removeAttribute(.paragraphStyle, range: NSRange(location: 0, length: mutableContent.length))
+                    mutableContent.addAttribute(.paragraphStyle, value: bodyParagraphStyle, range: NSRange(location: 0, length: mutableContent.length))
+
+                    // Ensure font is set
+                    mutableContent.enumerateAttribute(.font, in: NSRange(location: 0, length: mutableContent.length), options: []) { value, range, _ in
+                        if value == nil {
+                            mutableContent.addAttribute(.font, value: bodyFont, range: range)
+                        }
+                    }
+
+                    bodyText.append(mutableContent)
+                }
+            }
+
+            // Replace table with body text
+            textStorage.replaceCharacters(in: fullTableRange, with: bodyText)
+            textView.setSelectedRange(NSRange(location: tableStart, length: 0))
+            return
+        }
+
+        // Create new table with one fewer column
+        let newTable = NSTextTable()
+        newTable.numberOfColumns = totalColumns - 1
+        newTable.layoutAlgorithm = .automaticLayoutAlgorithm
+        newTable.collapsesBorders = false
+
+        let borderColor = (ThemeManager.shared.currentTheme.headerBackground).withAlphaComponent(0.5)
+        let result = NSMutableAttributedString()
+
+        // Rebuild the table without the deleted column
+        var newColumnIndex = 0
+        for column in 0..<totalColumns {
+            if column == columnToDelete {
+                continue // Skip the deleted column
+            }
+
+            // Find content for this column
+            let columnContent = tableRanges.first(where: { $0.column == column })?.content
+
+            let textBlock = NSTextTableBlock(table: newTable, startingRow: 0, rowSpan: 1, startingColumn: newColumnIndex, columnSpan: 1)
+
+            textBlock.setBorderColor(borderColor, for: .minX)
+            textBlock.setBorderColor(borderColor, for: .maxX)
+            textBlock.setBorderColor(borderColor, for: .minY)
+            textBlock.setBorderColor(borderColor, for: .maxY)
+            textBlock.setWidth(1.0, type: .absoluteValueType, for: .border)
+            textBlock.setWidth(8.0, type: .absoluteValueType, for: .padding, edge: .minX)
+            textBlock.setWidth(8.0, type: .absoluteValueType, for: .padding, edge: .maxX)
+            textBlock.setWidth(8.0, type: .absoluteValueType, for: .padding, edge: .minY)
+            textBlock.setWidth(8.0, type: .absoluteValueType, for: .padding, edge: .maxY)
+
+            let newParagraphStyle = NSMutableParagraphStyle()
+            newParagraphStyle.textBlocks = [textBlock]
+
+            if let content = columnContent {
+                let mutableContent = NSMutableAttributedString(attributedString: content)
+                mutableContent.addAttribute(.paragraphStyle, value: newParagraphStyle, range: NSRange(location: 0, length: mutableContent.length))
+                result.append(mutableContent)
+            } else {
+                var attrs = textView.typingAttributes
+                attrs[.paragraphStyle] = newParagraphStyle
+                let placeholder = NSAttributedString(string: "Column \(newColumnIndex + 1)\n", attributes: attrs)
+                result.append(placeholder)
+            }
+
+            newColumnIndex += 1
+        }
+
+        // Add final newline to exit table - use clean attributes without table formatting
+        let cleanParagraphStyle = NSMutableParagraphStyle()
+        cleanParagraphStyle.alignment = .left
+        cleanParagraphStyle.lineHeightMultiple = 2.0
+        let cleanFont = NSFont(name: "Times New Roman", size: 12) ?? NSFont.systemFont(ofSize: 12)
+        let finalNewline = NSAttributedString(string: "\n", attributes: [
+            .font: cleanFont,
+            .paragraphStyle: cleanParagraphStyle,
+            .foregroundColor: currentTheme.textColor
+        ])
+        result.append(finalNewline)
+
+        // Replace the old table with the new one
+        textStorage.replaceCharacters(in: fullTableRange, with: result)
+        textView.setSelectedRange(NSRange(location: tableStart, length: 0))
+    }
+
+    func removeTableAtCursor() {
+        guard let textStorage = textView.textStorage else { return }
+        let cursorPosition = textView.selectedRange().location
+        guard cursorPosition < textStorage.length else { return }
+
+        let attrs = textStorage.attributes(at: cursorPosition, effectiveRange: nil)
+        guard let paragraphStyle = attrs[.paragraphStyle] as? NSParagraphStyle,
+              let textBlocks = paragraphStyle.textBlocks as? [NSTextTableBlock],
+              let currentBlock = textBlocks.first else {
+            return
+        }
+
+        let table = currentBlock.table
+
+        // Find all paragraphs in the table
+        let fullString = textStorage.string as NSString
+        var tableRanges: [NSRange] = []
+        var searchLocation = 0
+
+        while searchLocation < textStorage.length {
+            let attrs = textStorage.attributes(at: searchLocation, effectiveRange: nil)
+            if let ps = attrs[.paragraphStyle] as? NSParagraphStyle,
+               let blocks = ps.textBlocks as? [NSTextTableBlock],
+               let block = blocks.first,
+               block.table == table {
+                let pRange = fullString.paragraphRange(for: NSRange(location: searchLocation, length: 0))
+                tableRanges.append(pRange)
+                searchLocation = NSMaxRange(pRange)
+            } else {
+                searchLocation += 1
+            }
+        }
+
+        guard !tableRanges.isEmpty else { return }
+
+        let tableStart = tableRanges.first!.location
+        let tableEnd = NSMaxRange(tableRanges.last!)
+        let fullTableRange = NSRange(location: tableStart, length: tableEnd - tableStart)
+
+        // Extract text content without table formatting and apply body text style
+        let plainText = NSMutableAttributedString()
+
+        // Create standard body text paragraph style
+        let bodyParagraphStyle = NSMutableParagraphStyle()
+        bodyParagraphStyle.alignment = .left
+        bodyParagraphStyle.lineHeightMultiple = 2.0
+        bodyParagraphStyle.paragraphSpacing = 0
+        bodyParagraphStyle.firstLineHeadIndent = 36
+
+        for range in tableRanges {
+            let content = textStorage.attributedSubstring(from: range)
+            let mutableContent = NSMutableAttributedString(attributedString: content)
+
+            // Remove table-specific attributes and apply body text style
+            mutableContent.removeAttribute(.paragraphStyle, range: NSRange(location: 0, length: mutableContent.length))
+            mutableContent.addAttribute(.paragraphStyle, value: bodyParagraphStyle, range: NSRange(location: 0, length: mutableContent.length))
+
+            // Ensure font is set to body text default
+            if mutableContent.attribute(.font, at: 0, effectiveRange: nil) == nil {
+                let bodyFont = NSFont(name: "Times New Roman", size: 12) ?? NSFont.systemFont(ofSize: 12)
+                mutableContent.addAttribute(.font, value: bodyFont, range: NSRange(location: 0, length: mutableContent.length))
+            }
+
+            plainText.append(mutableContent)
+        }
+
+        textStorage.replaceCharacters(in: fullTableRange, with: plainText)
+        textView.setSelectedRange(NSRange(location: tableStart, length: 0))
+    }
+
     func applyTheme(_ theme: AppTheme) {
         currentTheme = theme
         view.layer?.backgroundColor = theme.pageAround.cgColor

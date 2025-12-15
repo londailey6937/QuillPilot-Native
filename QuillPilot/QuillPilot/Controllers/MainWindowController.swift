@@ -36,6 +36,7 @@ protocol FormattingToolbarDelegate: AnyObject {
     func formattingToolbarDidInsertPageBreak(_ toolbar: FormattingToolbar)
     func formattingToolbarDidInsertColumnBreak(_ toolbar: FormattingToolbar)
     func formattingToolbarDidColumns(_ toolbar: FormattingToolbar)
+    func formattingToolbarDidDeleteColumn(_ toolbar: FormattingToolbar)
     func formattingToolbarDidClearAll(_ toolbar: FormattingToolbar)
 
     func formattingToolbarDidOpenStyleEditor(_ toolbar: FormattingToolbar)
@@ -396,6 +397,10 @@ extension MainWindowController: FormattingToolbarDelegate {
                 presentErrorAlert(message: "Invalid Input", details: "Please enter a number between 1 and 3.")
             }
         }
+    }
+
+    func formattingToolbarDidDeleteColumn(_ toolbar: FormattingToolbar) {
+        mainContentViewController.editorViewController.deleteColumnAtCursor()
     }
 
     func formattingToolbarDidClearAll(_ toolbar: FormattingToolbar) {
@@ -1076,11 +1081,15 @@ class FormattingToolbar: NSView {
 
         // Layout
         let columnsBtn = createToolbarButton("⫼") // Column icon
+        let deleteColumnBtn = createToolbarButton("⊟") // Delete column icon
         let pageBreakBtn = createToolbarButton("⤓") // Page break icon
         let columnBreakBtn = createToolbarButton("⏎") // Column break icon
         columnsBtn.target = self
         columnsBtn.action = #selector(columnsTapped)
         columnsBtn.toolTip = "Insert Columns"
+        deleteColumnBtn.target = self
+        deleteColumnBtn.action = #selector(deleteColumnTapped)
+        deleteColumnBtn.toolTip = "Delete Column at Cursor"
         pageBreakBtn.target = self
         pageBreakBtn.action = #selector(pageBreakTapped)
         pageBreakBtn.toolTip = "Page Break"
@@ -1108,7 +1117,7 @@ class FormattingToolbar: NSView {
             boldBtn, italicBtn, underlineBtn,
             alignLeftBtn, alignCenterBtn, alignRightBtn, justifyBtn,
             bulletsBtn, numberingBtn,
-            columnsBtn, columnBreakBtn, pageBreakBtn,
+            columnsBtn, deleteColumnBtn, columnBreakBtn, pageBreakBtn,
             outdentBtn, indentBtn,
             clearBtn
         ])
@@ -1231,6 +1240,10 @@ class FormattingToolbar: NSView {
 
     @objc private func columnBreakTapped() {
         delegate?.formattingToolbarDidInsertColumnBreak(self)
+    }
+
+    @objc private func deleteColumnTapped() {
+        delegate?.formattingToolbarDidDeleteColumn(self)
     }
 
     @objc private func clearAllTapped() {

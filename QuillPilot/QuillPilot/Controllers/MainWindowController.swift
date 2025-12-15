@@ -191,26 +191,20 @@ class MainWindowController: NSWindowController {
             return
         }
 
-        // Generate clean PDF without background/borders for printing
-        let pdfData = editorVC.printPDFData()
+        // Use native print panel on the page container view
+        let printInfo = NSPrintInfo.shared.copy() as! NSPrintInfo
+        printInfo.horizontalPagination = .automatic
+        printInfo.verticalPagination = .automatic
+        printInfo.topMargin = 0
+        printInfo.bottomMargin = 0
+        printInfo.leftMargin = 0
+        printInfo.rightMargin = 0
 
-        // Save PDF to temporary file
-        let tempDir = FileManager.default.temporaryDirectory
-        let tempFile = tempDir.appendingPathComponent("QuillPilot_Print_\(UUID().uuidString).pdf")
-
-        do {
-            try pdfData.write(to: tempFile)
-
-            // Open the PDF with the system print dialog
-            NSWorkspace.shared.open(tempFile)
-
-            // Clean up after a delay
-            DispatchQueue.main.asyncAfter(deadline: .now() + 5) {
-                try? FileManager.default.removeItem(at: tempFile)
-            }
-        } catch {
-            presentErrorAlert(message: "Print Failed", details: "Could not generate printable document: \(error.localizedDescription)")
-        }
+        // pageContainer is already laid out; print directly
+        let printOperation = NSPrintOperation(view: editorVC.pageContainer, printInfo: printInfo)
+        printOperation.showsPrintPanel = true
+        printOperation.showsProgressPanel = true
+        printOperation.run()
     }
 
     func showHeaderFooterSettings() {

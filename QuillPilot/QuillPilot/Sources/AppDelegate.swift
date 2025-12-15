@@ -116,6 +116,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         editMenu.addItem(NSMenuItem(title: "Paste", action: #selector(NSText.paste(_:)), keyEquivalent: "v"))
         editMenu.addItem(NSMenuItem(title: "Select All", action: #selector(NSText.selectAll(_:)), keyEquivalent: "a"))
 
+        // View Menu
+        let viewMenuItem = NSMenuItem()
+        mainMenu.addItem(viewMenuItem)
+        let viewMenu = NSMenu(title: "View")
+        viewMenuItem.submenu = viewMenu
+
+        let headerFooterItem = NSMenuItem(title: "Header & Footer Settings…", action: #selector(showHeaderFooterSettings(_:)), keyEquivalent: "")
+        headerFooterItem.target = self
+        viewMenu.addItem(headerFooterItem)
+
         // Window Menu
         let windowMenuItem = NSMenuItem()
         mainMenu.addItem(windowMenuItem)
@@ -128,6 +138,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         NSApp.mainMenu = mainMenu
         NSApp.windowsMenu = windowMenu
+    }
+
+    @objc private func showHeaderFooterSettings(_ sender: Any?) {
+        mainWindowController?.showHeaderFooterSettings()
     }
 
     @MainActor

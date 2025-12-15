@@ -45,7 +45,8 @@ class MainWindowController: NSWindowController {
     private var toolbarView: FormattingToolbar!
     private var rulerView: EnhancedRulerView!
     private var mainContentViewController: ContentViewController!
-        private var themeObserver: NSObjectProtocol?
+    private var themeObserver: NSObjectProtocol?
+    private var headerFooterSettingsWindow: HeaderFooterSettingsWindow?
 
     convenience init() {
         let window = NSWindow(
@@ -100,6 +101,12 @@ class MainWindowController: NSWindowController {
         mainContentViewController.onStatsUpdate = { [weak self] text in
             self?.headerView.specsPanel.updateStats(text: text)
         }
+
+        // Connect manuscript info changes to editor headers/footers
+        headerView.specsPanel.onManuscriptInfoChanged = { [weak self] title, author in
+            self?.mainContentViewController.editorViewController.setManuscriptInfo(title: title, author: author)
+        }
+
         let contentView = mainContentViewController.view
         contentView.translatesAutoresizingMaskIntoConstraints = false
         containerView.addSubview(contentView)
@@ -204,6 +211,38 @@ class MainWindowController: NSWindowController {
         } catch {
             presentErrorAlert(message: "Print Failed", details: "Could not generate printable document: \(error.localizedDescription)")
         }
+    }
+
+    func showHeaderFooterSettings() {
+        guard let editorVC = mainContentViewController?.editorViewController else { return }
+
+        let settingsWindow = HeaderFooterSettingsWindow()
+        self.headerFooterSettingsWindow = settingsWindow
+
+        settingsWindow.setCurrentSettings(
+            showHeaders: editorVC.showHeaders,
+            showFooters: editorVC.showFooters,
+            showPageNumbers: editorVC.showPageNumbers,
+            headerText: editorVC.headerText,
+            footerText: editorVC.footerText
+        )
+
+        settingsWindow.onApply = { [weak self, weak editorVC] showHeaders, showFooters, showPageNumbers, headerText, footerText in
+            editorVC?.showHeaders = showHeaders
+            editorVC?.showFooters = showFooters
+            editorVC?.showPageNumbers = showPageNumbers
+            editorVC?.headerText = headerText
+            editorVC?.footerText = footerText
+            editorVC?.updatePageCentering()
+            self?.headerFooterSettingsWindow = nil
+        }
+
+        settingsWindow.onCancel = { [weak self] in
+            self?.headerFooterSettingsWindow = nil
+        }
+
+        settingsWindow.window?.makeKeyAndOrderFront(nil)
+        NSApp.activate(ignoringOtherApps: true)
     }
 
     deinit {
@@ -456,12 +495,20 @@ extension MainWindowController {
             do {
                 let text = try DocxTextExtractor.extractPlainText(fromDocxFileURL: url)
                 mainContentViewController.setEditorPlainText(text)
+                // Reset header/footer custom text when loading new document
+                mainContentViewController.editorViewController.headerText = ""
+                mainContentViewController.editorViewController.footerText = ""
+                mainContentViewController.editorViewController.updatePageCentering()
                 return
             } catch {
                 let docxType = NSAttributedString.DocumentType(rawValue: "org.openxmlformats.wordprocessingml.document")
                 do {
                     let attributed = try NSAttributedString(url: url, options: [.documentType: docxType], documentAttributes: nil)
                     mainContentViewController.setEditorAttributedContent(attributed)
+                    // Reset header/footer custom text when loading new document
+                    mainContentViewController.editorViewController.headerText = ""
+                    mainContentViewController.editorViewController.footerText = ""
+                    mainContentViewController.editorViewController.updatePageCentering()
                     return
                 } catch {
                     throw NSError(domain: "QuillPilot", code: 2, userInfo: [
@@ -476,11 +523,19 @@ extension MainWindowController {
         if ext == "rtf" || ext == "rtfd" {
             let attributed = try NSAttributedString(url: url, options: [:], documentAttributes: nil)
             mainContentViewController.setEditorAttributedContent(attributed)
+            // Reset header/footer custom text when loading new document
+            mainContentViewController.editorViewController.headerText = ""
+            mainContentViewController.editorViewController.footerText = ""
+            mainContentViewController.editorViewController.updatePageCentering()
             return
         }
 
         let text = try String(contentsOf: url, encoding: .utf8)
         mainContentViewController.setEditorPlainText(text)
+        // Reset header/footer custom text when loading new document
+        mainContentViewController.editorViewController.headerText = ""
+        mainContentViewController.editorViewController.footerText = ""
+        mainContentViewController.editorViewController.updatePageCentering()
     }
 
     private func presentErrorAlert(message: String, details: String) {

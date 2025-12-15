@@ -11,6 +11,7 @@ import Cocoa
 class DocumentInfoPanel: NSView {
 
     private var titleField: NSTextField!
+    private var authorField: NSTextField!
     private var wordCountLabel: NSTextField!
     private var charactersLabel: NSTextField!
     private var readingLevelLabel: NSTextField!
@@ -19,6 +20,8 @@ class DocumentInfoPanel: NSView {
     private var statLabels: [NSTextField] = []
 
     var onTitleChanged: ((String) -> Void)?
+    var onAuthorChanged: ((String) -> Void)?
+    var onManuscriptInfoChanged: ((String, String) -> Void)?
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
@@ -43,6 +46,18 @@ class DocumentInfoPanel: NSView {
         titleField.delegate = self
         titleField.translatesAutoresizingMaskIntoConstraints = false
 
+        // Author field
+        authorField = NSTextField()
+        authorField.isBordered = false
+        authorField.isEditable = true
+        authorField.backgroundColor = .clear
+        authorField.font = NSFont(name: "Times New Roman", size: 12) ?? NSFont.systemFont(ofSize: 12)
+        authorField.textColor = NSColor(hex: "#2c3e50")
+        authorField.alignment = .center
+        authorField.placeholderString = "Author Name"
+        authorField.delegate = self
+        authorField.translatesAutoresizingMaskIntoConstraints = false
+
         // Word count
         wordCountLabel = createStatLabel("Words: 0")
 
@@ -62,8 +77,8 @@ class DocumentInfoPanel: NSView {
         statsStack.distribution = .equalSpacing
         statsStack.translatesAutoresizingMaskIntoConstraints = false
 
-        // Vertical stack: title on top, stats below
-        stackView = NSStackView(views: [titleField, statsStack])
+        // Vertical stack: title, author, then stats
+        stackView = NSStackView(views: [titleField, authorField, statsStack])
         stackView.orientation = .vertical
         stackView.spacing = 4
         stackView.alignment = .centerX
@@ -116,8 +131,17 @@ class DocumentInfoPanel: NSView {
         return titleField.stringValue
     }
 
+    func setAuthor(_ author: String) {
+        authorField.stringValue = author
+    }
+
+    func getAuthor() -> String {
+        return authorField.stringValue
+    }
+
     func applyTheme(_ theme: AppTheme) {
         titleField.textColor = theme.headerText
+        authorField.textColor = theme.headerText
         let statsColor = theme.headerText.withAlphaComponent(0.85)
         statLabels.forEach { $0.textColor = statsColor }
         let placeholderText = titleField.placeholderAttributedString?.string ?? titleField.placeholderString
@@ -129,6 +153,19 @@ class DocumentInfoPanel: NSView {
                 attributes: [
                     .foregroundColor: statsColor,
                     .font: titleField.font ?? NSFont.boldSystemFont(ofSize: 14),
+                    .paragraphStyle: centered
+                ]
+            )
+        }
+        let authorPlaceholderText = authorField.placeholderAttributedString?.string ?? authorField.placeholderString
+        if let placeholder = authorPlaceholderText {
+            let centered = NSMutableParagraphStyle()
+            centered.alignment = .center
+            authorField.placeholderAttributedString = NSAttributedString(
+                string: placeholder,
+                attributes: [
+                    .foregroundColor: statsColor,
+                    .font: authorField.font ?? NSFont.systemFont(ofSize: 12),
                     .paragraphStyle: centered
                 ]
             )
@@ -239,8 +276,14 @@ class DocumentInfoPanel: NSView {
 
 extension DocumentInfoPanel: NSTextFieldDelegate {
     func controlTextDidChange(_ obj: Notification) {
-        if let textField = obj.object as? NSTextField, textField == titleField {
-            onTitleChanged?(textField.stringValue)
+        if let textField = obj.object as? NSTextField {
+            if textField == titleField {
+                onTitleChanged?(textField.stringValue)
+                onManuscriptInfoChanged?(titleField.stringValue, authorField.stringValue)
+            } else if textField == authorField {
+                onAuthorChanged?(textField.stringValue)
+                onManuscriptInfoChanged?(titleField.stringValue, authorField.stringValue)
+            }
         }
     }
 }

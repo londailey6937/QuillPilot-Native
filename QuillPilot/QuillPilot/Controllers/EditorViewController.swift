@@ -24,12 +24,34 @@ class EditorViewController: NSViewController {
     private let standardIndentStep: CGFloat = 36
     var editorZoom: CGFloat = 1.4  // 140% zoom for better readability on large displays
 
+    // Page dimensions (US Letter)
+    private let pageWidth: CGFloat = 612  // 8.5 inches
+    private let pageHeight: CGFloat = 792  // 11 inches
+    private let headerHeight: CGFloat = 36  // 0.5 inch
+    private let footerHeight: CGFloat = 36  // 0.5 inch
+
     var textView: NSTextView!
     var pageContainer: NSView!  // Exposed for printing
 
     private var scrollView: NSScrollView!
     private var documentView: NSView!
     private var currentTheme: AppTheme = ThemeManager.shared.currentTheme
+
+    // Multi-page support
+    private var pages: [NSView] = []
+    private var headerViews: [NSTextField] = []
+    private var footerViews: [NSTextField] = []
+
+    // Manuscript metadata
+    var manuscriptTitle: String = "Untitled"
+    var manuscriptAuthor: String = "Author Name"
+
+    // Header/Footer configuration
+    var showHeaders: Bool = true
+    var showFooters: Bool = true
+    var showPageNumbers: Bool = true
+    var headerText: String = "" // Empty means use author/title
+    var footerText: String = "" // Empty means use page number
 
     weak var delegate: EditorViewControllerDelegate?
 
@@ -116,6 +138,12 @@ class EditorViewController: NSViewController {
 
     func getTextContent() -> String? {
         return textView.string
+    }
+
+    func setManuscriptInfo(title: String, author: String) {
+        manuscriptTitle = title
+        manuscriptAuthor = author
+        updateHeadersAndFooters()
     }
 
     func toggleBold() {
@@ -985,35 +1013,221 @@ case "Book Subtitle":
         }
     }
 
-    private func updatePageCentering() {
+    func updatePageCentering() {
         guard let scrollView else { return }
 
-        // Center the 612pt page within the editor column
         let visibleWidth = scrollView.contentView.bounds.width
-        let pageWidth: CGFloat = 612 * editorZoom
-        let pageX = max((visibleWidth - pageWidth) / 2, 0)
+        let scaledPageWidth = pageWidth * editorZoom
+        let scaledPageHeight = pageHeight * editorZoom
+        let pageX = max((visibleWidth - scaledPageWidth) / 2, 0)
 
-        // Calculate page height based on ALL text content
-        var pageHeight: CGFloat = 792 * editorZoom
+        // Calculate number of pages needed
+        var numPages = 1
         if let layoutManager = textView.layoutManager,
            let textContainer = textView.textContainer {
-            // Force layout of entire text range to get accurate height
             let textRange = NSRange(location: 0, length: textView.string.count)
             layoutManager.ensureLayout(forCharacterRange: textRange)
             let usedRect = layoutManager.usedRect(for: textContainer)
-            let neededHeight = ceil(usedRect.height + standardMargin * 2 * editorZoom)
-            pageHeight = max(neededHeight, 792 * editorZoom)
+            let activeHeaderHeight = showHeaders ? headerHeight : 0
+            let activeFooterHeight = showFooters ? footerHeight : 0
+            let pageTextHeight = scaledPageHeight - (standardMargin * 2 + activeHeaderHeight + activeFooterHeight) * editorZoom
+            numPages = max(1, Int(ceil(usedRect.height / pageTextHeight)))
         }
 
-        // Always update frame to ensure dynamic growth
-        pageContainer.frame = NSRect(x: pageX, y: 0, width: pageWidth, height: pageHeight)
-        textView.frame = pageContainer.bounds.insetBy(dx: standardMargin * editorZoom, dy: standardMargin * editorZoom)
+        // Total height includes all pages plus gaps between them
+        let pageGap: CGFloat = 20
+        let totalHeight = CGFloat(numPages) * scaledPageHeight + CGFloat(numPages - 1) * pageGap
+
+        pageContainer.frame = NSRect(x: pageX, y: 0, width: scaledPageWidth, height: totalHeight)
+
+        // Text view spans all pages with proper margins for header/footer
+        let activeHeaderHeight = showHeaders ? headerHeight : 0
+        let activeFooterHeight = showFooters ? footerHeight : 0
+        let textInsetTop = (standardMargin + activeHeaderHeight) * editorZoom
+        let textInsetBottom = (standardMargin + activeFooterHeight) * editorZoom
+        let textInsetH = standardMargin * editorZoom
+        textView.frame = NSRect(
+            x: textInsetH,
+            y: textInsetBottom,
+            width: scaledPageWidth - (textInsetH * 2),
+            height: totalHeight - textInsetTop - textInsetBottom
+        )
+
+        // Set text container inset to keep text within safe area
+        textView.textContainerInset = NSSize(width: 0, height: 0)
+
+        // Create exclusion paths for header/footer areas on each page
+        if let textContainer = textView.textContainer {
+            var exclusionPaths: [NSBezierPath] = []
+            let pageGap: CGFloat = 20
+
+            for pageNum in 0..<numPages {
+                let pageYInContainer = CGFloat(pageNum) * (scaledPageHeight + pageGap)
+
+                // Exclude header area at top of each page
+                if showHeaders {
+                    let headerY = pageYInContainer - textInsetBottom
+                    let headerRect = NSRect(
+                        x: 0,
+                        y: headerY,
+                        width: textView.frame.width,
+                        height: textInsetTop
+                    )
+                    exclusionPaths.append(NSBezierPath(rect: headerRect))
+                }
+
+                // Exclude footer area at bottom of each page
+                if showFooters {
+                    let footerY = pageYInContainer + scaledPageHeight - textInsetBottom - textInsetTop
+                    let footerRect = NSRect(
+                        x: 0,
+                        y: footerY,
+                        width: textView.frame.width,
+                        height: textInsetBottom
+                    )
+                    exclusionPaths.append(NSBezierPath(rect: footerRect))
+                }
+
+                // Exclude the gaps between pages
+                if pageNum < numPages - 1 {
+                    let gapY = pageYInContainer + scaledPageHeight - textInsetBottom
+                    let gapRect = NSRect(
+                        x: 0,
+                        y: gapY,
+                        width: textView.frame.width,
+                        height: pageGap
+                    )
+                    exclusionPaths.append(NSBezierPath(rect: gapRect))
+                }
+            }
+
+            textContainer.exclusionPaths = exclusionPaths
+        }
+
+        updateHeadersAndFooters()
         updateShadowPath()
 
-        // Document view encompasses the page with buffer for scrolling
-        let docWidth = max(visibleWidth, pageX + pageWidth + 20)
-        let docHeight = pageHeight + 1000
+        let docWidth = max(visibleWidth, pageX + scaledPageWidth + 20)
+        let docHeight = totalHeight + 1000
         documentView.frame = NSRect(x: 0, y: 0, width: docWidth, height: docHeight)
+    }
+
+    private func updateHeadersAndFooters() {
+        // Clear existing
+        headerViews.forEach { $0.removeFromSuperview() }
+        footerViews.forEach { $0.removeFromSuperview() }
+        pages.forEach { $0.removeFromSuperview() }
+        headerViews.removeAll()
+        footerViews.removeAll()
+        pages.removeAll()
+
+        let scaledPageWidth = pageWidth * editorZoom
+        let scaledPageHeight = pageHeight * editorZoom
+        let scaledHeaderHeight = headerHeight * editorZoom
+        let scaledFooterHeight = footerHeight * editorZoom
+        let margin = standardMargin * editorZoom
+
+        // Calculate number of pages needed based on text content height
+        guard let layoutManager = textView.layoutManager,
+              let textContainer = textView.textContainer else { return }
+
+        let textRange = NSRange(location: 0, length: textView.string.count)
+        layoutManager.ensureLayout(forCharacterRange: textRange)
+        let usedRect = layoutManager.usedRect(for: textContainer)
+
+        // Available height per page for text (page height minus header, footer, and margins)
+        let pageTextHeight = scaledPageHeight - (margin * 2) - scaledHeaderHeight - scaledFooterHeight
+        let numPages = max(1, Int(ceil(usedRect.height / pageTextHeight)))
+
+        for pageNum in 1...numPages {
+            let pageY = CGFloat(pageNum - 1) * (scaledPageHeight + 20) // 20pt gap between pages
+
+            // Create page background to visualize page boundaries (behind text)
+            let pageView = NSView(frame: NSRect(
+                x: 0,
+                y: pageY,
+                width: scaledPageWidth,
+                height: scaledPageHeight
+            ))
+            pageView.wantsLayer = true
+            pageView.layer?.backgroundColor = currentTheme.pageBackground.cgColor
+            pageView.layer?.borderWidth = 1
+            pageView.layer?.borderColor = currentTheme.pageBorder.cgColor
+            pageContainer.addSubview(pageView, positioned: .below, relativeTo: textView)
+            pages.append(pageView)
+
+            // Header (at top of page in flipped coordinates)
+            if showHeaders {
+                let headerContent = headerText.isEmpty ? "\(manuscriptAuthor.uppercased()) / \(manuscriptTitle.uppercased())" : headerText
+                let headerField = NSTextField(labelWithString: headerContent)
+                headerField.isEditable = false
+                headerField.isSelectable = false
+                headerField.isBordered = false
+                headerField.backgroundColor = .clear
+                headerField.font = NSFont(name: "Courier", size: 11) ?? NSFont.monospacedSystemFont(ofSize: 11, weight: .regular)
+                headerField.textColor = currentTheme.textColor.withAlphaComponent(0.5)
+                headerField.alignment = .left
+                headerField.frame = NSRect(
+                    x: margin,
+                    y: pageY + margin / 2,
+                    width: scaledPageWidth - margin * 2,
+                    height: scaledHeaderHeight
+                )
+                pageContainer.addSubview(headerField)
+                headerViews.append(headerField)
+
+                // Add separator line below header
+                let headerLine = NSBox(frame: NSRect(
+                    x: margin,
+                    y: pageY + margin / 2 + scaledHeaderHeight + 2,
+                    width: scaledPageWidth - margin * 2,
+                    height: 1
+                ))
+                headerLine.boxType = .separator
+                headerLine.borderColor = currentTheme.textColor.withAlphaComponent(0.2)
+                pageContainer.addSubview(headerLine)
+            }
+
+            // Footer (at bottom of page in flipped coordinates)
+            if showFooters {
+                let footerContent: String
+                if !footerText.isEmpty {
+                    footerContent = footerText
+                } else if showPageNumbers && pageNum > 1 {
+                    footerContent = "\(pageNum)"
+                } else {
+                    footerContent = ""
+                }
+
+                let footerField = NSTextField(labelWithString: footerContent)
+                footerField.isEditable = false
+                footerField.isSelectable = false
+                footerField.isBordered = false
+                footerField.backgroundColor = .clear
+                footerField.font = NSFont(name: "Courier", size: 11) ?? NSFont.monospacedSystemFont(ofSize: 11, weight: .regular)
+                footerField.textColor = currentTheme.textColor.withAlphaComponent(0.5)
+                footerField.alignment = .right
+                footerField.frame = NSRect(
+                    x: margin,
+                    y: pageY + scaledPageHeight - margin / 2 - scaledFooterHeight,
+                    width: scaledPageWidth - margin * 2,
+                    height: scaledFooterHeight
+                )
+                pageContainer.addSubview(footerField)
+                footerViews.append(footerField)
+
+                // Add separator line above footer
+                let footerLine = NSBox(frame: NSRect(
+                    x: margin,
+                    y: pageY + scaledPageHeight - margin / 2 - scaledFooterHeight - 2,
+                    width: scaledPageWidth - margin * 2,
+                    height: 1
+                ))
+                footerLine.boxType = .separator
+                footerLine.borderColor = currentTheme.textColor.withAlphaComponent(0.2)
+                pageContainer.addSubview(footerLine)
+            }
+        }
     }
 
     override func viewDidLayout() {

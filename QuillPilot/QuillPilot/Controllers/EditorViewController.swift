@@ -305,8 +305,53 @@ class EditorViewController: NSViewController {
     }
 
     func insertPageBreak() {
-        // Use form feed as a lightweight page-break marker.
-        textView.insertText("\u{000C}", replacementRange: textView.selectedRange())
+        guard let textStorage = textView.textStorage,
+              let layoutManager = textView.layoutManager else { return }
+
+        let currentRange = textView.selectedRange()
+
+        // Force layout to ensure we have accurate glyph information
+        layoutManager.ensureLayout(for: textView.textContainer!)
+
+        // Get the current Y position of the cursor
+        let glyphRange = layoutManager.glyphRange(forCharacterRange: currentRange, actualCharacterRange: nil)
+        let glyphRect = layoutManager.boundingRect(forGlyphRange: glyphRange, in: textView.textContainer!)
+        let currentY = glyphRect.origin.y
+
+        // Calculate which page we're on and how much space until next page
+        let scaledPageHeight = pageHeight * editorZoom
+        let pageGap: CGFloat = 20
+        let pageWithGap = scaledPageHeight + pageGap
+
+        let currentPage = floor(currentY / pageWithGap)
+        let nextPageY = (currentPage + 1) * pageWithGap
+        let spaceToNextPage = nextPageY - currentY
+
+        // Create a paragraph style with spacing to reach next page
+        let breakStyle = NSMutableParagraphStyle()
+        breakStyle.paragraphSpacing = max(0, spaceToNextPage)
+        breakStyle.paragraphSpacingBefore = 0
+
+        // Begin editing to register with undo manager
+        textStorage.beginEditing()
+
+        // Insert a newline with the page break style
+        let breakString = NSAttributedString(string: "\n", attributes: [
+            .paragraphStyle: breakStyle,
+            .font: textView.font ?? NSFont.systemFont(ofSize: 12)
+        ])
+
+        if textView.shouldChangeText(in: currentRange, replacementString: "\n") {
+            textStorage.replaceCharacters(in: currentRange, with: breakString)
+            textStorage.endEditing()
+            textView.didChangeText()
+            textView.setSelectedRange(NSRange(location: currentRange.location + 1, length: 0))
+        } else {
+            textStorage.endEditing()
+        }
+
+        // Force layout update
+        updatePageCentering()
     }
 
     func insertColumnBreak() {

@@ -239,9 +239,6 @@ class MainWindowController: NSWindowController {
         NSLog("Starting print operation (printer: \(printerName), shows panel: \(printOperation.showsPrintPanel), shows progress: \(printOperation.showsProgressPanel))")
         let success = printOperation.run()
         NSLog("NSPrintOperation.run returned: \(success)")
-        if !success {
-            presentPrintFailureFallback(for: pageContainer)
-        }
         activePrintOperation = nil
     }
 
@@ -299,40 +296,6 @@ extension MainWindowController: NSMenuItemValidation {
             return isValid
         }
         return true
-    }
-}
-
-// MARK: - Print fallback
-private extension MainWindowController {
-    func presentPrintFailureFallback(for view: NSView) {
-        guard let window else { return }
-
-        let alert = NSAlert()
-        alert.alertStyle = .warning
-        alert.messageText = "Printing Unavailable"
-        alert.informativeText = "macOS reported that printing is unavailable. You can save a PDF instead."
-        alert.addButton(withTitle: "Save PDF…")
-        alert.addButton(withTitle: "Cancel")
-
-        let response = alert.runModal()
-        guard response == .alertFirstButtonReturn else { return }
-
-        let savePanel = NSSavePanel()
-        savePanel.canCreateDirectories = true
-        savePanel.isExtensionHidden = false
-        savePanel.title = "Save PDF"
-        savePanel.allowedContentTypes = [.pdf]
-        savePanel.nameFieldStringValue = "QuillPilot.pdf"
-
-        savePanel.beginSheetModal(for: window) { panelResponse in
-            guard panelResponse == .OK, let url = savePanel.url else { return }
-            let data = view.dataWithPDF(inside: view.bounds)
-            do {
-                try data.write(to: url, options: .atomic)
-            } catch {
-                self.presentErrorAlert(message: "Save failed", details: error.localizedDescription)
-            }
-        }
     }
 }
 

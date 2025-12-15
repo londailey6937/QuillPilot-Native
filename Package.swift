@@ -24,7 +24,13 @@ let package = Package(
                 "Controllers/SplitViewController.swift",
                 "Controllers/EditorViewController.swift",
                 "Controllers/AnalysisViewController.swift",
-                "Models/AnalysisEngine.swift"
+                "Models/AnalysisEngine.swift",
+                "Utilities/ThemeManager.swift",
+                "Utilities/StyleCatalog.swift",
+                "Views/DocumentInfoPanel.swift",
+                "Views/RulerView.swift",
+                "Views/HeaderFooterSettingsWindow.swift",
+                "Views/StyleEditorWindow.swift"
             ],
             resources: [
                 .process("Resources/Info.plist")

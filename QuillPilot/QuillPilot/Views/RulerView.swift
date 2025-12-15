@@ -111,14 +111,14 @@ class EnhancedRulerView: NSView {
                 let label = "\(i/2)"
                 let attrs: [NSAttributedString.Key: Any] = [
                     .font: NSFont.systemFont(ofSize: fontSize),
-                    .foregroundColor: NSColor(hex: "#666666") ?? .gray
+                    .foregroundColor: ThemeManager.shared.currentTheme.rulerMarkings
                 ]
                 label.draw(at: NSPoint(x: x + centerOffset - 5, y: rulerHeight/2 - 5), withAttributes: attrs)
             } else if i == 17 {  // Special case for 8.5"
                 let label = "8.5"
                 let attrs: [NSAttributedString.Key: Any] = [
                     .font: NSFont.systemFont(ofSize: fontSize - 1),
-                    .foregroundColor: NSColor(hex: "#666666") ?? .gray
+                    .foregroundColor: ThemeManager.shared.currentTheme.rulerMarkings
                 ]
                 label.draw(at: NSPoint(x: x + centerOffset - 8, y: rulerHeight/2 - 5), withAttributes: attrs)
             }
@@ -198,12 +198,14 @@ class MarginHandle: NSView {
             path.close()
         }
 
-        let handleColor = isDragging ? NSColor(hex: "#2c3e50") : NSColor(hex: "#4a90e2")
-        handleColor?.setFill()
+        let handleColor = isDragging
+            ? ThemeManager.shared.currentTheme.headerBackground
+            : ThemeManager.shared.currentTheme.pageBorder
+        handleColor.setFill()
         path.fill()
 
         // Border
-        NSColor(hex: "#ffffff")?.setStroke()
+        ThemeManager.shared.currentTheme.pageBackground.setStroke()
         path.lineWidth = 1
         path.stroke()
     }

@@ -55,13 +55,13 @@ class AnalysisViewController: NSViewController {
         stackView.spacing = 16
         stackView.edgeInsets = NSEdgeInsets(top: 20, left: 20, bottom: 20, right: 20)
 
-        let headerLabel = createLabel("Analysis Results", fontSize: 18, bold: true, color: "#2c3e50")
+        let headerLabel = createLabel("Analysis Results", fontSize: 18, bold: true, color: "#1F1B1A")
         stackView.addArrangedSubview(headerLabel)
 
         let placeholderLabel = createLabel("Write some text and click Analyze to see results here.",
-                                           fontSize: 14,
-                                           bold: false,
-                                           color: "#6b7280")
+                           fontSize: 14,
+                           bold: false,
+                           color: "#684F3C")
         placeholderLabel.maximumNumberOfLines = 0
         stackView.addArrangedSubview(placeholderLabel)
 
@@ -108,13 +108,13 @@ class AnalysisViewController: NSViewController {
         addSectionHeader("📊 Paragraph Analysis")
         addStatistic("Average Length", value: "\(results.averageParagraphLength) words")
         if !results.longParagraphs.isEmpty {
-            addWarning("⚠️ \(results.longParagraphs.count) paragraph(s) may be too long (>150 words)", color: "#f97316")
+            addWarning("⚠️ \(results.longParagraphs.count) paragraph(s) may be too long (>150 words)", color: "#CEBCA7")
         }
         addSeparator()
 
         addSectionHeader("🔍 Passive Voice")
         if results.passiveVoiceCount > 0 {
-            addWarning("Found \(results.passiveVoiceCount) instance(s) of passive voice", color: "#8b5cf6")
+            addWarning("Found \(results.passiveVoiceCount) instance(s) of passive voice", color: "#CEBCA7")
             for phrase in results.passiveVoicePhrases.prefix(5) {
                 addBulletPoint("• \"\(phrase)\"")
             }
@@ -126,7 +126,7 @@ class AnalysisViewController: NSViewController {
         addSectionHeader("🌟 Sensory Details")
         addStatistic("Sensory Words", value: "\(results.sensoryDetailCount)")
         if results.missingSensoryDetail {
-            addWarning("Consider adding more sensory details to engage readers", color: "#eab308")
+            addWarning("Consider adding more sensory details to engage readers", color: "#CEBCA7")
         } else {
             addSuccess("✓ Good use of sensory language")
         }
@@ -137,13 +137,13 @@ class AnalysisViewController: NSViewController {
     }
 
     private func addSectionHeader(_ text: String) {
-        let label = createLabel(text, fontSize: 15, bold: true, color: "#2c3e50")
+        let label = createLabel(text, fontSize: 15, bold: true, color: "#1F1B1A")
         stackView.addArrangedSubview(label)
     }
 
     private func addStatistic(_ label: String, value: String) {
         let text = "\(label): \(value)"
-        let labelView = createLabel(text, fontSize: 13, bold: false, color: "#374151")
+        let labelView = createLabel(text, fontSize: 13, bold: false, color: "#684F3C")
         stackView.addArrangedSubview(labelView)
     }
 
@@ -154,12 +154,12 @@ class AnalysisViewController: NSViewController {
     }
 
     private func addSuccess(_ text: String) {
-        let label = createLabel(text, fontSize: 13, bold: false, color: "#10b981")
+        let label = createLabel(text, fontSize: 13, bold: false, color: "#684F3C")
         stackView.addArrangedSubview(label)
     }
 
     private func addBulletPoint(_ text: String) {
-        let label = createLabel(text, fontSize: 12, bold: false, color: "#6b7280")
+        let label = createLabel(text, fontSize: 12, bold: false, color: "#684F3C")
         label.maximumNumberOfLines = 0
         stackView.addArrangedSubview(label)
     }
@@ -194,7 +194,7 @@ class AnalysisViewController: NSViewController {
 
     private func refreshLabelColors(in view: NSView) {
         if let label = view as? NSTextField {
-            let hex = label.themedHexColor ?? "#2c3e50"
+            let hex = label.themedHexColor ?? "#1F1B1A"
             label.textColor = resolvedColor(for: hex)
         }
         view.subviews.forEach { refreshLabelColors(in: $0) }

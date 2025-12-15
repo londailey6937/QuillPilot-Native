@@ -48,7 +48,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     @objc private func openDocument(_ sender: Any?) {
+        NSLog("=== AppDelegate.openDocument called ===")
         Task { @MainActor [weak self] in
+            NSLog("AppDelegate.openDocument dispatching to mainWindowController")
             self?.mainWindowController?.performOpenDocument(sender)
         }
     }
@@ -68,11 +70,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NSLog("Finished calling mainWindowController.printDocument")
     }
 
-    // Support standard print: action so Cmd+P finds a responder
-    @MainActor
-    @objc func print(_ sender: Any?) {
-        printDocument(sender)
-    }
+    // Note: Removed print(_:) wrapper to avoid conflict with Swift's print() function
+    // Use printDocument(_:) directly from menu items
 
     private func setupMenuBar() {
         let mainMenu = NSMenu()
@@ -104,7 +103,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         saveItem.target = self
         fileMenu.addItem(saveItem)
 
-        let printItem = NSMenuItem(title: "Print…", action: #selector(print(_:)), keyEquivalent: "p")
+        let printItem = NSMenuItem(title: "Print…", action: #selector(printDocument(_:)), keyEquivalent: "p")
         printItem.target = self
         fileMenu.addItem(printItem)
         fileMenu.addItem(.separator())
@@ -172,7 +171,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 // MARK: - Menu Item Validation
 extension AppDelegate: NSMenuItemValidation {
     func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
-        if menuItem.action == #selector(printDocument(_:)) || menuItem.action == #selector(print(_:)) {
+        if menuItem.action == #selector(printDocument(_:)) {
             let isValid = mainWindowController != nil
             NSLog("Validating Print menu item: \(isValid)")
             return isValid

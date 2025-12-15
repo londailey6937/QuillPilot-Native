@@ -381,12 +381,123 @@ class EditorViewController: NSViewController {
     }
 
     func rtfData() throws -> Data {
-        let attributed = attributedContent()
+        let attributed = exportReadyAttributedContent()
         let fullRange = NSRange(location: 0, length: attributed.length)
         guard let data = attributed.rtf(from: fullRange, documentAttributes: [:]) else {
             throw NSError(domain: "QuillPilot", code: 1, userInfo: [NSLocalizedDescriptionKey: "Failed to generate RTF."])
         }
         return data
+    }
+
+    /// Returns an attributed string with paragraph, font, and color attributes normalized for export.
+    /// This prevents fallback defaults (e.g., all-bold, left-justified) when generating DOCX.
+    func exportReadyAttributedContent() -> NSAttributedString {
+        // Ensure the text storage has consistent attributes before exporting
+        if let storage = textView.textStorage {
+            let fullRange = NSRange(location: 0, length: storage.length)
+            storage.fixAttributes(in: fullRange)
+        }
+
+        let normalized = NSMutableAttributedString(attributedString: attributedContent())
+        let fullString = normalized.string as NSString
+        let defaultParagraph = textView.defaultParagraphStyle ?? NSParagraphStyle.default
+        let defaultFont = textView.font ?? NSFont.systemFont(ofSize: 12)
+        let defaultColor = currentTheme.textColor
+
+        // Reapply catalog-defined paragraph and font attributes based on stored style name
+        var location = 0
+        while location < fullString.length {
+            let paragraphRange = fullString.paragraphRange(for: NSRange(location: location, length: 0))
+            if let styleName = normalized.attribute(styleAttributeKey, at: paragraphRange.location, effectiveRange: nil) as? String,
+               let definition = StyleCatalog.shared.style(named: styleName) {
+                let paragraph = paragraphStyle(from: definition)
+                let font = font(from: definition)
+                let textColor = color(fromHex: definition.textColorHex, fallback: defaultColor)
+                let backgroundColor = definition.backgroundColorHex.flatMap { color(fromHex: $0, fallback: .clear) }
+
+                // Apply paragraph and font at paragraph level; colors applied per-run below to preserve inline formatting
+                normalized.addAttribute(.paragraphStyle, value: paragraph, range: paragraphRange)
+                normalized.addAttribute(.font, value: font, range: paragraphRange)
+
+                // Apply catalog colors per run to preserve any inline color overrides
+                normalized.enumerateAttributes(in: paragraphRange, options: []) { attrs, runRange, _ in
+                    if attrs[.foregroundColor] == nil {
+                        normalized.addAttribute(.foregroundColor, value: textColor, range: runRange)
+                    }
+                    if let backgroundColor, attrs[.backgroundColor] == nil {
+                        normalized.addAttribute(.backgroundColor, value: backgroundColor, range: runRange)
+                    }
+                }
+            } else {
+                // Paragraph without a catalog style tag: try to infer a catalog style based on size/alignment and apply it
+                let attrs = normalized.attributes(at: paragraphRange.location, effectiveRange: nil)
+                let paragraph = (attrs[.paragraphStyle] as? NSParagraphStyle) ?? defaultParagraph
+                let font = (attrs[.font] as? NSFont) ?? defaultFont
+
+                let size = font.pointSize
+                let alignment = paragraph.alignment
+
+                let inferredStyleName: String?
+                if size >= 21.5 && alignment == .center {
+                    inferredStyleName = "Book Title"
+                } else if size >= 16.5 && size < 21.5 && alignment == .center {
+                    inferredStyleName = "Chapter Title"
+                } else if size >= 13.5 && size < 16.5 && alignment == .center {
+                    inferredStyleName = "Subtitle"
+                } else {
+                    inferredStyleName = "Body"
+                }
+
+                if let styleName = inferredStyleName, let definition = StyleCatalog.shared.style(named: styleName) {
+                    let para = paragraphStyle(from: definition)
+                    let styleFont = self.font(from: definition)
+                    let styleColor = color(fromHex: definition.textColorHex, fallback: defaultColor)
+                    let bgColor = definition.backgroundColorHex.flatMap { color(fromHex: $0, fallback: .clear) }
+
+                    normalized.addAttribute(styleAttributeKey, value: styleName, range: paragraphRange)
+                    normalized.addAttribute(.paragraphStyle, value: para, range: paragraphRange)
+                    normalized.addAttribute(.font, value: styleFont, range: paragraphRange)
+                    normalized.enumerateAttributes(in: paragraphRange, options: []) { attrs, runRange, _ in
+                        if attrs[.foregroundColor] == nil {
+                            normalized.addAttribute(.foregroundColor, value: styleColor, range: runRange)
+                        }
+                        if let bgColor, attrs[.backgroundColor] == nil {
+                            normalized.addAttribute(.backgroundColor, value: bgColor, range: runRange)
+                        }
+                    }
+                } else {
+                    // No inferred style: only ensure paragraph style exists, preserve existing colors/fonts
+                    let hasParagraph = normalized.attribute(.paragraphStyle, at: paragraphRange.location, effectiveRange: nil) != nil
+                    if !hasParagraph {
+                        normalized.addAttribute(.paragraphStyle, value: defaultParagraph, range: paragraphRange)
+                    }
+                }
+            }
+            location = NSMaxRange(paragraphRange)
+        }
+
+        // Ensure every paragraph carries an explicit paragraph style
+        location = 0
+        while location < fullString.length {
+            let paragraphRange = fullString.paragraphRange(for: NSRange(location: location, length: 0))
+            let hasParagraphStyle = normalized.attribute(.paragraphStyle, at: paragraphRange.location, effectiveRange: nil) != nil
+            if !hasParagraphStyle {
+                normalized.addAttribute(.paragraphStyle, value: defaultParagraph, range: paragraphRange)
+            }
+            location = NSMaxRange(paragraphRange)
+        }
+
+        // Ensure runs have font and color; preserve loaded values, only fill true gaps
+        normalized.enumerateAttributes(in: NSRange(location: 0, length: normalized.length), options: []) { attrs, range, _ in
+            if attrs[.font] == nil {
+                normalized.addAttribute(.font, value: defaultFont, range: range)
+            }
+            if attrs[.foregroundColor] == nil {
+                normalized.addAttribute(.foregroundColor, value: defaultColor, range: range)
+            }
+        }
+
+        return normalized
     }
 
 
@@ -457,12 +568,120 @@ class EditorViewController: NSViewController {
     }
 
     func setAttributedContent(_ attributed: NSAttributedString) {
-        textView.textStorage?.setAttributedString(attributed)
+        // Before setting content, detect and re-tag catalog styles based on font/size/alignment
+        let retagged = detectAndRetagStyles(in: attributed)
+        textView.textStorage?.setAttributedString(retagged)
+
+        // Verify colors after setting into textStorage
+        NSLog("=== AFTER setAttributedString ===")
+        if let storage = textView.textStorage {
+            let str = storage.string as NSString
+            var loc = 0
+            var count = 0
+            while loc < str.length && count < 3 {
+                let pRange = str.paragraphRange(for: NSRange(location: loc, length: 0))
+                let attrs = storage.attributes(at: pRange.location, effectiveRange: nil)
+                let text = str.substring(with: pRange).prefix(20)
+                NSLog("P[\(pRange.location)]: \"\(text)\" color=\(attrs[.foregroundColor] ?? "nil")")
+                loc = NSMaxRange(pRange)
+                count += 1
+            }
+        }
+        NSLog("=================================")
+
+        // Use neutral defaults for new typing so loaded heading styles don't bleed into new paragraphs
+        let neutralParagraph = NSMutableParagraphStyle()
+        neutralParagraph.alignment = .left
+        neutralParagraph.lineHeightMultiple = 2.0
+        neutralParagraph.paragraphSpacing = 0
+        neutralParagraph.firstLineHeadIndent = 36
+        textView.defaultParagraphStyle = neutralParagraph
+        textView.font = NSFont(name: "Times New Roman", size: 12) ?? NSFont.systemFont(ofSize: 12)
+        // Don't set textView.textColor - it can interfere with attributed string colors
+        // textView.textColor = currentTheme.textColor
         refreshTypingAttributesUsingDefaultParagraphStyle()
+
+        // Final verification of colors after all setup
+        NSLog("=== FINAL CHECK (after all setup) ===")
+        if let storage = textView.textStorage, storage.length > 0 {
+            let attrs = storage.attributes(at: 0, effectiveRange: nil)
+            NSLog("First char color: \(attrs[.foregroundColor] ?? "nil")")
+        }
+        NSLog("=====================================")
+
         // Force immediate layout and page resize to accommodate all content
         updatePageCentering()
         scrollToTop()
         delegate?.textDidChange()
+    }
+
+    private func detectAndRetagStyles(in attributed: NSAttributedString) -> NSAttributedString {
+        let mutable = NSMutableAttributedString(attributedString: attributed)
+        let fullString = mutable.string as NSString
+
+        var location = 0
+        while location < fullString.length {
+            let paragraphRange = fullString.paragraphRange(for: NSRange(location: location, length: 0))
+
+            // Get paragraph attributes
+            let attrs = mutable.attributes(at: paragraphRange.location, effectiveRange: nil)
+            guard let font = attrs[.font] as? NSFont,
+                  let paragraphStyle = attrs[.paragraphStyle] as? NSParagraphStyle else {
+                location = NSMaxRange(paragraphRange)
+                continue
+            }
+
+            let fontSize = font.pointSize
+            let alignment = paragraphStyle.alignment
+            let existingColor = attrs[.foregroundColor] as? NSColor
+
+            NSLog("detectAndRetagStyles P[\(paragraphRange.location)]: font=\(fontSize)pt align=\(alignment.rawValue) existingColor=\(existingColor?.description ?? "nil")")
+
+            // Match against catalog style definitions
+            let styleName: String?
+            if fontSize >= 21.5 && alignment == .center {
+                styleName = "Book Title"
+            } else if fontSize >= 16.5 && fontSize < 21.5 && alignment == .center {
+                styleName = "Chapter Title"
+            } else if fontSize >= 13.5 && fontSize < 16.5 && alignment == .center {
+                styleName = "Subtitle"
+            } else {
+                styleName = "Body"
+            }
+
+            if let styleName = styleName,
+               let definition = StyleCatalog.shared.style(named: styleName) {
+                NSLog("  -> Matched style '\(styleName)'")
+                // Tag the paragraph
+                mutable.addAttribute(styleAttributeKey, value: styleName, range: paragraphRange)
+
+                // Apply catalog style colors and formatting to make them visible immediately
+                let catalogParagraph = self.paragraphStyle(from: definition)
+                let catalogFont = self.font(from: definition)
+                let textColor = self.color(fromHex: definition.textColorHex, fallback: currentTheme.textColor)
+                let backgroundColor = definition.backgroundColorHex.flatMap { self.color(fromHex: $0, fallback: .clear) }
+
+                mutable.addAttribute(.paragraphStyle, value: catalogParagraph, range: paragraphRange)
+                mutable.addAttribute(.font, value: catalogFont, range: paragraphRange)
+
+                mutable.enumerateAttributes(in: paragraphRange, options: []) { attrs, runRange, _ in
+                    let existingFg = attrs[.foregroundColor] as? NSColor
+                    if existingFg == nil {
+                        NSLog("    -> Adding catalog color \(textColor) at run \(runRange.location)")
+                        mutable.addAttribute(.foregroundColor, value: textColor, range: runRange)
+                    } else {
+                        NSLog("    -> Preserving existing color \(existingFg!) at run \(runRange.location)")
+                    }
+                    if let backgroundColor = backgroundColor, attrs[.backgroundColor] == nil {
+                        mutable.addAttribute(.backgroundColor, value: backgroundColor, range: runRange)
+                    }
+                }
+            }
+
+            location = NSMaxRange(paragraphRange)
+        }
+
+        return mutable
     }
 
     func setPlainTextContent(_ text: String) {
@@ -499,6 +718,20 @@ class EditorViewController: NSViewController {
     }
 
     func applyStyle(named styleName: String) {
+        let styledByCatalog = applyCatalogStyle(named: styleName)
+        if styledByCatalog {
+            if styleName == "Book Title" {
+                if let range = textView.selectedRanges.first as? NSRange, range.length == 0 {
+                    let paragraphRange = (textView.string as NSString).paragraphRange(for: range)
+                    let titleText = (textView.string as NSString).substring(with: paragraphRange).trimmingCharacters(in: .whitespacesAndNewlines)
+                    if !titleText.isEmpty {
+                        delegate?.titleDidChange(titleText)
+                    }
+                }
+            }
+            applyStyleAttribute(styleName)
+            return
+        }
         switch styleName {
         // MARK: Front Matter
         case "Book Title":
@@ -953,6 +1186,62 @@ case "Book Subtitle":
         }
     }
 
+    private func applyCatalogStyle(named styleName: String) -> Bool {
+        guard let definition = StyleCatalog.shared.style(named: styleName) else { return false }
+
+        let paragraph = paragraphStyle(from: definition)
+        let font = font(from: definition)
+        let textColor = color(fromHex: definition.textColorHex, fallback: currentTheme.textColor)
+        let backgroundColor = definition.backgroundColorHex.flatMap { color(fromHex: $0, fallback: .clear) }
+
+        applyParagraphEditsToSelectedParagraphs { style in
+            style.setParagraphStyle(paragraph)
+        }
+
+        if let storage = textView.textStorage {
+            let selection = textView.selectedRange()
+            let range = selection.length == 0 ? (textView.string as NSString).paragraphRange(for: selection) : selection
+            storage.addAttribute(.paragraphStyle, value: paragraph, range: range)
+            storage.addAttribute(.font, value: font, range: range)
+            storage.addAttribute(.foregroundColor, value: textColor, range: range)
+            if let backgroundColor {
+                storage.addAttribute(.backgroundColor, value: backgroundColor, range: range)
+            } else {
+                storage.removeAttribute(.backgroundColor, range: range)
+            }
+        }
+
+        return true
+    }
+
+    private func paragraphStyle(from definition: StyleDefinition) -> NSParagraphStyle {
+        let style = NSMutableParagraphStyle()
+        style.alignment = NSTextAlignment(rawValue: definition.alignmentRawValue) ?? .left
+        style.lineHeightMultiple = definition.lineHeightMultiple
+        style.paragraphSpacingBefore = definition.spacingBefore
+        style.paragraphSpacing = definition.spacingAfter
+        style.headIndent = definition.headIndent
+        style.firstLineHeadIndent = definition.firstLineIndent
+        style.tailIndent = definition.tailIndent
+        style.lineBreakMode = .byWordWrapping
+        return style.copy() as! NSParagraphStyle
+    }
+
+    private func font(from definition: StyleDefinition) -> NSFont {
+        var font = NSFont(name: definition.fontName, size: definition.fontSize) ?? NSFont.systemFont(ofSize: definition.fontSize)
+        if definition.isBold {
+            font = NSFontManager.shared.convert(font, toHaveTrait: .boldFontMask)
+        }
+        if definition.isItalic {
+            font = NSFontManager.shared.convert(font, toHaveTrait: .italicFontMask)
+        }
+        return font
+    }
+
+    private func color(fromHex hex: String, fallback: NSColor) -> NSColor {
+        NSColor(hex: hex) ?? fallback
+    }
+
     struct OutlineEntry {
         let title: String
         let level: Int
@@ -1342,7 +1631,7 @@ case "Book Subtitle":
         textTable.collapsesBorders = false
 
         // Light brown border color
-        let borderColor = NSColor(red: 0.48, green: 0.44, blue: 0.36, alpha: 0.5) // #7a6f5d with transparency
+        let borderColor = (ThemeManager.shared.currentTheme.headerBackground).withAlphaComponent(0.5)
 
         // Create attributed string with table blocks for each column
         let result = NSMutableAttributedString()

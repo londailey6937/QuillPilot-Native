@@ -11,117 +11,81 @@ import Cocoa
 enum AppTheme: String {
     case day = "day"
     case night = "night"
-    
+
     // Page colors
     var pageBackground: NSColor {
-        switch self {
-        case .day: return NSColor(hex: "#fef5e7") ?? .white
-        case .night: return NSColor(hex: "#1e1e1e") ?? .black
-        }
+        // Page surface
+        return NSColor(hex: "#FFFDF9") ?? .white
     }
-    
+
     var pageAround: NSColor {
-        switch self {
-        case .day: return NSColor(hex: "#f5f0e8") ?? .lightGray
-        case .night: return NSColor(hex: "#121212") ?? .black
-        }
+        // Surrounding area
+        return NSColor(hex: "#F7EEE0") ?? .lightGray
     }
-    
+
     var pageBorder: NSColor {
-        switch self {
-        case .day: return NSColor(hex: "#d4c5b0") ?? .gray
-        case .night: return NSColor(hex: "#3a3a3a") ?? .darkGray
-        }
+        return NSColor(hex: "#CEBCA7") ?? .gray
     }
-    
+
     // Text colors
     var textColor: NSColor {
-        switch self {
-        case .day: return NSColor(hex: "#2c3e50") ?? .black
-        case .night: return NSColor(hex: "#e0e0e0") ?? .white
-        }
+        // Near-black for readability
+        return NSColor(calibratedWhite: 0.1, alpha: 1.0)
     }
-    
+
     var insertionPointColor: NSColor {
-        switch self {
-        case .day: return NSColor(hex: "#2c3e50") ?? .black
-        case .night: return NSColor(hex: "#ffffff") ?? .white
-        }
+        return NSColor(calibratedWhite: 0.1, alpha: 1.0)
     }
-    
+
     // Header colors
     var headerBackground: NSColor {
-        switch self {
-        case .day: return NSColor(hex: "#2c3e50") ?? .darkGray
-        case .night: return NSColor(hex: "#0d1117") ?? .black
-        }
+        return NSColor(hex: "#684F3C") ?? .darkGray
     }
-    
+
     var headerText: NSColor {
-        switch self {
-        case .day: return NSColor(hex: "#fef5e7") ?? .white
-        case .night: return NSColor(hex: "#c9d1d9") ?? .lightGray
-        }
+        return NSColor(hex: "#FFFDF9") ?? .white
     }
-    
+
     // Toolbar colors
     var toolbarBackground: NSColor {
-        switch self {
-        case .day: return NSColor(hex: "#f5f0e8") ?? .lightGray
-        case .night: return NSColor(hex: "#21262d") ?? .darkGray
-        }
+        return NSColor(hex: "#F7EEE0") ?? .lightGray
     }
-    
+
     // Sidebar colors
     var outlineBackground: NSColor {
-        switch self {
-        case .day: return NSColor(hex: "#f9f4ed") ?? .white
-        case .night: return NSColor(hex: "#1c1f26") ?? .black
-        }
+        return NSColor(hex: "#F7EEE0") ?? .white
     }
-    
+
     var analysisBackground: NSColor {
-        switch self {
-        case .day: return NSColor(hex: "#fffaf3") ?? .white
-        case .night: return NSColor(hex: "#161b22") ?? .black
-        }
+        return NSColor(hex: "#FFFDF9") ?? .white
     }
-    
+
     // Ruler colors
     var rulerBackground: NSColor {
-        switch self {
-        case .day: return NSColor(hex: "#ffffff") ?? .white
-        case .night: return NSColor(hex: "#2d333b") ?? .darkGray
-        }
+        return NSColor(hex: "#FFFDF9") ?? .white
     }
-    
+
     var rulerBorder: NSColor {
-        switch self {
-        case .day: return NSColor(hex: "#d0d0d0") ?? .gray
-        case .night: return NSColor(hex: "#444c56") ?? .gray
-        }
+        return NSColor(hex: "#CEBCA7") ?? .gray
     }
-    
+
     var rulerMarkings: NSColor {
-        switch self {
-        case .day: return NSColor(hex: "#666666") ?? .gray
-        case .night: return NSColor(hex: "#8b949e") ?? .lightGray
-        }
+        return NSColor(hex: "#684F3C") ?? .gray
     }
 }
 
 class ThemeManager {
     static let shared = ThemeManager()
-    
+
     private let themeKey = "appTheme"
-    
+
     var currentTheme: AppTheme {
         didSet {
             UserDefaults.standard.set(currentTheme.rawValue, forKey: themeKey)
             NotificationCenter.default.post(name: .themeDidChange, object: currentTheme)
         }
     }
-    
+
     private init() {
         if let savedTheme = UserDefaults.standard.string(forKey: themeKey),
            let theme = AppTheme(rawValue: savedTheme) {
@@ -130,7 +94,7 @@ class ThemeManager {
             currentTheme = .day
         }
     }
-    
+
     func toggleTheme() {
         currentTheme = (currentTheme == .day) ? .night : .day
     }

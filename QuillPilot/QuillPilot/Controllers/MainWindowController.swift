@@ -37,6 +37,8 @@ protocol FormattingToolbarDelegate: AnyObject {
     func formattingToolbarDidInsertColumnBreak(_ toolbar: FormattingToolbar)
     func formattingToolbarDidColumns(_ toolbar: FormattingToolbar)
     func formattingToolbarDidClearAll(_ toolbar: FormattingToolbar)
+
+    func formattingToolbarDidOpenStyleEditor(_ toolbar: FormattingToolbar)
 }
 
 class MainWindowController: NSWindowController {
@@ -48,6 +50,7 @@ class MainWindowController: NSWindowController {
     private var mainContentViewController: ContentViewController!
     private var themeObserver: NSObjectProtocol?
     private var headerFooterSettingsWindow: HeaderFooterSettingsWindow?
+    private var styleEditorWindow: StyleEditorWindowController?
 
     convenience init() {
         let window = NSWindow(
@@ -188,6 +191,11 @@ class MainWindowController: NSWindowController {
     // MARK: - Print
     @MainActor
     @objc func printDocument(_ sender: Any?) {
+        NSLog("=== MainWindowController.printDocument called ===")
+        NSLog("STACK TRACE:")
+        Thread.callStackSymbols.forEach { NSLog("  \($0)") }
+        NSLog("Sender: \(String(describing: sender))")
+
         guard let editorVC = mainContentViewController?.editorViewController else {
             presentErrorAlert(message: "Print Failed", details: "Editor not available")
             return
@@ -242,11 +250,8 @@ class MainWindowController: NSWindowController {
         activePrintOperation = nil
     }
 
-    // Provide standard print: responder that forwards to printDocument
-    @MainActor
-    @objc func print(_ sender: Any?) {
-        printDocument(sender)
-    }
+    // Note: Removed print(_:) wrapper to avoid conflict with Swift's print() function
+    // The printDocument(_:) method already handles @objc print: action from menus
 
     func showHeaderFooterSettings() {
         guard let editorVC = mainContentViewController?.editorViewController else { return }
@@ -290,7 +295,7 @@ class MainWindowController: NSWindowController {
 // MARK: - Menu Item Validation
 extension MainWindowController: NSMenuItemValidation {
     func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
-        if menuItem.action == #selector(print(_:)) || menuItem.action == #selector(printDocument(_:)) {
+        if menuItem.action == #selector(printDocument(_:)) {
             let isValid = mainContentViewController != nil
             NSLog("MainWindowController validateMenuItem for Print: \(isValid)")
             return isValid
@@ -405,6 +410,20 @@ extension MainWindowController: FormattingToolbarDelegate {
             mainContentViewController.editorViewController.clearAll()
         }
     }
+
+    func formattingToolbarDidOpenStyleEditor(_ toolbar: FormattingToolbar) {
+        if styleEditorWindow == nil {
+            styleEditorWindow = StyleEditorWindowController(editor: self)
+        }
+        guard let sheet = styleEditorWindow?.window, let host = window else { return }
+        host.beginSheet(sheet, completionHandler: nil)
+    }
+}
+
+extension MainWindowController: StyleEditorPresenter {
+    func applyStyleFromEditor(named: String) {
+        mainContentViewController.applyStyle(named)
+    }
 }
 
 // MARK: - Save / Open
@@ -420,7 +439,11 @@ extension MainWindowController {
 
         let popup = NSPopUpButton(frame: .zero, pullsDown: false)
         ExportFormat.allCases.forEach { popup.addItem(withTitle: $0.displayName) }
-        popup.selectItem(at: 0)
+
+        // Default to RTF so formatting stays intact when reopening saved documents
+        let defaultFormat: ExportFormat = .rtf
+        let defaultIndex = ExportFormat.allCases.firstIndex(of: defaultFormat) ?? 0
+        popup.selectItem(at: defaultIndex)
 
         let accessory = NSStackView(views: [NSTextField(labelWithString: "Format:"), popup])
         accessory.orientation = .horizontal
@@ -475,8 +498,13 @@ extension MainWindowController {
 
     @MainActor
     func performOpenDocument(_ sender: Any?) {
-        guard let window else { return }
+        NSLog("MainWindowController.performOpenDocument called")
+        guard let window else {
+            NSLog("ERROR: window is nil in performOpenDocument")
+            return
+        }
 
+        NSLog("Creating NSOpenPanel")
         let panel = NSOpenPanel()
         panel.canChooseFiles = true
         panel.canChooseDirectories = false
@@ -485,7 +513,9 @@ extension MainWindowController {
         panel.allowedContentTypes = [.plainText, UTType(filenameExtension: "md") ?? .plainText, .rtf, .rtfd, UTType(filenameExtension: "docx") ?? .data, .pdf]
 
         panel.beginSheetModal(for: window) { response in
+            NSLog("Open panel response: \(response.rawValue)")
             guard response == .OK, let url = panel.url else { return }
+            NSLog("About to import file: \(url.path)")
             do {
                 try self.importFile(url: url)
             } catch {
@@ -512,14 +542,16 @@ extension MainWindowController {
         case .pdf:
             return mainContentViewController.editorPDFData()
         case .docx:
-            return try DocxBuilder.makeDocxData(fromPlainText: mainContentViewController.editorPlainText())
+            return try DocxBuilder.makeDocxData(from: mainContentViewController.editorExportReadyAttributedContent())
         case .shunnManuscript:
             return try mainContentViewController.editorShunnManuscriptRTFData(documentTitle: headerView.documentTitle())
         }
     }
 
     private func importFile(url: URL) throws {
+        NSLog("=== importFile called with: \(url.path) ===")
         let ext = url.pathExtension.lowercased()
+        NSLog("File extension: \(ext)")
 
         if ext == "pdf" {
             presentErrorAlert(message: "PDF import not supported", details: "PDF to editable text import isn't implemented yet.")
@@ -527,19 +559,115 @@ extension MainWindowController {
         }
 
         if ext == "docx" {
+            func colorHex(_ color: NSColor) -> String {
+                let srgb = color.usingColorSpace(.sRGB) ?? color
+                let r = Int((srgb.redComponent * 255).rounded())
+                let g = Int((srgb.greenComponent * 255).rounded())
+                let b = Int((srgb.blueComponent * 255).rounded())
+                return String(format: "%02X%02X%02X", r, g, b)
+            }
+
+            struct ColorSummary {
+                var coloredRuns: Int
+                var totalRuns: Int
+                var uniqueForegrounds: Set<String>
+                var uniqueBackgrounds: Set<String>
+            }
+
+            func summarizeColors(in attributed: NSAttributedString) -> ColorSummary {
+                var coloredRuns = 0
+                var totalRuns = 0
+                var fg: Set<String> = []
+                var bg: Set<String> = []
+
+                attributed.enumerateAttributes(in: NSRange(location: 0, length: attributed.length), options: []) { attrs, _, _ in
+                    totalRuns += 1
+                    if let color = attrs[.foregroundColor] as? NSColor {
+                        coloredRuns += 1
+                        fg.insert(colorHex(color))
+                    }
+                    if let color = attrs[.backgroundColor] as? NSColor, color.alphaComponent > 0.01 {
+                        bg.insert(colorHex(color))
+                    }
+                }
+
+                return ColorSummary(coloredRuns: coloredRuns, totalRuns: totalRuns, uniqueForegrounds: fg, uniqueBackgrounds: bg)
+            }
+
+            let docxType = NSAttributedString.DocumentType(rawValue: "org.openxmlformats.wordprocessingml.document")
             do {
-                let text = try DocxTextExtractor.extractPlainText(fromDocxFileURL: url)
-                mainContentViewController.setEditorPlainText(text)
+                // Prefer rich-text import; fall back to plain text if unavailable
+                let attributed = try NSAttributedString(url: url, options: [.documentType: docxType], documentAttributes: nil)
+
+                // Debug: log loaded attributes
+                let str = attributed.string as NSString
+                var loc = 0
+                print("=== DOCX IMPORT DEBUG ===")
+                while loc < str.length {
+                    let pRange = str.paragraphRange(for: NSRange(location: loc, length: 0))
+                    let attrs = attributed.attributes(at: pRange.location, effectiveRange: nil)
+                    let text = str.substring(with: pRange).prefix(30)
+                    let fontDesc = String(describing: attrs[.font] ?? "nil")
+                    let colorDesc = String(describing: attrs[.foregroundColor] ?? "nil")
+                    let alignVal = (attrs[.paragraphStyle] as? NSParagraphStyle)?.alignment.rawValue ?? -1
+                    print("P[\(pRange.location)]: \"\(text)\" font=\(fontDesc) color=\(colorDesc) align=\(alignVal)")
+                    loc = NSMaxRange(pRange)
+                }
+                print("=========================")
+
+                // If native importer yielded weak color data, try custom rich importer and pick the richer result
+                let nativeSummary = summarizeColors(in: attributed)
+                var finalAttributed: NSAttributedString = attributed
+
+                if nativeSummary.coloredRuns == 0 || nativeSummary.uniqueForegrounds.count <= 1 {
+                    NSLog("DOCX native import has limited colors (fg unique=\(nativeSummary.uniqueForegrounds.count)); attempting custom rich import")
+                    if let custom = try? DocxTextExtractor.extractAttributedString(fromDocxFileURL: url) {
+                        let customSummary = summarizeColors(in: custom)
+                        if customSummary.uniqueForegrounds.count > nativeSummary.uniqueForegrounds.count || (nativeSummary.coloredRuns == 0 && customSummary.coloredRuns > 0) {
+                            NSLog("DOCX custom import selected (native fg=\(nativeSummary.uniqueForegrounds.count) -> custom fg=\(customSummary.uniqueForegrounds.count))")
+                            finalAttributed = custom
+                        } else {
+                            NSLog("DOCX custom import offered no color improvement; keeping native")
+                        }
+                    }
+                }
+
+                mainContentViewController.setEditorAttributedContent(finalAttributed)
                 // Reset header/footer custom text when loading new document
                 mainContentViewController.editorViewController.headerText = ""
                 mainContentViewController.editorViewController.footerText = ""
                 mainContentViewController.editorViewController.updatePageCentering()
                 return
             } catch {
-                let docxType = NSAttributedString.DocumentType(rawValue: "org.openxmlformats.wordprocessingml.document")
+                NSLog("DOCX rich-text import failed, attempting custom importer: \(error.localizedDescription)")
                 do {
-                    let attributed = try NSAttributedString(url: url, options: [.documentType: docxType], documentAttributes: nil)
+                    let attributed = try DocxTextExtractor.extractAttributedString(fromDocxFileURL: url)
+
+                    // Debug: log loaded attributes
+                    let str = attributed.string as NSString
+                    var loc = 0
+                    print("=== DOCX CUSTOM IMPORT DEBUG ===")
+                    while loc < str.length {
+                        let pRange = str.paragraphRange(for: NSRange(location: loc, length: 0))
+                        let attrs = attributed.attributes(at: pRange.location, effectiveRange: nil)
+                        let text = str.substring(with: pRange).prefix(30)
+                        print("P[\(pRange.location)]: \"\(text)\" font=\(attrs[.font] ?? "nil") color=\(attrs[.foregroundColor] ?? "nil") align=\((attrs[.paragraphStyle] as? NSParagraphStyle)?.alignment.rawValue ?? -1)")
+                        loc = NSMaxRange(pRange)
+                    }
+                    print("=========================")
+
                     mainContentViewController.setEditorAttributedContent(attributed)
+                    // Reset header/footer custom text when loading new document
+                    mainContentViewController.editorViewController.headerText = ""
+                    mainContentViewController.editorViewController.footerText = ""
+                    mainContentViewController.editorViewController.updatePageCentering()
+                    return
+                } catch {
+                    NSLog("DOCX custom import failed, falling back to plain text: \(error.localizedDescription)")
+                }
+                do {
+                    let text = try DocxTextExtractor.extractPlainText(fromDocxFileURL: url)
+                    mainContentViewController.setEditorPlainText(text)
                     // Reset header/footer custom text when loading new document
                     mainContentViewController.editorViewController.headerText = ""
                     mainContentViewController.editorViewController.footerText = ""
@@ -548,7 +676,7 @@ extension MainWindowController {
                 } catch {
                     throw NSError(domain: "QuillPilot", code: 2, userInfo: [
                         NSLocalizedDescriptionKey: "Failed to import DOCX.",
-                        NSLocalizedFailureReasonErrorKey: "DOCX plain-text extraction and rich-text import both failed.",
+                        NSLocalizedFailureReasonErrorKey: "DOCX rich-text and plain-text imports both failed.",
                         NSUnderlyingErrorKey: error
                     ])
                 }
@@ -556,12 +684,33 @@ extension MainWindowController {
         }
 
         if ext == "rtf" || ext == "rtfd" {
+            NSLog("About to create NSAttributedString from RTF")
             let attributed = try NSAttributedString(url: url, options: [:], documentAttributes: nil)
+            NSLog("NSAttributedString created successfully, length: \(attributed.length)")
+
+            // Debug: log loaded attributes
+            let str = attributed.string as NSString
+            var loc = 0
+            print("=== RTF IMPORT DEBUG ===")
+            while loc < str.length {
+                let pRange = str.paragraphRange(for: NSRange(location: loc, length: 0))
+                let attrs = attributed.attributes(at: pRange.location, effectiveRange: nil)
+                let text = str.substring(with: pRange).prefix(30)
+                print("P[\(pRange.location)]: \"\(text)\" font=\(attrs[.font] ?? "nil") color=\(attrs[.foregroundColor] ?? "nil") align=\((attrs[.paragraphStyle] as? NSParagraphStyle)?.alignment.rawValue ?? -1)")
+                loc = NSMaxRange(pRange)
+            }
+            print("========================")
+
+            NSLog("About to call setEditorAttributedContent")
             mainContentViewController.setEditorAttributedContent(attributed)
+            NSLog("Finished setEditorAttributedContent")
             // Reset header/footer custom text when loading new document
             mainContentViewController.editorViewController.headerText = ""
             mainContentViewController.editorViewController.footerText = ""
+            NSLog("About to call updatePageCentering")
             mainContentViewController.editorViewController.updatePageCentering()
+            NSLog("Finished updatePageCentering")
+            NSLog("RTF import completed successfully")
             return
         }
 
@@ -616,7 +765,7 @@ class HeaderView: NSView {
         // Title
         titleLabel = NSTextField(labelWithString: "QuillPilot")
         titleLabel.font = NSFont.systemFont(ofSize: 20, weight: .medium)
-        titleLabel.textColor = NSColor(hex: "#2c3e50")
+        titleLabel.textColor = ThemeManager.shared.currentTheme.headerText
         titleLabel.translatesAutoresizingMaskIntoConstraints = false
         addSubview(titleLabel)
 
@@ -717,7 +866,7 @@ class AnimatedLogoView: NSView {
         // Draw simple quill feather icon
         guard let context = NSGraphicsContext.current?.cgContext else { return }
 
-        context.setFillColor(NSColor(hex: "#fef5e7")?.cgColor ?? NSColor.white.cgColor)
+        context.setFillColor(ThemeManager.shared.currentTheme.headerBackground.cgColor)
 
         // Quill shape (simplified)
         let path = NSBezierPath()
@@ -727,7 +876,7 @@ class AnimatedLogoView: NSView {
         path.line(to: NSPoint(x: bounds.width * 0.3, y: bounds.height * 0.9))
         path.close()
 
-        NSColor(hex: "#fef5e7")?.setFill()
+        ThemeManager.shared.currentTheme.headerBackground.setFill()
         path.fill()
     }
 }
@@ -744,6 +893,7 @@ class FormattingToolbar: NSView {
     private var fontPopup: NSPopUpButton!
     private var stylePopup: NSPopUpButton!
     private var sizePopup: NSPopUpButton!
+    private var editStylesButton: NSButton!
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
@@ -756,7 +906,7 @@ class FormattingToolbar: NSView {
 
     private func setupUI() {
         wantsLayer = true
-        layer?.backgroundColor = NSColor(hex: "#f5f0e8")?.cgColor
+        layer?.backgroundColor = ThemeManager.shared.currentTheme.toolbarBackground.cgColor
 
         // Styles popup
         stylePopup = registerControl(NSPopUpButton(frame: .zero, pullsDown: false))
@@ -770,7 +920,7 @@ class FormattingToolbar: NSView {
             let attributes: [NSAttributedString.Key: Any] = [
                 .font: NSFont.boldSystemFont(ofSize: 11),
                 .foregroundColor: NSColor.white,
-                .backgroundColor: NSColor(hex: "#7a6f5d") ?? NSColor.darkGray
+                .backgroundColor: ThemeManager.shared.currentTheme.headerBackground
             ]
             item.attributedTitle = NSAttributedString(string: "  \(title)", attributes: attributes)
 
@@ -856,6 +1006,11 @@ class FormattingToolbar: NSView {
         stylePopup.target = self
         stylePopup.action = #selector(styleChanged(_:))
         stylePopup.toolTip = "Paragraph Style"
+
+        editStylesButton = createToolbarButton("Edit…")
+        editStylesButton.target = self
+        editStylesButton.action = #selector(openStyleEditorTapped)
+        editStylesButton.toolTip = "Open Style Editor"
 
         // Font family popup
         fontPopup = registerControl(NSPopUpButton(frame: .zero, pullsDown: false))
@@ -949,7 +1104,7 @@ class FormattingToolbar: NSView {
 
         // Add all to stack view (all aligned left)
         let toolbarStack = NSStackView(views: [
-            stylePopup, fontPopup, decreaseSizeBtn, sizePopup, increaseSizeBtn,
+            stylePopup, editStylesButton, fontPopup, decreaseSizeBtn, sizePopup, increaseSizeBtn,
             boldBtn, italicBtn, underlineBtn,
             alignLeftBtn, alignCenterBtn, alignRightBtn, justifyBtn,
             bulletsBtn, numberingBtn,
@@ -1036,6 +1191,10 @@ class FormattingToolbar: NSView {
 
     @objc private func underlineTapped() {
         delegate?.formattingToolbarDidToggleUnderline(self)
+    }
+
+    @objc private func openStyleEditorTapped() {
+        delegate?.formattingToolbarDidOpenStyleEditor(self)
     }
 
     @objc private func alignLeftTapped() {
@@ -1278,12 +1437,20 @@ class ContentViewController: NSViewController {
         editorViewController.pdfData()
     }
 
+    func editorAttributedContent() -> NSAttributedString {
+        editorViewController.attributedContent()
+    }
+
     func editorRTFData() throws -> Data {
         try editorViewController.rtfData()
     }
 
     func editorShunnManuscriptRTFData(documentTitle: String) throws -> Data {
         try editorViewController.shunnManuscriptRTFData(documentTitle: documentTitle)
+    }
+
+    func editorExportReadyAttributedContent() -> NSAttributedString {
+        editorViewController.exportReadyAttributedContent()
     }
 
     func setEditorAttributedContent(_ attributed: NSAttributedString) {
@@ -1520,7 +1687,6 @@ extension OutlineViewController: NSOutlineViewDataSource, NSOutlineViewDelegate 
         onSelect?(entry)
     }
 }
-}
 
 // MARK: - Export Formats
 private enum ExportFormat: CaseIterable {
@@ -1566,9 +1732,9 @@ private enum ExportFormat: CaseIterable {
     }
 }
 
-// MARK: - Minimal DOCX builder (plain text)
+// MARK: - DOCX builder (rich text)
 private enum DocxBuilder {
-    static func makeDocxData(fromPlainText text: String) throws -> Data {
+    static func makeDocxData(from attributed: NSAttributedString) throws -> Data {
         let contentTypes = """
         <?xml version=\"1.0\" encoding=\"UTF-8\"?>
         <Types xmlns=\"http://schemas.openxmlformats.org/package/2006/content-types\">
@@ -1590,7 +1756,7 @@ private enum DocxBuilder {
         <Relationships xmlns=\"http://schemas.openxmlformats.org/package/2006/relationships\"/>
         """
 
-        let documentXml = makeDocumentXml(fromPlainText: text)
+        let documentXml = makeDocumentXml(from: attributed)
 
         let entries: [(String, Data)] = [
             ("[Content_Types].xml", Data(contentTypes.utf8)),
@@ -1602,17 +1768,8 @@ private enum DocxBuilder {
         return ZipWriter.makeZip(entries: entries)
     }
 
-    private static func makeDocumentXml(fromPlainText text: String) -> String {
-        let paragraphs = text
-            .replacingOccurrences(of: "\r\n", with: "\n")
-            .replacingOccurrences(of: "\r", with: "\n")
-            .split(separator: "\n", omittingEmptySubsequences: false)
-
-        let body = paragraphs.map { line -> String in
-            let escaped = xmlEscape(String(line))
-            return "<w:p><w:r><w:t xml:space=\"preserve\">\(escaped)</w:t></w:r></w:p>"
-        }.joined()
-
+    private static func makeDocumentXml(from attributed: NSAttributedString) -> String {
+        let body = makeParagraphs(from: attributed)
         return """
         <?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>
         <w:document xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\">
@@ -1622,6 +1779,157 @@ private enum DocxBuilder {
           </w:body>
         </w:document>
         """
+    }
+
+    private static func makeParagraphs(from attributed: NSAttributedString) -> String {
+        let fullString = attributed.string as NSString
+        var location = 0
+        var paragraphs: [String] = []
+
+        while location < fullString.length {
+            let paragraphRange = fullString.paragraphRange(for: NSRange(location: location, length: 0))
+            let contentRange = trimTrailingNewlines(in: paragraphRange, string: fullString)
+            let paragraphStyle = attributed.attribute(.paragraphStyle, at: paragraphRange.location, effectiveRange: nil) as? NSParagraphStyle
+
+            let runs = makeRuns(from: attributed, in: contentRange)
+            let pPr = paragraphPropertiesXml(from: paragraphStyle)
+            let paragraphXml = """
+            <w:p>
+              \(pPr)\(runs.joined())
+            </w:p>
+            """
+            paragraphs.append(paragraphXml)
+            location = NSMaxRange(paragraphRange)
+        }
+
+        return paragraphs.joined(separator: "\n")
+    }
+
+    private static func makeRuns(from attributed: NSAttributedString, in range: NSRange) -> [String] {
+        let fullString = attributed.string as NSString
+        var runs: [String] = []
+
+        if range.length == 0 {
+            return ["<w:r><w:t/></w:r>"]
+        }
+
+        attributed.enumerateAttributes(in: range, options: []) { attrs, subRange, _ in
+            let text = fullString.substring(with: subRange)
+            let runXml = runXml(for: text, attributes: attrs)
+            runs.append(runXml)
+        }
+
+        if runs.isEmpty {
+            runs.append("<w:r><w:t/></w:r>")
+        }
+
+        return runs
+    }
+
+    private static func paragraphPropertiesXml(from style: NSParagraphStyle?) -> String {
+        guard let style else { return "" }
+
+        var components: [String] = []
+
+        let alignment: String
+        switch style.alignment {
+        case .center: alignment = "center"
+        case .right: alignment = "right"
+        case .justified: alignment = "both"
+        default: alignment = "left"
+        }
+        components.append("<w:jc w:val=\"\(alignment)\"/>")
+
+        let before = max(0, Int(round(style.paragraphSpacingBefore * 20)))
+        let after = max(0, Int(round(style.paragraphSpacing * 20)))
+        var spacingAttrs: [String] = []
+        if before > 0 { spacingAttrs.append("w:before=\"\(before)\"") }
+        if after > 0 { spacingAttrs.append("w:after=\"\(after)\"") }
+        let lineMultiple = style.lineHeightMultiple
+        if lineMultiple > 0 {
+            let line = max(120, Int(round(lineMultiple * 240)))
+            spacingAttrs.append("w:line=\"\(line)\"")
+            spacingAttrs.append("w:lineRule=\"auto\"")
+        }
+        if !spacingAttrs.isEmpty {
+            components.append("<w:spacing \(spacingAttrs.joined(separator: " "))/>")
+        }
+
+        let leftIndent = max(0, Int(round(style.headIndent * 20)))
+        let firstLine = max(0, Int(round((style.firstLineHeadIndent - style.headIndent) * 20)))
+        let rightIndent = style.tailIndent > 0 ? Int(round(style.tailIndent * 20)) : 0
+        var indentAttrs: [String] = []
+        if leftIndent > 0 { indentAttrs.append("w:left=\"\(leftIndent)\"") }
+        if firstLine > 0 { indentAttrs.append("w:firstLine=\"\(firstLine)\"") }
+        if rightIndent > 0 { indentAttrs.append("w:right=\"\(rightIndent)\"") }
+        if !indentAttrs.isEmpty {
+            components.append("<w:ind \(indentAttrs.joined(separator: " "))/>")
+        }
+
+        guard !components.isEmpty else { return "" }
+        return """
+        <w:pPr>
+          \(components.joined(separator: "\n  "))
+        </w:pPr>
+        """
+    }
+
+    private static func runXml(for text: String, attributes: [NSAttributedString.Key: Any]) -> String {
+        let font = (attributes[.font] as? NSFont) ?? NSFont.systemFont(ofSize: 12)
+        let color = (attributes[.foregroundColor] as? NSColor) ?? .black
+        let background = (attributes[.backgroundColor] as? NSColor)?.usingColorSpace(.sRGB)
+
+        var rPr: [String] = []
+        let escapedFont = xmlEscape(font.fontName)
+        rPr.append("<w:rFonts w:ascii=\"\(escapedFont)\" w:hAnsi=\"\(escapedFont)\" w:cs=\"\(escapedFont)\"/>")
+
+        let halfPoints = Int(round(font.pointSize * 2))
+        rPr.append("<w:sz w:val=\"\(halfPoints)\"/>")
+
+        let traits = font.fontDescriptor.symbolicTraits
+        if traits.contains(.bold) { rPr.append("<w:b/>") }
+        if traits.contains(.italic) { rPr.append("<w:i/>") }
+
+        rPr.append("<w:color w:val=\"\(hex(from: color))\"/>")
+
+        if let background, background.alphaComponent > 0.01 {
+            rPr.append("<w:shd w:val=\"clear\" w:color=\"auto\" w:fill=\"\(hex(from: background))\"/>")
+        }
+
+        let rPrXml = rPr.isEmpty ? "" : """
+        <w:rPr>
+          \(rPr.joined(separator: "\n  "))
+        </w:rPr>
+        """
+
+        let escapedText = xmlEscape(text)
+        return """
+        <w:r>
+          \(rPrXml)<w:t xml:space=\"preserve\">\(escapedText)</w:t>
+        </w:r>
+        """
+    }
+
+    private static func trimTrailingNewlines(in range: NSRange, string: NSString) -> NSRange {
+        var newRange = range
+        while newRange.length > 0 {
+            let lastIndex = newRange.location + newRange.length - 1
+            let char = string.character(at: lastIndex)
+            if char == 10 || char == 13 {
+                newRange.length -= 1
+            } else {
+                break
+            }
+        }
+        return newRange
+    }
+
+    private static func hex(from color: NSColor) -> String {
+        let rgb = (color.usingColorSpace(.sRGB) ?? color)
+        let r = Int((rgb.redComponent * 255).rounded())
+        let g = Int((rgb.greenComponent * 255).rounded())
+        let b = Int((rgb.blueComponent * 255).rounded())
+        return String(format: "%02X%02X%02X", r, g, b)
     }
 
     private static func xmlEscape(_ s: String) -> String {
@@ -1636,6 +1944,16 @@ private enum DocxBuilder {
 
 // MARK: - Minimal DOCX text extractor (plain text)
 private enum DocxTextExtractor {
+    static func extractAttributedString(fromDocxFileURL url: URL) throws -> NSAttributedString {
+        let data = try Data(contentsOf: url)
+        return try extractAttributedString(fromDocxData: data)
+    }
+
+    static func extractAttributedString(fromDocxData data: Data) throws -> NSAttributedString {
+        let documentXml = try ZipReader.extractFile(named: "word/document.xml", fromZipData: data)
+        return try DocumentXMLAttributedCollector.makeAttributedString(from: documentXml)
+    }
+
     static func extractPlainText(fromDocxFileURL url: URL) throws -> String {
         let data = try Data(contentsOf: url)
         return try extractPlainText(fromDocxData: data)
@@ -1678,6 +1996,315 @@ private enum DocxTextExtractor {
                 inText = false
             } else if name.hasSuffix(":p") || name == "p" {
                 text.append("\n")
+            }
+        }
+    }
+
+    private final class DocumentXMLAttributedCollector: NSObject, XMLParserDelegate {
+        private let result = NSMutableAttributedString()
+        private var paragraphBuffer = NSMutableAttributedString()
+        private var hasActiveParagraph = false
+        private var paragraphStyle = ParagraphStyleProps()
+        private var runAttributes = RunAttributes()
+        private var currentText: String = ""
+        private var inText = false
+
+        static func makeAttributedString(from data: Data) throws -> NSAttributedString {
+            let collector = DocumentXMLAttributedCollector()
+            let parser = XMLParser(data: data)
+            parser.delegate = collector
+            guard parser.parse() else {
+                throw parser.parserError ?? NSError(domain: "QuillPilot", code: 12, userInfo: [NSLocalizedDescriptionKey: "Failed to parse DOCX rich text"])
+            }
+            return collector.output()
+        }
+
+        func parserDidEndDocument(_ parser: XMLParser) {
+            finalizeParagraph()
+            // Trim one trailing newline if present to avoid introducing an extra empty paragraph.
+            if result.string.hasSuffix("\n") {
+                result.deleteCharacters(in: NSRange(location: result.length - 1, length: 1))
+            }
+        }
+
+        func parser(_ parser: XMLParser, didStartElement elementName: String, namespaceURI: String?, qualifiedName qName: String?, attributes attributeDict: [String: String] = [:]) {
+            let name = (qName ?? elementName).lowercased()
+
+            switch name {
+            case "w:p", "p":
+                if hasActiveParagraph { finalizeParagraph() }
+                paragraphBuffer = NSMutableAttributedString()
+                paragraphStyle = ParagraphStyleProps()
+                hasActiveParagraph = true
+
+            case "w:jc", "jc":
+                let val = attributeDict["w:val"] ?? attributeDict["val"] ?? "left"
+                paragraphStyle.alignment = ParagraphStyleProps.alignment(from: val)
+
+            case "w:spacing", "spacing":
+                if let beforeStr = attributeDict["w:before"] ?? attributeDict["before"], let twips = Double(beforeStr) {
+                    paragraphStyle.spacingBefore = CGFloat(twips / 20.0)
+                }
+                if let afterStr = attributeDict["w:after"] ?? attributeDict["after"], let twips = Double(afterStr) {
+                    paragraphStyle.spacingAfter = CGFloat(twips / 20.0)
+                }
+                if let lineStr = attributeDict["w:line"] ?? attributeDict["line"], let line = Double(lineStr) {
+                    paragraphStyle.lineMultiple = max(0.01, CGFloat(line / 240.0))
+                }
+
+            case "w:ind", "ind":
+                if let leftStr = attributeDict["w:left"] ?? attributeDict["left"], let twips = Double(leftStr) {
+                    paragraphStyle.headIndent = CGFloat(twips / 20.0)
+                }
+                if let firstStr = attributeDict["w:firstline"] ?? attributeDict["firstline"], let twips = Double(firstStr) {
+                    paragraphStyle.firstLineIndent = CGFloat(twips / 20.0)
+                }
+                if let rightStr = attributeDict["w:right"] ?? attributeDict["right"], let twips = Double(rightStr) {
+                    paragraphStyle.tailIndent = CGFloat(twips / 20.0)
+                }
+
+            case "w:r", "r":
+                finalizeRun()
+                runAttributes = RunAttributes()
+                currentText = ""
+
+            case "w:rfonts", "rfonts":
+                runAttributes.fontName = attributeDict["w:ascii"] ?? attributeDict["w:hansi"] ?? attributeDict["w:cs"] ?? attributeDict["ascii"]
+
+            case "w:sz", "sz":
+                if let sizeStr = attributeDict["w:val"] ?? attributeDict["val"], let halfPoints = Double(sizeStr) {
+                    runAttributes.fontSize = CGFloat(halfPoints / 2.0)
+                }
+
+            case "w:b", "b":
+                runAttributes.isBold = true
+
+            case "w:i", "i":
+                runAttributes.isItalic = true
+
+            case "w:color", "color":
+                if let val = attributeDict["w:val"] ?? attributeDict["val"], let color = RunAttributes.color(fromHex: val) {
+                    runAttributes.foregroundColor = color
+                }
+                runAttributes.themeColorName = attributeDict["w:themeColor"] ?? attributeDict["themeColor"]
+                if let tint = attributeDict["w:themeTint"] ?? attributeDict["themeTint"], let dbl = RunAttributes.tintShadeFactor(from: tint) {
+                    runAttributes.themeTint = dbl
+                }
+                if let shade = attributeDict["w:themeShade"] ?? attributeDict["themeShade"], let dbl = RunAttributes.tintShadeFactor(from: shade) {
+                    runAttributes.themeShade = dbl
+                }
+
+            case "w:shd", "shd":
+                if let fill = attributeDict["w:fill"] ?? attributeDict["fill"], let color = RunAttributes.color(fromHex: fill) {
+                    runAttributes.backgroundColor = color
+                }
+                if runAttributes.backgroundColor == nil {
+                    runAttributes.shadingThemeColorName = attributeDict["w:themeColor"] ?? attributeDict["themeColor"]
+                    if let tint = attributeDict["w:themeTint"] ?? attributeDict["themeTint"], let dbl = RunAttributes.tintShadeFactor(from: tint) {
+                        runAttributes.shadingThemeTint = dbl
+                    }
+                    if let shade = attributeDict["w:themeShade"] ?? attributeDict["themeShade"], let dbl = RunAttributes.tintShadeFactor(from: shade) {
+                        runAttributes.shadingThemeShade = dbl
+                    }
+                }
+
+            case "w:t", "t":
+                inText = true
+
+            case "w:tab", "tab":
+                currentText.append("\t")
+
+            case "w:br", "br":
+                currentText.append("\n")
+
+            default:
+                break
+            }
+        }
+
+        func parser(_ parser: XMLParser, foundCharacters string: String) {
+            guard inText else { return }
+            currentText.append(string)
+        }
+
+        func parser(_ parser: XMLParser, didEndElement elementName: String, namespaceURI: String?, qualifiedName qName: String?) {
+            let name = (qName ?? elementName).lowercased()
+
+            switch name {
+            case "w:t", "t":
+                inText = false
+            case "w:r", "r":
+                finalizeRun()
+            case "w:p", "p":
+                finalizeParagraph()
+            default:
+                break
+            }
+        }
+
+        private func finalizeRun() {
+            guard !currentText.isEmpty else { return }
+
+            var attrs: [NSAttributedString.Key: Any] = [:]
+            let size = runAttributes.fontSize ?? 12
+            let fontName = runAttributes.fontName ?? "Times New Roman"
+            var font = NSFont(name: fontName, size: size) ?? NSFont.systemFont(ofSize: size)
+            if runAttributes.isBold {
+                font = NSFontManager.shared.convert(font, toHaveTrait: .boldFontMask)
+            }
+            if runAttributes.isItalic {
+                font = NSFontManager.shared.convert(font, toHaveTrait: .italicFontMask)
+            }
+            attrs[.font] = font
+
+            // Resolve foreground color: explicit hex first, then theme-based if present
+            if let fg = runAttributes.foregroundColor {
+                attrs[.foregroundColor] = fg
+            } else if let theme = RunAttributes.color(fromTheme: runAttributes.themeColorName, tint: runAttributes.themeTint, shade: runAttributes.themeShade) {
+                attrs[.foregroundColor] = theme
+            }
+
+            // Resolve background color from shading
+            if let bg = runAttributes.backgroundColor {
+                attrs[.backgroundColor] = bg
+            } else if let theme = RunAttributes.color(fromTheme: runAttributes.shadingThemeColorName, tint: runAttributes.shadingThemeTint, shade: runAttributes.shadingThemeShade) {
+                attrs[.backgroundColor] = theme
+            }
+
+            let runString = NSAttributedString(string: currentText, attributes: attrs)
+            paragraphBuffer.append(runString)
+
+            currentText = ""
+        }
+
+        private func finalizeParagraph() {
+            guard hasActiveParagraph else { return }
+            finalizeRun()
+
+            if paragraphBuffer.length > 0 {
+                let paragraph = paragraphStyle.makeParagraphStyle()
+                paragraphBuffer.addAttribute(.paragraphStyle, value: paragraph, range: NSRange(location: 0, length: paragraphBuffer.length))
+                result.append(paragraphBuffer)
+            }
+
+            result.append(NSAttributedString(string: "\n"))
+            paragraphBuffer = NSMutableAttributedString()
+            hasActiveParagraph = false
+        }
+
+        private func output() -> NSAttributedString {
+            return result.copy() as! NSAttributedString
+        }
+
+        private struct RunAttributes {
+            var fontName: String? = nil
+            var fontSize: CGFloat? = nil
+            var isBold: Bool = false
+            var isItalic: Bool = false
+            var foregroundColor: NSColor? = nil
+            var backgroundColor: NSColor? = nil
+            var themeColorName: String? = nil
+            var themeTint: Double? = nil
+            var themeShade: Double? = nil
+            var shadingThemeColorName: String? = nil
+            var shadingThemeTint: Double? = nil
+            var shadingThemeShade: Double? = nil
+
+            static func color(fromHex hex: String) -> NSColor? {
+                let cleaned = hex.trimmingCharacters(in: .whitespacesAndNewlines).trimmingCharacters(in: CharacterSet(charactersIn: "#"))
+                guard cleaned.count == 6 else { return nil }
+                guard cleaned.lowercased() != "auto" else { return nil }
+                let scanner = Scanner(string: cleaned)
+                var value: UInt64 = 0
+                guard scanner.scanHexInt64(&value) else { return nil }
+                let r = CGFloat((value & 0xFF0000) >> 16) / 255.0
+                let g = CGFloat((value & 0x00FF00) >> 8) / 255.0
+                let b = CGFloat(value & 0x0000FF) / 255.0
+                return NSColor(calibratedRed: r, green: g, blue: b, alpha: 1.0)
+            }
+
+            static func color(fromTheme name: String?, tint: Double?, shade: Double?) -> NSColor? {
+                guard let name else { return nil }
+                let baseHex: String?
+                switch name.lowercased() {
+                case "dark1": baseHex = "000000"
+                case "light1": baseHex = "FFFFFF"
+                case "dark2": baseHex = "44546A"
+                case "light2": baseHex = "E7E6E6"
+                case "accent1": baseHex = "4472C4"
+                case "accent2": baseHex = "ED7D31"
+                case "accent3": baseHex = "A5A5A5"
+                case "accent4": baseHex = "FFC000"
+                case "accent5": baseHex = "5B9BD5"
+                case "accent6": baseHex = "70AD47"
+                case "hyperlink": baseHex = "0563C1"
+                case "followedhyperlink": baseHex = "954F72"
+                default: baseHex = nil
+                }
+                guard let hex = baseHex, var color = color(fromHex: hex) else { return nil }
+                if let tint = tint {
+                    color = applyTint(color, factor: tint)
+                }
+                if let shade = shade {
+                    color = applyShade(color, factor: shade)
+                }
+                return color
+            }
+
+            static func tintShadeFactor(from hex: String) -> Double? {
+                let cleaned = hex.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard let value = Int(cleaned, radix: 16) else { return nil }
+                return Double(value) / 255.0
+            }
+
+            private static func applyTint(_ color: NSColor, factor: Double) -> NSColor {
+                let f = max(0.0, min(1.0, factor))
+                let srgb = (color.usingColorSpace(.sRGB) ?? color)
+                let r = srgb.redComponent + (1.0 - srgb.redComponent) * f
+                let g = srgb.greenComponent + (1.0 - srgb.greenComponent) * f
+                let b = srgb.blueComponent + (1.0 - srgb.blueComponent) * f
+                return NSColor(calibratedRed: r, green: g, blue: b, alpha: srgb.alphaComponent)
+            }
+
+            private static func applyShade(_ color: NSColor, factor: Double) -> NSColor {
+                let f = max(0.0, min(1.0, factor))
+                let srgb = (color.usingColorSpace(.sRGB) ?? color)
+                let r = srgb.redComponent * (1.0 - 0.8 * f)
+                let g = srgb.greenComponent * (1.0 - 0.8 * f)
+                let b = srgb.blueComponent * (1.0 - 0.8 * f)
+                return NSColor(calibratedRed: r, green: g, blue: b, alpha: srgb.alphaComponent)
+            }
+        }
+
+        private struct ParagraphStyleProps {
+            var alignment: NSTextAlignment = .left
+            var spacingBefore: CGFloat = 0
+            var spacingAfter: CGFloat = 0
+            var lineMultiple: CGFloat = 1.0
+            var headIndent: CGFloat = 0
+            var firstLineIndent: CGFloat = 0
+            var tailIndent: CGFloat = 0
+
+            func makeParagraphStyle() -> NSParagraphStyle {
+                let style = NSMutableParagraphStyle()
+                style.alignment = alignment
+                style.paragraphSpacingBefore = spacingBefore
+                style.paragraphSpacing = spacingAfter
+                style.lineHeightMultiple = lineMultiple
+                style.headIndent = headIndent
+                style.firstLineHeadIndent = headIndent + firstLineIndent
+                style.tailIndent = tailIndent
+                style.lineBreakMode = .byWordWrapping
+                return style.copy() as! NSParagraphStyle
+            }
+
+            static func alignment(from xmlValue: String) -> NSTextAlignment {
+                switch xmlValue.lowercased() {
+                case "center": return .center
+                case "right": return .right
+                case "both", "justify": return .justified
+                default: return .left
+                }
             }
         }
     }

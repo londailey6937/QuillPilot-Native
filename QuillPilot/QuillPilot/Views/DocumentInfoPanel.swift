@@ -40,7 +40,7 @@ class DocumentInfoPanel: NSView {
         titleField.backgroundColor = .clear
         // Mirror the document "Title" look (publisher-friendly): centered, serif.
         titleField.font = NSFont(name: "Times New Roman", size: 14) ?? NSFont.systemFont(ofSize: 14, weight: .medium)
-        titleField.textColor = NSColor(hex: "#2c3e50")
+        titleField.textColor = ThemeManager.shared.currentTheme.textColor
         titleField.alignment = .center
         titleField.placeholderString = "Untitled"
         titleField.delegate = self
@@ -52,7 +52,7 @@ class DocumentInfoPanel: NSView {
         authorField.isEditable = true
         authorField.backgroundColor = .clear
         authorField.font = NSFont(name: "Times New Roman", size: 12) ?? NSFont.systemFont(ofSize: 12)
-        authorField.textColor = NSColor(hex: "#2c3e50")
+        authorField.textColor = ThemeManager.shared.currentTheme.textColor
         authorField.alignment = .center
         authorField.placeholderString = "Author Name"
         authorField.delegate = self
@@ -99,7 +99,7 @@ class DocumentInfoPanel: NSView {
     private func createStatLabel(_ text: String) -> NSTextField {
         let label = NSTextField(labelWithString: text)
         label.font = NSFont.systemFont(ofSize: 11)
-        label.textColor = NSColor(hex: "#2c3e50")?.withAlphaComponent(0.75)
+        label.textColor = ThemeManager.shared.currentTheme.textColor.withAlphaComponent(0.75)
         label.alignment = .center
         statLabels.append(label)
         return label

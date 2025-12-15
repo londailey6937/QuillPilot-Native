@@ -39,6 +39,10 @@ class EditorViewController: NSViewController {
 
     // Multi-page support
     private var pages: [NSView] = []
+
+    private class FlippedView: NSView {
+        override var isFlipped: Bool { true }
+    }
     private var headerViews: [NSTextField] = []
     private var footerViews: [NSTextField] = []
 
@@ -76,7 +80,7 @@ class EditorViewController: NSViewController {
         scrollView.contentInsets = NSEdgeInsets(top: 0, left: 12, bottom: 50, right: 12)
 
         // Page container grows to fit all content (starts at US Letter height)
-        pageContainer = NSView(frame: NSRect(x: 0, y: 0, width: 612 * editorZoom, height: 10000 * editorZoom))
+        pageContainer = FlippedView(frame: NSRect(x: 0, y: 0, width: 612 * editorZoom, height: 10000 * editorZoom))
         pageContainer.wantsLayer = true
         pageContainer.layer?.borderWidth = 1
         pageContainer.layer?.masksToBounds = false  // Don't clip - let page grow
@@ -143,7 +147,7 @@ class EditorViewController: NSViewController {
     func setManuscriptInfo(title: String, author: String) {
         manuscriptTitle = title
         manuscriptAuthor = author
-        updateHeadersAndFooters()
+        updatePageCentering()
     }
 
     func toggleBold() {
@@ -1021,17 +1025,44 @@ case "Book Subtitle":
         let scaledPageHeight = pageHeight * editorZoom
         let pageX = max((visibleWidth - scaledPageWidth) / 2, 0)
 
-        // Calculate number of pages needed
+        // Calculate number of pages by walking laid out line fragments at correct width
         var numPages = 1
         if let layoutManager = textView.layoutManager,
            let textContainer = textView.textContainer {
-            let textRange = NSRange(location: 0, length: textView.string.count)
-            layoutManager.ensureLayout(forCharacterRange: textRange)
-            let usedRect = layoutManager.usedRect(for: textContainer)
             let activeHeaderHeight = showHeaders ? headerHeight : 0
             let activeFooterHeight = showFooters ? footerHeight : 0
             let pageTextHeight = scaledPageHeight - (standardMargin * 2 + activeHeaderHeight + activeFooterHeight) * editorZoom
-            numPages = max(1, Int(ceil(usedRect.height / pageTextHeight)))
+            let textWidth = scaledPageWidth - (standardMargin * 2) * editorZoom
+
+            // Preserve current state
+            let oldSize = textContainer.size
+            let oldExclusions = textContainer.exclusionPaths
+
+            // Measure with clean container sized to single-page text area
+            textContainer.exclusionPaths = []
+            textContainer.size = NSSize(width: textWidth, height: CGFloat.greatestFiniteMagnitude)
+            layoutManager.textContainerChangedGeometry(textContainer)
+
+            // Force layout and iterate line fragments to accumulate height into pages
+            layoutManager.ensureLayout(for: textContainer)
+            let glyphRange = layoutManager.glyphRange(for: textContainer)
+            var currentHeight: CGFloat = 0
+            var pages: Int = 1
+            layoutManager.enumerateLineFragments(forGlyphRange: glyphRange) { _, usedRect, _, _, _ in
+                let lineHeight = usedRect.height
+                if currentHeight + lineHeight > pageTextHeight {
+                    pages += 1
+                    currentHeight = lineHeight
+                } else {
+                    currentHeight += lineHeight
+                }
+            }
+
+            numPages = max(1, pages)
+
+            // Restore container state
+            textContainer.size = oldSize
+            textContainer.exclusionPaths = oldExclusions
         }
 
         // Total height includes all pages plus gaps between them
@@ -1104,7 +1135,7 @@ case "Book Subtitle":
             textContainer.exclusionPaths = exclusionPaths
         }
 
-        updateHeadersAndFooters()
+        updateHeadersAndFooters(numPages)
         updateShadowPath()
 
         let docWidth = max(visibleWidth, pageX + scaledPageWidth + 20)
@@ -1112,7 +1143,7 @@ case "Book Subtitle":
         documentView.frame = NSRect(x: 0, y: 0, width: docWidth, height: docHeight)
     }
 
-    private func updateHeadersAndFooters() {
+    private func updateHeadersAndFooters(_ numPages: Int) {
         // Clear existing
         headerViews.forEach { $0.removeFromSuperview() }
         footerViews.forEach { $0.removeFromSuperview() }
@@ -1126,18 +1157,6 @@ case "Book Subtitle":
         let scaledHeaderHeight = headerHeight * editorZoom
         let scaledFooterHeight = footerHeight * editorZoom
         let margin = standardMargin * editorZoom
-
-        // Calculate number of pages needed based on text content height
-        guard let layoutManager = textView.layoutManager,
-              let textContainer = textView.textContainer else { return }
-
-        let textRange = NSRange(location: 0, length: textView.string.count)
-        layoutManager.ensureLayout(forCharacterRange: textRange)
-        let usedRect = layoutManager.usedRect(for: textContainer)
-
-        // Available height per page for text (page height minus header, footer, and margins)
-        let pageTextHeight = scaledPageHeight - (margin * 2) - scaledHeaderHeight - scaledFooterHeight
-        let numPages = max(1, Int(ceil(usedRect.height / pageTextHeight)))
 
         for pageNum in 1...numPages {
             let pageY = CGFloat(pageNum - 1) * (scaledPageHeight + 20) // 20pt gap between pages
@@ -1156,7 +1175,7 @@ case "Book Subtitle":
             pageContainer.addSubview(pageView, positioned: .below, relativeTo: textView)
             pages.append(pageView)
 
-            // Header (at top of page in flipped coordinates)
+            // Header (top band)
             if showHeaders {
                 let headerContent = headerText
                 let headerField = NSTextField(labelWithString: headerContent)
@@ -1176,25 +1195,25 @@ case "Book Subtitle":
                 pageContainer.addSubview(headerField)
                 headerViews.append(headerField)
 
-                // Add separator line below header
-                let headerLine = NSBox(frame: NSRect(
+                // Separator under header
+                let headerLine = NSView(frame: NSRect(
                     x: margin,
                     y: pageY + margin / 2 + scaledHeaderHeight + 2,
                     width: scaledPageWidth - margin * 2,
                     height: 1
                 ))
-                headerLine.boxType = .separator
-                headerLine.borderColor = currentTheme.textColor.withAlphaComponent(0.2)
+                headerLine.wantsLayer = true
+                headerLine.layer?.backgroundColor = currentTheme.textColor.withAlphaComponent(0.2).cgColor
                 pageContainer.addSubview(headerLine)
             }
 
-            // Footer (at bottom of page in flipped coordinates)
+            // Footer (bottom band)
             if showFooters {
                 let footerContent: String
                 if !footerText.isEmpty {
                     footerContent = footerText
-                } else if showPageNumbers && pageNum > 1 {
-                    footerContent = "\(pageNum)"
+                } else if showPageNumbers {
+                    footerContent = pageNum > 1 ? "\(pageNum)" : ""
                 } else {
                     footerContent = ""
                 }
@@ -1215,15 +1234,15 @@ case "Book Subtitle":
                 pageContainer.addSubview(footerField)
                 footerViews.append(footerField)
 
-                // Add separator line above footer
-                let footerLine = NSBox(frame: NSRect(
+                // Separator above footer
+                let footerLine = NSView(frame: NSRect(
                     x: margin,
                     y: pageY + scaledPageHeight - margin / 2 - scaledFooterHeight - 2,
                     width: scaledPageWidth - margin * 2,
                     height: 1
                 ))
-                footerLine.boxType = .separator
-                footerLine.borderColor = currentTheme.textColor.withAlphaComponent(0.2)
+                footerLine.wantsLayer = true
+                footerLine.layer?.backgroundColor = currentTheme.textColor.withAlphaComponent(0.2).cgColor
                 pageContainer.addSubview(footerLine)
             }
         }

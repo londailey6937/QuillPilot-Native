@@ -179,6 +179,7 @@ extension AppDelegate: NSMenuItemValidation {
 
 @main
 @MainActor
+
 enum QuillPilotMain {
     private static let delegate = AppDelegate()
 

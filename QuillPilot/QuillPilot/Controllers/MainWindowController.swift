@@ -1133,6 +1133,10 @@ class ContentViewController: NSViewController {
     override func viewDidLoad() {
         super.viewDidLoad()
         setupLayout()
+        NotificationCenter.default.addObserver(forName: Notification.Name("QuillPilotOutlineRefresh"), object: nil, queue: .main) { [weak self] _ in
+            self?.refreshOutline()
+        }
+        refreshOutline()
     }
 
     private func setupLayout() {
@@ -1148,6 +1152,9 @@ class ContentViewController: NSViewController {
         splitView.addArrangedSubview(outlineViewController.view)
         outlineViewController.view.widthAnchor.constraint(greaterThanOrEqualToConstant: 200).isActive = true
         outlineViewController.view.widthAnchor.constraint(lessThanOrEqualToConstant: 350).isActive = true
+        outlineViewController.onSelect = { [weak self] entry in
+            self?.scrollToOutlineEntry(entry)
+        }
 
         // Center: Editor
         editorViewController = EditorViewController()
@@ -1183,9 +1190,20 @@ class ContentViewController: NSViewController {
         ])
     }
 
+    private func refreshOutline() {
+        let entries = editorViewController.buildOutlineEntries()
+        outlineViewController.update(with: entries)
+    }
+
     @objc private func scrollToTop() {
         // Scroll editor to top
         editorViewController.scrollToTop()
+    }
+
+    private func scrollToOutlineEntry(_ entry: EditorViewController.OutlineEntry) {
+        guard let textView = editorViewController.textView else { return }
+        textView.scrollRangeToVisible(entry.range)
+        textView.showFindIndicator(for: entry.range)
     }
 
     func applyTheme(_ theme: AppTheme) {
@@ -1298,8 +1316,35 @@ extension ContentViewController: RulerViewDelegate {
 
 // MARK: - Outline View Controller
 class OutlineViewController: NSViewController {
+    final class Node: NSObject {
+        let title: String
+        let level: Int
+        let page: Int?
+        let range: NSRange
+        var children: [Node]
+
+        init(title: String, level: Int, page: Int?, range: NSRange, children: [Node] = []) {
+            self.title = title
+            self.level = level
+            self.page = page
+            self.range = range
+            self.children = children
+        }
+    }
+
+    var onSelect: ((EditorViewController.OutlineEntry) -> Void)?
+    private var roots: [Node] = []
 
     private var headerLabel: NSTextField!
+    private var refreshButton: NSButton!
+    private var outlineView: NSOutlineView!
+
+    private let levelColors: [NSColor] = [
+        NSColor(calibratedRed: 0.18, green: 0.33, blue: 0.61, alpha: 1.0), // Part
+        NSColor(calibratedRed: 0.09, green: 0.52, blue: 0.52, alpha: 1.0), // Chapter / H1
+        NSColor(calibratedWhite: 0.2, alpha: 1.0),                         // H2
+        NSColor(calibratedWhite: 0.35, alpha: 1.0)                         // H3+
+    ]
 
     override func loadView() {
         view = NSView()
@@ -1309,26 +1354,172 @@ class OutlineViewController: NSViewController {
         super.viewDidLoad()
 
         view.wantsLayer = true
-        view.layer?.backgroundColor = NSColor(hex: "#f9f4ed")?.cgColor
 
         headerLabel = NSTextField(labelWithString: "Document Outline")
         headerLabel.font = NSFont.boldSystemFont(ofSize: 14)
-        headerLabel.translatesAutoresizingMaskIntoConstraints = false
-        view.addSubview(headerLabel)
+
+        refreshButton = NSButton(title: "Refresh", target: self, action: #selector(refreshTapped))
+        refreshButton.bezelStyle = .rounded
+
+        let headerStack = NSStackView(views: [headerLabel, NSView(), refreshButton])
+        headerStack.orientation = .horizontal
+        headerStack.alignment = .centerY
+        headerStack.spacing = 8
+        headerStack.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(headerStack)
+
+        outlineView = NSOutlineView()
+        outlineView.headerView = nil
+        outlineView.usesAlternatingRowBackgroundColors = false
+        outlineView.rowSizeStyle = .small
+        outlineView.delegate = self
+        outlineView.dataSource = self
+
+        let column = NSTableColumn(identifier: NSUserInterfaceItemIdentifier("OutlineColumn"))
+        column.title = ""
+        outlineView.addTableColumn(column)
+        outlineView.outlineTableColumn = column
+
+        let scrollView = NSScrollView()
+        scrollView.hasVerticalScroller = true
+        scrollView.documentView = outlineView
+        scrollView.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(scrollView)
 
         NSLayoutConstraint.activate([
-            headerLabel.topAnchor.constraint(equalTo: view.topAnchor, constant: 16),
-            headerLabel.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 16)
+            headerStack.topAnchor.constraint(equalTo: view.topAnchor, constant: 12),
+            headerStack.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 12),
+            headerStack.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -12),
+
+            scrollView.topAnchor.constraint(equalTo: headerStack.bottomAnchor, constant: 8),
+            scrollView.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 8),
+            scrollView.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -8),
+            scrollView.bottomAnchor.constraint(equalTo: view.bottomAnchor, constant: -8)
         ])
 
         applyTheme(ThemeManager.shared.currentTheme)
+    }
+
+    func update(with entries: [EditorViewController.OutlineEntry]) {
+        roots = buildTree(from: entries)
+        outlineView.reloadData()
+        outlineView.expandItem(nil, expandChildren: true)
+    }
+
+    private func buildTree(from entries: [EditorViewController.OutlineEntry]) -> [Node] {
+        var stack: [Node] = []
+        var roots: [Node] = []
+
+        for entry in entries {
+            let node = Node(title: entry.title, level: entry.level, page: entry.page, range: entry.range)
+
+            while let last = stack.last, last.level >= node.level {
+                stack.removeLast()
+            }
+
+            if let parent = stack.last {
+                parent.children.append(node)
+            } else {
+                roots.append(node)
+            }
+
+            stack.append(node)
+        }
+
+        return roots
     }
 
     func applyTheme(_ theme: AppTheme) {
         view.wantsLayer = true
         view.layer?.backgroundColor = theme.outlineBackground.cgColor
         headerLabel.textColor = theme.textColor
+        outlineView.backgroundColor = theme.outlineBackground
     }
+
+    @objc private func refreshTapped() {
+        // The content controller will rebuild and call update(with:)
+        NotificationCenter.default.post(name: Notification.Name("QuillPilotOutlineRefresh"), object: nil)
+    }
+}
+
+extension OutlineViewController: NSOutlineViewDataSource, NSOutlineViewDelegate {
+    func outlineView(_ outlineView: NSOutlineView, numberOfChildrenOfItem item: Any?) -> Int {
+        if let node = item as? Node { return node.children.count }
+        return roots.count
+    }
+
+    func outlineView(_ outlineView: NSOutlineView, isItemExpandable item: Any) -> Bool {
+        guard let node = item as? Node else { return false }
+        return !node.children.isEmpty
+    }
+
+    func outlineView(_ outlineView: NSOutlineView, child index: Int, ofItem item: Any?) -> Any {
+        if let node = item as? Node { return node.children[index] }
+        return roots[index]
+    }
+
+    func outlineView(_ outlineView: NSOutlineView, viewFor tableColumn: NSTableColumn?, item: Any) -> NSView? {
+        guard let node = item as? Node else { return nil }
+
+        let identifier = NSUserInterfaceItemIdentifier("OutlineCell")
+        let cell: NSTableCellView
+        if let existing = outlineView.makeView(withIdentifier: identifier, owner: self) as? NSTableCellView {
+            cell = existing
+        } else {
+            let titleField = NSTextField(labelWithString: "")
+            titleField.lineBreakMode = .byTruncatingTail
+
+            let pageField = NSTextField(labelWithString: "")
+            pageField.font = NSFont.systemFont(ofSize: 10)
+            pageField.textColor = NSColor.secondaryLabelColor
+
+            let stack = NSStackView(views: [titleField, NSView(), pageField])
+            stack.orientation = .horizontal
+            stack.alignment = .centerY
+            stack.spacing = 6
+            stack.translatesAutoresizingMaskIntoConstraints = false
+
+            cell = NSTableCellView()
+            cell.identifier = identifier
+            cell.addSubview(stack)
+            cell.textField = titleField
+
+            NSLayoutConstraint.activate([
+                stack.leadingAnchor.constraint(equalTo: cell.leadingAnchor, constant: 4),
+                stack.trailingAnchor.constraint(equalTo: cell.trailingAnchor, constant: -4),
+                stack.topAnchor.constraint(equalTo: cell.topAnchor, constant: 2),
+                stack.bottomAnchor.constraint(equalTo: cell.bottomAnchor, constant: -2)
+            ])
+
+            stack.setHuggingPriority(.defaultLow, for: .horizontal)
+            pageField.setContentCompressionResistancePriority(.required, for: .horizontal)
+        }
+
+        let titleField = cell.textField!
+        let pageField = (cell.subviews.first { $0 is NSStackView } as? NSStackView)?.arrangedSubviews.last as? NSTextField
+
+        let color = levelColors[min(node.level, levelColors.count - 1)]
+        let fontSize: CGFloat = node.level == 0 ? 13 : (node.level == 1 ? 12 : 11)
+        titleField.font = NSFont.systemFont(ofSize: fontSize, weight: node.level <= 1 ? .semibold : .regular)
+        titleField.textColor = color
+        titleField.stringValue = node.title
+
+        if let page = node.page {
+            pageField?.stringValue = "p. \(page)"
+        } else {
+            pageField?.stringValue = ""
+        }
+
+        return cell
+    }
+
+    func outlineViewSelectionDidChange(_ notification: Notification) {
+        let selectedRow = outlineView.selectedRow
+        guard selectedRow >= 0, let node = outlineView.item(atRow: selectedRow) as? Node else { return }
+        let entry = EditorViewController.OutlineEntry(title: node.title, level: node.level, range: node.range, page: node.page)
+        onSelect?(entry)
+    }
+}
 }
 
 // MARK: - Export Formats
@@ -1587,6 +1778,7 @@ extension ContentViewController: EditorViewControllerDelegate {
         if let text = editorViewController?.textView?.string {
             onStatsUpdate?(text)
         }
+        refreshOutline()
     }
 
     func titleDidChange(_ title: String) {

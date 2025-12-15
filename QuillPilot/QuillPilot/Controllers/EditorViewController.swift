@@ -20,6 +20,8 @@ protocol EditorViewControllerDelegate: AnyObject {
 
 class EditorViewController: NSViewController {
 
+    private let styleAttributeKey = NSAttributedString.Key("QuillStyleName")
+
     private let standardMargin: CGFloat = 72
     private let standardIndentStep: CGFloat = 36
     var editorZoom: CGFloat = 1.4  // 140% zoom for better readability on large displays
@@ -488,7 +490,8 @@ class EditorViewController: NSViewController {
         textView.typingAttributes = [
             .font: font,
             .foregroundColor: currentTheme.textColor,
-            .paragraphStyle: paragraphStyle.copy() as Any
+            .paragraphStyle: paragraphStyle.copy() as Any,
+            styleAttributeKey: "Body Text"
         ]
 
         delegate?.textDidChange()
@@ -937,6 +940,63 @@ case "Book Subtitle":
         default:
             break
         }
+
+        applyStyleAttribute(styleName)
+    }
+
+    private func applyStyleAttribute(_ styleName: String) {
+        textView.typingAttributes[styleAttributeKey] = styleName
+
+        if let selected = textView.selectedRanges.first as? NSRange {
+            let paragraphRange = (textView.string as NSString).paragraphRange(for: selected)
+            textView.textStorage?.addAttribute(styleAttributeKey, value: styleName, range: paragraphRange)
+        }
+    }
+
+    struct OutlineEntry {
+        let title: String
+        let level: Int
+        let range: NSRange
+        let page: Int?
+    }
+
+    func buildOutlineEntries() -> [OutlineEntry] {
+        guard let storage = textView.textStorage, let layoutManager = textView.layoutManager, let textContainer = textView.textContainer else {
+            return []
+        }
+
+        let levels: [String: Int] = [
+            "Part Title": 0,
+            "Chapter Number": 1,
+            "Chapter Title": 1,
+            "Heading 1": 1,
+            "Heading 2": 2,
+            "Heading 3": 3
+        ]
+
+        var results: [OutlineEntry] = []
+        let fullString = storage.string as NSString
+        var location = 0
+        while location < fullString.length {
+            let paragraphRange = fullString.paragraphRange(for: NSRange(location: location, length: 0))
+            guard paragraphRange.length > 0 else { break }
+
+            let styleName = storage.attribute(styleAttributeKey, at: paragraphRange.location, effectiveRange: nil) as? String
+            if let styleName, let level = levels[styleName] {
+                let rawTitle = fullString.substring(with: paragraphRange).trimmingCharacters(in: .whitespacesAndNewlines)
+                if !rawTitle.isEmpty {
+                    let glyphRange = layoutManager.glyphRange(forCharacterRange: paragraphRange, actualCharacterRange: nil)
+                    let bounds = layoutManager.boundingRect(forGlyphRange: glyphRange, in: textContainer)
+                    let pageHeight = pageHeight * editorZoom
+                    let pageIndex = max(0, Int(floor(bounds.midY / pageHeight))) + 1
+                    results.append(OutlineEntry(title: rawTitle, level: level, range: paragraphRange, page: pageIndex))
+                }
+            }
+
+            location = NSMaxRange(paragraphRange)
+        }
+
+        return results
     }
 
     private func manuscriptBaseParagraphStyle() -> NSParagraphStyle {

@@ -1158,7 +1158,7 @@ case "Book Subtitle":
 
             // Header (at top of page in flipped coordinates)
             if showHeaders {
-                let headerContent = headerText.isEmpty ? "\(manuscriptAuthor.uppercased()) / \(manuscriptTitle.uppercased())" : headerText
+                let headerContent = headerText
                 let headerField = NSTextField(labelWithString: headerContent)
                 headerField.isEditable = false
                 headerField.isSelectable = false
@@ -1198,7 +1198,6 @@ case "Book Subtitle":
                 } else {
                     footerContent = ""
                 }
-
                 let footerField = NSTextField(labelWithString: footerContent)
                 footerField.isEditable = false
                 footerField.isSelectable = false

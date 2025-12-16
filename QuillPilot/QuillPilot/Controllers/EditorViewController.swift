@@ -45,6 +45,36 @@ class EditorViewController: NSViewController {
     private class FlippedView: NSView {
         override var isFlipped: Bool { true }
     }
+
+    private class PageContainerView: NSView {
+        override var isFlipped: Bool { true }
+        var numPages: Int = 1
+        var pageHeight: CGFloat = 792
+        var pageGap: CGFloat = 20
+        var pageBackgroundColor: NSColor = .white
+
+        // Disable layer backing for this view to ensure draw() is called
+        override var wantsUpdateLayer: Bool { false }
+
+        override func draw(_ dirtyRect: NSRect) {
+            super.draw(dirtyRect)
+
+            // Draw ALL page backgrounds regardless of dirtyRect
+            // The dirtyRect optimization was preventing pages beyond a certain point from rendering
+            for pageNum in 0..<numPages {
+                let pageY = CGFloat(pageNum) * (pageHeight + pageGap)
+                let pageRect = NSRect(x: 0, y: pageY, width: bounds.width, height: pageHeight)
+
+                pageBackgroundColor.setFill()
+                pageRect.fill()
+
+                // Draw page border
+                NSColor.lightGray.setStroke()
+                NSBezierPath.stroke(pageRect)
+            }
+        }
+    }
+
     private var headerViews: [NSTextField] = []
     private var footerViews: [NSTextField] = []
 
@@ -63,7 +93,8 @@ class EditorViewController: NSViewController {
 
     override func loadView() {
         view = NSView()
-        view.wantsLayer = true
+        // Avoid layer-backing at this level to prevent huge-layer size limits on tall documents
+        view.wantsLayer = false
     }
 
     override func viewDidLoad() {
@@ -81,14 +112,18 @@ class EditorViewController: NSViewController {
         scrollView.drawsBackground = true
         scrollView.contentInsets = NSEdgeInsets(top: 0, left: 12, bottom: 50, right: 12)
 
-        // Page container grows to fit all content (starts at US Letter height)
-        pageContainer = FlippedView(frame: NSRect(x: 0, y: 0, width: 612 * editorZoom, height: 10000 * editorZoom))
-        pageContainer.wantsLayer = true
-        pageContainer.layer?.borderWidth = 1
-        pageContainer.layer?.masksToBounds = false  // Don't clip - let page grow
-        pageContainer.layer?.shadowOpacity = 0.35
-        pageContainer.layer?.shadowOffset = NSSize(width: 0, height: 2)
-        pageContainer.layer?.shadowRadius = 10
+        // Page container grows to fit all content (support up to 2000 pages)
+        // 2000 pages × 792pt + 1999 gaps × 20pt = ~1,624,000pts
+        let initialPageContainer = PageContainerView(frame: NSRect(x: 0, y: 0, width: 612 * editorZoom, height: 1650000 * editorZoom))
+        initialPageContainer.pageHeight = pageHeight * editorZoom
+        initialPageContainer.pageGap = 20
+        pageContainer = initialPageContainer
+        // Disable layer backing to allow traditional view drawing for all pages
+        // pageContainer.wantsLayer = true
+        // pageContainer.layer?.masksToBounds = false
+        // pageContainer.layer?.shadowOpacity = 0.35
+        // pageContainer.layer?.shadowOffset = NSSize(width: 0, height: 2)
+        // pageContainer.layer?.shadowRadius = 10
 
         // Create text view that grows with content
         let textFrame = pageContainer.bounds.insetBy(dx: standardMargin * editorZoom, dy: standardMargin * editorZoom)
@@ -124,7 +159,8 @@ class EditorViewController: NSViewController {
 
         // Document view holds the page - use FlippedView so y=0 is at top
         documentView = FlippedView()
-        documentView.wantsLayer = true
+        // Keep document view non-layer-backed so very tall content is not clipped by CALayer limits
+        documentView.wantsLayer = false
         documentView.addSubview(pageContainer)
 
         scrollView.documentView = documentView
@@ -311,7 +347,9 @@ class EditorViewController: NSViewController {
         let currentRange = textView.selectedRange()
 
         // Force layout to ensure we have accurate glyph information
-        layoutManager.ensureLayout(for: textView.textContainer!)
+            layoutManager.ensureLayout(for: textView.textContainer!)
+            let fullGlyphRange = NSRange(location: 0, length: layoutManager.numberOfGlyphs)
+            layoutManager.ensureLayout(forGlyphRange: fullGlyphRange)
 
         // Get the current Y position of the cursor
         let glyphRange = layoutManager.glyphRange(forCharacterRange: currentRange, actualCharacterRange: nil)
@@ -1526,26 +1564,24 @@ case "Book Subtitle":
             textContainer.size = NSSize(width: textWidth, height: CGFloat.greatestFiniteMagnitude)
             layoutManager.textContainerChangedGeometry(textContainer)
 
-            // Force layout and iterate line fragments to accumulate height into pages
-            layoutManager.ensureLayout(for: textContainer)
-            let glyphRange = layoutManager.glyphRange(for: textContainer)
-            var currentHeight: CGFloat = 0
-            var pages: Int = 1
-            layoutManager.enumerateLineFragments(forGlyphRange: glyphRange) { _, usedRect, _, _, _ in
-                let lineHeight = usedRect.height
-                if currentHeight + lineHeight > pageTextHeight {
-                    pages += 1
-                    currentHeight = lineHeight
-                } else {
-                    currentHeight += lineHeight
-                }
-            }
+            // Invalidate and force layout for all glyphs to get an accurate total height
+            let fullRange = NSRange(location: 0, length: textView.string.utf16.count)
+            layoutManager.invalidateLayout(forCharacterRange: fullRange, actualCharacterRange: nil)
+            let fullGlyphRange = NSRange(location: 0, length: layoutManager.numberOfGlyphs)
+            layoutManager.ensureLayout(forGlyphRange: fullGlyphRange)
+            let usedHeight = layoutManager.usedRect(for: textContainer).height
+            let measuredPages = Int(ceil(usedHeight / pageTextHeight))
 
-            numPages = max(1, pages)
+            // Heuristic safety net: estimate pages from character count to avoid undercounts on very long texts
+            let charsPerPageEstimate = 1200.0  // rough average for 12pt double-spaced text
+            let estimatedPages = Int(ceil(Double(textView.string.utf16.count) / charsPerPageEstimate))
+
+            numPages = max(1, max(measuredPages, estimatedPages))
 
             // Restore container state
             textContainer.size = oldSize
             textContainer.exclusionPaths = oldExclusions
+            layoutManager.textContainerChangedGeometry(textContainer)
         }
 
         // Total height includes all pages plus gaps between them
@@ -1553,6 +1589,15 @@ case "Book Subtitle":
         let totalHeight = CGFloat(numPages) * scaledPageHeight + CGFloat(numPages - 1) * pageGap
 
         pageContainer.frame = NSRect(x: pageX, y: 0, width: scaledPageWidth, height: totalHeight)
+
+        // Update page container to draw correct number of pages
+        if let pageContainerView = pageContainer as? PageContainerView {
+            pageContainerView.numPages = numPages
+            pageContainerView.pageHeight = scaledPageHeight
+            pageContainerView.pageGap = pageGap
+            // Force complete redraw of all pages
+            pageContainerView.setNeedsDisplay(pageContainerView.bounds)
+        }
 
         // Text view spans all pages with proper margins for header/footer
         let activeHeaderHeight = showHeaders ? headerHeight : 0
@@ -1622,7 +1667,7 @@ case "Book Subtitle":
         updateShadowPath()
 
         let docWidth = max(visibleWidth, pageX + scaledPageWidth + 20)
-        let docHeight = totalHeight + 1000
+        let docHeight = max(totalHeight + 1000, 1650000 * editorZoom)  // Ensure enough space for large documents
         documentView.frame = NSRect(x: 0, y: 0, width: docWidth, height: docHeight)
     }
 
@@ -1644,19 +1689,8 @@ case "Book Subtitle":
         for pageNum in 1...numPages {
             let pageY = CGFloat(pageNum - 1) * (scaledPageHeight + 20) // 20pt gap between pages
 
-            // Create page background to visualize page boundaries (behind text)
-            let pageView = NSView(frame: NSRect(
-                x: 0,
-                y: pageY,
-                width: scaledPageWidth,
-                height: scaledPageHeight
-            ))
-            pageView.wantsLayer = true
-            pageView.layer?.backgroundColor = currentTheme.pageBackground.cgColor
-            pageView.layer?.borderWidth = 1
-            pageView.layer?.borderColor = currentTheme.pageBorder.cgColor
-            pageContainer.addSubview(pageView, positioned: .below, relativeTo: textView)
-            pages.append(pageView)
+            // Note: Page backgrounds are now drawn by PageContainerView.draw(_:)
+            // This ensures proper page separation and performance
 
             // Header (top band)
             if showHeaders {
@@ -2036,11 +2070,19 @@ case "Book Subtitle":
         view.layer?.backgroundColor = theme.pageAround.cgColor
         scrollView?.backgroundColor = theme.pageAround
         documentView?.layer?.backgroundColor = theme.pageAround.cgColor
-        pageContainer?.layer?.backgroundColor = theme.pageBackground.cgColor
+
+        // Update PageContainerView to draw with theme colors
+        if let pageContainerView = pageContainer as? PageContainerView {
+            pageContainerView.pageBackgroundColor = theme.pageBackground
+            pageContainerView.needsDisplay = true
+        } else {
+            pageContainer?.layer?.backgroundColor = theme.pageBackground.cgColor
+        }
+
         pageContainer?.layer?.borderColor = theme.pageBorder.cgColor
         let shadowColor = NSColor.black.withAlphaComponent(theme == .day ? 0.3 : 0.65)
         pageContainer?.layer?.shadowColor = shadowColor.cgColor
-        textView?.backgroundColor = theme.pageBackground
+        textView?.backgroundColor = .clear  // Transparent so page backgrounds show through
         textView?.textColor = theme.textColor
         textView?.insertionPointColor = theme.insertionPointColor
 

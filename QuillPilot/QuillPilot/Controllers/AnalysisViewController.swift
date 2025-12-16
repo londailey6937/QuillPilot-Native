@@ -14,7 +14,6 @@ class AnalysisViewController: NSViewController {
     private var documentView: NSView!
     private var contentStack: NSStackView!
     private var resultsStack: NSStackView!
-    private var analyzeButton: NSButton!
     private var currentTheme: AppTheme = ThemeManager.shared.currentTheme
 
     var analyzeCallback: (() -> Void)?
@@ -69,21 +68,12 @@ class AnalysisViewController: NSViewController {
         let header = makeLabel("Document Analysis", size: 18, bold: true)
         contentStack.addArrangedSubview(header)
 
-        // Analyze button
-        analyzeButton = NSButton(title: "Analyze", target: self, action: #selector(handleAnalyzeClick))
-        analyzeButton.bezelStyle = .rounded
-        analyzeButton.translatesAutoresizingMaskIntoConstraints = false
-        NSLayoutConstraint.activate([
-            analyzeButton.widthAnchor.constraint(greaterThanOrEqualToConstant: 120)
-        ])
-        contentStack.addArrangedSubview(analyzeButton)
-
-        // Separator
-        let separator = NSBox()
-        separator.boxType = .separator
-        separator.translatesAutoresizingMaskIntoConstraints = false
-        separator.widthAnchor.constraint(equalToConstant: 200).isActive = true
-        contentStack.addArrangedSubview(separator)
+        // Info label
+        let info = makeLabel("Analysis updates automatically.", size: 13, bold: false)
+        info.textColor = .secondaryLabelColor
+        info.lineBreakMode = .byWordWrapping
+        info.maximumNumberOfLines = 0
+        contentStack.addArrangedSubview(info)
 
         // Results container
         resultsStack = NSStackView()
@@ -94,7 +84,7 @@ class AnalysisViewController: NSViewController {
         contentStack.addArrangedSubview(resultsStack)
 
         // Initial placeholder
-        let placeholder = makeLabel("Click Analyze to see document statistics.", size: 13, bold: false)
+        let placeholder = makeLabel("Analysis will appear here as it runs.", size: 13, bold: false)
         placeholder.textColor = .secondaryLabelColor
         placeholder.lineBreakMode = .byWordWrapping
         placeholder.maximumNumberOfLines = 0
@@ -108,17 +98,6 @@ class AnalysisViewController: NSViewController {
             contentStack.bottomAnchor.constraint(equalTo: documentView.bottomAnchor)
         ])
     }
-
-    @objc private func handleAnalyzeClick() {
-        NSLog("✅ Analysis button clicked on instance: \(Unmanaged.passUnretained(self).toOpaque())")
-        if analyzeCallback == nil {
-            NSLog("❌ ERROR: analyzeCallback is nil!")
-        } else {
-            NSLog("🔗 Invoking analyzeCallback...")
-            analyzeCallback?()
-        }
-    }
-
 
     func displayResults(_ results: AnalysisResults) {
         NSLog("📊 Displaying results: \(results.wordCount) words")

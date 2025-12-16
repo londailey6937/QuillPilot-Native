@@ -8,15 +8,14 @@
 
 import Cocoa
 import UniformTypeIdentifiers
+import ObjectiveC
 
 protocol FormattingToolbarDelegate: AnyObject {
     func formattingToolbarDidIndent(_ toolbar: FormattingToolbar)
     func formattingToolbarDidOutdent(_ toolbar: FormattingToolbar)
     func formattingToolbarDidSave(_ toolbar: FormattingToolbar)
 
-    func formattingToolbar(_ toolbar
-
-                           : FormattingToolbar, didSelectStyle styleName: String)
+    func formattingToolbar(_ toolbar: FormattingToolbar, didSelectStyle styleName: String)
 
     func formattingToolbarDidToggleBold(_ toolbar: FormattingToolbar)
     func formattingToolbarDidToggleItalic(_ toolbar: FormattingToolbar)
@@ -38,6 +37,7 @@ protocol FormattingToolbarDelegate: AnyObject {
     func formattingToolbarDidInsertImage(_ toolbar: FormattingToolbar)
     func formattingToolbarDidColumns(_ toolbar: FormattingToolbar)
     func formattingToolbarDidDeleteColumn(_ toolbar: FormattingToolbar)
+    func formattingToolbarDidInsertTable(_ toolbar: FormattingToolbar)
     func formattingToolbarDidClearAll(_ toolbar: FormattingToolbar)
 
     func formattingToolbarDidOpenStyleEditor(_ toolbar: FormattingToolbar)
@@ -53,6 +53,11 @@ class MainWindowController: NSWindowController {
     private var themeObserver: NSObjectProtocol?
     private var headerFooterSettingsWindow: HeaderFooterSettingsWindow?
     private var styleEditorWindow: StyleEditorWindowController?
+
+    // Sheet field references
+    private var columnsSheetField: NSTextField?
+    private var tableRowsSheetField: NSTextField?
+    private var tableColsSheetField: NSTextField?
 
     convenience init() {
         let window = NSWindow(
@@ -324,6 +329,130 @@ extension MainWindowController: FormattingToolbarDelegate {
         mainContentViewController.applyStyle(styleName)
     }
 
+    func formattingToolbarDidColumns(_ toolbar: FormattingToolbar) {
+        let theme = ThemeManager.shared.currentTheme
+
+        // Create a custom window for the sheet
+        let sheetWindow = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 400, height: 350),
+            styleMask: [.titled, .closable],
+            backing: .buffered,
+            defer: false
+        )
+        sheetWindow.title = "Column Operations"
+        sheetWindow.backgroundColor = theme.toolbarBackground
+
+        let containerView = NSView()
+        containerView.wantsLayer = true
+        containerView.layer?.backgroundColor = theme.toolbarBackground.cgColor
+        sheetWindow.contentView = containerView
+
+        let stackView = NSStackView()
+        stackView.orientation = .vertical
+        stackView.spacing = 16
+        stackView.alignment = .leading
+        stackView.distribution = .gravityAreas
+        stackView.translatesAutoresizingMaskIntoConstraints = false
+        stackView.edgeInsets = NSEdgeInsets(top: 20, left: 20, bottom: 60, right: 20)
+
+        containerView.addSubview(stackView)
+        NSLayoutConstraint.activate([
+            stackView.topAnchor.constraint(equalTo: containerView.topAnchor),
+            stackView.leadingAnchor.constraint(equalTo: containerView.leadingAnchor),
+            stackView.trailingAnchor.constraint(equalTo: containerView.trailingAnchor),
+            stackView.bottomAnchor.constraint(equalTo: containerView.bottomAnchor, constant: -60)
+        ])
+
+        // Set columns section
+        let setLabel = NSTextField(labelWithString: "Set Number of Columns:")
+        setLabel.font = NSFont.boldSystemFont(ofSize: 12)
+        setLabel.textColor = theme.textColor
+        stackView.addArrangedSubview(setLabel)
+
+        let setStack = NSStackView()
+        setStack.orientation = .horizontal
+        setStack.spacing = 8
+        setStack.alignment = .centerY
+
+        let columnsField = NSTextField(string: "2")
+        columnsField.placeholderString = "2-4"
+        columnsField.alignment = .center
+        columnsField.widthAnchor.constraint(equalToConstant: 60).isActive = true
+        columnsField.textColor = theme.textColor
+        columnsField.backgroundColor = theme.pageBackground
+
+        let setBtn = NSButton(title: "Set Columns", target: nil, action: nil)
+        setBtn.bezelStyle = .rounded
+        setBtn.contentTintColor = theme.headerBackground
+
+        setStack.addArrangedSubview(columnsField)
+        setStack.addArrangedSubview(setBtn)
+        stackView.addArrangedSubview(setStack)
+
+        // Separator
+        let sep1 = NSBox()
+        sep1.boxType = .separator
+        stackView.addArrangedSubview(sep1)
+
+        // Column operations
+        let insertBtn = NSButton(title: "Insert Column", target: nil, action: nil)
+        insertBtn.bezelStyle = .rounded
+        insertBtn.contentTintColor = theme.headerBackground
+        stackView.addArrangedSubview(insertBtn)
+
+        let breakBtn = NSButton(title: "Insert Column Break", target: nil, action: nil)
+        breakBtn.bezelStyle = .rounded
+        breakBtn.contentTintColor = theme.headerBackground
+        stackView.addArrangedSubview(breakBtn)
+
+        let deleteBtn = NSButton(title: "Delete Column at Cursor", target: nil, action: nil)
+        deleteBtn.bezelStyle = .rounded
+        deleteBtn.contentTintColor = theme.headerBackground
+        stackView.addArrangedSubview(deleteBtn)
+
+        // Done Button
+        let doneBtn = NSButton(title: "Done", target: nil, action: nil)
+        doneBtn.bezelStyle = .rounded
+        doneBtn.contentTintColor = theme.headerBackground
+        doneBtn.translatesAutoresizingMaskIntoConstraints = false
+        containerView.addSubview(doneBtn)
+
+        NSLayoutConstraint.activate([
+            doneBtn.bottomAnchor.constraint(equalTo: containerView.bottomAnchor, constant: -20),
+            doneBtn.trailingAnchor.constraint(equalTo: containerView.trailingAnchor, constant: -20),
+            doneBtn.widthAnchor.constraint(equalToConstant: 80)
+        ])
+
+        // Hook up actions
+        setBtn.target = self
+        setBtn.action = #selector(handleSetColumnsFromSheet(_:))
+
+        insertBtn.target = self
+        insertBtn.action = #selector(handleInsertColumnFromSheet)
+
+        breakBtn.target = self
+        breakBtn.action = #selector(handleInsertColumnBreakFromDialog)
+
+        deleteBtn.target = self
+        deleteBtn.action = #selector(handleDeleteColumnFromDialog)
+
+        doneBtn.target = self
+        doneBtn.action = #selector(handleCloseColumnsSheet(_:))
+
+        // Store field reference
+        self.columnsSheetField = columnsField
+
+        self.window?.beginSheet(sheetWindow, completionHandler: nil)
+    }
+
+    func formattingToolbar(_ toolbar: FormattingToolbar, didChangeFontFamily family: String) {
+        mainContentViewController.setFontFamily(family)
+    }
+
+    func formattingToolbar(_ toolbar: FormattingToolbar, didChangeFontSize size: CGFloat) {
+        mainContentViewController.setFontSize(size)
+    }
+
     func formattingToolbarDidToggleBold(_ toolbar: FormattingToolbar) {
         mainContentViewController.toggleBold()
     }
@@ -334,14 +463,6 @@ extension MainWindowController: FormattingToolbarDelegate {
 
     func formattingToolbarDidToggleUnderline(_ toolbar: FormattingToolbar) {
         mainContentViewController.toggleUnderline()
-    }
-
-    func formattingToolbar(_ toolbar: FormattingToolbar, didChangeFontFamily family: String) {
-        mainContentViewController.setFontFamily(family)
-    }
-
-    func formattingToolbar(_ toolbar: FormattingToolbar, didChangeFontSize size: CGFloat) {
-        mainContentViewController.setFontSize(size)
     }
 
     func formattingToolbarDidAlignLeft(_ toolbar: FormattingToolbar) {
@@ -380,32 +501,268 @@ extension MainWindowController: FormattingToolbarDelegate {
         mainContentViewController.editorViewController.insertColumnBreak()
     }
 
-    func formattingToolbarDidColumns(_ toolbar: FormattingToolbar) {
-        // Prompt for number of columns
-        let alert = NSAlert()
-        alert.messageText = "Multi-Column Layout"
-        alert.informativeText = "Enter the number of columns (1-3):"
-        alert.alertStyle = .informational
+    func formattingToolbarDidDeleteColumn(_ toolbar: FormattingToolbar) {
+        mainContentViewController.editorViewController.deleteColumnAtCursor()
+    }
 
-        let input = NSTextField(frame: NSRect(x: 0, y: 0, width: 200, height: 24))
-        input.stringValue = "\(mainContentViewController.editorViewController.getColumnCount())"
-        input.placeholderString = "1, 2, or 3"
-        alert.accessoryView = input
+    func formattingToolbarDidInsertTable(_ toolbar: FormattingToolbar) {
+        let theme = ThemeManager.shared.currentTheme
 
-        alert.addButton(withTitle: "OK")
-        alert.addButton(withTitle: "Cancel")
+        // Create a custom window for the sheet
+        let sheetWindow = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 400, height: 450),
+            styleMask: [.titled, .closable],
+            backing: .buffered,
+            defer: false
+        )
+        sheetWindow.title = "Table Operations"
+        sheetWindow.backgroundColor = theme.toolbarBackground
 
-        if alert.runModal() == .alertFirstButtonReturn {
-            if let columns = Int(input.stringValue), columns >= 1, columns <= 3 {
-                mainContentViewController.editorViewController.setColumnCount(columns)
-            } else {
-                presentErrorAlert(message: "Invalid Input", details: "Please enter a number between 1 and 3.")
+        let containerView = NSView()
+        containerView.wantsLayer = true
+        containerView.layer?.backgroundColor = theme.toolbarBackground.cgColor
+        sheetWindow.contentView = containerView
+
+        let stackView = NSStackView()
+        stackView.orientation = .vertical
+        stackView.spacing = 16
+        stackView.alignment = .leading
+        stackView.distribution = .gravityAreas
+        stackView.translatesAutoresizingMaskIntoConstraints = false
+        stackView.edgeInsets = NSEdgeInsets(top: 20, left: 20, bottom: 60, right: 20)
+
+        containerView.addSubview(stackView)
+        NSLayoutConstraint.activate([
+            stackView.topAnchor.constraint(equalTo: containerView.topAnchor),
+            stackView.leadingAnchor.constraint(equalTo: containerView.leadingAnchor),
+            stackView.trailingAnchor.constraint(equalTo: containerView.trailingAnchor),
+            stackView.bottomAnchor.constraint(equalTo: containerView.bottomAnchor, constant: -60)
+        ])
+
+        // Insert Table Section
+        let insertLabel = NSTextField(labelWithString: "Insert New Table:")
+        insertLabel.font = NSFont.boldSystemFont(ofSize: 12)
+        insertLabel.textColor = theme.textColor
+        stackView.addArrangedSubview(insertLabel)
+
+        let insertStack = NSStackView()
+        insertStack.orientation = .horizontal
+        insertStack.spacing = 8
+        insertStack.alignment = .centerY
+
+        let rowsLabel = NSTextField(labelWithString: "Rows:")
+        rowsLabel.textColor = theme.textColor
+        let rowsField = NSTextField(string: "3")
+        rowsField.placeholderString = "3"
+        rowsField.widthAnchor.constraint(equalToConstant: 50).isActive = true
+        rowsField.textColor = theme.textColor
+        rowsField.backgroundColor = theme.pageBackground
+
+        let colsLabel = NSTextField(labelWithString: "Columns:")
+        colsLabel.textColor = theme.textColor
+        let colsField = NSTextField(string: "3")
+        colsField.placeholderString = "3"
+        colsField.widthAnchor.constraint(equalToConstant: 50).isActive = true
+        colsField.textColor = theme.textColor
+        colsField.backgroundColor = theme.pageBackground
+
+        insertStack.addArrangedSubview(rowsLabel)
+        insertStack.addArrangedSubview(rowsField)
+        insertStack.addArrangedSubview(colsLabel)
+        insertStack.addArrangedSubview(colsField)
+        stackView.addArrangedSubview(insertStack)
+
+        let insertBtn = NSButton(title: "Insert Table", target: nil, action: nil)
+        insertBtn.bezelStyle = .rounded
+        insertBtn.contentTintColor = theme.headerBackground
+        stackView.addArrangedSubview(insertBtn)
+
+        // Separator
+        let separator1 = NSBox()
+        separator1.boxType = .separator
+        stackView.addArrangedSubview(separator1)
+
+        // Edit Table Section
+        let editLabel = NSTextField(labelWithString: "Edit Existing Table:")
+        editLabel.font = NSFont.boldSystemFont(ofSize: 12)
+        editLabel.textColor = theme.textColor
+        stackView.addArrangedSubview(editLabel)
+
+        let addRowBtn = NSButton(title: "Insert Row", target: nil, action: nil)
+        addRowBtn.bezelStyle = .rounded
+        addRowBtn.contentTintColor = theme.headerBackground
+
+        let addColBtn = NSButton(title: "Insert Column", target: nil, action: nil)
+        addColBtn.bezelStyle = .rounded
+        addColBtn.contentTintColor = theme.headerBackground
+
+        let deleteRowBtn = NSButton(title: "Delete Row", target: nil, action: nil)
+        deleteRowBtn.bezelStyle = .rounded
+        deleteRowBtn.contentTintColor = theme.headerBackground
+
+        let deleteColBtn = NSButton(title: "Delete Column", target: nil, action: nil)
+        deleteColBtn.bezelStyle = .rounded
+        deleteColBtn.contentTintColor = theme.headerBackground
+
+        let deleteTableBtn = NSButton(title: "Delete Table", target: nil, action: nil)
+        deleteTableBtn.bezelStyle = .rounded
+        deleteTableBtn.contentTintColor = theme.headerBackground
+
+        stackView.addArrangedSubview(addRowBtn)
+        stackView.addArrangedSubview(addColBtn)
+        stackView.addArrangedSubview(deleteRowBtn)
+        stackView.addArrangedSubview(deleteColBtn)
+        stackView.addArrangedSubview(deleteTableBtn)
+
+        // Done Button
+        let doneBtn = NSButton(title: "Done", target: nil, action: nil)
+        doneBtn.bezelStyle = .rounded
+        doneBtn.contentTintColor = theme.headerBackground
+        doneBtn.translatesAutoresizingMaskIntoConstraints = false
+        containerView.addSubview(doneBtn)
+
+        NSLayoutConstraint.activate([
+            doneBtn.bottomAnchor.constraint(equalTo: containerView.bottomAnchor, constant: -20),
+            doneBtn.trailingAnchor.constraint(equalTo: containerView.trailingAnchor, constant: -20),
+            doneBtn.widthAnchor.constraint(equalToConstant: 80)
+        ])
+
+        // Set up button actions
+        insertBtn.target = self
+        insertBtn.action = #selector(handleInsertTableFromSheet(_:))
+
+        addRowBtn.target = self
+        addRowBtn.action = #selector(handleAddTableRow)
+
+        addColBtn.target = self
+        addColBtn.action = #selector(handleAddTableColumn)
+
+        deleteRowBtn.target = self
+        deleteRowBtn.action = #selector(handleDeleteTableRow)
+
+        deleteColBtn.target = self
+        deleteColBtn.action = #selector(handleDeleteTableColumn)
+
+        deleteTableBtn.target = self
+        deleteTableBtn.action = #selector(handleDeleteTable)
+
+        doneBtn.target = self
+        doneBtn.action = #selector(handleCloseTableSheet(_:))
+
+        // Store field references
+        self.tableRowsSheetField = rowsField
+        self.tableColsSheetField = colsField
+
+        self.window?.beginSheet(sheetWindow, completionHandler: nil)
+    }
+
+    @objc private func handleSetColumnsFromDialog(_ sender: NSButton) {
+        guard let columnsField = objc_getAssociatedObject(sender, "columnsField") as? NSTextField,
+              let alert = objc_getAssociatedObject(sender, "alert") as? NSAlert else { return }
+
+        let columns = Int(columnsField.stringValue) ?? 1
+        mainContentViewController.editorViewController.setColumnCount(columns)
+        alert.window.makeFirstResponder(nil)
+    }
+
+    @objc private func handleInsertColumnBreakFromDialog() {
+        mainContentViewController.editorViewController.insertColumnBreak()
+    }
+
+    @objc private func handleDeleteColumnFromDialog() {
+        mainContentViewController.editorViewController.deleteColumnAtCursor()
+    }
+
+    @objc private func handleSetColumnsFromSheet(_ sender: NSButton) {
+        guard let columnsField = self.columnsSheetField else { return }
+        let clamped = max(2, min(4, Int(columnsField.stringValue) ?? 2))
+        NSLog("handleSetColumnsFromSheet: field value='\(columnsField.stringValue)' clamped=\(clamped)")
+
+        // Close sheet first, then insert after window becomes key
+        if let window = sender.window {
+            self.window?.endSheet(window)
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [weak self] in
+                self?.mainContentViewController.editorViewController.setColumnCount(clamped)
             }
         }
     }
 
-    func formattingToolbarDidDeleteColumn(_ toolbar: FormattingToolbar) {
-        mainContentViewController.editorViewController.deleteColumnAtCursor()
+    @objc private func handleInsertColumnFromSheet() {
+        let current = mainContentViewController.editorViewController.getColumnCount()
+        let next = max(2, min(4, current + 1))
+
+        // Close sheet first, then insert after window becomes key
+        if let window = self.window?.attachedSheet {
+            self.window?.endSheet(window)
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [weak self] in
+                self?.mainContentViewController.editorViewController.setColumnCount(next)
+            }
+        }
+    }
+
+    @objc private func handleCloseColumnsSheet(_ sender: NSButton) {
+        guard let window = sender.window else { return }
+        let clamped = max(2, min(4, Int(self.columnsSheetField?.stringValue ?? "2") ?? 2))
+        NSLog("handleCloseColumnsSheet: field value='\(self.columnsSheetField?.stringValue ?? "nil")' clamped=\(clamped)")
+
+        self.window?.endSheet(window)
+        self.columnsSheetField = nil
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [weak self] in
+            self?.mainContentViewController.editorViewController.setColumnCount(clamped)
+        }
+    }
+
+    @objc private func handleInsertTableFromSheet(_ sender: NSButton) {
+        guard let rowsField = self.tableRowsSheetField,
+              let colsField = self.tableColsSheetField else { return }
+
+        let rows = max(1, min(10, Int(rowsField.stringValue) ?? 3))
+        let cols = max(1, min(6, Int(colsField.stringValue) ?? 3))
+        NSLog("handleInsertTableFromSheet: rows='\(rowsField.stringValue)'->\(rows) cols='\(colsField.stringValue)'->\(cols)")
+
+        // Close sheet first, then insert after window becomes key
+        if let window = sender.window {
+            self.window?.endSheet(window)
+            self.tableRowsSheetField = nil
+            self.tableColsSheetField = nil
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [weak self] in
+                self?.mainContentViewController.editorViewController.insertTable(rows: rows, columns: cols)
+            }
+        }
+    }
+
+    @objc private func handleCloseTableSheet(_ sender: NSButton) {
+        guard let window = sender.window else { return }
+        let rows = max(1, min(10, Int(self.tableRowsSheetField?.stringValue ?? "3") ?? 3))
+        let cols = max(1, min(6, Int(self.tableColsSheetField?.stringValue ?? "3") ?? 3))
+        NSLog("handleCloseTableSheet: rows='\(self.tableRowsSheetField?.stringValue ?? "nil")'->\(rows) cols='\(self.tableColsSheetField?.stringValue ?? "nil")'->\(cols)")
+
+        self.window?.endSheet(window)
+        self.tableRowsSheetField = nil
+        self.tableColsSheetField = nil
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [weak self] in
+            self?.mainContentViewController.editorViewController.insertTable(rows: rows, columns: cols)
+        }
+    }
+
+    @objc private func handleAddTableRow() {
+        mainContentViewController.editorViewController.addTableRow()
+    }
+
+    @objc private func handleAddTableColumn() {
+        mainContentViewController.editorViewController.addTableColumn()
+    }
+
+    @objc private func handleDeleteTableRow() {
+        mainContentViewController.editorViewController.deleteTableRow()
+    }
+
+    @objc private func handleDeleteTableColumn() {
+        mainContentViewController.editorViewController.deleteTableColumn()
+    }
+
+    @objc private func handleDeleteTable() {
+        mainContentViewController.editorViewController.deleteTable()
     }
 
     func formattingToolbarDidClearAll(_ toolbar: FormattingToolbar) {
@@ -1058,10 +1415,10 @@ class FormattingToolbar: NSView {
         underlineBtn.toolTip = "Underline"
 
         // Alignment
-                let alignLeftBtn = createToolbarButton("≡")
-                let alignCenterBtn = createToolbarButton("≣")
-                let alignRightBtn = createToolbarButton("≡")
-                let justifyBtn = createToolbarButton("≣")
+                let alignLeftBtn = createToolbarButton("≡", fontSize: 20)
+                let alignCenterBtn = createToolbarButton("≣", fontSize: 20)
+                let alignRightBtn = createToolbarButton("≡", fontSize: 20)
+                let justifyBtn = createToolbarButton("≣", fontSize: 20)
                 alignLeftBtn.target = self
                 alignLeftBtn.action = #selector(alignLeftTapped)
                 alignLeftBtn.toolTip = "Align Left"
@@ -1086,30 +1443,25 @@ class FormattingToolbar: NSView {
         numberingBtn.toolTip = "Numbered List"
 
         // Images
-        imageButton = createToolbarButton("🖼")
+        imageButton = createToolbarButton("⧉", fontSize: 20) // Image silhouette icon
         imageButton.target = self
         imageButton.action = #selector(imageTapped)
         imageButton.toolTip = "Insert Image"
 
         // Layout
-        let columnsBtn = createToolbarButton("⫼") // Column icon
-        let deleteColumnBtn = createToolbarButton("⊟") // Delete column icon
+        let columnsBtn = createToolbarButton("⫼", fontSize: 20) // Column icon
+        let tableBtn = createToolbarButton("⊞", fontSize: 20) // Table icon
         let pageBreakBtn = createToolbarButton("⤓") // Page break icon
-        let columnBreakBtn = createToolbarButton("⏎") // Column break icon
+
         columnsBtn.target = self
         columnsBtn.action = #selector(columnsTapped)
-        columnsBtn.toolTip = "Insert Columns"
-        deleteColumnBtn.target = self
-        deleteColumnBtn.action = #selector(deleteColumnTapped)
-        deleteColumnBtn.toolTip = "Delete Column at Cursor"
+        columnsBtn.toolTip = "Columns"
+        tableBtn.target = self
+        tableBtn.action = #selector(tableTapped)
+        tableBtn.toolTip = "Table Operations"
         pageBreakBtn.target = self
         pageBreakBtn.action = #selector(pageBreakTapped)
         pageBreakBtn.toolTip = "Page Break"
-        columnBreakBtn.target = self
-        columnBreakBtn.action = #selector(columnBreakTapped)
-        columnBreakBtn.toolTip = "Column Break"
-
-        // Clear all button
         let clearBtn = createToolbarButton("⌧") // Clear icon
         clearBtn.target = self
         clearBtn.action = #selector(clearAllTapped)
@@ -1130,7 +1482,7 @@ class FormattingToolbar: NSView {
             alignLeftBtn, alignCenterBtn, alignRightBtn, justifyBtn,
             bulletsBtn, numberingBtn,
             imageButton,
-            columnsBtn, deleteColumnBtn, columnBreakBtn, pageBreakBtn,
+            columnsBtn, tableBtn, pageBreakBtn,
             outdentBtn, indentBtn,
             clearBtn
         ])
@@ -1148,14 +1500,14 @@ class FormattingToolbar: NSView {
         ])
     }
 
-    private func createToolbarButton(_ title: String, weight: NSFont.Weight = .regular, isItalic: Bool = false, isUnderlined: Bool = false) -> NSButton {
+    private func createToolbarButton(_ title: String, weight: NSFont.Weight = .regular, isItalic: Bool = false, isUnderlined: Bool = false, fontSize: CGFloat = 14) -> NSButton {
         let button = NSButton(title: title, target: nil, action: nil)
         button.bezelStyle = .texturedRounded
         button.setButtonType(.momentaryPushIn)
 
-        var font = NSFont.systemFont(ofSize: 14, weight: weight)
+        var font = NSFont.systemFont(ofSize: fontSize, weight: weight)
         if isItalic {
-            font = NSFont(descriptor: font.fontDescriptor.withSymbolicTraits(.italic), size: 14) ?? font
+            font = NSFont(descriptor: font.fontDescriptor.withSymbolicTraits(.italic), size: fontSize) ?? font
         }
         button.font = font
         return registerControl(button)
@@ -1173,9 +1525,10 @@ class FormattingToolbar: NSView {
         themedControls.forEach { control in
             if let button = control as? NSButton {
                 button.contentTintColor = theme.textColor
+                let currentFontSize = button.font?.pointSize ?? 14
                 let attributes: [NSAttributedString.Key: Any] = [
                     .foregroundColor: theme.textColor,
-                    .font: button.font ?? NSFont.systemFont(ofSize: 14)
+                    .font: button.font ?? NSFont.systemFont(ofSize: currentFontSize)
                 ]
                 button.attributedTitle = NSAttributedString(string: button.title, attributes: attributes)
             } else if let popup = control as? NSPopUpButton {
@@ -1261,6 +1614,10 @@ class FormattingToolbar: NSView {
 
     @objc private func deleteColumnTapped() {
         delegate?.formattingToolbarDidDeleteColumn(self)
+    }
+
+    @objc private func tableTapped() {
+        delegate?.formattingToolbarDidInsertTable(self)
     }
 
     @objc private func clearAllTapped() {

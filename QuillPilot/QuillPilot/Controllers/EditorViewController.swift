@@ -161,6 +161,9 @@ class EditorViewController: NSViewController {
         textView.textContainerInset = NSSize(width: 0, height: 0)
         textView.delegate = self
 
+        // Enable drag and drop for images
+        textView.registerForDraggedTypes([.fileURL, .tiff, .png])
+
         let font = NSFont(name: "Times New Roman", size: 12) ?? NSFont.systemFont(ofSize: 12)
         textView.font = font
 
@@ -2181,23 +2184,41 @@ case "Book Subtitle":
     }
 
     func getColumnCount() -> Int {
-        return textView.textContainer?.layoutManager?.textContainers.count ?? 1
+        guard let textStorage = textView.textStorage else { return 1 }
+        let cursor = textView.selectedRange().location
+        guard cursor < textStorage.length else { return 1 }
+
+        let attrs = textStorage.attributes(at: cursor, effectiveRange: nil)
+        if let paragraphStyle = attrs[.paragraphStyle] as? NSParagraphStyle,
+           let textBlocks = paragraphStyle.textBlocks as? [NSTextTableBlock],
+           let block = textBlocks.first {
+            return block.table.numberOfColumns
+        }
+        return 1
     }
 
     func setColumnCount(_ columns: Int) {
-        guard columns >= 2, columns <= 4 else { return }
-        guard let textStorage = textView.textStorage else { return }
+        NSLog("setColumnCount called with \(columns)")
+        guard columns >= 2, columns <= 4 else {
+            NSLog("setColumnCount: columns out of range (must be 2-4)")
+            return
+        }
+        guard let textStorage = textView.textStorage else {
+            NSLog("setColumnCount: no textStorage")
+            return
+        }
+
+        // Ensure text view can accept input
+        textView.window?.makeFirstResponder(textView)
 
         let currentRange = textView.selectedRange()
+        NSLog("setColumnCount: inserting at location \(currentRange.location)")
 
-        // Create text table for columns
+        // Create text table for columns - but with NO visible borders
         let textTable = NSTextTable()
         textTable.numberOfColumns = columns
         textTable.layoutAlgorithm = .automaticLayoutAlgorithm
-        textTable.collapsesBorders = false
-
-        // Light brown border color
-        let borderColor = (ThemeManager.shared.currentTheme.headerBackground).withAlphaComponent(0.5)
+        textTable.collapsesBorders = true
 
         // Create attributed string with table blocks for each column
         let result = NSMutableAttributedString()
@@ -2205,37 +2226,282 @@ case "Book Subtitle":
         for i in 0..<columns {
             let textBlock = NSTextTableBlock(table: textTable, startingRow: 0, rowSpan: 1, startingColumn: i, columnSpan: 1)
 
-            // Add borders to each column
-            textBlock.setBorderColor(borderColor, for: .minX)
-            textBlock.setBorderColor(borderColor, for: .maxX)
-            textBlock.setBorderColor(borderColor, for: .minY)
-            textBlock.setBorderColor(borderColor, for: .maxY)
+            // Separator line on the right of each column except the last one
+            if i < columns - 1 {
+                textBlock.setBorderColor(currentTheme.textColor.withAlphaComponent(0.2), for: .maxX)
+                textBlock.setWidth(1.0, type: .absoluteValueType, for: .border, edge: .maxX)
+            } else {
+                textBlock.setBorderColor(.clear, for: .maxX)
+                textBlock.setWidth(0.0, type: .absoluteValueType, for: .border, edge: .maxX)
+            }
 
-            // Set border width
-            textBlock.setWidth(1.0, type: .absoluteValueType, for: .border)
+            textBlock.setBorderColor(.clear, for: .minX)
+            textBlock.setBorderColor(.clear, for: .minY)
+            textBlock.setBorderColor(.clear, for: .maxY)
 
-            // Add padding for better spacing
-            textBlock.setWidth(8.0, type: .absoluteValueType, for: .padding, edge: .minX)
-            textBlock.setWidth(8.0, type: .absoluteValueType, for: .padding, edge: .maxX)
-            textBlock.setWidth(8.0, type: .absoluteValueType, for: .padding, edge: .minY)
-            textBlock.setWidth(8.0, type: .absoluteValueType, for: .padding, edge: .maxY)
-
-            let paragraphStyle = NSMutableParagraphStyle()
-            paragraphStyle.textBlocks = [textBlock]
+            // Add padding for column spacing
+            textBlock.setWidth(12.0, type: .absoluteValueType, for: .padding, edge: .minX)
+            textBlock.setWidth(12.0, type: .absoluteValueType, for: .padding, edge: .maxX)
+            textBlock.setWidth(0.0, type: .absoluteValueType, for: .padding, edge: .minY)
+            textBlock.setWidth(0.0, type: .absoluteValueType, for: .padding, edge: .maxY)
 
             var attrs = textView.typingAttributes
-            attrs[.paragraphStyle] = paragraphStyle
 
-            let columnContent = NSAttributedString(string: "Column \(i + 1) content...\n", attributes: attrs)
+            // Apply Body Text style if available
+            if let bodyStyle = StyleCatalog.shared.style(named: "Body Text") {
+                let pStyle = paragraphStyle(from: bodyStyle)
+                if let mutablePStyle = pStyle.mutableCopy() as? NSMutableParagraphStyle {
+                    mutablePStyle.textBlocks = [textBlock]
+                    attrs[.paragraphStyle] = mutablePStyle
+                }
+                attrs[.font] = font(from: bodyStyle)
+                attrs[.foregroundColor] = color(fromHex: bodyStyle.textColorHex, fallback: currentTheme.textColor)
+            } else {
+                let paragraphStyle = NSMutableParagraphStyle()
+                paragraphStyle.textBlocks = [textBlock]
+                attrs[.paragraphStyle] = paragraphStyle
+            }
+
+            let columnContent = NSAttributedString(string: "Column \(i + 1)\n", attributes: attrs)
             result.append(columnContent)
         }
 
-        // Add final newline to exit table
+        // Add final newline to exit columns
         let finalNewline = NSAttributedString(string: "\n", attributes: textView.typingAttributes)
         result.append(finalNewline)
 
         textStorage.insert(result, at: currentRange.location)
         textView.setSelectedRange(NSRange(location: currentRange.location + 1, length: 0))
+        NSLog("setColumnCount: columns inserted successfully")
+    }
+
+    // MARK: - Table System (separate from columns)
+
+    func insertTable(rows: Int, columns: Int) {
+        NSLog("insertTable called with rows=\(rows), columns=\(columns)")
+        guard rows >= 1, rows <= 10, columns >= 1, columns <= 6 else {
+            NSLog("insertTable: rows/columns out of range")
+            return
+        }
+        guard let textStorage = textView.textStorage else {
+            NSLog("insertTable: no textStorage")
+            return
+        }
+
+        // Ensure text view can accept input
+        textView.window?.makeFirstResponder(textView)
+
+        let currentRange = textView.selectedRange()
+        NSLog("insertTable: inserting at location \(currentRange.location)")
+        let borderColor = (ThemeManager.shared.currentTheme.headerBackground).withAlphaComponent(0.5)
+
+        let result = NSMutableAttributedString()
+
+        // Create table with visible borders
+        let textTable = NSTextTable()
+        textTable.numberOfColumns = columns
+        textTable.layoutAlgorithm = .automaticLayoutAlgorithm
+        textTable.collapsesBorders = false
+
+        for row in 0..<rows {
+            for col in 0..<columns {
+                let textBlock = NSTextTableBlock(table: textTable, startingRow: row, rowSpan: 1, startingColumn: col, columnSpan: 1)
+
+                // Add visible borders to table cells
+                textBlock.setBorderColor(borderColor, for: .minX)
+                textBlock.setBorderColor(borderColor, for: .maxX)
+                textBlock.setBorderColor(borderColor, for: .minY)
+                textBlock.setBorderColor(borderColor, for: .maxY)
+                textBlock.setWidth(1.0, type: .absoluteValueType, for: .border)
+
+                // Cell padding
+                textBlock.setWidth(8.0, type: .absoluteValueType, for: .padding, edge: .minX)
+                textBlock.setWidth(8.0, type: .absoluteValueType, for: .padding, edge: .maxX)
+                textBlock.setWidth(4.0, type: .absoluteValueType, for: .padding, edge: .minY)
+                textBlock.setWidth(4.0, type: .absoluteValueType, for: .padding, edge: .maxY)
+
+                let paragraphStyle = NSMutableParagraphStyle()
+                paragraphStyle.textBlocks = [textBlock]
+                paragraphStyle.alignment = .left
+
+                var attrs = textView.typingAttributes
+                attrs[.paragraphStyle] = paragraphStyle
+
+                let cellContent = NSAttributedString(string: " \n", attributes: attrs)
+                result.append(cellContent)
+            }
+        }
+
+        // Exit table with clean paragraph
+        let exitAttrs: [NSAttributedString.Key: Any] = [
+            .font: textView.font ?? NSFont.systemFont(ofSize: 12),
+            .paragraphStyle: textView.defaultParagraphStyle ?? NSParagraphStyle.default
+        ]
+        result.append(NSAttributedString(string: "\n", attributes: exitAttrs))
+
+        textStorage.insert(result, at: currentRange.location)
+        textView.setSelectedRange(NSRange(location: currentRange.location + 1, length: 0))
+        NSLog("insertTable: table inserted successfully")
+    }
+
+    // MARK: - Table Editing Methods
+
+    func addTableRow() {
+        guard let textStorage = textView.textStorage else { return }
+        let currentRange = textView.selectedRange()
+
+        // Find the table at cursor
+        guard let (table, _, row, col) = findTableAtLocation(currentRange.location) else {
+            return
+        }
+
+        let borderColor = (ThemeManager.shared.currentTheme.headerBackground).withAlphaComponent(0.5)
+        let result = NSMutableAttributedString()
+
+        // Add a new row after the current row
+        for i in 0..<table.numberOfColumns {
+            let textBlock = NSTextTableBlock(table: table, startingRow: row + 1, rowSpan: 1, startingColumn: i, columnSpan: 1)
+
+            textBlock.setBorderColor(borderColor, for: .minX)
+            textBlock.setBorderColor(borderColor, for: .maxX)
+            textBlock.setBorderColor(borderColor, for: .minY)
+            textBlock.setBorderColor(borderColor, for: .maxY)
+            textBlock.setWidth(1.0, type: .absoluteValueType, for: .border)
+
+            textBlock.setWidth(8.0, type: .absoluteValueType, for: .padding, edge: .minX)
+            textBlock.setWidth(8.0, type: .absoluteValueType, for: .padding, edge: .maxX)
+            textBlock.setWidth(4.0, type: .absoluteValueType, for: .padding, edge: .minY)
+            textBlock.setWidth(4.0, type: .absoluteValueType, for: .padding, edge: .maxY)
+
+            let paragraphStyle = NSMutableParagraphStyle()
+            paragraphStyle.textBlocks = [textBlock]
+            paragraphStyle.alignment = .left
+
+            var attrs = textView.typingAttributes
+            attrs[.paragraphStyle] = paragraphStyle
+
+            let cellContent = NSAttributedString(string: " \n", attributes: attrs)
+            result.append(cellContent)
+        }
+
+        // Find insertion point (after current paragraph)
+        var insertLocation = currentRange.location
+        let string = textStorage.string as NSString
+        let paragraphRange = string.paragraphRange(for: currentRange)
+        insertLocation = NSMaxRange(paragraphRange)
+
+        textStorage.insert(result, at: insertLocation)
+    }
+
+    func addTableColumn() {
+        // Adding a column requires rebuilding the entire table
+        // This is complex with NSTextTable, so we'll notify the user
+        let alert = NSAlert()
+        alert.messageText = "Add Column"
+        alert.informativeText = "To add a column, please insert a new table with the desired column count."
+        alert.alertStyle = .informational
+        alert.addButton(withTitle: "OK")
+        alert.runModal()
+    }
+
+    func deleteTableRow() {
+        guard let textStorage = textView.textStorage else { return }
+        let currentRange = textView.selectedRange()
+
+        // Find the table at cursor
+        guard let (table, _, _, _) = findTableAtLocation(currentRange.location) else {
+            return
+        }
+
+        // Delete the current paragraph (row)
+        let string = textStorage.string as NSString
+        let paragraphRange = string.paragraphRange(for: currentRange)
+
+        // Delete all cells in this row
+        var rangeToDelete = paragraphRange
+        for _ in 1..<table.numberOfColumns {
+            let nextParagraphStart = NSMaxRange(rangeToDelete)
+            if nextParagraphStart < textStorage.length {
+                let nextParagraphRange = string.paragraphRange(for: NSRange(location: nextParagraphStart, length: 0))
+                rangeToDelete = NSUnionRange(rangeToDelete, nextParagraphRange)
+            }
+        }
+
+        textStorage.deleteCharacters(in: rangeToDelete)
+    }
+
+    func deleteTableColumn() {
+        let alert = NSAlert()
+        alert.messageText = "Delete Column"
+        alert.informativeText = "To delete a column, please recreate the table with the desired column count."
+        alert.alertStyle = .informational
+        alert.addButton(withTitle: "OK")
+        alert.runModal()
+    }
+
+    func deleteTable() {
+        guard let textStorage = textView.textStorage else { return }
+        let currentRange = textView.selectedRange()
+
+        // Find the table at cursor
+        guard let (table, startLocation, _, _) = findTableAtLocation(currentRange.location) else {
+            return
+        }
+
+        // Find the entire range of the table
+        var endLocation = startLocation
+        let string = textStorage.string as NSString
+
+        // Scan forward to find all cells in the table
+        while endLocation < textStorage.length {
+            let attrs = textStorage.attributes(at: endLocation, effectiveRange: nil)
+            if let style = attrs[.paragraphStyle] as? NSParagraphStyle,
+               let blocks = style.textBlocks as? [NSTextTableBlock],
+               let block = blocks.first,
+               block.table === table {
+                let paragraphRange = string.paragraphRange(for: NSRange(location: endLocation, length: 0))
+                endLocation = NSMaxRange(paragraphRange)
+            } else {
+                break
+            }
+        }
+
+        let tableRange = NSRange(location: startLocation, length: endLocation - startLocation)
+        textStorage.deleteCharacters(in: tableRange)
+    }
+
+    private func findTableAtLocation(_ location: Int) -> (table: NSTextTable, startLocation: Int, row: Int, column: Int)? {
+        guard let textStorage = textView.textStorage, location < textStorage.length else { return nil }
+
+        let attrs = textStorage.attributes(at: location, effectiveRange: nil)
+        guard let style = attrs[.paragraphStyle] as? NSParagraphStyle,
+              let blocks = style.textBlocks as? [NSTextTableBlock],
+              let block = blocks.first else {
+            return nil
+        }
+
+        let table = block.table
+        let row = block.startingRow
+        let column = block.startingColumn
+
+        // Find start of table
+        var startLocation = location
+        let string = textStorage.string as NSString
+        while startLocation > 0 {
+            let prevLocation = startLocation - 1
+            let prevAttrs = textStorage.attributes(at: prevLocation, effectiveRange: nil)
+            if let prevStyle = prevAttrs[.paragraphStyle] as? NSParagraphStyle,
+               let prevBlocks = prevStyle.textBlocks as? [NSTextTableBlock],
+               let prevBlock = prevBlocks.first,
+               prevBlock.table === table {
+                let paragraphRange = string.paragraphRange(for: NSRange(location: prevLocation, length: 0))
+                startLocation = paragraphRange.location
+            } else {
+                break
+            }
+        }
+
+        return (table, startLocation, row, column)
     }
 
     func deleteColumnAtCursor() {

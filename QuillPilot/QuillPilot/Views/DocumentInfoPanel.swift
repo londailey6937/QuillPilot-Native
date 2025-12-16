@@ -46,7 +46,7 @@ class DocumentInfoPanel: NSView {
         titleField.delegate = self
         titleField.translatesAutoresizingMaskIntoConstraints = false
 
-        // Author field
+        // Author field (hidden per request)
         authorField = NSTextField()
         authorField.isBordered = false
         authorField.isEditable = true
@@ -57,6 +57,7 @@ class DocumentInfoPanel: NSView {
         authorField.placeholderString = "Author Name"
         authorField.delegate = self
         authorField.translatesAutoresizingMaskIntoConstraints = false
+        authorField.isHidden = true
 
         // Word count
         wordCountLabel = createStatLabel("Words: 0")
@@ -77,8 +78,8 @@ class DocumentInfoPanel: NSView {
         statsStack.distribution = .equalSpacing
         statsStack.translatesAutoresizingMaskIntoConstraints = false
 
-        // Vertical stack: title, author, then stats
-        stackView = NSStackView(views: [titleField, authorField, statsStack])
+        // Vertical stack: title, stats (author hidden)
+        stackView = NSStackView(views: [titleField, statsStack])
         stackView.orientation = .vertical
         stackView.spacing = 4
         stackView.alignment = .centerX

@@ -48,7 +48,7 @@ class HeaderFooterSettingsWindow: NSWindowController {
         contentView.addSubview(headerLabel)
 
         headerTextField = NSTextField()
-        headerTextField.placeholderString = "Leave empty to use Author / Title"
+        headerTextField.placeholderString = "Header text (optional)"
         headerTextField.translatesAutoresizingMaskIntoConstraints = false
         contentView.addSubview(headerTextField)
 

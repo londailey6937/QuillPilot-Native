@@ -147,8 +147,8 @@ final class StyleCatalog {
 
     private static func fictionStyles() -> [String: StyleDefinition] {
         var styles: [String: StyleDefinition] = [:]
-        styles["Body Text"] = baseDefinition(font: "Times New Roman", size: 12)
-        styles["Body Text – No Indent"] = baseDefinition(font: "Times New Roman", size: 12, firstLine: 0)
+        styles["Body Text"] = baseDefinition(font: "Times New Roman", size: 14)
+        styles["Body Text – No Indent"] = baseDefinition(font: "Times New Roman", size: 14, firstLine: 0)
         styles["Book Title"] = baseDefinition(font: "Times New Roman", size: 24, bold: false, alignment: .center, before: 0, after: 18, headIndent: 0, firstLine: 0)
         styles["Book Subtitle"] = baseDefinition(font: "Times New Roman", size: 16, alignment: .center, before: 0, after: 12, headIndent: 0, firstLine: 0)
         styles["Author Name"] = baseDefinition(font: "Times New Roman", size: 14, alignment: .center, before: 0, after: 12, headIndent: 0, firstLine: 0)

@@ -7,205 +7,239 @@
 //
 
 import Cocoa
-import ObjectiveC
-
-private class FlippedClipView: NSView {
-    override var isFlipped: Bool { true }
-}
-
-private var themedLabelColorKey: UInt8 = 0
-
-private extension NSTextField {
-    var themedHexColor: String? {
-        get { objc_getAssociatedObject(self, &themedLabelColorKey) as? String }
-        set { objc_setAssociatedObject(self, &themedLabelColorKey, newValue, .OBJC_ASSOCIATION_COPY_NONATOMIC) }
-    }
-}
 
 class AnalysisViewController: NSViewController {
 
     private var scrollView: NSScrollView!
-    private var stackView: NSStackView!
-    private var documentView: FlippedClipView!
+    private var documentView: NSView!
+    private var contentStack: NSStackView!
+    private var resultsStack: NSStackView!
+    private var analyzeButton: NSButton!
     private var currentTheme: AppTheme = ThemeManager.shared.currentTheme
+
+    var analyzeCallback: (() -> Void)?
 
     override func loadView() {
         view = NSView()
+        view.wantsLayer = true
     }
 
     override func viewDidLoad() {
         super.viewDidLoad()
-        setupUI()
+        setupScrollView()
+        setupContent()
+        applyTheme(currentTheme)
     }
 
-    private func setupUI() {
+    private func setupScrollView() {
         scrollView = NSScrollView()
         scrollView.translatesAutoresizingMaskIntoConstraints = false
         scrollView.hasVerticalScroller = true
         scrollView.hasHorizontalScroller = false
-        scrollView.borderType = .noBorder
+        scrollView.autohidesScrollers = true
         scrollView.drawsBackground = true
 
-        documentView = FlippedClipView()
-        documentView.wantsLayer = true
-
-        stackView = NSStackView()
-        stackView.orientation = .vertical
-        stackView.alignment = .leading
-        stackView.spacing = 16
-        stackView.edgeInsets = NSEdgeInsets(top: 20, left: 20, bottom: 20, right: 20)
-
-        let headerLabel = createLabel("Analysis Results", fontSize: 18, bold: true, color: "#1F1B1A")
-        stackView.addArrangedSubview(headerLabel)
-
-        let placeholderLabel = createLabel("Write some text and click Analyze to see results here.",
-                           fontSize: 14,
-                           bold: false,
-                           color: "#684F3C")
-        placeholderLabel.maximumNumberOfLines = 0
-        stackView.addArrangedSubview(placeholderLabel)
-
-        documentView.addSubview(stackView)
+        documentView = NSView()
+        documentView.translatesAutoresizingMaskIntoConstraints = false
         scrollView.documentView = documentView
-        view.addSubview(scrollView)
 
+        view.addSubview(scrollView)
         NSLayoutConstraint.activate([
             scrollView.topAnchor.constraint(equalTo: view.topAnchor),
             scrollView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             scrollView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
-            scrollView.bottomAnchor.constraint(equalTo: view.bottomAnchor)
+            scrollView.bottomAnchor.constraint(equalTo: view.bottomAnchor),
+            documentView.leadingAnchor.constraint(equalTo: scrollView.contentView.leadingAnchor),
+            documentView.trailingAnchor.constraint(equalTo: scrollView.contentView.trailingAnchor),
+            documentView.topAnchor.constraint(equalTo: scrollView.contentView.topAnchor),
+            documentView.bottomAnchor.constraint(equalTo: scrollView.contentView.bottomAnchor),
+            documentView.widthAnchor.constraint(equalTo: scrollView.contentView.widthAnchor)
         ])
-
-        view.wantsLayer = true
-        updateStackViewFrame()
-        applyTheme(currentTheme)
     }
 
-    private func updateStackViewFrame() {
-        let scrollWidth = scrollView.contentView.bounds.width
-        let fittingSize = stackView.fittingSize
-        stackView.frame = NSRect(x: 0, y: 0, width: scrollWidth, height: fittingSize.height)
-        documentView.frame = NSRect(x: 0, y: 0, width: scrollWidth, height: fittingSize.height)
-    }
+    private func setupContent() {
+        contentStack = NSStackView()
+        contentStack.translatesAutoresizingMaskIntoConstraints = false
+        contentStack.orientation = .vertical
+        contentStack.alignment = .leading
+        contentStack.spacing = 16
+        contentStack.edgeInsets = NSEdgeInsets(top: 20, left: 20, bottom: 20, right: 40)
 
-    override func viewDidLayout() {
-        super.viewDidLayout()
-        updateStackViewFrame()
-    }
+        // Header
+        let header = makeLabel("Document Analysis", size: 18, bold: true)
+        contentStack.addArrangedSubview(header)
 
-    func displayResults(_ results: AnalysisResults) {
-        while stackView.arrangedSubviews.count > 1 {
-            if let view = stackView.arrangedSubviews.last {
-                stackView.removeArrangedSubview(view)
-                view.removeFromSuperview()
-            }
-        }
+        // Analyze button
+        analyzeButton = NSButton(title: "Analyze", target: self, action: #selector(handleAnalyzeClick))
+        analyzeButton.bezelStyle = .rounded
+        analyzeButton.translatesAutoresizingMaskIntoConstraints = false
+        NSLayoutConstraint.activate([
+            analyzeButton.widthAnchor.constraint(greaterThanOrEqualToConstant: 120)
+        ])
+        contentStack.addArrangedSubview(analyzeButton)
 
-        addStatistic("Total Words", value: "\(results.wordCount)")
-        addStatistic("Total Sentences", value: "\(results.sentenceCount)")
-        addSeparator()
-
-        addSectionHeader("📊 Paragraph Analysis")
-        addStatistic("Average Length", value: "\(results.averageParagraphLength) words")
-        if !results.longParagraphs.isEmpty {
-            addWarning("⚠️ \(results.longParagraphs.count) paragraph(s) may be too long (>150 words)", color: "#CEBCA7")
-        }
-        addSeparator()
-
-        addSectionHeader("🔍 Passive Voice")
-        if results.passiveVoiceCount > 0 {
-            addWarning("Found \(results.passiveVoiceCount) instance(s) of passive voice", color: "#CEBCA7")
-            for phrase in results.passiveVoicePhrases.prefix(5) {
-                addBulletPoint("• \"\(phrase)\"")
-            }
-        } else {
-            addSuccess("✓ No passive voice detected")
-        }
-        addSeparator()
-
-        addSectionHeader("🌟 Sensory Details")
-        addStatistic("Sensory Words", value: "\(results.sensoryDetailCount)")
-        if results.missingSensoryDetail {
-            addWarning("Consider adding more sensory details to engage readers", color: "#CEBCA7")
-        } else {
-            addSuccess("✓ Good use of sensory language")
-        }
-
-        DispatchQueue.main.async { [weak self] in
-            self?.updateStackViewFrame()
-        }
-    }
-
-    private func addSectionHeader(_ text: String) {
-        let label = createLabel(text, fontSize: 15, bold: true, color: "#1F1B1A")
-        stackView.addArrangedSubview(label)
-    }
-
-    private func addStatistic(_ label: String, value: String) {
-        let text = "\(label): \(value)"
-        let labelView = createLabel(text, fontSize: 13, bold: false, color: "#684F3C")
-        stackView.addArrangedSubview(labelView)
-    }
-
-    private func addWarning(_ text: String, color: String) {
-        let label = createLabel(text, fontSize: 13, bold: false, color: color)
-        label.maximumNumberOfLines = 0
-        stackView.addArrangedSubview(label)
-    }
-
-    private func addSuccess(_ text: String) {
-        let label = createLabel(text, fontSize: 13, bold: false, color: "#684F3C")
-        stackView.addArrangedSubview(label)
-    }
-
-    private func addBulletPoint(_ text: String) {
-        let label = createLabel(text, fontSize: 12, bold: false, color: "#684F3C")
-        label.maximumNumberOfLines = 0
-        stackView.addArrangedSubview(label)
-    }
-
-    private func addSeparator() {
+        // Separator
         let separator = NSBox()
         separator.boxType = .separator
         separator.translatesAutoresizingMaskIntoConstraints = false
         separator.widthAnchor.constraint(equalToConstant: 200).isActive = true
-        stackView.addArrangedSubview(separator)
+        contentStack.addArrangedSubview(separator)
+
+        // Results container
+        resultsStack = NSStackView()
+        resultsStack.translatesAutoresizingMaskIntoConstraints = false
+        resultsStack.orientation = .vertical
+        resultsStack.alignment = .leading
+        resultsStack.spacing = 10
+        contentStack.addArrangedSubview(resultsStack)
+
+        // Initial placeholder
+        let placeholder = makeLabel("Click Analyze to see document statistics.", size: 13, bold: false)
+        placeholder.textColor = .secondaryLabelColor
+        placeholder.lineBreakMode = .byWordWrapping
+        placeholder.maximumNumberOfLines = 0
+        resultsStack.addArrangedSubview(placeholder)
+
+        documentView.addSubview(contentStack)
+        NSLayoutConstraint.activate([
+            contentStack.topAnchor.constraint(equalTo: documentView.topAnchor),
+            contentStack.leadingAnchor.constraint(equalTo: documentView.leadingAnchor),
+            contentStack.trailingAnchor.constraint(equalTo: documentView.trailingAnchor),
+            contentStack.bottomAnchor.constraint(equalTo: documentView.bottomAnchor)
+        ])
     }
 
-    private func createLabel(_ text: String, fontSize: CGFloat, bold: Bool, color: String) -> NSTextField {
+    @objc private func handleAnalyzeClick() {
+        NSLog("✅ Analysis button clicked on instance: \(Unmanaged.passUnretained(self).toOpaque())")
+        if analyzeCallback == nil {
+            NSLog("❌ ERROR: analyzeCallback is nil!")
+        } else {
+            NSLog("🔗 Invoking analyzeCallback...")
+            analyzeCallback?()
+        }
+    }
+
+
+    func displayResults(_ results: AnalysisResults) {
+        NSLog("📊 Displaying results: \(results.wordCount) words")
+
+        // Clear previous results
+        resultsStack.arrangedSubviews.forEach { view in
+            resultsStack.removeArrangedSubview(view)
+            view.removeFromSuperview()
+        }
+
+        guard results.wordCount > 0 else {
+            let msg = makeLabel("No content to analyze.", size: 13, bold: false)
+            msg.textColor = .secondaryLabelColor
+            resultsStack.addArrangedSubview(msg)
+            return
+        }
+
+        // Basic stats
+        addStat("Words", "\(results.wordCount)")
+        addStat("Sentences", "\(results.sentenceCount)")
+        addStat("Reading Level", results.readingLevel)
+        addDivider()
+
+        // Paragraph analysis
+        addHeader("📊 Paragraphs")
+        addStat("Avg Length", "\(results.averageParagraphLength) words")
+        addStat("Dialogue", "\(results.dialoguePercentage)%")
+        if !results.longParagraphs.isEmpty {
+            addWarning("⚠️ \(results.longParagraphs.count) long paragraph(s)")
+        }
+        addDivider()
+
+        // Passive voice
+        addHeader("🔍 Passive Voice")
+        if results.passiveVoiceCount > 0 {
+            addWarning("Found \(results.passiveVoiceCount) instance(s)")
+            for phrase in results.passiveVoicePhrases.prefix(3) {
+                addDetail("• \"\(phrase)\"")
+            }
+        } else {
+            addSuccess("✓ None detected")
+        }
+        addDivider()
+
+        // Adverbs
+        addHeader("🐢 Adverbs")
+        if results.adverbCount > 0 {
+            addWarning("Found \(results.adverbCount)")
+            for phrase in results.adverbPhrases.prefix(3) {
+                addDetail("• \"\(phrase)\"")
+            }
+        } else {
+            addSuccess("✓ Minimal usage")
+        }
+        addDivider()
+
+        // Sensory details
+        addHeader("🌟 Sensory Details")
+        addStat("Count", "\(results.sensoryDetailCount)")
+        if results.missingSensoryDetail {
+            addWarning("Consider adding more")
+        } else {
+            addSuccess("✓ Good usage")
+        }
+    }
+
+    private func makeLabel(_ text: String, size: CGFloat, bold: Bool) -> NSTextField {
         let label = NSTextField(labelWithString: text)
         label.isEditable = false
         label.isBezeled = false
         label.drawsBackground = false
         label.isSelectable = false
-        label.font = bold ? NSFont.boldSystemFont(ofSize: fontSize) : NSFont.systemFont(ofSize: fontSize)
-        label.themedHexColor = color
-        label.textColor = resolvedColor(for: color)
+        label.font = bold ? .boldSystemFont(ofSize: size) : .systemFont(ofSize: size)
+        label.textColor = .labelColor
         return label
     }
 
-    private func resolvedColor(for hex: String) -> NSColor {
-        guard let baseColor = NSColor(hex: hex) else { return currentTheme.textColor }
-        if currentTheme == .day {
-            return baseColor
-        }
-        return baseColor.blended(withFraction: 0.45, of: .white) ?? currentTheme.textColor
+    private func addHeader(_ text: String) {
+        let label = makeLabel(text, size: 14, bold: true)
+        resultsStack.addArrangedSubview(label)
     }
 
-    private func refreshLabelColors(in view: NSView) {
-        if let label = view as? NSTextField {
-            let hex = label.themedHexColor ?? "#1F1B1A"
-            label.textColor = resolvedColor(for: hex)
-        }
-        view.subviews.forEach { refreshLabelColors(in: $0) }
+    private func addStat(_ name: String, _ value: String) {
+        let label = makeLabel("\(name): \(value)", size: 12, bold: false)
+        label.textColor = .secondaryLabelColor
+        resultsStack.addArrangedSubview(label)
+    }
+
+    private func addWarning(_ text: String) {
+        let label = makeLabel(text, size: 12, bold: false)
+        label.textColor = .systemOrange
+        label.lineBreakMode = .byWordWrapping
+        label.maximumNumberOfLines = 0
+        resultsStack.addArrangedSubview(label)
+    }
+
+    private func addSuccess(_ text: String) {
+        let label = makeLabel(text, size: 12, bold: false)
+        label.textColor = .systemGreen
+        resultsStack.addArrangedSubview(label)
+    }
+
+    private func addDetail(_ text: String) {
+        let label = makeLabel(text, size: 11, bold: false)
+        label.textColor = .tertiaryLabelColor
+        label.lineBreakMode = .byWordWrapping
+        label.maximumNumberOfLines = 0
+        resultsStack.addArrangedSubview(label)
+    }
+
+    private func addDivider() {
+        let box = NSBox()
+        box.boxType = .separator
+        box.translatesAutoresizingMaskIntoConstraints = false
+        box.widthAnchor.constraint(equalToConstant: 180).isActive = true
+        resultsStack.addArrangedSubview(box)
     }
 
     func applyTheme(_ theme: AppTheme) {
         currentTheme = theme
-        view.wantsLayer = true
         view.layer?.backgroundColor = theme.analysisBackground.cgColor
         scrollView?.backgroundColor = theme.analysisBackground
-        documentView?.layer?.backgroundColor = theme.analysisBackground.cgColor
-        refreshLabelColors(in: stackView)
     }
 }

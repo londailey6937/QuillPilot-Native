@@ -1340,6 +1340,12 @@ class ContentViewController: NSViewController {
         splitView.addArrangedSubview(analysisViewController.view)
         analysisViewController.view.widthAnchor.constraint(greaterThanOrEqualToConstant: 250).isActive = true
 
+        // Set up analysis callback
+        analysisViewController.analyzeCallback = { [weak self] in
+            NSLog("🔗 Analysis callback triggered")
+            self?.performAnalysis()
+        }
+
         // Encourage symmetric sidebars so the editor column (and page) stays centered in the window.
         let equalSidebarWidths = outlineViewController.view.widthAnchor.constraint(equalTo: analysisViewController.view.widthAnchor)
         equalSidebarWidths.priority = .defaultHigh
@@ -1477,6 +1483,21 @@ class ContentViewController: NSViewController {
     private func applyRulerToEditor(_ ruler: EnhancedRulerView) {
         editorViewController.setPageMargins(left: ruler.leftMargin, right: ruler.rightMargin)
         editorViewController.setFirstLineIndent(ruler.firstLineIndent)
+    }
+
+    private func performAnalysis() {
+        NSLog("🔍 performAnalysis called in ContentViewController")
+
+        guard let text = editorViewController.getTextContent(), !text.isEmpty else {
+            NSLog("⚠️ No text to analyze")
+            return
+        }
+
+        let analysisEngine = AnalysisEngine()
+        let results = analysisEngine.analyzeText(text)
+
+        NSLog("📊 Analysis results: \(results.wordCount) words, \(results.sentenceCount) sentences, \(results.paragraphCount) paragraphs")
+        analysisViewController.displayResults(results)
     }
 }
 
@@ -2419,10 +2440,18 @@ extension ContentViewController: EditorViewControllerDelegate {
             onStatsUpdate?(text)
         }
         refreshOutline()
+
+        // Trigger auto-analysis after a delay
+        NSObject.cancelPreviousPerformRequests(withTarget: self, selector: #selector(performAnalysisDelayed), object: nil)
+        perform(#selector(performAnalysisDelayed), with: nil, afterDelay: 1.5)
     }
 
     func titleDidChange(_ title: String) {
         onTitleChange?(title)
+    }
+
+    @objc private func performAnalysisDelayed() {
+        performAnalysis()
     }
 }
 

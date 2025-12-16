@@ -16,8 +16,12 @@ struct AnalysisResults {
     var longParagraphs: [Int] = []
     var passiveVoiceCount: Int = 0
     var passiveVoicePhrases: [String] = []
+    var adverbCount: Int = 0
+    var adverbPhrases: [String] = []
     var sensoryDetailCount: Int = 0
     var missingSensoryDetail: Bool = false
+    var readingLevel: String = "--"
+    var dialoguePercentage: Int = 0
 }
 
 class AnalysisEngine {
@@ -28,6 +32,11 @@ class AnalysisEngine {
         "been \\w+ed", "being \\w+ed", "be \\w+ed",
         "was written", "were written", "was made", "were made",
         "was given", "were given", "was taken", "were taken"
+    ]
+
+    // Common non-adverb words ending in -ly
+    private let adverbExceptions: Set<String> = [
+        "family", "only", "lovely", "lonely", "friendly", "silly", "ugly", "early", "daily", "weekly", "monthly", "yearly", "holy", "jelly", "belly", "bully", "fly", "rely", "supply", "apply", "reply"
     ]
 
     // Sensory words
@@ -72,9 +81,18 @@ class AnalysisEngine {
         // Passive voice detection
         (results.passiveVoiceCount, results.passiveVoicePhrases) = detectPassiveVoice(text)
 
+        // Adverb detection
+        (results.adverbCount, results.adverbPhrases) = detectAdverbs(text)
+
         // Sensory detail analysis
         results.sensoryDetailCount = countSensoryWords(text)
         results.missingSensoryDetail = results.sensoryDetailCount < (results.wordCount / 50) // Less than 2% sensory words
+
+        // Readability
+        results.readingLevel = calculateReadingLevel(text: text, wordCount: results.wordCount, sentenceCount: results.sentenceCount)
+
+        // Dialogue
+        results.dialoguePercentage = calculateDialoguePercentage(text: text)
 
         return results
     }
@@ -130,5 +148,80 @@ class AnalysisEngine {
         }
 
         return count
+    }
+
+    private func detectAdverbs(_ text: String) -> (Int, [String]) {
+        var count = 0
+        var phrases: [String] = []
+
+        let words = text.components(separatedBy: .whitespacesAndNewlines)
+
+        for word in words {
+            let cleanWord = word.trimmingCharacters(in: .punctuationCharacters).lowercased()
+            if cleanWord.hasSuffix("ly") && !adverbExceptions.contains(cleanWord) && cleanWord.count > 2 {
+                count += 1
+                if phrases.count < 10 && !phrases.contains(cleanWord) {
+                    phrases.append(cleanWord)
+                }
+            }
+        }
+
+        return (count, phrases)
+    }
+
+    private func calculateReadingLevel(text: String, wordCount: Int, sentenceCount: Int) -> String {
+        guard wordCount > 0, sentenceCount > 0 else { return "--" }
+
+        let words = text.components(separatedBy: .whitespacesAndNewlines).filter { !$0.isEmpty }
+        var syllableCount = 0
+        for word in words {
+            syllableCount += countSyllables(word: word)
+        }
+
+        // Flesch-Kincaid Grade Level formula
+        let gradeLevel = 0.39 * (Double(wordCount) / Double(sentenceCount)) + 11.8 * (Double(syllableCount) / Double(wordCount)) - 15.59
+
+        let grade = Int(max(0, min(18, gradeLevel)))
+        return "Grade \(grade)"
+    }
+
+    private func countSyllables(word: String) -> Int {
+        let word = word.lowercased()
+        let vowels: Set<Character> = ["a", "e", "i", "o", "u", "y"]
+        var count = 0
+        var previousWasVowel = false
+
+        for char in word {
+            let isVowel = vowels.contains(char)
+            if isVowel && !previousWasVowel {
+                count += 1
+            }
+            previousWasVowel = isVowel
+        }
+
+        // Adjust for silent e
+        if word.hasSuffix("e") && count > 1 {
+            count -= 1
+        }
+
+        return max(count, 1)
+    }
+
+    private func calculateDialoguePercentage(text: String) -> Int {
+        guard !text.isEmpty else { return 0 }
+
+        let totalLength = text.count
+        var dialogueLength = 0
+        var inDialogue = false
+
+        for char in text {
+            if char == "\"" || char == "“" || char == "”" {
+                inDialogue.toggle()
+            } else if inDialogue {
+                dialogueLength += 1
+            }
+        }
+
+        return Int((Double(dialogueLength) / Double(totalLength)) * 100)
     }
 }

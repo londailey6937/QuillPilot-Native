@@ -647,7 +647,7 @@ class EditorViewController: NSViewController {
         textView.defaultParagraphStyle = neutralParagraph
 
         // Update typing attributes for new text without overwriting existing content
-        let defaultFont = NSFont(name: "Times New Roman", size: 12) ?? NSFont.systemFont(ofSize: 12)
+        let defaultFont = NSFont(name: "Times New Roman", size: 14) ?? NSFont.systemFont(ofSize: 14)
         var newTypingAttributes = textView.typingAttributes
         newTypingAttributes[.font] = defaultFont
         newTypingAttributes[.paragraphStyle] = neutralParagraph
@@ -657,19 +657,12 @@ class EditorViewController: NSViewController {
         // textView.textColor = currentTheme.textColor
         refreshTypingAttributesUsingDefaultParagraphStyle()
 
-        // Final verification of colors after all setup
-        // NSLog("=== FINAL CHECK (after all setup) ===")
-        /*
-        if let storage = textView.textStorage, storage.length > 0 {
-            let attrs = storage.attributes(at: 0, effectiveRange: nil)
-            NSLog("First char color: \(attrs[.foregroundColor] ?? "nil")")
-        }
-        */
-        // NSLog("=====================================")
-
         // Force immediate layout and page resize to accommodate all content
         updatePageCentering()
         scrollToTop()
+
+        // Notify delegate that content changed (for analysis, etc.)
+        NSLog("📄 setAttributedContent complete, notifying delegate")
         delegate?.textDidChange()
     }
 
@@ -781,6 +774,7 @@ class EditorViewController: NSViewController {
     func setPlainTextContent(_ text: String) {
         let attributed = NSAttributedString(string: text, attributes: textView.typingAttributes)
         setAttributedContent(attributed)
+        // Note: delegate?.textDidChange() is called inside setAttributedContent
     }
 
     func clearAll() {

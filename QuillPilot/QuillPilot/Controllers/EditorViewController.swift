@@ -38,6 +38,7 @@ class EditorViewController: NSViewController {
 
     private var imageControlsPopover: NSPopover?
     private var lastImageRange: NSRange?
+    private var imageScaleLabel: NSTextField?
 
     private var scrollView: NSScrollView!
     private var documentView: NSView!
@@ -460,14 +461,18 @@ class EditorViewController: NSViewController {
 
         lastImageRange = attachmentRange
 
+        let maxWidth = pageWidth * editorZoom - standardMargin * 2
+        let currentWidth = (textView.textStorage?.attribute(.attachment, at: attachmentRange.location, effectiveRange: nil) as? NSTextAttachment)?.bounds.width ?? maxWidth
+        let currentScale = max(0.1, min(1.5, currentWidth / maxWidth))
+
         let popover = imageControlsPopover ?? NSPopover()
         popover.behavior = .transient
-        popover.contentSize = NSSize(width: 240, height: 140)
+        popover.contentSize = NSSize(width: 200, height: 150)
 
         let stack = NSStackView()
         stack.orientation = .vertical
-        stack.spacing = 6
-        stack.edgeInsets = NSEdgeInsets(top: 8, left: 8, bottom: 8, right: 8)
+        stack.spacing = 4
+        stack.edgeInsets = NSEdgeInsets(top: 4, left: 4, bottom: 4, right: 4)
 
         func makeButton(_ title: String, action: Selector) -> NSButton {
             let btn = NSButton(title: title, target: self, action: action)
@@ -496,11 +501,28 @@ class EditorViewController: NSViewController {
             makeButton("Delete", action: #selector(deleteImage))
         ])
         replaceDeleteRow.orientation = .horizontal
-        replaceDeleteRow.spacing = 6
+        replaceDeleteRow.spacing = 4
+
+        // Resize slider row
+        let scaleLabel = NSTextField(labelWithString: "100%")
+        scaleLabel.alignment = .right
+        scaleLabel.font = NSFont.systemFont(ofSize: 11)
+        imageScaleLabel = scaleLabel
+
+        let slider = NSSlider(value: currentScale, minValue: 0.25, maxValue: 1.5, target: self, action: #selector(resizeSliderChanged(_:)))
+        slider.isContinuous = true
+
+        let resizeRow = NSStackView(views: [scaleLabel, slider])
+        resizeRow.orientation = .horizontal
+        resizeRow.spacing = 6
+        resizeRow.distribution = .fillProportionally
 
         stack.addArrangedSubview(alignRow)
         stack.addArrangedSubview(moveRow)
         stack.addArrangedSubview(replaceDeleteRow)
+        stack.addArrangedSubview(resizeRow)
+
+        updateScaleLabel(currentScale)
 
         let contentView = NSView()
         contentView.translatesAutoresizingMaskIntoConstraints = false
@@ -525,6 +547,11 @@ class EditorViewController: NSViewController {
         rect.origin.y += textView.textContainerOrigin.y
         popover.show(relativeTo: rect, of: textView, preferredEdge: .maxY)
         window.makeFirstResponder(textView)
+    }
+
+    @objc private func resizeSliderChanged(_ sender: NSSlider) {
+        let scale = CGFloat(sender.doubleValue)
+        resizeImage(toScale: scale)
     }
 
     @objc private func alignImageLeft() { alignImage(.left) }
@@ -588,6 +615,28 @@ class EditorViewController: NSViewController {
 
         textView.didChangeText()
         showImageControlsIfNeeded()
+    }
+
+    private func resizeImage(toScale scale: CGFloat) {
+        guard let storage = textView.textStorage else { return }
+        guard let range = lastImageRange ?? imageAttachmentRange(at: textView.selectedRange().location) else { return }
+        guard let attachment = storage.attribute(.attachment, at: range.location, effectiveRange: nil) as? NSTextAttachment else { return }
+
+        let maxWidth = pageWidth * editorZoom - standardMargin * 2
+        let naturalSize = attachment.image?.size ?? attachment.bounds.size
+        let clampedScale = max(0.25, min(1.5, scale))
+        let targetWidth = max(40, maxWidth * clampedScale)
+        let aspect = (naturalSize.width > 0) ? (naturalSize.height / naturalSize.width) : 1
+        let targetHeight = targetWidth * aspect
+
+        attachment.bounds = NSRect(origin: .zero, size: NSSize(width: targetWidth, height: targetHeight))
+        textView.textStorage?.edited(.editedAttributes, range: range, changeInLength: 0)
+        textView.didChangeText()
+        updateScaleLabel(clampedScale)
+    }
+
+    private func updateScaleLabel(_ scale: CGFloat) {
+        imageScaleLabel?.stringValue = "\(Int(round(scale * 100)))%"
     }
 
     @objc private func deleteImage() {

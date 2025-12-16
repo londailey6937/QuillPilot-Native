@@ -460,12 +460,17 @@ class EditorViewController: NSViewController {
                 let textColor = color(fromHex: definition.textColorHex, fallback: defaultColor)
                 let backgroundColor = definition.backgroundColorHex.flatMap { color(fromHex: $0, fallback: .clear) }
 
-                // Apply paragraph and font at paragraph level; colors applied per-run below to preserve inline formatting
+                // Apply paragraph style at paragraph level
                 normalized.addAttribute(.paragraphStyle, value: paragraph, range: paragraphRange)
-                normalized.addAttribute(.font, value: font, range: paragraphRange)
 
-                // Apply catalog colors per run to preserve any inline color overrides
+                // Apply font and colors per run to preserve inline formatting (bold, italic, size changes)
                 normalized.enumerateAttributes(in: paragraphRange, options: []) { attrs, runRange, _ in
+                    // Merge style font with existing font to preserve inline changes
+                    let existingFont = attrs[.font] as? NSFont
+                    let finalFont = mergedFont(existing: existingFont, style: font)
+
+                    normalized.addAttribute(.font, value: finalFont, range: runRange)
+
                     if attrs[.foregroundColor] == nil {
                         normalized.addAttribute(.foregroundColor, value: textColor, range: runRange)
                     }
@@ -479,30 +484,27 @@ class EditorViewController: NSViewController {
                 let paragraph = (attrs[.paragraphStyle] as? NSParagraphStyle) ?? defaultParagraph
                 let font = (attrs[.font] as? NSFont) ?? defaultFont
 
-                let size = font.pointSize
-                let alignment = paragraph.alignment
+                let inferredStyleName = inferStyle(font: font, paragraphStyle: paragraph)
 
-                let inferredStyleName: String?
-                if size >= 21.5 && alignment == .center {
-                    inferredStyleName = "Book Title"
-                } else if size >= 16.5 && size < 21.5 && alignment == .center {
-                    inferredStyleName = "Chapter Title"
-                } else if size >= 13.5 && size < 16.5 && alignment == .center {
-                    inferredStyleName = "Subtitle"
-                } else {
-                    inferredStyleName = "Body"
-                }
-
-                if let styleName = inferredStyleName, let definition = StyleCatalog.shared.style(named: styleName) {
+                if let definition = StyleCatalog.shared.style(named: inferredStyleName) {
                     let para = paragraphStyle(from: definition)
                     let styleFont = self.font(from: definition)
                     let styleColor = color(fromHex: definition.textColorHex, fallback: defaultColor)
                     let bgColor = definition.backgroundColorHex.flatMap { color(fromHex: $0, fallback: .clear) }
 
-                    normalized.addAttribute(styleAttributeKey, value: styleName, range: paragraphRange)
-                    normalized.addAttribute(.paragraphStyle, value: para, range: paragraphRange)
-                    normalized.addAttribute(.font, value: styleFont, range: paragraphRange)
+                    normalized.addAttribute(styleAttributeKey, value: inferredStyleName, range: paragraphRange)
+
+                    // Merge paragraph style to preserve manual alignment overrides
+                    let finalParagraph = mergedParagraphStyle(existing: paragraph, style: para)
+                    normalized.addAttribute(.paragraphStyle, value: finalParagraph, range: paragraphRange)
+
+                    // Apply font and colors per run to preserve inline formatting
                     normalized.enumerateAttributes(in: paragraphRange, options: []) { attrs, runRange, _ in
+                        // Merge style font with existing font to preserve inline changes
+                        let existingFont = attrs[.font] as? NSFont
+                        let finalFont = mergedFont(existing: existingFont, style: styleFont)
+                        normalized.addAttribute(.font, value: finalFont, range: runRange)
+
                         if attrs[.foregroundColor] == nil {
                             normalized.addAttribute(.foregroundColor, value: styleColor, range: runRange)
                         }
@@ -618,7 +620,8 @@ class EditorViewController: NSViewController {
         textView.textStorage?.setAttributedString(retagged)
 
         // Verify colors after setting into textStorage
-        NSLog("=== AFTER setAttributedString ===")
+        // NSLog("=== AFTER setAttributedString ===")
+        /*
         if let storage = textView.textStorage {
             let str = storage.string as NSString
             var loc = 0
@@ -632,7 +635,8 @@ class EditorViewController: NSViewController {
                 count += 1
             }
         }
-        NSLog("=================================")
+        */
+        // NSLog("=================================")
 
         // Use neutral defaults for new typing so loaded heading styles don't bleed into new paragraphs
         let neutralParagraph = NSMutableParagraphStyle()
@@ -641,18 +645,27 @@ class EditorViewController: NSViewController {
         neutralParagraph.paragraphSpacing = 0
         neutralParagraph.firstLineHeadIndent = 36
         textView.defaultParagraphStyle = neutralParagraph
-        textView.font = NSFont(name: "Times New Roman", size: 12) ?? NSFont.systemFont(ofSize: 12)
+
+        // Update typing attributes for new text without overwriting existing content
+        let defaultFont = NSFont(name: "Times New Roman", size: 12) ?? NSFont.systemFont(ofSize: 12)
+        var newTypingAttributes = textView.typingAttributes
+        newTypingAttributes[.font] = defaultFont
+        newTypingAttributes[.paragraphStyle] = neutralParagraph
+        textView.typingAttributes = newTypingAttributes
+
         // Don't set textView.textColor - it can interfere with attributed string colors
         // textView.textColor = currentTheme.textColor
         refreshTypingAttributesUsingDefaultParagraphStyle()
 
         // Final verification of colors after all setup
-        NSLog("=== FINAL CHECK (after all setup) ===")
+        // NSLog("=== FINAL CHECK (after all setup) ===")
+        /*
         if let storage = textView.textStorage, storage.length > 0 {
             let attrs = storage.attributes(at: 0, effectiveRange: nil)
             NSLog("First char color: \(attrs[.foregroundColor] ?? "nil")")
         }
-        NSLog("=====================================")
+        */
+        // NSLog("=====================================")
 
         // Force immediate layout and page resize to accommodate all content
         updatePageCentering()
@@ -676,27 +689,10 @@ class EditorViewController: NSViewController {
                 continue
             }
 
-            let fontSize = font.pointSize
-            let alignment = paragraphStyle.alignment
-            let existingColor = attrs[.foregroundColor] as? NSColor
+            // Infer style based on font and paragraph attributes
+            let styleName = inferStyle(font: font, paragraphStyle: paragraphStyle)
 
-            NSLog("detectAndRetagStyles P[\(paragraphRange.location)]: font=\(fontSize)pt align=\(alignment.rawValue) existingColor=\(existingColor?.description ?? "nil")")
-
-            // Match against catalog style definitions
-            let styleName: String?
-            if fontSize >= 21.5 && alignment == .center {
-                styleName = "Book Title"
-            } else if fontSize >= 16.5 && fontSize < 21.5 && alignment == .center {
-                styleName = "Chapter Title"
-            } else if fontSize >= 13.5 && fontSize < 16.5 && alignment == .center {
-                styleName = "Subtitle"
-            } else {
-                styleName = "Body"
-            }
-
-            if let styleName = styleName,
-               let definition = StyleCatalog.shared.style(named: styleName) {
-                NSLog("  -> Matched style '\(styleName)'")
+            if let definition = StyleCatalog.shared.style(named: styleName) {
                 // Tag the paragraph
                 mutable.addAttribute(styleAttributeKey, value: styleName, range: paragraphRange)
 
@@ -706,16 +702,20 @@ class EditorViewController: NSViewController {
                 let textColor = self.color(fromHex: definition.textColorHex, fallback: currentTheme.textColor)
                 let backgroundColor = definition.backgroundColorHex.flatMap { self.color(fromHex: $0, fallback: .clear) }
 
-                mutable.addAttribute(.paragraphStyle, value: catalogParagraph, range: paragraphRange)
-                mutable.addAttribute(.font, value: catalogFont, range: paragraphRange)
+                // Merge paragraph style to preserve manual alignment overrides
+                let finalParagraph = mergedParagraphStyle(existing: paragraphStyle, style: catalogParagraph)
+                mutable.addAttribute(.paragraphStyle, value: finalParagraph, range: paragraphRange)
 
+                // Apply font per run to preserve inline formatting (bold, italic, size changes)
                 mutable.enumerateAttributes(in: paragraphRange, options: []) { attrs, runRange, _ in
+                    // Merge style font with existing font to preserve inline changes
+                    let existingFont = attrs[.font] as? NSFont
+                    let finalFont = mergedFont(existing: existingFont, style: catalogFont)
+                    mutable.addAttribute(.font, value: finalFont, range: runRange)
+
                     let existingFg = attrs[.foregroundColor] as? NSColor
                     if existingFg == nil {
-                        NSLog("    -> Adding catalog color \(textColor) at run \(runRange.location)")
                         mutable.addAttribute(.foregroundColor, value: textColor, range: runRange)
-                    } else {
-                        NSLog("    -> Preserving existing color \(existingFg!) at run \(runRange.location)")
                     }
                     if let backgroundColor = backgroundColor, attrs[.backgroundColor] == nil {
                         mutable.addAttribute(.backgroundColor, value: backgroundColor, range: runRange)
@@ -727,6 +727,55 @@ class EditorViewController: NSViewController {
         }
 
         return mutable
+    }
+
+    private func inferStyle(font: NSFont, paragraphStyle: NSParagraphStyle) -> String {
+        let currentTemplate = StyleCatalog.shared.currentTemplateName
+        let styleNames = StyleCatalog.shared.styleNames(for: currentTemplate)
+
+        var bestMatch: String = "Body Text"
+        var bestScore: Int = -100
+
+        let fontTraits = NSFontManager.shared.traits(of: font)
+        let isBold = fontTraits.contains(.boldFontMask)
+        let isItalic = fontTraits.contains(.italicFontMask)
+
+        for name in styleNames {
+            guard let style = StyleCatalog.shared.style(named: name) else { continue }
+
+            var score = 0
+
+            // Alignment match
+            if style.alignmentRawValue == paragraphStyle.alignment.rawValue {
+                score += 10
+            } else {
+                // Penalize mismatch but don't skip - user might have manually aligned the text
+                score -= 5
+            }
+
+            // Font Size match (allow small tolerance)
+            if abs(style.fontSize - font.pointSize) < 0.5 {
+                score += 20
+            } else {
+                score -= 10
+            }
+
+            // Traits match
+            if style.isBold == isBold { score += 5 } else { score -= 5 }
+            if style.isItalic == isItalic { score += 5 } else { score -= 5 }
+
+            // Font Family match
+            if font.familyName?.contains(style.fontName) == true || style.fontName.contains(font.familyName ?? "") {
+                score += 5
+            }
+
+            if score > bestScore {
+                bestScore = score
+                bestMatch = name
+            }
+        }
+
+        return bestMatch
     }
 
     func setPlainTextContent(_ text: String) {
@@ -1281,6 +1330,52 @@ case "Book Subtitle":
             font = NSFontManager.shared.convert(font, toHaveTrait: .italicFontMask)
         }
         return font
+    }
+
+    /// Merges style base font with existing font to preserve intentional inline changes
+    /// - Parameters:
+    ///   - existingFont: The font currently applied to the text run (may have inline changes)
+    ///   - styleFont: The base font from the style definition
+    /// - Returns: The appropriate font - style font if no inline changes, or preserved font if intentionally modified
+    private func mergedFont(existing existingFont: NSFont?, style styleFont: NSFont) -> NSFont {
+        guard let existing = existingFont else { return styleFont }
+
+        // Check if the existing font has been intentionally modified (different size or traits)
+        let existingTraits = NSFontManager.shared.traits(of: existing)
+        let styleTraits = NSFontManager.shared.traits(of: styleFont)
+
+        let existingBold = existingTraits.contains(.boldFontMask)
+        let existingItalic = existingTraits.contains(.italicFontMask)
+        let styleBold = styleTraits.contains(.boldFontMask)
+        let styleItalic = styleTraits.contains(.italicFontMask)
+
+        // Check for font family difference (e.g. user changed to Helvetica)
+        let familyChanged = existing.familyName != styleFont.familyName
+
+        // If size differs or bold/italic traits differ, this is an inline change - preserve it
+        // Use a very small epsilon for size comparison to catch even minor differences
+        if abs(existing.pointSize - styleFont.pointSize) > 0.1 ||
+           existingBold != styleBold ||
+           existingItalic != styleItalic ||
+           familyChanged {
+            // NSLog("mergedFont: Preserving existing \(existing.fontName) \(existing.pointSize)pt (Style: \(styleFont.fontName) \(styleFont.pointSize)pt)")
+            return existing  // Preserve inline formatting change
+        }
+
+        // No inline changes detected, use style font (to pick up style-level updates)
+        return styleFont
+    }
+
+    private func mergedParagraphStyle(existing: NSParagraphStyle?, style: NSParagraphStyle) -> NSParagraphStyle {
+        guard let existing = existing else { return style }
+        guard let mutable = style.mutableCopy() as? NSMutableParagraphStyle else { return style }
+
+        // Preserve alignment if it differs from the style default (user manual override)
+        if existing.alignment != style.alignment {
+            mutable.alignment = existing.alignment
+        }
+
+        return mutable.copy() as! NSParagraphStyle
     }
 
     private func color(fromHex hex: String, fallback: NSColor) -> NSColor {

@@ -7,6 +7,7 @@
 //
 
 import Cocoa
+import UniformTypeIdentifiers
 
 // Flipped view so y=0 is at the top (standard for scroll views)
 class FlippedView: NSView {
@@ -34,6 +35,9 @@ class EditorViewController: NSViewController {
 
     var textView: NSTextView!
     var pageContainer: NSView!  // Exposed for printing
+
+    private var imageControlsPopover: NSPopover?
+    private var lastImageRange: NSRange?
 
     private var scrollView: NSScrollView!
     private var documentView: NSView!
@@ -93,8 +97,8 @@ class EditorViewController: NSViewController {
 
     override func loadView() {
         view = NSView()
-        // Avoid layer-backing at this level to prevent huge-layer size limits on tall documents
-        view.wantsLayer = false
+        // Root view can be layer-backed for theming (content height is bounded by window)
+        view.wantsLayer = true
     }
 
     override func viewDidLoad() {
@@ -403,6 +407,229 @@ class EditorViewController: NSViewController {
 
         textStorage.insert(breakString, at: range.location)
         textView.setSelectedRange(NSRange(location: range.location + separator.count, length: 0))
+    }
+
+    // MARK: - Images
+
+    func insertImageFromDisk() {
+        let panel = NSOpenPanel()
+        panel.allowedContentTypes = [.image]
+        panel.allowsMultipleSelection = false
+        panel.canChooseDirectories = false
+        panel.title = "Insert Image"
+
+        guard panel.runModal() == .OK, let url = panel.url, let image = NSImage(contentsOf: url) else {
+            return
+        }
+
+        let maxWidth = pageWidth * editorZoom - standardMargin * 2
+        let scale = min(1.0, maxWidth / image.size.width)
+        let targetSize = NSSize(width: image.size.width * scale, height: image.size.height * scale)
+
+        let attachment = NSTextAttachment()
+        attachment.image = image
+        attachment.bounds = NSRect(origin: .zero, size: targetSize)
+
+        let attrImage = NSAttributedString(attachment: attachment)
+        let insertionRange = textView.selectedRange()
+        textView.textStorage?.insert(attrImage, at: insertionRange.location)
+        textView.setSelectedRange(NSRange(location: insertionRange.location, length: attrImage.length))
+        textView.didChangeText()
+        showImageControlsIfNeeded()
+    }
+
+    private func imageAttachmentRange(at location: Int) -> NSRange? {
+        guard let storage = textView.textStorage, storage.length > 0 else { return nil }
+        let clampedLoc = max(0, min(location, storage.length - 1))
+        var effectiveRange = NSRange(location: NSNotFound, length: 0)
+        if storage.attribute(.attachment, at: clampedLoc, effectiveRange: &effectiveRange) != nil {
+            return effectiveRange
+        }
+        return nil
+    }
+
+    private func showImageControlsIfNeeded() {
+        guard let window = view.window else { return }
+        let selection = textView.selectedRange()
+        guard selection.length <= 1, let attachmentRange = imageAttachmentRange(at: selection.location) else {
+            imageControlsPopover?.performClose(nil)
+            imageControlsPopover = nil
+            lastImageRange = nil
+            return
+        }
+
+        lastImageRange = attachmentRange
+
+        let popover = imageControlsPopover ?? NSPopover()
+        popover.behavior = .transient
+        popover.contentSize = NSSize(width: 240, height: 140)
+
+        let stack = NSStackView()
+        stack.orientation = .vertical
+        stack.spacing = 6
+        stack.edgeInsets = NSEdgeInsets(top: 8, left: 8, bottom: 8, right: 8)
+
+        func makeButton(_ title: String, action: Selector) -> NSButton {
+            let btn = NSButton(title: title, target: self, action: action)
+            btn.bezelStyle = .rounded
+            btn.setButtonType(.momentaryPushIn)
+            return btn
+        }
+
+        let alignRow = NSStackView(views: [
+            makeButton("Left", action: #selector(alignImageLeft)),
+            makeButton("Center", action: #selector(alignImageCenter)),
+            makeButton("Right", action: #selector(alignImageRight))
+        ])
+        alignRow.orientation = .horizontal
+        alignRow.spacing = 6
+
+        let moveRow = NSStackView(views: [
+            makeButton("↑", action: #selector(moveImageUp)),
+            makeButton("↓", action: #selector(moveImageDown))
+        ])
+        moveRow.orientation = .horizontal
+        moveRow.spacing = 6
+
+        let replaceDeleteRow = NSStackView(views: [
+            makeButton("Replace", action: #selector(replaceImage)),
+            makeButton("Delete", action: #selector(deleteImage))
+        ])
+        replaceDeleteRow.orientation = .horizontal
+        replaceDeleteRow.spacing = 6
+
+        stack.addArrangedSubview(alignRow)
+        stack.addArrangedSubview(moveRow)
+        stack.addArrangedSubview(replaceDeleteRow)
+
+        let contentView = NSView()
+        contentView.translatesAutoresizingMaskIntoConstraints = false
+        contentView.addSubview(stack)
+
+        stack.translatesAutoresizingMaskIntoConstraints = false
+        NSLayoutConstraint.activate([
+            stack.leadingAnchor.constraint(equalTo: contentView.leadingAnchor),
+            stack.trailingAnchor.constraint(equalTo: contentView.trailingAnchor),
+            stack.topAnchor.constraint(equalTo: contentView.topAnchor),
+            stack.bottomAnchor.constraint(equalTo: contentView.bottomAnchor)
+        ])
+
+        popover.contentViewController = NSViewController()
+        popover.contentViewController?.view = contentView
+
+        imageControlsPopover = popover
+
+        let glyphRange = textView.layoutManager?.glyphRange(forCharacterRange: attachmentRange, actualCharacterRange: nil) ?? attachmentRange
+        var rect = textView.layoutManager?.boundingRect(forGlyphRange: glyphRange, in: textView.textContainer!) ?? .zero
+        rect.origin.x += textView.textContainerOrigin.x
+        rect.origin.y += textView.textContainerOrigin.y
+        popover.show(relativeTo: rect, of: textView, preferredEdge: .maxY)
+        window.makeFirstResponder(textView)
+    }
+
+    @objc private func alignImageLeft() { alignImage(.left) }
+    @objc private func alignImageCenter() { alignImage(.center) }
+    @objc private func alignImageRight() { alignImage(.right) }
+
+    private func alignImage(_ alignment: NSTextAlignment) {
+        guard let range = lastImageRange ?? imageAttachmentRange(at: textView.selectedRange().location) else { return }
+        guard let storage = textView.textStorage else { return }
+        let paragraphRange = (storage.string as NSString).paragraphRange(for: range)
+        storage.beginEditing()
+        storage.enumerateAttribute(.paragraphStyle, in: paragraphRange, options: []) { value, subrange, _ in
+            let base = (value as? NSParagraphStyle) ?? (textView.defaultParagraphStyle ?? NSParagraphStyle.default)
+            let mutable = base.mutableCopy() as! NSMutableParagraphStyle
+            mutable.alignment = alignment
+            storage.addAttribute(.paragraphStyle, value: mutable.copy() as! NSParagraphStyle, range: subrange)
+        }
+        storage.endEditing()
+        textView.didChangeText()
+    }
+
+    @objc private func moveImageUp() { moveImage(direction: -1) }
+    @objc private func moveImageDown() { moveImage(direction: 1) }
+
+    private func moveImage(direction: Int) {
+        guard let storage = textView.textStorage else { return }
+        guard let range = lastImageRange ?? imageAttachmentRange(at: textView.selectedRange().location) else { return }
+        let fullString = storage.string as NSString
+        let currentPara = fullString.paragraphRange(for: range)
+
+        let currentText = storage.attributedSubstring(from: currentPara)
+
+        if direction < 0 {
+            if currentPara.location == 0 { return }
+            let prevPara = fullString.paragraphRange(for: NSRange(location: max(0, currentPara.location - 1), length: 0))
+            if prevPara.location == currentPara.location { return }
+            let prevText = storage.attributedSubstring(from: prevPara)
+            let combinedRange = NSRange(location: prevPara.location, length: NSMaxRange(currentPara) - prevPara.location)
+            let swapped = NSMutableAttributedString()
+            swapped.append(currentText)
+            swapped.append(prevText)
+            storage.beginEditing()
+            storage.replaceCharacters(in: combinedRange, with: swapped)
+            storage.endEditing()
+            textView.setSelectedRange(NSRange(location: prevPara.location, length: currentText.length))
+        } else {
+            let nextStart = NSMaxRange(currentPara)
+            if nextStart >= storage.length { return }
+            let nextPara = fullString.paragraphRange(for: NSRange(location: nextStart, length: 0))
+            if nextPara.location == currentPara.location { return }
+            let nextText = storage.attributedSubstring(from: nextPara)
+            let combinedRange = NSRange(location: currentPara.location, length: NSMaxRange(nextPara) - currentPara.location)
+            let swapped = NSMutableAttributedString()
+            swapped.append(nextText)
+            swapped.append(currentText)
+            storage.beginEditing()
+            storage.replaceCharacters(in: combinedRange, with: swapped)
+            storage.endEditing()
+            textView.setSelectedRange(NSRange(location: nextPara.location + nextText.length, length: currentText.length))
+        }
+
+        textView.didChangeText()
+        showImageControlsIfNeeded()
+    }
+
+    @objc private func deleteImage() {
+        guard let storage = textView.textStorage else { return }
+        guard let range = lastImageRange ?? imageAttachmentRange(at: textView.selectedRange().location) else { return }
+        storage.beginEditing()
+        storage.deleteCharacters(in: range)
+        storage.endEditing()
+        imageControlsPopover?.performClose(nil)
+        imageControlsPopover = nil
+        textView.didChangeText()
+    }
+
+    @objc private func replaceImage() {
+        guard let storage = textView.textStorage else { return }
+        guard let range = lastImageRange ?? imageAttachmentRange(at: textView.selectedRange().location) else { return }
+
+        let panel = NSOpenPanel()
+        panel.allowedContentTypes = [.image]
+        panel.allowsMultipleSelection = false
+        panel.canChooseDirectories = false
+        panel.title = "Replace Image"
+
+        guard panel.runModal() == .OK, let url = panel.url, let image = NSImage(contentsOf: url) else {
+            return
+        }
+
+        let maxWidth = pageWidth * editorZoom - standardMargin * 2
+        let scale = min(1.0, maxWidth / image.size.width)
+        let targetSize = NSSize(width: image.size.width * scale, height: image.size.height * scale)
+
+        let attachment = NSTextAttachment()
+        attachment.image = image
+        attachment.bounds = NSRect(origin: .zero, size: targetSize)
+
+        let attrImage = NSAttributedString(attachment: attachment)
+        storage.beginEditing()
+        storage.replaceCharacters(in: range, with: attrImage)
+        storage.endEditing()
+        textView.setSelectedRange(NSRange(location: range.location, length: attrImage.length))
+        textView.didChangeText()
+        showImageControlsIfNeeded()
     }
 
     func scrollToTop() {
@@ -2074,7 +2301,7 @@ case "Book Subtitle":
         // Update PageContainerView to draw with theme colors
         if let pageContainerView = pageContainer as? PageContainerView {
             pageContainerView.pageBackgroundColor = theme.pageBackground
-            pageContainerView.needsDisplay = true
+            pageContainerView.setNeedsDisplay(pageContainerView.bounds)
         } else {
             pageContainer?.layer?.backgroundColor = theme.pageBackground.cgColor
         }
@@ -2287,5 +2514,9 @@ extension EditorViewController: NSTextViewDelegate {
                 delegate?.titleDidChange(titleText)
             }
         }
+    }
+
+    func textViewDidChangeSelection(_ notification: Notification) {
+        showImageControlsIfNeeded()
     }
 }

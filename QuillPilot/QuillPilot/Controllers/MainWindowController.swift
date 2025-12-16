@@ -35,6 +35,7 @@ protocol FormattingToolbarDelegate: AnyObject {
 
     func formattingToolbarDidInsertPageBreak(_ toolbar: FormattingToolbar)
     func formattingToolbarDidInsertColumnBreak(_ toolbar: FormattingToolbar)
+    func formattingToolbarDidInsertImage(_ toolbar: FormattingToolbar)
     func formattingToolbarDidColumns(_ toolbar: FormattingToolbar)
     func formattingToolbarDidDeleteColumn(_ toolbar: FormattingToolbar)
     func formattingToolbarDidClearAll(_ toolbar: FormattingToolbar)
@@ -365,6 +366,10 @@ extension MainWindowController: FormattingToolbarDelegate {
 
     func formattingToolbarDidToggleNumbering(_ toolbar: FormattingToolbar) {
         mainContentViewController.toggleNumberedList()
+    }
+
+    func formattingToolbarDidInsertImage(_ toolbar: FormattingToolbar) {
+        mainContentViewController.insertImage()
     }
 
     func formattingToolbarDidInsertPageBreak(_ toolbar: FormattingToolbar) {
@@ -899,6 +904,7 @@ class FormattingToolbar: NSView {
     private var stylePopup: NSPopUpButton!
     private var sizePopup: NSPopUpButton!
     private var editStylesButton: NSButton!
+    private var imageButton: NSButton!
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
@@ -1079,6 +1085,12 @@ class FormattingToolbar: NSView {
         numberingBtn.action = #selector(numberingTapped)
         numberingBtn.toolTip = "Numbered List"
 
+        // Images
+        imageButton = createToolbarButton("🖼")
+        imageButton.target = self
+        imageButton.action = #selector(imageTapped)
+        imageButton.toolTip = "Insert Image"
+
         // Layout
         let columnsBtn = createToolbarButton("⫼") // Column icon
         let deleteColumnBtn = createToolbarButton("⊟") // Delete column icon
@@ -1117,6 +1129,7 @@ class FormattingToolbar: NSView {
             boldBtn, italicBtn, underlineBtn,
             alignLeftBtn, alignCenterBtn, alignRightBtn, justifyBtn,
             bulletsBtn, numberingBtn,
+            imageButton,
             columnsBtn, deleteColumnBtn, columnBreakBtn, pageBreakBtn,
             outdentBtn, indentBtn,
             clearBtn
@@ -1228,6 +1241,10 @@ class FormattingToolbar: NSView {
 
     @objc private func numberingTapped() {
         delegate?.formattingToolbarDidToggleNumbering(self)
+    }
+
+    @objc private func imageTapped() {
+        delegate?.formattingToolbarDidInsertImage(self)
     }
 
     @objc private func columnsTapped() {
@@ -1446,6 +1463,10 @@ class ContentViewController: NSViewController {
 
     func insertPageBreak() {
         editorViewController.insertPageBreak()
+    }
+
+    func insertImage() {
+        editorViewController.insertImageFromDisk()
     }
 
     func editorPlainText() -> String {

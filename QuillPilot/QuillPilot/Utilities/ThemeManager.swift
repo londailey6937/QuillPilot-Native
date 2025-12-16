@@ -14,63 +14,125 @@ enum AppTheme: String {
 
     // Page colors
     var pageBackground: NSColor {
-        // Page surface
-        return NSColor(hex: "#FFFDF9") ?? .white
+        switch self {
+        case .day:
+            return NSColor(hex: "#FFFDF9") ?? .white
+        case .night:
+            return NSColor(hex: "#1F1F1F") ?? .black
+        }
     }
 
     var pageAround: NSColor {
-        // Surrounding area
-        return NSColor(hex: "#F7EEE0") ?? .lightGray
+        switch self {
+        case .day:
+            return NSColor(hex: "#F7EEE0") ?? .lightGray
+        case .night:
+            return NSColor(hex: "#121212") ?? .darkGray
+        }
     }
 
     var pageBorder: NSColor {
-        return NSColor(hex: "#CEBCA7") ?? .gray
+        switch self {
+        case .day:
+            return NSColor(hex: "#CEBCA7") ?? .gray
+        case .night:
+            return NSColor(hex: "#333333") ?? .gray
+        }
     }
 
     // Text colors
     var textColor: NSColor {
-        // Near-black for readability
-        return NSColor(calibratedWhite: 0.1, alpha: 1.0)
+        switch self {
+        case .day:
+            return NSColor(calibratedWhite: 0.1, alpha: 1.0)
+        case .night:
+            return NSColor(calibratedWhite: 0.9, alpha: 1.0)
+        }
     }
 
     var insertionPointColor: NSColor {
-        return NSColor(calibratedWhite: 0.1, alpha: 1.0)
+        switch self {
+        case .day:
+            return NSColor(calibratedWhite: 0.1, alpha: 1.0)
+        case .night:
+            return NSColor(hex: "#FFD479") ?? NSColor(calibratedWhite: 0.9, alpha: 1.0)
+        }
     }
 
     // Header colors
     var headerBackground: NSColor {
-        return NSColor(hex: "#684F3C") ?? .darkGray
+        switch self {
+        case .day:
+            return NSColor(hex: "#684F3C") ?? .darkGray
+        case .night:
+            return NSColor(hex: "#2A2A2A") ?? .darkGray
+        }
     }
 
     var headerText: NSColor {
-        return NSColor(hex: "#FFFDF9") ?? .white
+        switch self {
+        case .day:
+            return NSColor(hex: "#FFFDF9") ?? .white
+        case .night:
+            return NSColor(hex: "#E8E8E8") ?? .white
+        }
     }
 
     // Toolbar colors
     var toolbarBackground: NSColor {
-        return NSColor(hex: "#F7EEE0") ?? .lightGray
+        switch self {
+        case .day:
+            return NSColor(hex: "#F7EEE0") ?? .lightGray
+        case .night:
+            return NSColor(hex: "#1A1A1A") ?? .black
+        }
     }
 
     // Sidebar colors
     var outlineBackground: NSColor {
-        return NSColor(hex: "#F7EEE0") ?? .white
+        switch self {
+        case .day:
+            return NSColor(hex: "#F7EEE0") ?? .white
+        case .night:
+            return NSColor(hex: "#161616") ?? .black
+        }
     }
 
     var analysisBackground: NSColor {
-        return NSColor(hex: "#FFFDF9") ?? .white
+        switch self {
+        case .day:
+            return NSColor(hex: "#FFFDF9") ?? .white
+        case .night:
+            return NSColor(hex: "#1E1E1E") ?? .black
+        }
     }
 
     // Ruler colors
     var rulerBackground: NSColor {
-        return NSColor(hex: "#FFFDF9") ?? .white
+        switch self {
+        case .day:
+            return NSColor(hex: "#FFFDF9") ?? .white
+        case .night:
+            return NSColor(hex: "#1E1E1E") ?? .black
+        }
     }
 
     var rulerBorder: NSColor {
-        return NSColor(hex: "#CEBCA7") ?? .gray
+        switch self {
+        case .day:
+            return NSColor(hex: "#CEBCA7") ?? .gray
+        case .night:
+            return NSColor(hex: "#333333") ?? .gray
+        }
     }
 
     var rulerMarkings: NSColor {
-        return NSColor(hex: "#684F3C") ?? .gray
+        switch self {
+        case .day:
+            return NSColor(hex: "#684F3C") ?? .gray
+        case .night:
+            return NSColor(hex: "#888888") ?? .lightGray
+        }
     }
 }
 

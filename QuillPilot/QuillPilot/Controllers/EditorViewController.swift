@@ -39,6 +39,17 @@ class EditorViewController: NSViewController {
     private var imageControlsPopover: NSPopover?
     private var lastImageRange: NSRange?
     private var imageScaleLabel: NSTextField?
+    private var popoverScrollObserver: NSObjectProtocol?
+
+    // Helper to register undo/redo and notify text system
+    private func replaceCharacters(in range: NSRange, with attributed: NSAttributedString, undoPlaceholder: String) {
+        guard let storage = textView.textStorage else { return }
+        guard textView.shouldChangeText(in: range, replacementString: undoPlaceholder) else { return }
+        storage.beginEditing()
+        storage.replaceCharacters(in: range, with: attributed)
+        storage.endEditing()
+        textView.didChangeText()
+    }
 
     private var scrollView: NSScrollView!
     private var documentView: NSView!
@@ -423,7 +434,9 @@ class EditorViewController: NSViewController {
             return
         }
 
-        let maxWidth = pageWidth * editorZoom - standardMargin * 2
+        // Calculate max width based on text container width (accounts for margins and zoom)
+        let textContainerWidth = textView.textContainer?.size.width ?? ((pageWidth - standardMargin * 2) * editorZoom)
+        let maxWidth = textContainerWidth
         let scale = min(1.0, maxWidth / image.size.width)
         let targetSize = NSSize(width: image.size.width * scale, height: image.size.height * scale)
 
@@ -431,11 +444,41 @@ class EditorViewController: NSViewController {
         attachment.image = image
         attachment.bounds = NSRect(origin: .zero, size: targetSize)
 
-        let attrImage = NSAttributedString(attachment: attachment)
-        let insertionRange = textView.selectedRange()
-        textView.textStorage?.insert(attrImage, at: insertionRange.location)
-        textView.setSelectedRange(NSRange(location: insertionRange.location, length: attrImage.length))
-        textView.didChangeText()
+        textView.window?.makeFirstResponder(textView)
+
+        // Store the current insertion point before any modal dialogs affect focus
+        let caretRange = textView.selectedRange()
+        let insertionPoint = min(caretRange.location, textView.string.count)
+        let insertionRange = NSRange(location: insertionPoint, length: 0)
+
+        // Create a simple image paragraph without extra newlines that could push content into exclusion zones
+        let para = NSMutableParagraphStyle()
+        para.alignment = .center
+        para.paragraphSpacing = 0
+        para.paragraphSpacingBefore = 0
+        para.firstLineHeadIndent = 0
+        para.headIndent = 0
+        para.tailIndent = 0
+
+        let imageString = NSMutableAttributedString(attachment: attachment)
+        imageString.addAttribute(.paragraphStyle, value: para, range: NSRange(location: 0, length: imageString.length))
+
+        replaceCharacters(in: insertionRange, with: imageString, undoPlaceholder: "\u{FFFC}")
+
+        // Update page layout to account for the new image
+        updatePageCentering()
+
+        // Force layout to complete before positioning the caret and scrolling
+        textView.layoutManager?.ensureLayout(for: textView.textContainer!)
+
+        // Place caret after the attachment
+        let attachmentPos = insertionRange.location
+        textView.setSelectedRange(NSRange(location: attachmentPos, length: 0))
+
+        // Scroll to make the inserted image visible
+        textView.scrollRangeToVisible(NSRange(location: attachmentPos, length: 1))
+
+        lastImageRange = NSRange(location: attachmentPos, length: 1)
         showImageControlsIfNeeded()
     }
 
@@ -449,30 +492,58 @@ class EditorViewController: NSViewController {
         return nil
     }
 
+    private func makeImageBlock(with attachment: NSTextAttachment) -> (NSAttributedString, Int) {
+        // Build a minimal paragraph-wrapped attachment with neutral spacing
+        let block = NSMutableAttributedString()
+        let typingAttrs = textView.typingAttributes
+        let baseParagraph = (typingAttrs[.paragraphStyle] as? NSParagraphStyle) ?? (textView.defaultParagraphStyle ?? NSParagraphStyle.default)
+        let para = baseParagraph.mutableCopy() as! NSMutableParagraphStyle
+        para.paragraphSpacing = 0
+        para.paragraphSpacingBefore = 0
+
+        // Leading newline
+        block.append(NSAttributedString(string: "\n", attributes: [.paragraphStyle: para]))
+        let attachmentLocation = block.length
+
+        // Attachment
+        block.append(NSAttributedString(attachment: attachment))
+
+        // Trailing newline
+        block.append(NSAttributedString(string: "\n", attributes: [.paragraphStyle: para]))
+
+        // Apply paragraph style over the whole block
+        block.addAttribute(.paragraphStyle, value: para.copy() as! NSParagraphStyle, range: NSRange(location: 0, length: block.length))
+        return (block.copy() as! NSAttributedString, attachmentLocation)
+    }
+
     private func showImageControlsIfNeeded() {
         guard let window = view.window else { return }
         let selection = textView.selectedRange()
         guard selection.length <= 1, let attachmentRange = imageAttachmentRange(at: selection.location) else {
             imageControlsPopover?.performClose(nil)
             imageControlsPopover = nil
+            if let obs = popoverScrollObserver {
+                NotificationCenter.default.removeObserver(obs)
+                popoverScrollObserver = nil
+            }
             lastImageRange = nil
             return
         }
 
         lastImageRange = attachmentRange
 
-        let maxWidth = pageWidth * editorZoom - standardMargin * 2
+        let maxWidth = textView.textContainer?.size.width ?? ((pageWidth - standardMargin * 2) * editorZoom)
         let currentWidth = (textView.textStorage?.attribute(.attachment, at: attachmentRange.location, effectiveRange: nil) as? NSTextAttachment)?.bounds.width ?? maxWidth
         let currentScale = max(0.1, min(1.5, currentWidth / maxWidth))
 
-        let popover = imageControlsPopover ?? NSPopover()
+        // Always create fresh popover to ensure proper sizing
+        let popover = NSPopover()
         popover.behavior = .transient
-        popover.contentSize = NSSize(width: 200, height: 150)
 
         let stack = NSStackView()
         stack.orientation = .vertical
-        stack.spacing = 4
-        stack.edgeInsets = NSEdgeInsets(top: 4, left: 4, bottom: 4, right: 4)
+        stack.spacing = 2
+        stack.edgeInsets = NSEdgeInsets(top: 2, left: 2, bottom: 2, right: 2)
 
         func makeButton(_ title: String, action: Selector) -> NSButton {
             let btn = NSButton(title: title, target: self, action: action)
@@ -487,26 +558,26 @@ class EditorViewController: NSViewController {
             makeButton("Right", action: #selector(alignImageRight))
         ])
         alignRow.orientation = .horizontal
-        alignRow.spacing = 6
+        alignRow.spacing = 3
 
         let moveRow = NSStackView(views: [
             makeButton("↑", action: #selector(moveImageUp)),
             makeButton("↓", action: #selector(moveImageDown))
         ])
         moveRow.orientation = .horizontal
-        moveRow.spacing = 6
+        moveRow.spacing = 3
 
         let replaceDeleteRow = NSStackView(views: [
             makeButton("Replace", action: #selector(replaceImage)),
             makeButton("Delete", action: #selector(deleteImage))
         ])
         replaceDeleteRow.orientation = .horizontal
-        replaceDeleteRow.spacing = 4
+        replaceDeleteRow.spacing = 3
 
         // Resize slider row
         let scaleLabel = NSTextField(labelWithString: "100%")
         scaleLabel.alignment = .right
-        scaleLabel.font = NSFont.systemFont(ofSize: 11)
+        scaleLabel.font = NSFont.systemFont(ofSize: 10)
         imageScaleLabel = scaleLabel
 
         let slider = NSSlider(value: currentScale, minValue: 0.25, maxValue: 1.5, target: self, action: #selector(resizeSliderChanged(_:)))
@@ -514,7 +585,7 @@ class EditorViewController: NSViewController {
 
         let resizeRow = NSStackView(views: [scaleLabel, slider])
         resizeRow.orientation = .horizontal
-        resizeRow.spacing = 6
+        resizeRow.spacing = 3
         resizeRow.distribution = .fillProportionally
 
         stack.addArrangedSubview(alignRow)
@@ -524,29 +595,47 @@ class EditorViewController: NSViewController {
 
         updateScaleLabel(currentScale)
 
-        let contentView = NSView()
-        contentView.translatesAutoresizingMaskIntoConstraints = false
+        let contentSize = NSSize(width: 120, height: 95)
+        let contentView = NSView(frame: NSRect(origin: .zero, size: contentSize))
         contentView.addSubview(stack)
 
-        stack.translatesAutoresizingMaskIntoConstraints = false
-        NSLayoutConstraint.activate([
-            stack.leadingAnchor.constraint(equalTo: contentView.leadingAnchor),
-            stack.trailingAnchor.constraint(equalTo: contentView.trailingAnchor),
-            stack.topAnchor.constraint(equalTo: contentView.topAnchor),
-            stack.bottomAnchor.constraint(equalTo: contentView.bottomAnchor)
-        ])
+        // Use simple autoresizing to avoid popover sizing glitches
+        stack.frame = contentView.bounds
+        stack.autoresizingMask = [.width, .height]
 
-        popover.contentViewController = NSViewController()
-        popover.contentViewController?.view = contentView
+        let viewController = NSViewController()
+        viewController.view = contentView
+        popover.contentViewController = viewController
+        popover.contentSize = contentSize
 
         imageControlsPopover = popover
 
+        if let lm = textView.layoutManager {
+            lm.ensureLayout(forCharacterRange: attachmentRange)
+        }
         let glyphRange = textView.layoutManager?.glyphRange(forCharacterRange: attachmentRange, actualCharacterRange: nil) ?? attachmentRange
         var rect = textView.layoutManager?.boundingRect(forGlyphRange: glyphRange, in: textView.textContainer!) ?? .zero
-        rect.origin.x += textView.textContainerOrigin.x
-        rect.origin.y += textView.textContainerOrigin.y
+        if rect.isEmpty {
+            rect = textView.firstRect(forCharacterRange: attachmentRange, actualRange: nil)
+            rect = textView.convert(rect, from: nil)
+        } else {
+            rect.origin.x += textView.textContainerOrigin.x
+            rect.origin.y += textView.textContainerOrigin.y
+        }
+        if rect.height == 0 { rect.size.height = 24 }
         popover.show(relativeTo: rect, of: textView, preferredEdge: .maxY)
         window.makeFirstResponder(textView)
+
+        // Reposition popover as the user scrolls
+        scrollView.contentView.postsBoundsChangedNotifications = true
+        if let obs = popoverScrollObserver {
+            NotificationCenter.default.removeObserver(obs)
+            popoverScrollObserver = nil
+        }
+        popoverScrollObserver = NotificationCenter.default.addObserver(forName: NSView.boundsDidChangeNotification, object: scrollView.contentView, queue: .main) { [weak self] _ in
+            guard let self = self, let pop = self.imageControlsPopover, pop.isShown else { return }
+            self.showImageControlsIfNeeded()
+        }
     }
 
     @objc private func resizeSliderChanged(_ sender: NSSlider) {
@@ -561,16 +650,28 @@ class EditorViewController: NSViewController {
     private func alignImage(_ alignment: NSTextAlignment) {
         guard let range = lastImageRange ?? imageAttachmentRange(at: textView.selectedRange().location) else { return }
         guard let storage = textView.textStorage else { return }
-        let paragraphRange = (storage.string as NSString).paragraphRange(for: range)
+        // Limit to the paragraph containing the attachment only
+        let paragraphRange = (storage.string as NSString).paragraphRange(for: NSRange(location: range.location, length: 1))
+
+        // Register with undo for style change
+        guard textView.shouldChangeText(in: paragraphRange, replacementString: nil) else { return }
+
+        let base = (textView.textStorage?.attribute(.paragraphStyle, at: paragraphRange.location, effectiveRange: nil) as? NSParagraphStyle) ?? (textView.defaultParagraphStyle ?? NSParagraphStyle.default)
+        let mutable = base.mutableCopy() as! NSMutableParagraphStyle
+        mutable.alignment = alignment
         storage.beginEditing()
-        storage.enumerateAttribute(.paragraphStyle, in: paragraphRange, options: []) { value, subrange, _ in
-            let base = (value as? NSParagraphStyle) ?? (textView.defaultParagraphStyle ?? NSParagraphStyle.default)
-            let mutable = base.mutableCopy() as! NSMutableParagraphStyle
-            mutable.alignment = alignment
-            storage.addAttribute(.paragraphStyle, value: mutable.copy() as! NSParagraphStyle, range: subrange)
-        }
+        storage.addAttribute(.paragraphStyle, value: mutable.copy() as! NSParagraphStyle, range: paragraphRange)
         storage.endEditing()
+        storage.fixAttributes(in: paragraphRange)
+        textView.layoutManager?.invalidateLayout(forCharacterRange: paragraphRange, actualCharacterRange: nil)
         textView.didChangeText()
+
+        // Close and reopen popover to reposition it correctly
+        imageControlsPopover?.performClose(nil)
+        imageControlsPopover = nil
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { [weak self] in
+            self?.showImageControlsIfNeeded()
+        }
     }
 
     @objc private func moveImageUp() { moveImage(direction: -1) }
@@ -593,6 +694,8 @@ class EditorViewController: NSViewController {
             let swapped = NSMutableAttributedString()
             swapped.append(currentText)
             swapped.append(prevText)
+
+            guard textView.shouldChangeText(in: combinedRange, replacementString: swapped.string) else { return }
             storage.beginEditing()
             storage.replaceCharacters(in: combinedRange, with: swapped)
             storage.endEditing()
@@ -607,6 +710,8 @@ class EditorViewController: NSViewController {
             let swapped = NSMutableAttributedString()
             swapped.append(nextText)
             swapped.append(currentText)
+
+            guard textView.shouldChangeText(in: combinedRange, replacementString: swapped.string) else { return }
             storage.beginEditing()
             storage.replaceCharacters(in: combinedRange, with: swapped)
             storage.endEditing()
@@ -622,7 +727,7 @@ class EditorViewController: NSViewController {
         guard let range = lastImageRange ?? imageAttachmentRange(at: textView.selectedRange().location) else { return }
         guard let attachment = storage.attribute(.attachment, at: range.location, effectiveRange: nil) as? NSTextAttachment else { return }
 
-        let maxWidth = pageWidth * editorZoom - standardMargin * 2
+        let maxWidth = textView.textContainer?.size.width ?? ((pageWidth - standardMargin * 2) * editorZoom)
         let naturalSize = attachment.image?.size ?? attachment.bounds.size
         let clampedScale = max(0.25, min(1.5, scale))
         let targetWidth = max(40, maxWidth * clampedScale)
@@ -642,12 +747,9 @@ class EditorViewController: NSViewController {
     @objc private func deleteImage() {
         guard let storage = textView.textStorage else { return }
         guard let range = lastImageRange ?? imageAttachmentRange(at: textView.selectedRange().location) else { return }
-        storage.beginEditing()
-        storage.deleteCharacters(in: range)
-        storage.endEditing()
+        replaceCharacters(in: range, with: NSAttributedString(string: ""), undoPlaceholder: "")
         imageControlsPopover?.performClose(nil)
         imageControlsPopover = nil
-        textView.didChangeText()
     }
 
     @objc private func replaceImage() {
@@ -664,7 +766,7 @@ class EditorViewController: NSViewController {
             return
         }
 
-        let maxWidth = pageWidth * editorZoom - standardMargin * 2
+        let maxWidth = textView.textContainer?.size.width ?? ((pageWidth - standardMargin * 2) * editorZoom)
         let scale = min(1.0, maxWidth / image.size.width)
         let targetSize = NSSize(width: image.size.width * scale, height: image.size.height * scale)
 
@@ -672,12 +774,32 @@ class EditorViewController: NSViewController {
         attachment.image = image
         attachment.bounds = NSRect(origin: .zero, size: targetSize)
 
-        let attrImage = NSAttributedString(attachment: attachment)
-        storage.beginEditing()
-        storage.replaceCharacters(in: range, with: attrImage)
-        storage.endEditing()
-        textView.setSelectedRange(NSRange(location: range.location, length: attrImage.length))
-        textView.didChangeText()
+        textView.window?.makeFirstResponder(textView)
+
+        // Create a simple image paragraph without extra newlines
+        let para = NSMutableParagraphStyle()
+        para.alignment = .center
+        para.paragraphSpacing = 0
+        para.paragraphSpacingBefore = 0
+        para.firstLineHeadIndent = 0
+        para.headIndent = 0
+        para.tailIndent = 0
+
+        let imageString = NSMutableAttributedString(attachment: attachment)
+        imageString.addAttribute(.paragraphStyle, value: para, range: NSRange(location: 0, length: imageString.length))
+
+        replaceCharacters(in: range, with: imageString, undoPlaceholder: "\u{FFFC}")
+
+        // Update page layout to account for the new image
+        updatePageCentering()
+
+        // Force layout to complete before positioning the caret and scrolling
+        textView.layoutManager?.ensureLayout(for: textView.textContainer!)
+
+        let attachmentPos = range.location
+        textView.setSelectedRange(NSRange(location: attachmentPos, length: 0))
+        textView.scrollRangeToVisible(NSRange(location: attachmentPos, length: 1))
+        lastImageRange = NSRange(location: attachmentPos, length: 1)
         showImageControlsIfNeeded()
     }
 

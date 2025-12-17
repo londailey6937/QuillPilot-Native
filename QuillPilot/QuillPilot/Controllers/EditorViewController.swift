@@ -439,7 +439,23 @@ class EditorViewController: NSViewController {
 
         // Calculate max width based on text container width (accounts for margins and zoom)
         let textContainerWidth = textView.textContainer?.size.width ?? ((pageWidth - standardMargin * 2) * editorZoom)
-        let maxWidth = textContainerWidth
+        var maxWidth = textContainerWidth
+        
+        // Check if cursor is in a table cell - if so, use much smaller max width to avoid breaking the cell
+        let cursorLocation = textView.selectedRange().location
+        if let textStorage = textView.textStorage, cursorLocation < textStorage.length {
+            let attrs = textStorage.attributes(at: cursorLocation, effectiveRange: nil)
+            if let paragraphStyle = attrs[.paragraphStyle] as? NSParagraphStyle,
+               let textBlocks = paragraphStyle.textBlocks as? [NSTextTableBlock],
+               let block = textBlocks.first {
+                // In a table cell - limit to a small size to avoid breaking the cell
+                let table = block.table
+                let cellWidth = textContainerWidth / CGFloat(table.numberOfColumns)
+                // Use 60% of cell width minus padding to ensure it fits comfortably
+                maxWidth = cellWidth * 0.6
+            }
+        }
+        
         let scale = min(1.0, maxWidth / image.size.width)
         let targetSize = NSSize(width: image.size.width * scale, height: image.size.height * scale)
 
@@ -1408,26 +1424,76 @@ case "Book Subtitle":
 
         // MARK: Body Text
         case "Body Text":
-            applyManuscriptParagraphStyle { style in
-                style.alignment = .left
-                style.headIndent = 0
-                style.firstLineHeadIndent = standardIndentStep
-                style.tailIndent = 0
-                style.paragraphSpacingBefore = 0
-                style.paragraphSpacing = 0
+            // Special handling: preserve textBlocks if in column/table
+            guard let textStorage = textView.textStorage else { break }
+            guard let selected = textView.selectedRanges.first?.rangeValue else { break }
+            let fullText = (textStorage.string as NSString)
+            let paragraphsRange = fullText.paragraphRange(for: selected)
+            
+            textStorage.beginEditing()
+            textStorage.enumerateAttribute(.paragraphStyle, in: paragraphsRange, options: []) { value, range, _ in
+                let current = (value as? NSParagraphStyle) ?? textView.defaultParagraphStyle ?? NSParagraphStyle.default
+                let mutable = (current.mutableCopy() as? NSMutableParagraphStyle) ?? NSMutableParagraphStyle()
+                
+                // Preserve textBlocks if they exist (columns/tables)
+                let preservedTextBlocks = mutable.textBlocks
+                
+                // Apply Body Text formatting
+                let base = manuscriptBaseParagraphStyle()
+                mutable.setParagraphStyle(base)
+                mutable.alignment = .left
+                mutable.headIndent = 0
+                mutable.firstLineHeadIndent = standardIndentStep
+                mutable.tailIndent = 0
+                mutable.paragraphSpacingBefore = 0
+                mutable.paragraphSpacing = 0
+                
+                // Restore textBlocks if they were present
+                if let blocks = preservedTextBlocks, !blocks.isEmpty {
+                    mutable.textBlocks = blocks
+                }
+                
+                textStorage.addAttribute(.paragraphStyle, value: mutable.copy() as! NSParagraphStyle, range: range)
             }
+            textStorage.endEditing()
+            
             applyFontChange { _ in
                 NSFont(name: "Times New Roman", size: 12) ?? NSFont.systemFont(ofSize: 12)
             }
         case "Body Text – No Indent":
-            applyManuscriptParagraphStyle { style in
-                style.alignment = .left
-                style.headIndent = 0
-                style.firstLineHeadIndent = 0
-                style.tailIndent = 0
-                style.paragraphSpacingBefore = 0
-                style.paragraphSpacing = 0
+            // Special handling: preserve textBlocks if in column/table
+            guard let textStorage = textView.textStorage else { break }
+            guard let selected = textView.selectedRanges.first?.rangeValue else { break }
+            let fullText = (textStorage.string as NSString)
+            let paragraphsRange = fullText.paragraphRange(for: selected)
+            
+            textStorage.beginEditing()
+            textStorage.enumerateAttribute(.paragraphStyle, in: paragraphsRange, options: []) { value, range, _ in
+                let current = (value as? NSParagraphStyle) ?? textView.defaultParagraphStyle ?? NSParagraphStyle.default
+                let mutable = (current.mutableCopy() as? NSMutableParagraphStyle) ?? NSMutableParagraphStyle()
+                
+                // Preserve textBlocks if they exist (columns/tables)
+                let preservedTextBlocks = mutable.textBlocks
+                
+                // Apply Body Text formatting
+                let base = manuscriptBaseParagraphStyle()
+                mutable.setParagraphStyle(base)
+                mutable.alignment = .left
+                mutable.headIndent = 0
+                mutable.firstLineHeadIndent = 0
+                mutable.tailIndent = 0
+                mutable.paragraphSpacingBefore = 0
+                mutable.paragraphSpacing = 0
+                
+                // Restore textBlocks if they were present
+                if let blocks = preservedTextBlocks, !blocks.isEmpty {
+                    mutable.textBlocks = blocks
+                }
+                
+                textStorage.addAttribute(.paragraphStyle, value: mutable.copy() as! NSParagraphStyle, range: range)
             }
+            textStorage.endEditing()
+            
             applyFontChange { _ in
                 NSFont(name: "Times New Roman", size: 12) ?? NSFont.systemFont(ofSize: 12)
             }

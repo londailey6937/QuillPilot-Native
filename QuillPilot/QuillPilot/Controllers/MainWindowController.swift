@@ -56,6 +56,10 @@ class MainWindowController: NSWindowController {
     private var styleEditorWindow: StyleEditorWindowController?
     private var searchPanel: SearchPanelController?
 
+    // Document tracking for auto-save
+    private var currentDocumentURL: URL?
+    private var currentDocumentFormat: ExportFormat = .rtf
+
     // Sheet field references
     private var columnsSheetField: NSTextField?
     private var tableRowsSheetField: NSTextField?
@@ -113,6 +117,9 @@ class MainWindowController: NSWindowController {
         }
         mainContentViewController.onStatsUpdate = { [weak self] text in
             self?.headerView.specsPanel.updateStats(text: text)
+        }
+        mainContentViewController.onSelectionChange = { [weak self] styleName in
+            self?.toolbarView.updateSelectedStyle(styleName)
         }
 
         // Connect manuscript info changes to editor headers/footers
@@ -814,6 +821,17 @@ extension MainWindowController: StyleEditorPresenter {
 extension MainWindowController {
     @MainActor
     func performSaveDocument(_ sender: Any?) {
+        // If we have a current document URL, save directly without showing panel
+        if let url = currentDocumentURL {
+            saveToURL(url, format: currentDocumentFormat)
+            return
+        }
+
+        // Otherwise show save panel for new documents
+        performSaveAs(sender)
+    }
+
+    func performSaveAs(_ sender: Any?) {
         guard let window else { return }
 
         let panel = NSSavePanel()
@@ -856,12 +874,20 @@ extension MainWindowController {
         panel.beginSheetModal(for: window) { response in
             guard response == .OK, let url = panel.url else { return }
             let format = ExportFormat.allCases[popup.indexOfSelectedItem]
-            do {
-                let data = try self.exportData(format: format)
-                try data.write(to: url, options: .atomic)
-            } catch {
-                self.presentErrorAlert(message: "Save failed", details: error.localizedDescription)
-            }
+            self.saveToURL(url, format: format)
+            // Remember this for auto-save
+            self.currentDocumentURL = url
+            self.currentDocumentFormat = format
+        }
+    }
+
+    private func saveToURL(_ url: URL, format: ExportFormat) {
+        do {
+            let data = try self.exportData(format: format)
+            try data.write(to: url, options: .atomic)
+            NSLog("Document saved to \(url.path)")
+        } catch {
+            self.presentErrorAlert(message: "Save failed", details: error.localizedDescription)
         }
     }
 
@@ -1045,6 +1071,10 @@ extension MainWindowController {
                     mainContentViewController.editorViewController.headerText = ""
                     mainContentViewController.editorViewController.footerText = ""
                     mainContentViewController.editorViewController.updatePageCentering()
+
+                    // Store URL and format for auto-save
+                    currentDocumentURL = url
+                    currentDocumentFormat = .docx
                     return
                 } catch {
                     NSLog("DOCX custom import failed, falling back to plain text: \(error.localizedDescription)")
@@ -1056,6 +1086,10 @@ extension MainWindowController {
                     mainContentViewController.editorViewController.headerText = ""
                     mainContentViewController.editorViewController.footerText = ""
                     mainContentViewController.editorViewController.updatePageCentering()
+
+                    // Store URL and format for auto-save (will export as DOCX)
+                    currentDocumentURL = url
+                    currentDocumentFormat = .docx
                     return
                 } catch {
                     throw NSError(domain: "QuillPilot", code: 2, userInfo: [
@@ -1095,6 +1129,10 @@ extension MainWindowController {
             mainContentViewController.editorViewController.updatePageCentering()
             NSLog("Finished updatePageCentering")
             NSLog("RTF import completed successfully")
+
+            // Store URL and format for auto-save
+            currentDocumentURL = url
+            currentDocumentFormat = .rtf
             return
         }
 
@@ -1104,6 +1142,10 @@ extension MainWindowController {
         mainContentViewController.editorViewController.headerText = ""
         mainContentViewController.editorViewController.footerText = ""
         mainContentViewController.editorViewController.updatePageCentering()
+
+        // Store URL for auto-save (plain text treated as RTF)
+        currentDocumentURL = url
+        currentDocumentFormat = .rtf
     }
 
     private func presentErrorAlert(message: String, details: String) {
@@ -1685,6 +1727,19 @@ class FormattingToolbar: NSView {
         sizePopup.selectItem(at: currentIndex + 1)
         fontSizeChanged(sizePopup)
     }
+
+    func updateSelectedStyle(_ styleName: String?) {
+        guard let styleName = styleName else {
+            // If no style found, select the first item (typically "Normal")
+            stylePopup.selectItem(at: 0)
+            return
+        }
+
+        // Try to find and select the matching style in the popup
+        if let index = (0..<stylePopup.numberOfItems).first(where: { stylePopup.item(at: $0)?.title == styleName }) {
+            stylePopup.selectItem(at: index)
+        }
+    }
 }
 
 // MARK: - Ruler View
@@ -1693,8 +1748,10 @@ class FormattingToolbar: NSView {
 class ContentViewController: NSViewController {
     var onTitleChange: ((String) -> Void)?
     var onStatsUpdate: ((String) -> Void)?
+    var onSelectionChange: ((String?) -> Void)?
 
     private var outlineViewController: OutlineViewController!
+    private var outlinePanelController: AnalysisViewController!
     var editorViewController: EditorViewController!
     private var analysisViewController: AnalysisViewController!
     private var backToTopButton: NSButton!
@@ -1731,14 +1788,17 @@ class ContentViewController: NSViewController {
         splitView.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(splitView)
 
-        // Left: Outline panel
+        // Left: Mirrored analysis shell showing the outline (📝)
         outlineViewController = OutlineViewController()
-        splitView.addArrangedSubview(outlineViewController.view)
-        outlineViewController.view.widthAnchor.constraint(greaterThanOrEqualToConstant: 200).isActive = true
-        outlineViewController.view.widthAnchor.constraint(lessThanOrEqualToConstant: 350).isActive = true
         outlineViewController.onSelect = { [weak self] entry in
             self?.scrollToOutlineEntry(entry)
         }
+        outlinePanelController = AnalysisViewController()
+        outlinePanelController.isOutlinePanel = true
+        outlinePanelController.outlineViewController = outlineViewController
+        splitView.addArrangedSubview(outlinePanelController.view)
+        outlinePanelController.view.widthAnchor.constraint(greaterThanOrEqualToConstant: 240).isActive = true
+        outlinePanelController.view.widthAnchor.constraint(lessThanOrEqualToConstant: 360).isActive = true
 
         // Center: Editor
         editorViewController = EditorViewController()
@@ -1751,6 +1811,7 @@ class ContentViewController: NSViewController {
         analysisViewController = AnalysisViewController()
         splitView.addArrangedSubview(analysisViewController.view)
         analysisViewController.view.widthAnchor.constraint(greaterThanOrEqualToConstant: 250).isActive = true
+        analysisViewController.view.widthAnchor.constraint(lessThanOrEqualToConstant: 400).isActive = true
 
         // Set up analysis callback
         analysisViewController.analyzeCallback = { [weak self] in
@@ -1759,10 +1820,9 @@ class ContentViewController: NSViewController {
         }
 
         // Encourage symmetric sidebars so the editor column (and page) stays centered in the window.
-        let equalSidebarWidths = outlineViewController.view.widthAnchor.constraint(equalTo: analysisViewController.view.widthAnchor)
+        let equalSidebarWidths = outlinePanelController.view.widthAnchor.constraint(equalTo: analysisViewController.view.widthAnchor)
         equalSidebarWidths.priority = .defaultHigh
         equalSidebarWidths.isActive = true
-        analysisViewController.view.widthAnchor.constraint(lessThanOrEqualToConstant: 400).isActive = true        // Back to top button (floating)
         backToTopButton = NSButton(title: "↑ Top", target: self, action: #selector(scrollToTop))
         backToTopButton.bezelStyle = .rounded
         backToTopButton.translatesAutoresizingMaskIntoConstraints = false
@@ -1909,11 +1969,18 @@ class ContentViewController: NSViewController {
             return
         }
 
-        let analysisEngine = AnalysisEngine()
-        let results = analysisEngine.analyzeText(text)
+        // Run analysis on background thread to avoid blocking UI
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            let analysisEngine = AnalysisEngine()
+            let results = analysisEngine.analyzeText(text)
 
-        NSLog("📊 Analysis results: \(results.wordCount) words, \(results.sentenceCount) sentences, \(results.paragraphCount) paragraphs")
-        analysisViewController.displayResults(results)
+            NSLog("📊 Analysis results: \(results.wordCount) words, \(results.sentenceCount) sentences, \(results.paragraphCount) paragraphs")
+
+            // Update UI on main thread
+            DispatchQueue.main.async {
+                self?.analysisViewController.displayResults(results)
+            }
+        }
     }
 }
 
@@ -1998,7 +2065,13 @@ class OutlineViewController: NSViewController {
         outlineView.outlineTableColumn = column
 
         let scrollView = NSScrollView()
-        scrollView.hasVerticalScroller = true
+        scrollView.hasVerticalScroller = false
+        scrollView.autohidesScrollers = true
+        scrollView.scrollerStyle = .overlay
+        scrollView.drawsBackground = false
+        scrollView.borderType = .noBorder
+        scrollView.verticalScroller?.isHidden = true
+        scrollView.horizontalScroller?.isHidden = true
         scrollView.documentView = outlineView
         scrollView.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(scrollView)
@@ -2852,22 +2925,39 @@ private enum DocxTextExtractor {
 // MARK: - EditorViewController Delegate
 extension ContentViewController: EditorViewControllerDelegate {
     func textDidChange() {
-        if let text = editorViewController?.textView?.string {
-            onStatsUpdate?(text)
-        }
-        refreshOutline()
+        // Throttle stats update and outline refresh to improve typing performance
+        NSObject.cancelPreviousPerformRequests(withTarget: self, selector: #selector(updateStatsDelayed), object: nil)
+        NSObject.cancelPreviousPerformRequests(withTarget: self, selector: #selector(refreshOutlineDelayed), object: nil)
+        perform(#selector(updateStatsDelayed), with: nil, afterDelay: 0.5)
+        perform(#selector(refreshOutlineDelayed), with: nil, afterDelay: 0.5)
 
-        // Trigger auto-analysis after a delay
+        // Trigger auto-analysis after a longer delay
         NSObject.cancelPreviousPerformRequests(withTarget: self, selector: #selector(performAnalysisDelayed), object: nil)
-        perform(#selector(performAnalysisDelayed), with: nil, afterDelay: 1.5)
+        perform(#selector(performAnalysisDelayed), with: nil, afterDelay: 2.0)
     }
 
     func titleDidChange(_ title: String) {
         onTitleChange?(title)
     }
 
+    func selectionDidChange() {
+        // Get current style name at cursor and notify
+        let styleName = editorViewController?.getCurrentStyleName()
+        onSelectionChange?(styleName)
+    }
+
     @objc private func performAnalysisDelayed() {
         performAnalysis()
+    }
+
+    @objc private func updateStatsDelayed() {
+        if let text = editorViewController?.textView?.string {
+            onStatsUpdate?(text)
+        }
+    }
+
+    @objc private func refreshOutlineDelayed() {
+        refreshOutline()
     }
 }
 

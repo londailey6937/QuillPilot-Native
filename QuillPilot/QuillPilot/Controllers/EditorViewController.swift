@@ -17,6 +17,7 @@ class FlippedView: NSView {
 protocol EditorViewControllerDelegate: AnyObject {
     func textDidChange()
     func titleDidChange(_ title: String)
+    func selectionDidChange()
 }
 
 class EditorViewController: NSViewController {
@@ -1083,10 +1084,28 @@ class EditorViewController: NSViewController {
     func rtfData() throws -> Data {
         let attributed = exportReadyAttributedContent()
         let fullRange = NSRange(location: 0, length: attributed.length)
-        guard let data = attributed.rtf(from: fullRange, documentAttributes: [:]) else {
-            throw NSError(domain: "QuillPilot", code: 1, userInfo: [NSLocalizedDescriptionKey: "Failed to generate RTF."])
+
+        // Check if there are any attachments (images) in the content
+        var hasAttachments = false
+        attributed.enumerateAttribute(.attachment, in: fullRange, options: []) { value, _, stop in
+            if value != nil {
+                hasAttachments = true
+                stop.pointee = true
+            }
         }
-        return data
+
+        // Use RTFD if there are images, otherwise use RTF
+        if hasAttachments {
+            guard let rtfdData = attributed.rtfd(from: fullRange, documentAttributes: [:]) else {
+                throw NSError(domain: "QuillPilot", code: 1, userInfo: [NSLocalizedDescriptionKey: "Failed to generate RTFD with images."])
+            }
+            return rtfdData
+        } else {
+            guard let data = attributed.rtf(from: fullRange, documentAttributes: [:]) else {
+                throw NSError(domain: "QuillPilot", code: 1, userInfo: [NSLocalizedDescriptionKey: "Failed to generate RTF."])
+            }
+            return data
+        }
     }
 
     /// Returns an attributed string with paragraph, font, and color attributes normalized for export.
@@ -2051,6 +2070,28 @@ case "Book Subtitle":
         }
     }
 
+    func getCurrentStyleName() -> String? {
+        guard let storage = textView.textStorage,
+              let selected = textView.selectedRanges.first as? NSRange else {
+            return nil
+        }
+
+        // Get the style at the cursor position (or start of selection)
+        let position = selected.location
+        guard position < storage.length else { return nil }
+
+        // Get the paragraph range to check paragraph-level style
+        let paragraphRange = (textView.string as NSString).paragraphRange(for: selected)
+        guard paragraphRange.location < storage.length else { return nil }
+
+        // Try to get the stored style name attribute
+        if let styleName = storage.attribute(styleAttributeKey, at: paragraphRange.location, effectiveRange: nil) as? String {
+            return styleName
+        }
+
+        return nil
+    }
+
     private func applyCatalogStyle(named styleName: String) -> Bool {
         guard let definition = StyleCatalog.shared.style(named: styleName) else { return false }
 
@@ -2286,9 +2327,21 @@ case "Book Subtitle":
         let scaledPageHeight = pageHeight * editorZoom
         let pageX = max((visibleWidth - scaledPageWidth) / 2, 0)
 
-        // Calculate number of pages by walking laid out line fragments at correct width
+        // Use fast estimation for page count to avoid expensive layout operations
         var numPages = 1
-        if let layoutManager = textView.layoutManager,
+
+        // Estimate pages based on word/character count (much faster than full layout)
+        let textLength = textView.string.utf16.count
+        if textLength > 0 {
+            // Average ~250 words per page, ~5 chars per word = ~1250 chars per page
+            // Add some buffer for formatting, headers, etc.
+            let charsPerPageEstimate = 1200.0
+            numPages = max(1, Int(ceil(Double(textLength) / charsPerPageEstimate)))
+        }
+
+        // Only do expensive full layout calculation if document is small (< 10 pages estimated)
+        // or if explicitly needed (like when printing)
+        if numPages < 10, let layoutManager = textView.layoutManager,
            let textContainer = textView.textContainer {
             let activeHeaderHeight = showHeaders ? headerHeight : 0
             let activeFooterHeight = showFooters ? footerHeight : 0
@@ -2304,19 +2357,11 @@ case "Book Subtitle":
             textContainer.size = NSSize(width: textWidth, height: CGFloat.greatestFiniteMagnitude)
             layoutManager.textContainerChangedGeometry(textContainer)
 
-            // Invalidate and force layout for all glyphs to get an accurate total height
-            let fullRange = NSRange(location: 0, length: textView.string.utf16.count)
-            layoutManager.invalidateLayout(forCharacterRange: fullRange, actualCharacterRange: nil)
-            let fullGlyphRange = NSRange(location: 0, length: layoutManager.numberOfGlyphs)
-            layoutManager.ensureLayout(forGlyphRange: fullGlyphRange)
+            // For small documents, do a quick layout without full invalidation
             let usedHeight = layoutManager.usedRect(for: textContainer).height
             let measuredPages = Int(ceil(usedHeight / pageTextHeight))
 
-            // Heuristic safety net: estimate pages from character count to avoid undercounts on very long texts
-            let charsPerPageEstimate = 1200.0  // rough average for 12pt double-spaced text
-            let estimatedPages = Int(ceil(Double(textView.string.utf16.count) / charsPerPageEstimate))
-
-            numPages = max(1, max(measuredPages, estimatedPages))
+            numPages = max(1, measuredPages)
 
             // Restore container state
             textContainer.size = oldSize
@@ -3396,10 +3441,19 @@ extension EditorViewController: NSTextViewDelegate {
     func textDidChange(_ notification: Notification) {
         delegate?.textDidChange()
 
-        // Check if current paragraph is the title and update if so
-        checkAndUpdateTitle()
+        // Throttle expensive operations to improve typing performance
+        NSObject.cancelPreviousPerformRequests(withTarget: self, selector: #selector(checkAndUpdateTitleDelayed), object: nil)
+        NSObject.cancelPreviousPerformRequests(withTarget: self, selector: #selector(updatePageCenteringDelayed), object: nil)
 
-        // Update page height dynamically as text is typed/pasted
+        perform(#selector(checkAndUpdateTitleDelayed), with: nil, afterDelay: 0.3)
+        perform(#selector(updatePageCenteringDelayed), with: nil, afterDelay: 0.5)
+    }
+
+    @objc private func checkAndUpdateTitleDelayed() {
+        checkAndUpdateTitle()
+    }
+
+    @objc private func updatePageCenteringDelayed() {
         updatePageCentering()
     }
 
@@ -3447,5 +3501,8 @@ extension EditorViewController: NSTextViewDelegate {
            selectedRange.length > 0 {
             applyFormatPainterToSelection()
         }
+
+        // Notify delegate that selection changed (for updating style dropdown)
+        delegate?.selectionDidChange()
     }
 }

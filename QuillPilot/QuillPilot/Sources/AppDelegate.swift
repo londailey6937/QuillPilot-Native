@@ -2,6 +2,7 @@ import Cocoa
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private var mainWindowController: MainWindowController?
+    private var documentationWindow: DocumentationWindowController?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         setupMenuBar()
@@ -44,6 +45,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     @objc private func saveDocument(_ sender: Any?) {
         Task { @MainActor [weak self] in
             self?.mainWindowController?.performSaveDocument(sender)
+        }
+    }
+
+    @objc private func saveDocumentAs(_ sender: Any?) {
+        Task { @MainActor [weak self] in
+            self?.mainWindowController?.performSaveAs(sender)
         }
     }
 
@@ -99,9 +106,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         openItem.target = self
         fileMenu.addItem(openItem)
 
-        let saveItem = NSMenuItem(title: "Save…", action: #selector(saveDocument(_:)), keyEquivalent: "s")
+        let saveItem = NSMenuItem(title: "Save", action: #selector(saveDocument(_:)), keyEquivalent: "s")
         saveItem.target = self
         fileMenu.addItem(saveItem)
+
+        let saveAsItem = NSMenuItem(title: "Save As…", action: #selector(saveDocumentAs(_:)), keyEquivalent: "S")
+        saveAsItem.target = self
+        fileMenu.addItem(saveAsItem)
 
         let printItem = NSMenuItem(title: "Print…", action: #selector(printDocument(_:)), keyEquivalent: "p")
         printItem.target = self
@@ -142,12 +153,31 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         windowMenu.addItem(NSMenuItem(title: "Minimize", action: #selector(NSWindow.miniaturize(_:)), keyEquivalent: "m"))
         windowMenu.addItem(NSMenuItem(title: "Zoom", action: #selector(NSWindow.zoom(_:)), keyEquivalent: ""))
 
+        // Help Menu
+        let helpMenuItem = NSMenuItem()
+        mainMenu.addItem(helpMenuItem)
+
+        let helpMenu = NSMenu(title: "Help")
+        helpMenuItem.submenu = helpMenu
+
+        let documentationItem = NSMenuItem(title: "QuillPilot Help", action: #selector(showDocumentation(_:)), keyEquivalent: "?")
+        documentationItem.target = self
+        helpMenu.addItem(documentationItem)
+
         NSApp.mainMenu = mainMenu
         NSApp.windowsMenu = windowMenu
     }
 
     @objc private func showHeaderFooterSettings(_ sender: Any?) {
         mainWindowController?.showHeaderFooterSettings()
+    }
+
+    @objc private func showDocumentation(_ sender: Any?) {
+        if documentationWindow == nil {
+            documentationWindow = DocumentationWindowController()
+        }
+        documentationWindow?.showWindow(nil)
+        documentationWindow?.window?.makeKeyAndOrderFront(nil)
     }
 
     @MainActor

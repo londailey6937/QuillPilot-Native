@@ -30,7 +30,8 @@ let package = Package(
                 "Views/DocumentInfoPanel.swift",
                 "Views/RulerView.swift",
                 "Views/HeaderFooterSettingsWindow.swift",
-                "Views/StyleEditorWindow.swift"
+                "Views/StyleEditorWindow.swift",
+                "Views/DocumentationWindow.swift"
             ],
             resources: [
                 .process("Resources/Info.plist")

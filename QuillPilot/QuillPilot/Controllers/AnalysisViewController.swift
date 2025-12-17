@@ -10,13 +10,36 @@ import Cocoa
 
 class AnalysisViewController: NSViewController {
 
+    private var menuSidebar: NSView!
+    private var menuSeparator: NSView!
+    private var menuButtons: [NSButton] = []
+    private var scrollContainer: NSView!
     private var scrollView: NSScrollView!
     private var documentView: NSView!
     private var contentStack: NSStackView!
     private var resultsStack: NSStackView!
     private var currentTheme: AppTheme = ThemeManager.shared.currentTheme
+    private var currentCategory: AnalysisCategory = .basic
 
+    var outlineViewController: OutlineViewController?
+    var isOutlinePanel: Bool = false
     var analyzeCallback: (() -> Void)?
+
+    enum AnalysisCategory: String, CaseIterable {
+        case basic = "Outline"
+        case advanced = "Advanced"
+        case characters = "Characters"
+        case plot = "Plot"
+
+        var icon: String {
+            switch self {
+            case .basic: return "📝"
+            case .advanced: return "🔬"
+            case .characters: return "👥"
+            case .plot: return "📖"
+            }
+        }
+    }
 
     override func loadView() {
         view = NSView()
@@ -25,29 +48,213 @@ class AnalysisViewController: NSViewController {
 
     override func viewDidLoad() {
         super.viewDidLoad()
+        setupSidebarMenu()
         setupScrollView()
         setupContent()
         applyTheme(currentTheme)
+        switchToCategory(currentCategory)
+    }
+
+    private func setupSidebarMenu() {
+        menuSidebar = NSView()
+        menuSidebar.translatesAutoresizingMaskIntoConstraints = false
+        menuSidebar.wantsLayer = true
+        view.addSubview(menuSidebar)
+
+        menuSeparator = NSView()
+        menuSeparator.translatesAutoresizingMaskIntoConstraints = false
+        menuSeparator.wantsLayer = true
+        view.addSubview(menuSeparator)
+
+        // Create menu buttons
+        var yPosition: CGFloat = 12
+        for category in AnalysisCategory.allCases {
+            let button = NSButton(frame: NSRect(x: 0, y: 0, width: 44, height: 44))
+            button.title = category.icon
+            button.font = .systemFont(ofSize: 20)
+            button.isBordered = false
+            button.bezelStyle = .rounded
+            button.target = self
+            button.action = #selector(categoryButtonTapped(_:))
+            button.tag = AnalysisCategory.allCases.firstIndex(of: category) ?? 0
+            button.translatesAutoresizingMaskIntoConstraints = false
+            button.toolTip = category.rawValue
+
+            menuSidebar.addSubview(button)
+            menuButtons.append(button)
+
+            NSLayoutConstraint.activate([
+                button.topAnchor.constraint(equalTo: menuSidebar.topAnchor, constant: yPosition),
+                button.centerXAnchor.constraint(equalTo: menuSidebar.centerXAnchor),
+                button.widthAnchor.constraint(equalToConstant: 44),
+                button.heightAnchor.constraint(equalToConstant: 44)
+            ])
+
+            yPosition += 52
+        }
+
+        if isOutlinePanel {
+            NSLayoutConstraint.activate([
+                menuSidebar.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+                menuSidebar.topAnchor.constraint(equalTo: view.topAnchor),
+                menuSidebar.bottomAnchor.constraint(equalTo: view.bottomAnchor),
+                menuSidebar.widthAnchor.constraint(equalToConstant: 56),
+
+                menuSeparator.trailingAnchor.constraint(equalTo: menuSidebar.leadingAnchor),
+                menuSeparator.topAnchor.constraint(equalTo: view.topAnchor),
+                menuSeparator.bottomAnchor.constraint(equalTo: view.bottomAnchor),
+                menuSeparator.widthAnchor.constraint(equalToConstant: 1)
+            ])
+        } else {
+            NSLayoutConstraint.activate([
+                menuSidebar.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+                menuSidebar.topAnchor.constraint(equalTo: view.topAnchor),
+                menuSidebar.bottomAnchor.constraint(equalTo: view.bottomAnchor),
+                menuSidebar.widthAnchor.constraint(equalToConstant: 56),
+
+                menuSeparator.leadingAnchor.constraint(equalTo: menuSidebar.trailingAnchor),
+                menuSeparator.topAnchor.constraint(equalTo: view.topAnchor),
+                menuSeparator.bottomAnchor.constraint(equalTo: view.bottomAnchor),
+                menuSeparator.widthAnchor.constraint(equalToConstant: 1)
+            ])
+        }
+
+        updateSelectedButton()
+    }
+
+    @objc private func categoryButtonTapped(_ sender: NSButton) {
+        let category = AnalysisCategory.allCases[sender.tag]
+        currentCategory = category
+        updateSelectedButton()
+        switchToCategory(category)
+    }
+
+    private func updateSelectedButton() {
+        for (index, button) in menuButtons.enumerated() {
+            if index == AnalysisCategory.allCases.firstIndex(of: currentCategory) {
+                button.layer?.backgroundColor = currentTheme.headerBackground.withAlphaComponent(0.3).cgColor
+                button.layer?.cornerRadius = 8
+            } else {
+                button.layer?.backgroundColor = NSColor.clear.cgColor
+            }
+        }
+    }
+
+    private func switchToCategory(_ category: AnalysisCategory) {
+        currentCategory = category
+
+        let showOutline = isOutlinePanel && category == .basic
+
+        if showOutline {
+            // Show outline, hide analysis content
+            scrollContainer.isHidden = true
+            if let outlineVC = outlineViewController {
+                if outlineVC.view.superview == nil {
+                    view.addSubview(outlineVC.view)
+                    outlineVC.view.translatesAutoresizingMaskIntoConstraints = false
+                    NSLayoutConstraint.activate([
+                        outlineVC.view.topAnchor.constraint(equalTo: view.topAnchor),
+                        outlineVC.view.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+                        outlineVC.view.trailingAnchor.constraint(equalTo: menuSeparator.leadingAnchor),
+                        outlineVC.view.bottomAnchor.constraint(equalTo: view.bottomAnchor)
+                    ])
+                }
+                outlineVC.view.isHidden = false
+            }
+            // Trigger a refresh of the outline data when opened via the top button
+            NotificationCenter.default.post(name: Notification.Name("QuillPilotOutlineRefresh"), object: nil)
+            updateSelectedButton()
+            return
+        }
+
+        // Show analysis content, hide outline
+        scrollContainer.isHidden = false
+        outlineViewController?.view.isHidden = true
+
+        // Clear current analysis content
+        resultsStack.arrangedSubviews.forEach { view in
+            resultsStack.removeArrangedSubview(view)
+            view.removeFromSuperview()
+        }
+
+        if !isOutlinePanel && category == .basic {
+            // Restore basic analysis - trigger a re-analysis
+            analyzeCallback?()
+        } else {
+            // Add placeholder for non-basic categories
+            let placeholder = makeLabel("\(category.icon) \(category.rawValue) Analysis\n\nComing soon...", size: 16, bold: true)
+            placeholder.alignment = .center
+            placeholder.textColor = .secondaryLabelColor
+            placeholder.maximumNumberOfLines = 0
+            resultsStack.addArrangedSubview(placeholder)
+        }
+
+        updateSelectedButton()
     }
 
     private func setupScrollView() {
+        // Outer container - transparent, no styling (contentStack provides the card)
+        scrollContainer = NSView()
+        scrollContainer.translatesAutoresizingMaskIntoConstraints = false
+        scrollContainer.wantsLayer = true
+        scrollContainer.layer?.backgroundColor = NSColor.clear.cgColor
+
         scrollView = NSScrollView()
         scrollView.translatesAutoresizingMaskIntoConstraints = false
-        scrollView.hasVerticalScroller = true
+        scrollView.hasVerticalScroller = false
         scrollView.hasHorizontalScroller = false
         scrollView.autohidesScrollers = true
-        scrollView.drawsBackground = true
+        scrollView.scrollerStyle = .overlay
+        scrollView.drawsBackground = false
+        scrollView.borderType = .noBorder
+        scrollView.wantsLayer = true
+        scrollView.layer?.backgroundColor = NSColor.clear.cgColor
+        scrollView.contentView.drawsBackground = false
+        scrollView.verticalScroller?.isHidden = true
+        scrollView.horizontalScroller?.isHidden = true
+
+        // Performance optimizations for scrolling
+        scrollView.usesPredominantAxisScrolling = false
+        scrollView.scrollerInsets = NSEdgeInsets(top: 0, left: 0, bottom: 0, right: 0)
+
+        // Clip view stays transparent
+        scrollView.contentView.wantsLayer = true
+        scrollView.contentView.layer?.cornerRadius = 0
+        scrollView.contentView.layer?.masksToBounds = false
+        scrollView.contentView.layer?.backgroundColor = NSColor.clear.cgColor
 
         documentView = NSView()
         documentView.translatesAutoresizingMaskIntoConstraints = false
+        documentView.wantsLayer = true
+        documentView.layer?.backgroundColor = NSColor.clear.cgColor
         scrollView.documentView = documentView
 
-        view.addSubview(scrollView)
-        NSLayoutConstraint.activate([
-            scrollView.topAnchor.constraint(equalTo: view.topAnchor),
-            scrollView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
-            scrollView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
-            scrollView.bottomAnchor.constraint(equalTo: view.bottomAnchor),
+        scrollContainer.addSubview(scrollView)
+        view.addSubview(scrollContainer)
+
+        let containerConstraints: [NSLayoutConstraint]
+        if isOutlinePanel {
+            containerConstraints = [
+                scrollContainer.topAnchor.constraint(equalTo: view.topAnchor, constant: 12),
+                scrollContainer.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 0),
+                scrollContainer.trailingAnchor.constraint(equalTo: menuSeparator.leadingAnchor, constant: 0),
+                scrollContainer.bottomAnchor.constraint(equalTo: view.bottomAnchor, constant: -12)
+            ]
+        } else {
+            containerConstraints = [
+                scrollContainer.topAnchor.constraint(equalTo: view.topAnchor, constant: 12),
+                scrollContainer.leadingAnchor.constraint(equalTo: menuSeparator.trailingAnchor, constant: 0),
+                scrollContainer.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -12),
+                scrollContainer.bottomAnchor.constraint(equalTo: view.bottomAnchor, constant: -12)
+            ]
+        }
+
+        NSLayoutConstraint.activate(containerConstraints + [
+            scrollView.topAnchor.constraint(equalTo: scrollContainer.topAnchor),
+            scrollView.leadingAnchor.constraint(equalTo: scrollContainer.leadingAnchor),
+            scrollView.trailingAnchor.constraint(equalTo: scrollContainer.trailingAnchor),
+            scrollView.bottomAnchor.constraint(equalTo: scrollContainer.bottomAnchor),
+
             documentView.leadingAnchor.constraint(equalTo: scrollView.contentView.leadingAnchor),
             documentView.trailingAnchor.constraint(equalTo: scrollView.contentView.trailingAnchor),
             documentView.topAnchor.constraint(equalTo: scrollView.contentView.topAnchor),
@@ -61,7 +268,15 @@ class AnalysisViewController: NSViewController {
         contentStack.orientation = .vertical
         contentStack.alignment = .leading
         contentStack.spacing = 16
-        contentStack.edgeInsets = NSEdgeInsets(top: 20, left: 16, bottom: 20, right: 16)
+        contentStack.edgeInsets = NSEdgeInsets(top: 24, left: 32, bottom: 24, right: 8)
+        contentStack.wantsLayer = true
+
+        // Set background and corner radius so the card shows its rounding
+        if let layer = contentStack.layer {
+            layer.backgroundColor = currentTheme.toolbarBackground.cgColor
+            layer.cornerRadius = 12
+            layer.masksToBounds = true
+        }
 
         // Header
         let header = makeLabel("Document Analysis", size: 18, bold: true)
@@ -91,10 +306,10 @@ class AnalysisViewController: NSViewController {
 
         documentView.addSubview(contentStack)
         NSLayoutConstraint.activate([
-            contentStack.topAnchor.constraint(equalTo: documentView.topAnchor),
-            contentStack.leadingAnchor.constraint(equalTo: documentView.leadingAnchor),
-            contentStack.trailingAnchor.constraint(equalTo: documentView.trailingAnchor),
-            contentStack.bottomAnchor.constraint(equalTo: documentView.bottomAnchor, constant: -20)
+            contentStack.topAnchor.constraint(equalTo: documentView.topAnchor, constant: 12),
+            contentStack.leadingAnchor.constraint(equalTo: documentView.leadingAnchor, constant: 12),
+            contentStack.trailingAnchor.constraint(equalTo: documentView.trailingAnchor, constant: -12),
+            contentStack.bottomAnchor.constraint(equalTo: documentView.bottomAnchor, constant: -32)
         ])
 
         // Ensure documentView height grows with content
@@ -107,6 +322,9 @@ class AnalysisViewController: NSViewController {
         // Scroll to top first
         scrollView?.documentView?.scroll(NSPoint.zero)
 
+
+        // Only display if we're on the basic category
+        guard currentCategory == .basic else { return }
         // Clear previous results
         resultsStack.arrangedSubviews.forEach { view in
             resultsStack.removeArrangedSubview(view)
@@ -128,10 +346,16 @@ class AnalysisViewController: NSViewController {
 
         // Paragraph analysis
         addHeader("📊 Paragraphs")
+        addStat("Count", "\(results.paragraphCount)")
+        addStat("Pages", "~\(results.pageCount)")
         addStat("Avg Length", "\(results.averageParagraphLength) words")
         addStat("Dialogue", "\(results.dialoguePercentage)%")
         if !results.longParagraphs.isEmpty {
             addWarning("⚠️ \(results.longParagraphs.count) long paragraph(s)")
+        }
+        if !results.suggestedParagraphBreaks.isEmpty {
+            addWarning("💡 \(results.suggestedParagraphBreaks.count) suggested paragraph break(s)")
+            addDetail("Consider breaking at lines: \(results.suggestedParagraphBreaks.prefix(5).map(String.init).joined(separator: ", "))")
         }
         addDivider()
 
@@ -387,7 +611,21 @@ class AnalysisViewController: NSViewController {
 
     func applyTheme(_ theme: AppTheme) {
         currentTheme = theme
-        view.layer?.backgroundColor = theme.analysisBackground.cgColor
-        scrollView?.backgroundColor = theme.analysisBackground
+        let panelBackground = isOutlinePanel ? theme.outlineBackground : theme.toolbarBackground
+
+        // Main view is transparent - no background color
+        view.layer?.backgroundColor = NSColor.clear.cgColor
+        menuSidebar?.layer?.backgroundColor = theme.toolbarBackground.cgColor
+        menuSeparator?.layer?.backgroundColor = NSColor.separatorColor.cgColor
+        // Keep scroll hierarchy transparent - only contentStack provides the card
+        scrollContainer?.layer?.backgroundColor = NSColor.clear.cgColor
+        scrollView?.drawsBackground = false
+        scrollView?.backgroundColor = .clear
+        scrollView?.layer?.backgroundColor = NSColor.clear.cgColor
+        documentView?.layer?.backgroundColor = NSColor.clear.cgColor
+        // Only contentStack gets the panel background (the visible card)
+        contentStack?.layer?.backgroundColor = panelBackground.cgColor
+        outlineViewController?.applyTheme(theme)
+        updateSelectedButton()
     }
 }

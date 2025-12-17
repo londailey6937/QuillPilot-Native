@@ -11,6 +11,8 @@ import Cocoa
 class SplitViewController: NSSplitViewController {
 
     var editorViewController: EditorViewController!
+    private var outlineViewController: OutlineViewController!
+    private var outlinePanelController: AnalysisViewController!
     private var analysisViewController: AnalysisViewController!
     private var analysisEngine: AnalysisEngine!
 
@@ -20,21 +22,36 @@ class SplitViewController: NSSplitViewController {
         // Initialize analysis engine
         analysisEngine = AnalysisEngine()
 
-        // Create editor view controller
+        // Outline panel on the left (mirrors analysis UI but shows outline)
+        outlineViewController = OutlineViewController()
+        outlinePanelController = AnalysisViewController()
+        outlinePanelController.isOutlinePanel = true
+        outlinePanelController.outlineViewController = outlineViewController
+        let outlineItem = NSSplitViewItem(sidebarWithViewController: outlinePanelController)
+        outlineItem.canCollapse = true
+        outlineItem.minimumThickness = 280
+        outlineItem.maximumThickness = 360
+        outlineItem.holdingPriority = .init(260)
+        outlineItem.isCollapsed = false
+        addSplitViewItem(outlineItem)
+
+        // Editor in the middle
         editorViewController = EditorViewController()
         editorViewController.delegate = self
         let editorItem = NSSplitViewItem(viewController: editorViewController)
         editorItem.canCollapse = false
-        editorItem.minimumThickness = 400
+        editorItem.minimumThickness = 480
         addSplitViewItem(editorItem)
 
-        // Create analysis view controller
+        // Analysis panel on the right
         analysisViewController = AnalysisViewController()
+        analysisViewController.isOutlinePanel = false
         let analysisItem = NSSplitViewItem(sidebarWithViewController: analysisViewController)
-        analysisItem.canCollapse = false  // Keep it visible for debugging
+        analysisItem.canCollapse = true
         analysisItem.minimumThickness = 280
-        analysisItem.holdingPriority = .init(250)  // Allow flexible sizing
-        analysisItem.isCollapsed = false  // Ensure it starts visible
+        analysisItem.maximumThickness = 400
+        analysisItem.holdingPriority = .init(250)
+        analysisItem.isCollapsed = false
         addSplitViewItem(analysisItem)
 
         // Set callback AFTER adding to split view to ensure view is loaded
@@ -114,6 +131,10 @@ extension SplitViewController: EditorViewControllerDelegate {
 
     func titleDidChange(_ title: String) {
         // Title changed in editor
+    }
+
+    func selectionDidChange() {
+        // Selection changed in editor (not used in this view controller)
     }
 
     @objc private func performAnalysisDelayed() {

@@ -32,6 +32,12 @@ struct AnalysisResults {
     var filterWordPhrases: [String] = []
     var sentenceVarietyScore: Int = 0 // 0-100
     var sentenceLengths: [Int] = [] // For graphing
+
+    // Paragraph break suggestions (line numbers where breaks should be added)
+    var suggestedParagraphBreaks: [Int] = []
+
+    // Page count (estimated at ~250 words per page)
+    var pageCount: Int = 0
 }
 
 class AnalysisEngine {
@@ -165,6 +171,12 @@ class AnalysisEngine {
 
         // Dialogue
         results.dialoguePercentage = calculateDialoguePercentage(text: text)
+
+        // Paragraph break suggestions
+        results.suggestedParagraphBreaks = suggestParagraphBreaks(text)
+
+        // Page count (industry standard: ~250 words per manuscript page)
+        results.pageCount = max(1, (results.wordCount + 249) / 250)
 
         return results
     }
@@ -373,4 +385,66 @@ class AnalysisEngine {
         let varietyScore = min(100, Int((standardDeviation / 5.0) * 100))
 
         return (varietyScore, lengths)
+    }
+
+    private func suggestParagraphBreaks(_ text: String) -> [Int] {
+        var suggestions: [Int] = []
+
+        // Split text into lines
+        let lines = text.components(separatedBy: .newlines)
+
+        var currentParagraphSentences = 0
+        var currentParagraphWords = 0
+        var lineInParagraph = 0
+
+        for (index, line) in lines.enumerated() {
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+
+            // Empty line indicates an existing paragraph break
+            if trimmed.isEmpty {
+                currentParagraphSentences = 0
+                currentParagraphWords = 0
+                lineInParagraph = 0
+                continue
+            }
+
+            lineInParagraph += 1
+            let sentencesInLine = trimmed.components(separatedBy: CharacterSet(charactersIn: ".!?")).filter { !$0.trimmingCharacters(in: .whitespaces).isEmpty }.count
+            let wordsInLine = trimmed.components(separatedBy: .whitespacesAndNewlines).filter { !$0.isEmpty }.count
+
+            currentParagraphSentences += sentencesInLine
+            currentParagraphWords += wordsInLine
+
+            // Suggest a break if:
+            // 1. Paragraph has 5+ sentences and this line ends with a sentence-ending punctuation
+            // 2. Paragraph has 100+ words and this line ends with a sentence-ending punctuation
+            // 3. Line contains dialogue transition ("he said", "she asked", etc) after dialogue
+
+            let endsWithSentence = trimmed.last == "." || trimmed.last == "!" || trimmed.last == "?"
+            let hasDialogueTransition = trimmed.range(of: #"["""].+["""][,.]? (he|she|they|it|[A-Z]\w+) (said|asked|replied|shouted|whispered|muttered|exclaimed)"#, options: .regularExpression) != nil
+
+            if endsWithSentence {
+                if currentParagraphSentences >= 5 && lineInParagraph >= 3 {
+                    // Suggest break after long paragraph with multiple sentences
+                    suggestions.append(index + 1) // Next line should start new paragraph
+                    currentParagraphSentences = 0
+                    currentParagraphWords = 0
+                    lineInParagraph = 0
+                } else if currentParagraphWords >= 100 && lineInParagraph >= 4 {
+                    // Suggest break after long paragraph by word count
+                    suggestions.append(index + 1)
+                    currentParagraphSentences = 0
+                    currentParagraphWords = 0
+                    lineInParagraph = 0
+                } else if hasDialogueTransition && currentParagraphSentences >= 2 {
+                    // Suggest break after dialogue with transition
+                    suggestions.append(index + 1)
+                    currentParagraphSentences = 0
+                    currentParagraphWords = 0
+                    lineInParagraph = 0
+                }
+            }
+        }
+
+        return suggestions
     }}

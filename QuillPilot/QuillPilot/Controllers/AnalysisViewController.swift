@@ -164,6 +164,61 @@ class AnalysisViewController: NSViewController {
         } else {
             addSuccess("✓ Good usage")
         }
+        addDivider()
+
+        // Weak verbs
+        addHeader("💪 Weak Verbs")
+        if results.weakVerbCount > 0 {
+            addWarning("Found \(results.weakVerbCount) instance(s)")
+            for phrase in results.weakVerbPhrases.prefix(5) {
+                addDetail("• \"\(phrase)\"")
+            }
+            addDetail("Tip: Use stronger, more specific verbs")
+        } else {
+            addSuccess("✓ Minimal usage")
+        }
+        addDivider()
+
+        // Clichés
+        addHeader("🚫 Clichés")
+        if results.clicheCount > 0 {
+            addWarning("Found \(results.clicheCount) cliché(s)")
+            for phrase in results.clichePhrases.prefix(3) {
+                addDetail("• \"\(phrase)\"")
+            }
+            addDetail("Tip: Replace with original descriptions")
+        } else {
+            addSuccess("✓ None detected")
+        }
+        addDivider()
+
+        // Filter words
+        addHeader("🔍 Filter Words")
+        if results.filterWordCount > 0 {
+            addWarning("Found \(results.filterWordCount) instance(s)")
+            for phrase in results.filterWordPhrases.prefix(5) {
+                addDetail("• \"\(phrase)\"")
+            }
+            addDetail("Tip: Show directly instead of filtering through perception")
+        } else {
+            addSuccess("✓ Minimal usage")
+        }
+        addDivider()
+
+        // Sentence variety with graph
+        addHeader("📊 Sentence Variety")
+        addStat("Score", "\(results.sentenceVarietyScore)%")
+        if !results.sentenceLengths.isEmpty {
+            let graphView = createSentenceGraph(results.sentenceLengths)
+            resultsStack.addArrangedSubview(graphView)
+        }
+        if results.sentenceVarietyScore < 40 {
+            addWarning("Low variety - mix short and long sentences")
+        } else if results.sentenceVarietyScore < 70 {
+            addDetail("Good variety - consider adding more variation")
+        } else {
+            addSuccess("✓ Excellent variety")
+        }
     }
 
     private func makeLabel(_ text: String, size: CGFloat, bold: Bool) -> NSTextField {
@@ -216,6 +271,81 @@ class AnalysisViewController: NSViewController {
         box.translatesAutoresizingMaskIntoConstraints = false
         box.widthAnchor.constraint(equalToConstant: 180).isActive = true
         resultsStack.addArrangedSubview(box)
+    }
+
+    private func createSentenceGraph(_ lengths: [Int]) -> NSView {
+        let graphHeight: CGFloat = 80
+        let graphWidth: CGFloat = 200
+
+        let container = NSView(frame: NSRect(x: 0, y: 0, width: graphWidth, height: graphHeight))
+        container.wantsLayer = true
+        container.translatesAutoresizingMaskIntoConstraints = false
+
+        // Create bar chart
+        guard !lengths.isEmpty else { return container }
+
+        let maxLength = lengths.max() ?? 1
+        let barWidth = min(graphWidth / CGFloat(lengths.count), 12.0)
+        let spacing: CGFloat = 2
+
+        for (index, length) in lengths.prefix(Int(graphWidth / (barWidth + spacing))).enumerated() {
+            let barHeight = (CGFloat(length) / CGFloat(maxLength)) * (graphHeight - 20)
+            let x = CGFloat(index) * (barWidth + spacing)
+            let y = graphHeight - barHeight - 10
+
+            let bar = NSView(frame: NSRect(x: x, y: y, width: barWidth, height: barHeight))
+            bar.wantsLayer = true
+
+            // Color by length: green (short), yellow (medium), red (long)
+            if length < 12 {
+                bar.layer?.backgroundColor = NSColor.systemGreen.withAlphaComponent(0.6).cgColor
+            } else if length < 20 {
+                bar.layer?.backgroundColor = NSColor.systemYellow.withAlphaComponent(0.6).cgColor
+            } else {
+                bar.layer?.backgroundColor = NSColor.systemRed.withAlphaComponent(0.6).cgColor
+            }
+
+            bar.layer?.cornerRadius = 2
+            container.addSubview(bar)
+        }
+
+        // Add legend labels
+        let legendStack = NSStackView()
+        legendStack.translatesAutoresizingMaskIntoConstraints = false
+        legendStack.orientation = .horizontal
+        legendStack.spacing = 8
+        legendStack.alignment = .centerY
+
+        func addLegendItem(_ color: NSColor, _ label: String) {
+            let dot = NSView(frame: NSRect(x: 0, y: 0, width: 8, height: 8))
+            dot.wantsLayer = true
+            dot.layer?.backgroundColor = color.cgColor
+            dot.layer?.cornerRadius = 4
+            dot.translatesAutoresizingMaskIntoConstraints = false
+            dot.widthAnchor.constraint(equalToConstant: 8).isActive = true
+            dot.heightAnchor.constraint(equalToConstant: 8).isActive = true
+
+            let text = makeLabel(label, size: 9, bold: false)
+            text.textColor = .tertiaryLabelColor
+
+            legendStack.addArrangedSubview(dot)
+            legendStack.addArrangedSubview(text)
+        }
+
+        addLegendItem(NSColor.systemGreen.withAlphaComponent(0.6), "Short")
+        addLegendItem(NSColor.systemYellow.withAlphaComponent(0.6), "Medium")
+        addLegendItem(NSColor.systemRed.withAlphaComponent(0.6), "Long")
+
+        container.addSubview(legendStack)
+
+        NSLayoutConstraint.activate([
+            container.heightAnchor.constraint(equalToConstant: graphHeight),
+            container.widthAnchor.constraint(equalToConstant: graphWidth),
+            legendStack.bottomAnchor.constraint(equalTo: container.bottomAnchor),
+            legendStack.leadingAnchor.constraint(equalTo: container.leadingAnchor)
+        ])
+
+        return container
     }
 
     func applyTheme(_ theme: AppTheme) {

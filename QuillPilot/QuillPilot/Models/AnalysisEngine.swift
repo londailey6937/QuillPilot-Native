@@ -22,6 +22,16 @@ struct AnalysisResults {
     var missingSensoryDetail: Bool = false
     var readingLevel: String = "--"
     var dialoguePercentage: Int = 0
+
+    // New metrics
+    var weakVerbCount: Int = 0
+    var weakVerbPhrases: [String] = []
+    var clicheCount: Int = 0
+    var clichePhrases: [String] = []
+    var filterWordCount: Int = 0
+    var filterWordPhrases: [String] = []
+    var sentenceVarietyScore: Int = 0 // 0-100
+    var sentenceLengths: [Int] = [] // For graphing
 }
 
 class AnalysisEngine {
@@ -51,6 +61,54 @@ class AnalysisEngine {
         "smell", "smelled", "scent", "fragrant", "musty", "fresh", "acrid", "aromatic",
         // Gustatory
         "taste", "tasted", "flavor", "sweet", "sour", "bitter", "salty", "savory", "delicious"
+    ]
+
+    // Weak verbs to avoid
+    private let weakVerbs: Set<String> = [
+        "is", "are", "was", "were", "be", "being", "been",
+        "have", "has", "had", "having",
+        "do", "does", "did", "doing",
+        "get", "gets", "got", "getting", "gotten",
+        "make", "makes", "made", "making",
+        "go", "goes", "went", "going", "gone",
+        "come", "comes", "came", "coming",
+        "take", "takes", "took", "taking", "taken",
+        "give", "gives", "gave", "giving", "given",
+        "put", "puts", "putting",
+        "seem", "seems", "seemed", "seeming",
+        "become", "becomes", "became", "becoming"
+    ]
+
+    // Common clichés to detect
+    private let cliches = [
+        "at the end of the day", "think outside the box", "bottom line",
+        "hit the ground running", "low-hanging fruit", "move the needle",
+        "eyes sparkled", "eyes gleamed", "heart raced", "blood ran cold",
+        "time stood still", "moment of truth", "breath caught",
+        "crystal clear", "clear as day", "cold as ice", "dark as night",
+        "quiet as a mouse", "quick as lightning", "strong as an ox",
+        "busy as a bee", "light as a feather", "fit as a fiddle",
+        "last but not least", "it goes without saying", "needless to say",
+        "at this point in time", "in this day and age", "for all intents and purposes",
+        "each and every", "first and foremost", "sad but true",
+        "only time will tell", "easier said than done", "better late than never",
+        "actions speak louder than words", "the tip of the iceberg",
+        "a blessing in disguise", "add insult to injury", "beat around the bush"
+    ]
+
+    // Filter words that create distance
+    private let filterWords: Set<String> = [
+        "saw", "see", "sees", "seeing", "seen",
+        "heard", "hear", "hears", "hearing",
+        "felt", "feel", "feels", "feeling",
+        "noticed", "notice", "notices", "noticing",
+        "seemed", "seem", "seems", "seeming",
+        "realized", "realize", "realizes", "realizing",
+        "thought", "think", "thinks", "thinking",
+        "wondered", "wonder", "wonders", "wondering",
+        "watched", "watch", "watches", "watching",
+        "looked", "look", "looks", "looking",
+        "smelled", "smell", "smells", "smelling"
     ]
 
     func analyzeText(_ text: String) -> AnalysisResults {
@@ -86,7 +144,21 @@ class AnalysisEngine {
 
         // Sensory detail analysis
         results.sensoryDetailCount = countSensoryWords(text)
-        results.missingSensoryDetail = results.sensoryDetailCount < (results.wordCount / 50) // Less than 2% sensory words
+        // Missing sensory detail if: no sensory words at all, OR less than 2% sensory words (with minimum threshold of 1)
+        let minSensoryWords = max(1, results.wordCount / 50)
+        results.missingSensoryDetail = results.wordCount > 0 && results.sensoryDetailCount < minSensoryWords
+
+        // Weak verb detection
+        (results.weakVerbCount, results.weakVerbPhrases) = detectWeakVerbs(text)
+
+        // Cliché detection
+        (results.clicheCount, results.clichePhrases) = detectCliches(text)
+
+        // Filter word detection
+        (results.filterWordCount, results.filterWordPhrases) = detectFilterWords(text)
+
+        // Sentence variety
+        (results.sentenceVarietyScore, results.sentenceLengths) = analyzeSentenceVariety(text)
 
         // Readability
         results.readingLevel = calculateReadingLevel(text: text, wordCount: results.wordCount, sentenceCount: results.sentenceCount)
@@ -224,4 +296,81 @@ class AnalysisEngine {
 
         return Int((Double(dialogueLength) / Double(totalLength)) * 100)
     }
-}
+    private func detectWeakVerbs(_ text: String) -> (Int, [String]) {
+        var count = 0
+        var phrases: [String] = []
+
+        let words = text.components(separatedBy: .whitespacesAndNewlines)
+
+        for word in words {
+            let cleanWord = word.trimmingCharacters(in: .punctuationCharacters).lowercased()
+            if weakVerbs.contains(cleanWord) {
+                count += 1
+                if phrases.count < 10 && !phrases.contains(cleanWord) {
+                    phrases.append(cleanWord)
+                }
+            }
+        }
+
+        return (count, phrases)
+    }
+
+    private func detectCliches(_ text: String) -> (Int, [String]) {
+        var count = 0
+        var found: [String] = []
+
+        let lowercased = text.lowercased()
+
+        for cliche in cliches {
+            if lowercased.contains(cliche) {
+                count += 1
+                if found.count < 10 && !found.contains(cliche) {
+                    found.append(cliche)
+                }
+            }
+        }
+
+        return (count, found)
+    }
+
+    private func detectFilterWords(_ text: String) -> (Int, [String]) {
+        var count = 0
+        var phrases: [String] = []
+
+        let words = text.components(separatedBy: .whitespacesAndNewlines)
+
+        for word in words {
+            let cleanWord = word.trimmingCharacters(in: .punctuationCharacters).lowercased()
+            if filterWords.contains(cleanWord) {
+                count += 1
+                if phrases.count < 10 && !phrases.contains(cleanWord) {
+                    phrases.append(cleanWord)
+                }
+            }
+        }
+
+        return (count, phrases)
+    }
+
+    private func analyzeSentenceVariety(_ text: String) -> (Int, [Int]) {
+        let sentences = text.components(separatedBy: CharacterSet(charactersIn: ".!?")).filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+
+        guard sentences.count > 1 else { return (0, []) }
+
+        var lengths: [Int] = []
+        for sentence in sentences {
+            let wordCount = sentence.components(separatedBy: .whitespacesAndNewlines).filter { !$0.isEmpty }.count
+            lengths.append(wordCount)
+        }
+
+        // Calculate standard deviation to measure variety
+        let average = Double(lengths.reduce(0, +)) / Double(lengths.count)
+        let variance = lengths.map { pow(Double($0) - average, 2) }.reduce(0, +) / Double(lengths.count)
+        let standardDeviation = sqrt(variance)
+
+        // Higher standard deviation = better variety
+        // Normalize to 0-100 scale (stdev of 5+ = 100%)
+        let varietyScore = min(100, Int((standardDeviation / 5.0) * 100))
+
+        return (varietyScore, lengths)
+    }}

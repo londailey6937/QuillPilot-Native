@@ -39,6 +39,7 @@ protocol FormattingToolbarDelegate: AnyObject {
     func formattingToolbarDidDeleteColumn(_ toolbar: FormattingToolbar)
     func formattingToolbarDidInsertTable(_ toolbar: FormattingToolbar)
     func formattingToolbarDidClearAll(_ toolbar: FormattingToolbar)
+    func formattingToolbarDidFormatPainter(_ toolbar: FormattingToolbar)
 
     func formattingToolbarDidOpenStyleEditor(_ toolbar: FormattingToolbar)
 }
@@ -208,7 +209,7 @@ class MainWindowController: NSWindowController {
             return
         }
 
-        guard let window = window else {
+        guard self.window != nil else {
             presentErrorAlert(message: "Print Failed", details: "No window available for printing")
             return
         }
@@ -400,11 +401,6 @@ extension MainWindowController: FormattingToolbarDelegate {
         insertBtn.contentTintColor = theme.headerBackground
         stackView.addArrangedSubview(insertBtn)
 
-        let breakBtn = NSButton(title: "Insert Column Break", target: nil, action: nil)
-        breakBtn.bezelStyle = .rounded
-        breakBtn.contentTintColor = theme.headerBackground
-        stackView.addArrangedSubview(breakBtn)
-
         let deleteBtn = NSButton(title: "Delete Column at Cursor", target: nil, action: nil)
         deleteBtn.bezelStyle = .rounded
         deleteBtn.contentTintColor = theme.headerBackground
@@ -429,9 +425,6 @@ extension MainWindowController: FormattingToolbarDelegate {
 
         insertBtn.target = self
         insertBtn.action = #selector(handleInsertColumnFromSheet)
-
-        breakBtn.target = self
-        breakBtn.action = #selector(handleInsertColumnBreakFromDialog)
 
         deleteBtn.target = self
         deleteBtn.action = #selector(handleDeleteColumnFromDialog)
@@ -689,13 +682,19 @@ extension MainWindowController: FormattingToolbarDelegate {
 
     @objc private func handleInsertColumnFromSheet() {
         let current = mainContentViewController.editorViewController.getColumnCount()
-        let next = max(2, min(4, current + 1))
 
-        // Close sheet first, then insert after window becomes key
+        // Close sheet first, then add column after window becomes key
         if let window = self.window?.attachedSheet {
             self.window?.endSheet(window)
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [weak self] in
-                self?.mainContentViewController.editorViewController.setColumnCount(next)
+                if current >= 2 && current < 4 {
+                    // Already in a column layout - add one more column
+                    self?.mainContentViewController.editorViewController.addColumnToExisting()
+                } else if current == 1 {
+                    // Not in columns yet - create 2 columns
+                    self?.mainContentViewController.editorViewController.setColumnCount(2)
+                }
+                // If current == 4, do nothing (already at max)
             }
         }
     }
@@ -776,6 +775,10 @@ extension MainWindowController: FormattingToolbarDelegate {
         if alert.runModal() == .alertFirstButtonReturn {
             mainContentViewController.editorViewController.clearAll()
         }
+    }
+
+    func formattingToolbarDidFormatPainter(_ toolbar: FormattingToolbar) {
+        mainContentViewController.editorViewController.toggleFormatPainter()
     }
 
     func formattingToolbarDidOpenStyleEditor(_ toolbar: FormattingToolbar) {
@@ -1380,6 +1383,12 @@ class FormattingToolbar: NSView {
         editStylesButton.action = #selector(openStyleEditorTapped)
         editStylesButton.toolTip = "Open Style Editor"
 
+        // Format painter button
+        let formatPainterBtn = createToolbarButton("🖌️")
+        formatPainterBtn.target = self
+        formatPainterBtn.action = #selector(formatPainterTapped)
+        formatPainterBtn.toolTip = "Format Painter (Copy Style)"
+
         // Font family popup
         fontPopup = registerControl(NSPopUpButton(frame: .zero, pullsDown: false))
         fontPopup.addItems(withTitles: ["Inter", "Georgia", "Times New Roman", "Arial", "Courier New"])
@@ -1477,7 +1486,7 @@ class FormattingToolbar: NSView {
 
         // Add all to stack view (all aligned left)
         let toolbarStack = NSStackView(views: [
-            stylePopup, editStylesButton, fontPopup, decreaseSizeBtn, sizePopup, increaseSizeBtn,
+            stylePopup, editStylesButton, formatPainterBtn, fontPopup, decreaseSizeBtn, sizePopup, increaseSizeBtn,
             boldBtn, italicBtn, underlineBtn,
             alignLeftBtn, alignCenterBtn, alignRightBtn, justifyBtn,
             bulletsBtn, numberingBtn,
@@ -1598,6 +1607,10 @@ class FormattingToolbar: NSView {
 
     @objc private func imageTapped() {
         delegate?.formattingToolbarDidInsertImage(self)
+    }
+
+    @objc private func formatPainterTapped() {
+        delegate?.formattingToolbarDidFormatPainter(self)
     }
 
     @objc private func columnsTapped() {

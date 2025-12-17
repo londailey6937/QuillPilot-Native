@@ -41,6 +41,10 @@ class EditorViewController: NSViewController {
     private var imageScaleLabel: NSTextField?
     private var popoverScrollObserver: NSObjectProtocol?
 
+    // Format painter state
+    private var formatPainterActive: Bool = false
+    private var copiedAttributes: [NSAttributedString.Key: Any]?
+
     // Helper to register undo/redo and notify text system
     private func replaceCharacters(in range: NSRange, with attributed: NSAttributedString, undoPlaceholder: String) {
         guard let storage = textView.textStorage else { return }
@@ -440,7 +444,7 @@ class EditorViewController: NSViewController {
         // Calculate max width based on text container width (accounts for margins and zoom)
         let textContainerWidth = textView.textContainer?.size.width ?? ((pageWidth - standardMargin * 2) * editorZoom)
         var maxWidth = textContainerWidth
-        
+
         // Check if cursor is in a table cell - if so, use much smaller max width to avoid breaking the cell
         let cursorLocation = textView.selectedRange().location
         if let textStorage = textView.textStorage, cursorLocation < textStorage.length {
@@ -455,7 +459,7 @@ class EditorViewController: NSViewController {
                 maxWidth = cellWidth * 0.6
             }
         }
-        
+
         let scale = min(1.0, maxWidth / image.size.width)
         let targetSize = NSSize(width: image.size.width * scale, height: image.size.height * scale)
 
@@ -470,17 +474,34 @@ class EditorViewController: NSViewController {
         let insertionPoint = min(caretRange.location, textView.string.count)
         let insertionRange = NSRange(location: insertionPoint, length: 0)
 
-        // Create a simple image paragraph without extra newlines that could push content into exclusion zones
-        let para = NSMutableParagraphStyle()
-        para.alignment = .center
-        para.paragraphSpacing = 0
-        para.paragraphSpacingBefore = 0
-        para.firstLineHeadIndent = 0
-        para.headIndent = 0
-        para.tailIndent = 0
+        // Check if we're in a table cell - if so, insert as inline attachment without paragraph breaks
+        var isInTableCell = false
+        if let textStorage = textView.textStorage, insertionPoint < textStorage.length {
+            let attrs = textStorage.attributes(at: insertionPoint, effectiveRange: nil)
+            if let existingStyle = attrs[.paragraphStyle] as? NSParagraphStyle {
+                isInTableCell = !existingStyle.textBlocks.isEmpty
+            }
+        }
 
-        let imageString = NSMutableAttributedString(attachment: attachment)
-        imageString.addAttribute(.paragraphStyle, value: para, range: NSRange(location: 0, length: imageString.length))
+        let imageString: NSAttributedString
+        if isInTableCell {
+            // In table cell: insert as inline attachment using current attributes
+            let currentAttrs = textView.typingAttributes
+            imageString = NSAttributedString(attachment: attachment, attributes: currentAttrs)
+        } else {
+            // Not in table: use centered paragraph style
+            let para = NSMutableParagraphStyle()
+            para.alignment = .center
+            para.paragraphSpacing = 0
+            para.paragraphSpacingBefore = 0
+            para.firstLineHeadIndent = 0
+            para.headIndent = 0
+            para.tailIndent = 0
+
+            let mutableImageString = NSMutableAttributedString(attachment: attachment)
+            mutableImageString.addAttribute(.paragraphStyle, value: para, range: NSRange(location: 0, length: mutableImageString.length))
+            imageString = mutableImageString
+        }
 
         replaceCharacters(in: insertionRange, with: imageString, undoPlaceholder: "\u{FFFC}")
 
@@ -764,7 +785,7 @@ class EditorViewController: NSViewController {
     }
 
     @objc private func deleteImage() {
-        guard let storage = textView.textStorage else { return }
+        guard textView.textStorage != nil else { return }
         guard let range = lastImageRange ?? imageAttachmentRange(at: textView.selectedRange().location) else { return }
         replaceCharacters(in: range, with: NSAttributedString(string: ""), undoPlaceholder: "")
         imageControlsPopover?.performClose(nil)
@@ -772,7 +793,7 @@ class EditorViewController: NSViewController {
     }
 
     @objc private func replaceImage() {
-        guard let storage = textView.textStorage else { return }
+        guard textView.textStorage != nil else { return }
         guard let range = lastImageRange ?? imageAttachmentRange(at: textView.selectedRange().location) else { return }
 
         let panel = NSOpenPanel()
@@ -1260,6 +1281,70 @@ class EditorViewController: NSViewController {
         updatePageCentering()
     }
 
+    // MARK: - Format Painter
+
+    func toggleFormatPainter() {
+        guard let textStorage = textView.textStorage else { return }
+        guard let selectedRange = textView.selectedRanges.first?.rangeValue else { return }
+
+        if !formatPainterActive {
+            // Activate format painter - copy formatting from selection
+            if selectedRange.length > 0 {
+                // Copy attributes from the start of the selection
+                let attrs = textStorage.attributes(at: selectedRange.location, effectiveRange: nil)
+                copiedAttributes = attrs
+                formatPainterActive = true
+
+                // Change cursor to indicate format painter is active
+                NSCursor.crosshair.push()
+
+                NSLog("Format Painter activated - copied formatting")
+            } else {
+                // No selection, show alert
+                let alert = NSAlert()
+                alert.messageText = "Format Painter"
+                alert.informativeText = "Select text with the formatting you want to copy first."
+                alert.alertStyle = .informational
+                alert.addButton(withTitle: "OK")
+                alert.runModal()
+            }
+        } else {
+            // Deactivate format painter
+            deactivateFormatPainter()
+        }
+    }
+
+    private func deactivateFormatPainter() {
+        formatPainterActive = false
+        copiedAttributes = nil
+        NSCursor.pop()
+        NSLog("Format Painter deactivated")
+    }
+
+    private func applyFormatPainterToSelection() {
+        guard formatPainterActive,
+              let copiedAttrs = copiedAttributes,
+              let textStorage = textView.textStorage,
+              let selectedRange = textView.selectedRanges.first?.rangeValue,
+              selectedRange.length > 0 else { return }
+
+        textStorage.beginEditing()
+
+        // Apply all copied attributes except textBlocks (to preserve table/column structure)
+        for (key, value) in copiedAttrs {
+            if key != .attachment {  // Don't copy attachments
+                textStorage.addAttribute(key, value: value, range: selectedRange)
+            }
+        }
+
+        textStorage.endEditing()
+
+        NSLog("Format Painter applied to selection")
+
+        // Deactivate after one use
+        deactivateFormatPainter()
+    }
+
     func applyStyle(named styleName: String) {
         let styledByCatalog = applyCatalogStyle(named: styleName)
         if styledByCatalog {
@@ -1424,78 +1509,86 @@ case "Book Subtitle":
 
         // MARK: Body Text
         case "Body Text":
-            // Special handling: preserve textBlocks if in column/table
+            // Check if we're in a table/column - if so, only apply font, no paragraph changes
             guard let textStorage = textView.textStorage else { break }
             guard let selected = textView.selectedRanges.first?.rangeValue else { break }
-            let fullText = (textStorage.string as NSString)
-            let paragraphsRange = fullText.paragraphRange(for: selected)
-            
-            textStorage.beginEditing()
-            textStorage.enumerateAttribute(.paragraphStyle, in: paragraphsRange, options: []) { value, range, _ in
-                let current = (value as? NSParagraphStyle) ?? textView.defaultParagraphStyle ?? NSParagraphStyle.default
-                let mutable = (current.mutableCopy() as? NSMutableParagraphStyle) ?? NSMutableParagraphStyle()
-                
-                // Preserve textBlocks if they exist (columns/tables)
-                let preservedTextBlocks = mutable.textBlocks
-                
-                // Apply Body Text formatting
-                let base = manuscriptBaseParagraphStyle()
-                mutable.setParagraphStyle(base)
-                mutable.alignment = .left
-                mutable.headIndent = 0
-                mutable.firstLineHeadIndent = standardIndentStep
-                mutable.tailIndent = 0
-                mutable.paragraphSpacingBefore = 0
-                mutable.paragraphSpacing = 0
-                
-                // Restore textBlocks if they were present
-                if let blocks = preservedTextBlocks, !blocks.isEmpty {
-                    mutable.textBlocks = blocks
+
+            // Check if cursor is in a table/column
+            var isInTableOrColumn = false
+            if selected.location < textStorage.length {
+                let attrs = textStorage.attributes(at: selected.location, effectiveRange: nil)
+                if let style = attrs[.paragraphStyle] as? NSParagraphStyle {
+                    isInTableOrColumn = !style.textBlocks.isEmpty
                 }
-                
-                textStorage.addAttribute(.paragraphStyle, value: mutable.copy() as! NSParagraphStyle, range: range)
             }
-            textStorage.endEditing()
-            
+
+            if !isInTableOrColumn {
+                // Only apply paragraph formatting outside tables/columns
+                let fullText = (textStorage.string as NSString)
+                let paragraphsRange = fullText.paragraphRange(for: selected)
+
+                textStorage.beginEditing()
+                textStorage.enumerateAttribute(.paragraphStyle, in: paragraphsRange, options: []) { value, range, _ in
+                    let current = (value as? NSParagraphStyle) ?? textView.defaultParagraphStyle ?? NSParagraphStyle.default
+                    let mutable = (current.mutableCopy() as? NSMutableParagraphStyle) ?? NSMutableParagraphStyle()
+
+                    mutable.alignment = .left
+                    mutable.lineHeightMultiple = 2.0
+                    mutable.headIndent = 0
+                    mutable.firstLineHeadIndent = standardIndentStep
+                    mutable.tailIndent = 0
+                    mutable.paragraphSpacingBefore = 0
+                    mutable.paragraphSpacing = 0
+                    mutable.lineBreakMode = .byWordWrapping
+
+                    textStorage.addAttribute(.paragraphStyle, value: mutable.copy() as! NSParagraphStyle, range: range)
+                }
+                textStorage.endEditing()
+            }
+            // Apply font regardless of table/column
             applyFontChange { _ in
-                NSFont(name: "Times New Roman", size: 12) ?? NSFont.systemFont(ofSize: 12)
+                NSFont(name: "Times New Roman", size: 14) ?? NSFont.systemFont(ofSize: 14)
             }
         case "Body Text – No Indent":
-            // Special handling: preserve textBlocks if in column/table
+            // Check if we're in a table/column - if so, only apply font, no paragraph changes
             guard let textStorage = textView.textStorage else { break }
             guard let selected = textView.selectedRanges.first?.rangeValue else { break }
-            let fullText = (textStorage.string as NSString)
-            let paragraphsRange = fullText.paragraphRange(for: selected)
-            
-            textStorage.beginEditing()
-            textStorage.enumerateAttribute(.paragraphStyle, in: paragraphsRange, options: []) { value, range, _ in
-                let current = (value as? NSParagraphStyle) ?? textView.defaultParagraphStyle ?? NSParagraphStyle.default
-                let mutable = (current.mutableCopy() as? NSMutableParagraphStyle) ?? NSMutableParagraphStyle()
-                
-                // Preserve textBlocks if they exist (columns/tables)
-                let preservedTextBlocks = mutable.textBlocks
-                
-                // Apply Body Text formatting
-                let base = manuscriptBaseParagraphStyle()
-                mutable.setParagraphStyle(base)
-                mutable.alignment = .left
-                mutable.headIndent = 0
-                mutable.firstLineHeadIndent = 0
-                mutable.tailIndent = 0
-                mutable.paragraphSpacingBefore = 0
-                mutable.paragraphSpacing = 0
-                
-                // Restore textBlocks if they were present
-                if let blocks = preservedTextBlocks, !blocks.isEmpty {
-                    mutable.textBlocks = blocks
+
+            // Check if cursor is in a table/column
+            var isInTableOrColumn = false
+            if selected.location < textStorage.length {
+                let attrs = textStorage.attributes(at: selected.location, effectiveRange: nil)
+                if let style = attrs[.paragraphStyle] as? NSParagraphStyle {
+                    isInTableOrColumn = !style.textBlocks.isEmpty
                 }
-                
-                textStorage.addAttribute(.paragraphStyle, value: mutable.copy() as! NSParagraphStyle, range: range)
             }
-            textStorage.endEditing()
-            
+
+            if !isInTableOrColumn {
+                // Only apply paragraph formatting outside tables/columns
+                let fullText = (textStorage.string as NSString)
+                let paragraphsRange = fullText.paragraphRange(for: selected)
+
+                textStorage.beginEditing()
+                textStorage.enumerateAttribute(.paragraphStyle, in: paragraphsRange, options: []) { value, range, _ in
+                    let current = (value as? NSParagraphStyle) ?? textView.defaultParagraphStyle ?? NSParagraphStyle.default
+                    let mutable = (current.mutableCopy() as? NSMutableParagraphStyle) ?? NSMutableParagraphStyle()
+
+                    mutable.alignment = .left
+                    mutable.lineHeightMultiple = 2.0
+                    mutable.headIndent = 0
+                    mutable.firstLineHeadIndent = 0
+                    mutable.tailIndent = 0
+                    mutable.paragraphSpacingBefore = 0
+                    mutable.paragraphSpacing = 0
+                    mutable.lineBreakMode = .byWordWrapping
+
+                    textStorage.addAttribute(.paragraphStyle, value: mutable.copy() as! NSParagraphStyle, range: range)
+                }
+                textStorage.endEditing()
+            }
+            // Apply font regardless of table/column
             applyFontChange { _ in
-                NSFont(name: "Times New Roman", size: 12) ?? NSFont.systemFont(ofSize: 12)
+                NSFont(name: "Times New Roman", size: 14) ?? NSFont.systemFont(ofSize: 14)
             }
         case "Heading 1":
             applyManuscriptParagraphStyle { style in
@@ -1791,10 +1884,11 @@ case "Book Subtitle":
             style.setParagraphStyle(paragraph)
         }
 
+        // Apply font and color changes without overriding the paragraph style
+        // (which was already applied with textBlocks preserved)
         if let storage = textView.textStorage {
             let selection = textView.selectedRange()
             let range = selection.length == 0 ? (textView.string as NSString).paragraphRange(for: selection) : selection
-            storage.addAttribute(.paragraphStyle, value: paragraph, range: range)
             storage.addAttribute(.font, value: font, range: range)
             storage.addAttribute(.foregroundColor, value: textColor, range: range)
             if let backgroundColor {
@@ -2328,7 +2422,7 @@ case "Book Subtitle":
                 attrs[.paragraphStyle] = paragraphStyle
             }
 
-            let columnContent = NSAttributedString(string: "Column \(i + 1)\n", attributes: attrs)
+            let columnContent = NSAttributedString(string: "\n", attributes: attrs)
             result.append(columnContent)
         }
 
@@ -2339,6 +2433,142 @@ case "Book Subtitle":
         textStorage.insert(result, at: currentRange.location)
         textView.setSelectedRange(NSRange(location: currentRange.location + 1, length: 0))
         NSLog("setColumnCount: columns inserted successfully")
+    }
+
+    /// Add one column to an existing column layout (up to max of 4)
+    func addColumnToExisting() {
+        guard let textStorage = textView.textStorage else { return }
+        let cursorLocation = textView.selectedRange().location
+        guard cursorLocation < textStorage.length else { return }
+
+        // Find the existing table at cursor
+        let attrs = textStorage.attributes(at: cursorLocation, effectiveRange: nil)
+        guard let style = attrs[.paragraphStyle] as? NSParagraphStyle,
+              let blocks = style.textBlocks as? [NSTextTableBlock],
+              let block = blocks.first else {
+            // Not in a column layout - create new 2-column layout instead
+            setColumnCount(2)
+            return
+        }
+
+        let existingTable = block.table
+        let currentColumns = existingTable.numberOfColumns
+
+        guard currentColumns < 4 else {
+            NSLog("addColumnToExisting: already at max columns (4)")
+            return
+        }
+
+        // Find the full range of the existing column layout
+        let string = textStorage.string as NSString
+        var startLocation = cursorLocation
+        var endLocation = cursorLocation
+
+        // Scan backward to find start
+        while startLocation > 0 {
+            let prevLoc = startLocation - 1
+            let prevAttrs = textStorage.attributes(at: prevLoc, effectiveRange: nil)
+            if let prevStyle = prevAttrs[.paragraphStyle] as? NSParagraphStyle,
+               let prevBlocks = prevStyle.textBlocks as? [NSTextTableBlock],
+               let prevBlock = prevBlocks.first,
+               prevBlock.table === existingTable {
+                let paragraphRange = string.paragraphRange(for: NSRange(location: prevLoc, length: 0))
+                startLocation = paragraphRange.location
+            } else {
+                break
+            }
+        }
+
+        // Scan forward to find end
+        while endLocation < textStorage.length {
+            let nextAttrs = textStorage.attributes(at: endLocation, effectiveRange: nil)
+            if let nextStyle = nextAttrs[.paragraphStyle] as? NSParagraphStyle,
+               let nextBlocks = nextStyle.textBlocks as? [NSTextTableBlock],
+               let nextBlock = nextBlocks.first,
+               nextBlock.table === existingTable {
+                let paragraphRange = string.paragraphRange(for: NSRange(location: endLocation, length: 0))
+                endLocation = NSMaxRange(paragraphRange)
+            } else {
+                break
+            }
+        }
+
+        // Extract content from each existing column
+        var columnContents: [NSAttributedString] = []
+        var scanLocation = startLocation
+        while scanLocation < endLocation {
+            let paragraphRange = string.paragraphRange(for: NSRange(location: scanLocation, length: 0))
+            let content = textStorage.attributedSubstring(from: paragraphRange)
+            columnContents.append(content)
+            scanLocation = NSMaxRange(paragraphRange)
+        }
+
+        let columnRange = NSRange(location: startLocation, length: endLocation - startLocation)
+
+        // Create new table with one more column
+        let newColumnCount = currentColumns + 1
+        let newTable = NSTextTable()
+        newTable.numberOfColumns = newColumnCount
+        newTable.layoutAlgorithm = .automaticLayoutAlgorithm
+        newTable.collapsesBorders = true
+
+        // Build new column content - preserving existing content and adding new empty column
+        let result = NSMutableAttributedString()
+
+        for i in 0..<newColumnCount {
+            let textBlock = NSTextTableBlock(table: newTable, startingRow: 0, rowSpan: 1, startingColumn: i, columnSpan: 1)
+
+            // Separator line on the right of each column except the last one
+            if i < newColumnCount - 1 {
+                textBlock.setBorderColor(currentTheme.textColor.withAlphaComponent(0.2), for: .maxX)
+                textBlock.setWidth(1.0, type: .absoluteValueType, for: .border, edge: .maxX)
+            } else {
+                textBlock.setBorderColor(.clear, for: .maxX)
+                textBlock.setWidth(0.0, type: .absoluteValueType, for: .border, edge: .maxX)
+            }
+
+            textBlock.setBorderColor(.clear, for: .minX)
+            textBlock.setBorderColor(.clear, for: .minY)
+            textBlock.setBorderColor(.clear, for: .maxY)
+
+            textBlock.setWidth(12.0, type: .absoluteValueType, for: .padding, edge: .minX)
+            textBlock.setWidth(12.0, type: .absoluteValueType, for: .padding, edge: .maxX)
+            textBlock.setWidth(0.0, type: .absoluteValueType, for: .padding, edge: .minY)
+            textBlock.setWidth(0.0, type: .absoluteValueType, for: .padding, edge: .maxY)
+
+            if i < columnContents.count {
+                // Preserve existing column content with new textBlock
+                let existingContent = columnContents[i]
+                let mutableContent = NSMutableAttributedString(attributedString: existingContent)
+
+                // Update the paragraph style to use the new textBlock
+                mutableContent.enumerateAttribute(.paragraphStyle, in: NSRange(location: 0, length: mutableContent.length), options: []) { value, range, _ in
+                    let pStyle = (value as? NSParagraphStyle) ?? NSParagraphStyle.default
+                    let mutablePStyle = (pStyle.mutableCopy() as? NSMutableParagraphStyle) ?? NSMutableParagraphStyle()
+                    mutablePStyle.textBlocks = [textBlock]
+                    mutableContent.addAttribute(.paragraphStyle, value: mutablePStyle.copy() as! NSParagraphStyle, range: range)
+                }
+                result.append(mutableContent)
+            } else {
+                // New empty column
+                var colAttrs = textView.typingAttributes
+                let paragraphStyle = NSMutableParagraphStyle()
+                paragraphStyle.textBlocks = [textBlock]
+                colAttrs[.paragraphStyle] = paragraphStyle
+
+                let columnContent = NSAttributedString(string: " \n", attributes: colAttrs)
+                result.append(columnContent)
+            }
+        }
+
+        // Add final newline to exit columns
+        let finalNewline = NSAttributedString(string: "\n", attributes: textView.typingAttributes)
+        result.append(finalNewline)
+
+        // Replace the old column layout with the new one
+        textStorage.replaceCharacters(in: columnRange, with: result)
+        textView.setSelectedRange(NSRange(location: startLocation + 1, length: 0))
+        NSLog("addColumnToExisting: expanded from \(currentColumns) to \(newColumnCount) columns")
     }
 
     // MARK: - Table System (separate from columns)
@@ -2380,11 +2610,11 @@ case "Book Subtitle":
                 textBlock.setBorderColor(borderColor, for: .maxY)
                 textBlock.setWidth(1.0, type: .absoluteValueType, for: .border)
 
-                // Cell padding
-                textBlock.setWidth(8.0, type: .absoluteValueType, for: .padding, edge: .minX)
-                textBlock.setWidth(8.0, type: .absoluteValueType, for: .padding, edge: .maxX)
-                textBlock.setWidth(4.0, type: .absoluteValueType, for: .padding, edge: .minY)
-                textBlock.setWidth(4.0, type: .absoluteValueType, for: .padding, edge: .maxY)
+                // Cell padding - increased for 14pt text
+                textBlock.setWidth(10.0, type: .absoluteValueType, for: .padding, edge: .minX)
+                textBlock.setWidth(10.0, type: .absoluteValueType, for: .padding, edge: .maxX)
+                textBlock.setWidth(8.0, type: .absoluteValueType, for: .padding, edge: .minY)
+                textBlock.setWidth(8.0, type: .absoluteValueType, for: .padding, edge: .maxY)
 
                 let paragraphStyle = NSMutableParagraphStyle()
                 paragraphStyle.textBlocks = [textBlock]
@@ -2417,7 +2647,7 @@ case "Book Subtitle":
         let currentRange = textView.selectedRange()
 
         // Find the table at cursor
-        guard let (table, _, row, col) = findTableAtLocation(currentRange.location) else {
+        guard let (table, _, row, _) = findTableAtLocation(currentRange.location) else {
             return
         }
 
@@ -2854,7 +3084,17 @@ case "Book Subtitle":
         textStorage.enumerateAttribute(.paragraphStyle, in: paragraphsRange, options: []) { value, range, _ in
             let current = (value as? NSParagraphStyle) ?? textView.defaultParagraphStyle ?? NSParagraphStyle.default
             guard let mutable = current.mutableCopy() as? NSMutableParagraphStyle else { return }
+
+            // Preserve textBlocks (for tables/columns) before editing
+            let existingTextBlocks = current.textBlocks
+
             edit(mutable)
+
+            // Restore textBlocks after editing to keep table/column structure
+            if !existingTextBlocks.isEmpty {
+                mutable.textBlocks = existingTextBlocks
+            }
+
             textStorage.addAttribute(.paragraphStyle, value: mutable.copy() as! NSParagraphStyle, range: range)
         }
         textStorage.endEditing()
@@ -3021,5 +3261,12 @@ extension EditorViewController: NSTextViewDelegate {
 
     func textViewDidChangeSelection(_ notification: Notification) {
         showImageControlsIfNeeded()
+
+        // If format painter is active and user makes a selection, apply the formatting
+        if formatPainterActive,
+           let selectedRange = textView.selectedRanges.first?.rangeValue,
+           selectedRange.length > 0 {
+            applyFormatPainterToSelection()
+        }
     }
 }

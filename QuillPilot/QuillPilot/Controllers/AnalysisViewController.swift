@@ -157,7 +157,9 @@ class AnalysisViewController: NSViewController {
         // Sensory details
         addHeader("🌟 Sensory Details")
         addStat("Count", "\(results.sensoryDetailCount)")
-        if results.missingSensoryDetail {
+        if results.wordCount == 0 {
+            // Don't show any message for empty documents
+        } else if results.missingSensoryDetail {
             addWarning("Consider adding more")
         } else {
             addSuccess("✓ Good usage")

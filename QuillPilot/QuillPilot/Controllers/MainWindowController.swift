@@ -54,6 +54,7 @@ class MainWindowController: NSWindowController {
     private var themeObserver: NSObjectProtocol?
     private var headerFooterSettingsWindow: HeaderFooterSettingsWindow?
     private var styleEditorWindow: StyleEditorWindowController?
+    private var searchPanel: SearchPanelController?
 
     // Sheet field references
     private var columnsSheetField: NSTextField?
@@ -176,6 +177,11 @@ class MainWindowController: NSWindowController {
             self.applyTheme(theme)
         }
 
+        // Listen for search panel requests
+        NotificationCenter.default.addObserver(forName: NSNotification.Name("ShowSearchPanel"), object: nil, queue: .main) { [weak self] _ in
+            self?.showSearchPanel()
+        }
+
         // Update stats panel with initial text once the editor is ready
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [weak self] in
             guard let self = self,
@@ -195,6 +201,14 @@ class MainWindowController: NSWindowController {
         mainContentViewController.applyTheme(theme)
     }
 
+    private func showSearchPanel() {
+        if searchPanel == nil {
+            searchPanel = SearchPanelController()
+            searchPanel?.editorViewController = mainContentViewController.editorViewController
+        }
+        searchPanel?.showWindow(nil)
+        searchPanel?.window?.makeKeyAndOrderFront(nil)
+    }
 
     // MARK: - Print
     @MainActor
@@ -1476,6 +1490,12 @@ class FormattingToolbar: NSView {
         clearBtn.action = #selector(clearAllTapped)
         clearBtn.toolTip = "Clear All"
 
+        // Search & Replace
+        let searchBtn = createToolbarButton("🔍", fontSize: 16)
+        searchBtn.target = self
+        searchBtn.action = #selector(searchTapped)
+        searchBtn.toolTip = "Find & Replace"
+
         // Indentation
         let outdentBtn = registerControl(NSButton(title: "⇤", target: self, action: #selector(outdentTapped)))
         outdentBtn.bezelStyle = .texturedRounded
@@ -1493,7 +1513,7 @@ class FormattingToolbar: NSView {
             imageButton,
             columnsBtn, tableBtn, pageBreakBtn,
             outdentBtn, indentBtn,
-            clearBtn
+            searchBtn, clearBtn
         ])
         toolbarStack.orientation = .horizontal
         toolbarStack.spacing = 8
@@ -1635,6 +1655,11 @@ class FormattingToolbar: NSView {
 
     @objc private func clearAllTapped() {
         delegate?.formattingToolbarDidClearAll(self)
+    }
+
+    @objc private func searchTapped() {
+        // Post notification to show search panel
+        NotificationCenter.default.post(name: NSNotification.Name("ShowSearchPanel"), object: nil)
     }
 
     @objc private func fontFamilyChanged(_ sender: NSPopUpButton) {
@@ -2947,6 +2972,201 @@ private enum ZipWriter {
     }
 }
 
+
+// MARK: - Search Panel
+
+class SearchPanelController: NSWindowController {
+    private var searchField: NSTextField!
+    private var replaceField: NSTextField!
+    private var caseSensitiveCheckbox: NSButton!
+    private var wholeWordsCheckbox: NSButton!
+    private var findNextButton: NSButton!
+    private var findPreviousButton: NSButton!
+    private var replaceButton: NSButton!
+    private var replaceAllButton: NSButton!
+    private var statusLabel: NSTextField!
+
+    weak var editorViewController: EditorViewController?
+
+    convenience init() {
+        let panel = NSPanel(
+            contentRect: NSRect(x: 0, y: 0, width: 520, height: 220),
+            styleMask: [.titled, .closable, .utilityWindow],
+            backing: .buffered,
+            defer: false
+        )
+        panel.title = "Find & Replace"
+        panel.isFloatingPanel = true
+        panel.level = .floating
+
+        self.init(window: panel)
+        setupUI()
+        applyTheme()
+    }
+
+    private func setupUI() {
+        guard let panel = window as? NSPanel else { return }
+
+        let contentView = NSView(frame: panel.contentView!.bounds)
+        contentView.autoresizingMask = [.width, .height]
+        contentView.wantsLayer = true
+        panel.contentView = contentView
+
+        // Search field
+        let searchLabel = NSTextField(labelWithString: "Find:")
+        searchLabel.frame = NSRect(x: 20, y: 170, width: 60, height: 20)
+        contentView.addSubview(searchLabel)
+
+        searchField = NSTextField(frame: NSRect(x: 90, y: 168, width: 410, height: 24))
+        searchField.placeholderString = "Enter search text"
+        contentView.addSubview(searchField)
+
+        // Replace field
+        let replaceLabel = NSTextField(labelWithString: "Replace:")
+        replaceLabel.frame = NSRect(x: 20, y: 138, width: 60, height: 20)
+        contentView.addSubview(replaceLabel)
+
+        replaceField = NSTextField(frame: NSRect(x: 90, y: 136, width: 410, height: 24))
+        replaceField.placeholderString = "Enter replacement text"
+        contentView.addSubview(replaceField)
+
+        // Options
+        caseSensitiveCheckbox = NSButton(checkboxWithTitle: "Case sensitive", target: nil, action: nil)
+        caseSensitiveCheckbox.frame = NSRect(x: 90, y: 108, width: 140, height: 20)
+        contentView.addSubview(caseSensitiveCheckbox)
+
+        wholeWordsCheckbox = NSButton(checkboxWithTitle: "Whole words only", target: nil, action: nil)
+        wholeWordsCheckbox.frame = NSRect(x: 90, y: 84, width: 140, height: 20)
+        contentView.addSubview(wholeWordsCheckbox)
+
+        // Buttons
+        findPreviousButton = NSButton(title: "◀︎ Previous", target: self, action: #selector(findPrevious))
+        findPreviousButton.frame = NSRect(x: 20, y: 50, width: 105, height: 28)
+        findPreviousButton.bezelStyle = .rounded
+        contentView.addSubview(findPreviousButton)
+
+        findNextButton = NSButton(title: "Next ▶︎", target: self, action: #selector(findNext))
+        findNextButton.frame = NSRect(x: 135, y: 50, width: 105, height: 28)
+        findNextButton.bezelStyle = .rounded
+        findNextButton.keyEquivalent = "\r"
+        contentView.addSubview(findNextButton)
+
+        replaceButton = NSButton(title: "Replace", target: self, action: #selector(replace))
+        replaceButton.frame = NSRect(x: 250, y: 50, width: 120, height: 28)
+        replaceButton.bezelStyle = .rounded
+        contentView.addSubview(replaceButton)
+
+        replaceAllButton = NSButton(title: "Replace All", target: self, action: #selector(replaceAll))
+        replaceAllButton.frame = NSRect(x: 380, y: 50, width: 120, height: 28)
+        replaceAllButton.bezelStyle = .rounded
+        contentView.addSubview(replaceAllButton)
+
+        // Status label
+        statusLabel = NSTextField(labelWithString: "")
+        statusLabel.frame = NSRect(x: 20, y: 20, width: 480, height: 20)
+        statusLabel.alignment = .center
+        contentView.addSubview(statusLabel)
+    }
+
+    private func applyTheme() {
+        guard let panel = window as? NSPanel,
+              let contentView = panel.contentView else { return }
+
+        let theme = ThemeManager.shared.currentTheme
+
+        // Apply background color
+        contentView.layer?.backgroundColor = theme.toolbarBackground.cgColor
+
+        // Apply text colors to labels
+        contentView.subviews.forEach { view in
+            if let textField = view as? NSTextField, !textField.isEditable {
+                textField.textColor = theme.textColor
+            }
+        }
+
+        // Status label uses secondary color
+        statusLabel.textColor = theme.textColor.withAlphaComponent(0.7)
+    }
+
+    @objc private func findNext() {
+        guard let editor = editorViewController else { return }
+        let searchText = searchField.stringValue
+        guard !searchText.isEmpty else {
+            statusLabel.stringValue = "Enter text to search"
+            return
+        }
+
+        let found = editor.findNext(
+            searchText,
+            forward: true,
+            caseSensitive: caseSensitiveCheckbox.state == .on,
+            wholeWords: wholeWordsCheckbox.state == .on
+        )
+
+        statusLabel.stringValue = found ? "Found" : "Not found"
+    }
+
+    @objc private func findPrevious() {
+        guard let editor = editorViewController else { return }
+        let searchText = searchField.stringValue
+        guard !searchText.isEmpty else {
+            statusLabel.stringValue = "Enter text to search"
+            return
+        }
+
+        let found = editor.findNext(
+            searchText,
+            forward: false,
+            caseSensitive: caseSensitiveCheckbox.state == .on,
+            wholeWords: wholeWordsCheckbox.state == .on
+        )
+
+        statusLabel.stringValue = found ? "Found" : "Not found"
+    }
+
+    @objc private func replace() {
+        guard let editor = editorViewController else { return }
+        let searchText = searchField.stringValue
+        let replaceText = replaceField.stringValue
+        guard !searchText.isEmpty else {
+            statusLabel.stringValue = "Enter text to search"
+            return
+        }
+
+        let replaced = editor.replaceSelection(
+            searchText,
+            with: replaceText,
+            caseSensitive: caseSensitiveCheckbox.state == .on
+        )
+
+        if replaced {
+            statusLabel.stringValue = "Replaced"
+            // Find next after replacing
+            findNext()
+        } else {
+            statusLabel.stringValue = "Selection doesn't match search text"
+        }
+    }
+
+    @objc private func replaceAll() {
+        guard let editor = editorViewController else { return }
+        let searchText = searchField.stringValue
+        let replaceText = replaceField.stringValue
+        guard !searchText.isEmpty else {
+            statusLabel.stringValue = "Enter text to search"
+            return
+        }
+
+        let count = editor.replaceAll(
+            searchText,
+            with: replaceText,
+            caseSensitive: caseSensitiveCheckbox.state == .on,
+            wholeWords: wholeWordsCheckbox.state == .on
+        )
+
+        statusLabel.stringValue = count > 0 ? "Replaced \(count) occurrence\(count == 1 ? "" : "s")" : "No matches found"
+    }
+}
 
 private extension Data {
     mutating func appendUInt16(_ v: UInt16) {

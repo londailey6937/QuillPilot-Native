@@ -205,6 +205,185 @@ class EditorViewController: NSViewController {
         return textView.string
     }
 
+    // MARK: - Search and Replace
+
+    /// Find all occurrences of a search string in the document
+    /// - Parameters:
+    ///   - searchText: The text to search for
+    ///   - caseSensitive: Whether the search should be case sensitive
+    ///   - wholeWords: Whether to match whole words only
+    /// - Returns: Array of NSRange objects representing match locations
+    func findAll(_ searchText: String, caseSensitive: Bool = false, wholeWords: Bool = false) -> [NSRange] {
+        guard !searchText.isEmpty else { return [] }
+
+        let text = textView.string
+        var options: String.CompareOptions = []
+
+        if !caseSensitive {
+            options.insert(.caseInsensitive)
+        }
+
+        var ranges: [NSRange] = []
+        var searchRange = NSRange(location: 0, length: text.count)
+
+        while searchRange.location < text.count {
+            let foundRange = (text as NSString).range(of: searchText, options: options, range: searchRange)
+
+            if foundRange.location == NSNotFound {
+                break
+            }
+
+            // Check for whole word match if needed
+            if wholeWords {
+                let beforeOK = foundRange.location == 0 || !text[text.index(text.startIndex, offsetBy: foundRange.location - 1)].isLetter
+                let afterIndex = foundRange.location + foundRange.length
+                let afterOK = afterIndex >= text.count || !text[text.index(text.startIndex, offsetBy: afterIndex)].isLetter
+
+                if beforeOK && afterOK {
+                    ranges.append(foundRange)
+                }
+            } else {
+                ranges.append(foundRange)
+            }
+
+            searchRange.location = foundRange.location + foundRange.length
+            searchRange.length = text.count - searchRange.location
+        }
+
+        return ranges
+    }
+
+    /// Find and highlight the next occurrence of search text
+    /// - Parameters:
+    ///   - searchText: The text to search for
+    ///   - forward: Search forward (true) or backward (false) from current selection
+    ///   - caseSensitive: Whether the search should be case sensitive
+    ///   - wholeWords: Whether to match whole words only
+    /// - Returns: true if a match was found, false otherwise
+    @discardableResult
+    func findNext(_ searchText: String, forward: Bool = true, caseSensitive: Bool = false, wholeWords: Bool = false) -> Bool {
+        guard !searchText.isEmpty else { return false }
+
+        let text = textView.string
+        let currentRange = textView.selectedRange()
+        var options: String.CompareOptions = forward ? [] : .backwards
+
+        if !caseSensitive {
+            options.insert(.caseInsensitive)
+        }
+
+        let searchStart = forward ? (currentRange.location + currentRange.length) : 0
+        let searchLength = forward ? (text.count - searchStart) : currentRange.location
+        var searchRange = NSRange(location: searchStart, length: searchLength)
+
+        let foundRange = (text as NSString).range(of: searchText, options: options, range: searchRange)
+
+        if foundRange.location != NSNotFound {
+            // Check whole word if needed
+            if wholeWords {
+                let beforeOK = foundRange.location == 0 || !text[text.index(text.startIndex, offsetBy: foundRange.location - 1)].isLetter
+                let afterIndex = foundRange.location + foundRange.length
+                let afterOK = afterIndex >= text.count || !text[text.index(text.startIndex, offsetBy: afterIndex)].isLetter
+
+                if beforeOK && afterOK {
+                    textView.setSelectedRange(foundRange)
+                    textView.scrollRangeToVisible(foundRange)
+                    return true
+                }
+            } else {
+                textView.setSelectedRange(foundRange)
+                textView.scrollRangeToVisible(foundRange)
+                return true
+            }
+        }
+
+        // Wrap around if nothing found
+        if forward && searchStart > 0 {
+            searchRange = NSRange(location: 0, length: currentRange.location)
+            let wrappedRange = (text as NSString).range(of: searchText, options: options, range: searchRange)
+            if wrappedRange.location != NSNotFound {
+                textView.setSelectedRange(wrappedRange)
+                textView.scrollRangeToVisible(wrappedRange)
+                return true
+            }
+        } else if !forward && searchLength < text.count {
+            searchRange = NSRange(location: currentRange.location + currentRange.length, length: text.count - (currentRange.location + currentRange.length))
+            let wrappedRange = (text as NSString).range(of: searchText, options: options, range: searchRange)
+            if wrappedRange.location != NSNotFound {
+                textView.setSelectedRange(wrappedRange)
+                textView.scrollRangeToVisible(wrappedRange)
+                return true
+            }
+        }
+
+        return false
+    }
+
+    /// Replace the current selection with replacement text if it matches search text
+    /// - Parameters:
+    ///   - searchText: The text to search for
+    ///   - replaceText: The text to replace with
+    ///   - caseSensitive: Whether the search should be case sensitive
+    /// - Returns: true if replacement was made, false otherwise
+    @discardableResult
+    func replaceSelection(_ searchText: String, with replaceText: String, caseSensitive: Bool = false) -> Bool {
+        let currentRange = textView.selectedRange()
+        guard currentRange.length > 0 else { return false }
+
+        let text = textView.string
+        let selectedText = (text as NSString).substring(with: currentRange)
+
+        let matches = caseSensitive ? (selectedText == searchText) : (selectedText.caseInsensitiveCompare(searchText) == .orderedSame)
+
+        if matches {
+            // Preserve formatting of replaced text
+            guard let textStorage = textView.textStorage else { return false }
+            let attrs = textStorage.attributes(at: currentRange.location, effectiveRange: nil)
+            let replacementString = NSAttributedString(string: replaceText, attributes: attrs)
+
+            textView.shouldChangeText(in: currentRange, replacementString: replaceText)
+            textStorage.replaceCharacters(in: currentRange, with: replacementString)
+            textView.didChangeText()
+
+            return true
+        }
+
+        return false
+    }
+
+    /// Replace all occurrences of search text with replacement text
+    /// - Parameters:
+    ///   - searchText: The text to search for
+    ///   - replaceText: The text to replace with
+    ///   - caseSensitive: Whether the search should be case sensitive
+    ///   - wholeWords: Whether to match whole words only
+    /// - Returns: Number of replacements made
+    @discardableResult
+    func replaceAll(_ searchText: String, with replaceText: String, caseSensitive: Bool = false, wholeWords: Bool = false) -> Int {
+        guard !searchText.isEmpty, let textStorage = textView.textStorage else { return 0 }
+
+        let ranges = findAll(searchText, caseSensitive: caseSensitive, wholeWords: wholeWords)
+        guard !ranges.isEmpty else { return 0 }
+
+        textStorage.beginEditing()
+
+        // Replace in reverse order to maintain correct ranges
+        var replacementCount = 0
+        for range in ranges.reversed() {
+            let attrs = textStorage.attributes(at: range.location, effectiveRange: nil)
+            let replacementString = NSAttributedString(string: replaceText, attributes: attrs)
+
+            textView.shouldChangeText(in: range, replacementString: replaceText)
+            textStorage.replaceCharacters(in: range, with: replacementString)
+            replacementCount += 1
+        }
+
+        textStorage.endEditing()
+        textView.didChangeText()
+
+        return replacementCount
+    }
+
     func setManuscriptInfo(title: String, author: String) {
         manuscriptTitle = title
         manuscriptAuthor = author

@@ -38,6 +38,7 @@ class DocumentInfoPanel: NSView {
         titleField.isBordered = false
         titleField.isEditable = true
         titleField.backgroundColor = .clear
+        titleField.focusRingType = .none
         // Mirror the document "Title" look (publisher-friendly): centered, serif.
         titleField.font = NSFont(name: "Times New Roman", size: 14) ?? NSFont.systemFont(ofSize: 14, weight: .medium)
         titleField.textColor = ThemeManager.shared.currentTheme.textColor
@@ -51,6 +52,7 @@ class DocumentInfoPanel: NSView {
         authorField.isBordered = false
         authorField.isEditable = true
         authorField.backgroundColor = .clear
+        authorField.focusRingType = .none
         authorField.font = NSFont(name: "Times New Roman", size: 12) ?? NSFont.systemFont(ofSize: 12)
         authorField.textColor = ThemeManager.shared.currentTheme.textColor
         authorField.alignment = .center

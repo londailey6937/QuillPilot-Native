@@ -32,8 +32,8 @@ class SplitViewController: NSSplitViewController {
         analysisViewController = AnalysisViewController()
         let analysisItem = NSSplitViewItem(sidebarWithViewController: analysisViewController)
         analysisItem.canCollapse = false  // Keep it visible for debugging
-        analysisItem.minimumThickness = 320
-        analysisItem.maximumThickness = 520
+        analysisItem.minimumThickness = 280
+        analysisItem.holdingPriority = .init(250)  // Allow flexible sizing
         analysisItem.isCollapsed = false  // Ensure it starts visible
         addSplitViewItem(analysisItem)
 

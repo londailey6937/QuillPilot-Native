@@ -51,7 +51,6 @@ class AnalysisViewController: NSViewController {
             documentView.leadingAnchor.constraint(equalTo: scrollView.contentView.leadingAnchor),
             documentView.trailingAnchor.constraint(equalTo: scrollView.contentView.trailingAnchor),
             documentView.topAnchor.constraint(equalTo: scrollView.contentView.topAnchor),
-            documentView.bottomAnchor.constraint(equalTo: scrollView.contentView.bottomAnchor),
             documentView.widthAnchor.constraint(equalTo: scrollView.contentView.widthAnchor)
         ])
     }
@@ -62,7 +61,7 @@ class AnalysisViewController: NSViewController {
         contentStack.orientation = .vertical
         contentStack.alignment = .leading
         contentStack.spacing = 16
-        contentStack.edgeInsets = NSEdgeInsets(top: 20, left: 20, bottom: 20, right: 40)
+        contentStack.edgeInsets = NSEdgeInsets(top: 20, left: 16, bottom: 20, right: 16)
 
         // Header
         let header = makeLabel("Document Analysis", size: 18, bold: true)
@@ -95,12 +94,18 @@ class AnalysisViewController: NSViewController {
             contentStack.topAnchor.constraint(equalTo: documentView.topAnchor),
             contentStack.leadingAnchor.constraint(equalTo: documentView.leadingAnchor),
             contentStack.trailingAnchor.constraint(equalTo: documentView.trailingAnchor),
-            contentStack.bottomAnchor.constraint(equalTo: documentView.bottomAnchor)
+            contentStack.bottomAnchor.constraint(equalTo: documentView.bottomAnchor, constant: -20)
         ])
+
+        // Ensure documentView height grows with content
+        contentStack.setContentHuggingPriority(.defaultHigh, for: .vertical)
     }
 
     func displayResults(_ results: AnalysisResults) {
         NSLog("📊 Displaying results: \(results.wordCount) words")
+
+        // Scroll to top first
+        scrollView?.documentView?.scroll(NSPoint.zero)
 
         // Clear previous results
         resultsStack.arrangedSubviews.forEach { view in
@@ -210,7 +215,19 @@ class AnalysisViewController: NSViewController {
         addStat("Score", "\(results.sentenceVarietyScore)%")
         if !results.sentenceLengths.isEmpty {
             let graphView = createSentenceGraph(results.sentenceLengths)
-            resultsStack.addArrangedSubview(graphView)
+
+            // Wrap in container to ensure proper spacing and visibility
+            let graphContainer = NSView()
+            graphContainer.translatesAutoresizingMaskIntoConstraints = false
+            graphContainer.addSubview(graphView)
+
+            NSLayoutConstraint.activate([
+                graphView.topAnchor.constraint(equalTo: graphContainer.topAnchor, constant: 8),
+                graphView.leadingAnchor.constraint(equalTo: graphContainer.leadingAnchor),
+                graphView.bottomAnchor.constraint(equalTo: graphContainer.bottomAnchor, constant: -8)
+            ])
+
+            resultsStack.addArrangedSubview(graphContainer)
         }
         if results.sentenceVarietyScore < 40 {
             addWarning("Low variety - mix short and long sentences")
@@ -269,80 +286,100 @@ class AnalysisViewController: NSViewController {
         let box = NSBox()
         box.boxType = .separator
         box.translatesAutoresizingMaskIntoConstraints = false
-        box.widthAnchor.constraint(equalToConstant: 180).isActive = true
         resultsStack.addArrangedSubview(box)
+
+        // Make divider span the full width of resultsStack
+        NSLayoutConstraint.activate([
+            box.leadingAnchor.constraint(equalTo: resultsStack.leadingAnchor),
+            box.trailingAnchor.constraint(equalTo: resultsStack.trailingAnchor)
+        ])
     }
 
     private func createSentenceGraph(_ lengths: [Int]) -> NSView {
-        let graphHeight: CGFloat = 80
-        let graphWidth: CGFloat = 200
+        // Make graph responsive to panel width
+        let availableWidth = view.frame.width > 0 ? view.frame.width - 32 : 280
+        let graphWidth = min(max(availableWidth, 240), 400)  // Between 240-400px
+        let graphHeight: CGFloat = 180
 
         let container = NSView(frame: NSRect(x: 0, y: 0, width: graphWidth, height: graphHeight))
         container.wantsLayer = true
         container.translatesAutoresizingMaskIntoConstraints = false
+        container.layer?.backgroundColor = currentTheme.textColor.withAlphaComponent(0.08).cgColor
+        container.layer?.cornerRadius = 8
 
         // Create bar chart
-        guard !lengths.isEmpty else { return container }
+        guard !lengths.isEmpty else {
+            NSLayoutConstraint.activate([
+                container.heightAnchor.constraint(equalToConstant: graphHeight),
+                container.widthAnchor.constraint(equalToConstant: graphWidth)
+            ])
+
+            // Add "No data" label
+            let noDataLabel = makeLabel("Not enough sentences", size: 11, bold: false)
+            noDataLabel.textColor = .tertiaryLabelColor
+            noDataLabel.frame = NSRect(x: 10, y: graphHeight/2 - 10, width: graphWidth - 20, height: 20)
+            container.addSubview(noDataLabel)
+
+            return container
+        }
 
         let maxLength = lengths.max() ?? 1
-        let barWidth = min(graphWidth / CGFloat(lengths.count), 12.0)
+        let barWidth: CGFloat = max(4.0, min(graphWidth / CGFloat(lengths.count), 12.0))
         let spacing: CGFloat = 2
+        let chartWidth = graphWidth - 20
+        let maxBars = Int(chartWidth / (barWidth + spacing))
+        let chartHeight = graphHeight - 35  // Space for legend at bottom
 
-        for (index, length) in lengths.prefix(Int(graphWidth / (barWidth + spacing))).enumerated() {
-            let barHeight = (CGFloat(length) / CGFloat(maxLength)) * (graphHeight - 20)
-            let x = CGFloat(index) * (barWidth + spacing)
-            let y = graphHeight - barHeight - 10
+        // Draw bars directly on container
+        for (index, length) in lengths.prefix(maxBars).enumerated() {
+            let barHeight = max(4, (CGFloat(length) / CGFloat(maxLength)) * (chartHeight - 10))
+            let x = 10 + CGFloat(index) * (barWidth + spacing)
+            let y: CGFloat = 25  // Start from bottom, bars grow upward
 
             let bar = NSView(frame: NSRect(x: x, y: y, width: barWidth, height: barHeight))
             bar.wantsLayer = true
 
             // Color by length: green (short), yellow (medium), red (long)
             if length < 12 {
-                bar.layer?.backgroundColor = NSColor.systemGreen.withAlphaComponent(0.6).cgColor
+                bar.layer?.backgroundColor = NSColor.systemGreen.withAlphaComponent(0.85).cgColor
             } else if length < 20 {
-                bar.layer?.backgroundColor = NSColor.systemYellow.withAlphaComponent(0.6).cgColor
+                bar.layer?.backgroundColor = NSColor.systemYellow.withAlphaComponent(0.85).cgColor
             } else {
-                bar.layer?.backgroundColor = NSColor.systemRed.withAlphaComponent(0.6).cgColor
+                bar.layer?.backgroundColor = NSColor.systemRed.withAlphaComponent(0.85).cgColor
             }
 
             bar.layer?.cornerRadius = 2
             container.addSubview(bar)
         }
 
-        // Add legend labels
-        let legendStack = NSStackView()
-        legendStack.translatesAutoresizingMaskIntoConstraints = false
-        legendStack.orientation = .horizontal
-        legendStack.spacing = 8
-        legendStack.alignment = .centerY
+        // Add legend labels at bottom
+        let legendY: CGFloat = 8
+        let legendX: CGFloat = 10
 
-        func addLegendItem(_ color: NSColor, _ label: String) {
-            let dot = NSView(frame: NSRect(x: 0, y: 0, width: 8, height: 8))
+        func addLegendItem(_ color: NSColor, _ label: String, xOffset: CGFloat) {
+            let dot = NSView(frame: NSRect(x: legendX + xOffset, y: legendY, width: 7, height: 7))
             dot.wantsLayer = true
             dot.layer?.backgroundColor = color.cgColor
-            dot.layer?.cornerRadius = 4
-            dot.translatesAutoresizingMaskIntoConstraints = false
-            dot.widthAnchor.constraint(equalToConstant: 8).isActive = true
-            dot.heightAnchor.constraint(equalToConstant: 8).isActive = true
+            dot.layer?.cornerRadius = 3.5
+            container.addSubview(dot)
 
-            let text = makeLabel(label, size: 9, bold: false)
-            text.textColor = .tertiaryLabelColor
-
-            legendStack.addArrangedSubview(dot)
-            legendStack.addArrangedSubview(text)
+            let text = NSTextField(labelWithString: label)
+            text.isEditable = false
+            text.isBezeled = false
+            text.drawsBackground = false
+            text.font = .systemFont(ofSize: 10)
+            text.textColor = .secondaryLabelColor
+            text.frame = NSRect(x: legendX + xOffset + 10, y: legendY - 2, width: 50, height: 14)
+            container.addSubview(text)
         }
 
-        addLegendItem(NSColor.systemGreen.withAlphaComponent(0.6), "Short")
-        addLegendItem(NSColor.systemYellow.withAlphaComponent(0.6), "Medium")
-        addLegendItem(NSColor.systemRed.withAlphaComponent(0.6), "Long")
-
-        container.addSubview(legendStack)
+        addLegendItem(NSColor.systemGreen.withAlphaComponent(0.85), "Short (<12)", xOffset: 0)
+        addLegendItem(NSColor.systemYellow.withAlphaComponent(0.85), "Medium (12-20)", xOffset: 80)
+        addLegendItem(NSColor.systemRed.withAlphaComponent(0.85), "Long (20+)", xOffset: 180)
 
         NSLayoutConstraint.activate([
             container.heightAnchor.constraint(equalToConstant: graphHeight),
-            container.widthAnchor.constraint(equalToConstant: graphWidth),
-            legendStack.bottomAnchor.constraint(equalTo: container.bottomAnchor),
-            legendStack.leadingAnchor.constraint(equalTo: container.leadingAnchor)
+            container.widthAnchor.constraint(equalToConstant: graphWidth)
         ])
 
         return container

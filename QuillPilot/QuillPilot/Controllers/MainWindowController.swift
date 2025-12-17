@@ -62,14 +62,14 @@ class MainWindowController: NSWindowController {
 
     convenience init() {
         let window = NSWindow(
-              contentRect: NSRect(x: 0, y: 0, width: 1400, height: 900),
+              contentRect: NSRect(x: 0, y: 0, width: 1200, height: 800),
             styleMask: [.titled, .closable, .miniaturizable, .resizable],
             backing: .buffered,
             defer: false
         )
 
         window.title = "QuillPilot"
-        window.minSize = NSSize(width: 1000, height: 700)
+        window.minSize = NSSize(width: 900, height: 650)
         window.isReleasedWhenClosed = false
         window.isRestorable = false
         window.center()

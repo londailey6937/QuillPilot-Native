@@ -2634,11 +2634,18 @@ private enum DocxBuilder {
         }
 
         let leftIndent = max(0, Int(round(style.headIndent * 20)))
-        let firstLine = max(0, Int(round((style.firstLineHeadIndent - style.headIndent) * 20)))
+        let indentDiff = Int(round((style.firstLineHeadIndent - style.headIndent) * 20))
         let rightIndent = style.tailIndent > 0 ? Int(round(style.tailIndent * 20)) : 0
+
         var indentAttrs: [String] = []
         if leftIndent > 0 { indentAttrs.append("w:left=\"\(leftIndent)\"") }
-        if firstLine > 0 { indentAttrs.append("w:firstLine=\"\(firstLine)\"") }
+
+        if indentDiff > 0 {
+            indentAttrs.append("w:firstLine=\"\(indentDiff)\"")
+        } else if indentDiff < 0 {
+            indentAttrs.append("w:hanging=\"\(abs(indentDiff))\"")
+        }
+
         if rightIndent > 0 { indentAttrs.append("w:right=\"\(rightIndent)\"") }
         if !indentAttrs.isEmpty {
             components.append("<w:ind \(indentAttrs.joined(separator: " "))/>")
@@ -2963,13 +2970,21 @@ private enum DocxTextExtractor {
                 }
 
             case "w:ind", "ind":
-                if let leftStr = attributeDict["w:left"] ?? attributeDict["left"], let twips = Double(leftStr) {
+                if let leftStr = attributeDict["w:left"] ?? attributeDict["left"] ?? attributeDict["w:start"] ?? attributeDict["start"], let twips = Double(leftStr) {
                     paragraphStyle.headIndent = CGFloat(twips / 20.0)
                 }
-                if let firstStr = attributeDict["w:firstline"] ?? attributeDict["firstline"], let twips = Double(firstStr) {
+
+                // Check for firstLine (standard indent) - handle both camelCase (standard) and lowercase
+                if let firstStr = attributeDict["w:firstLine"] ?? attributeDict["firstLine"] ?? attributeDict["w:firstline"] ?? attributeDict["firstline"], let twips = Double(firstStr) {
                     paragraphStyle.firstLineIndent = CGFloat(twips / 20.0)
                 }
-                if let rightStr = attributeDict["w:right"] ?? attributeDict["right"], let twips = Double(rightStr) {
+
+                // Check for hanging indent (negative first line)
+                if let hangingStr = attributeDict["w:hanging"] ?? attributeDict["hanging"], let twips = Double(hangingStr) {
+                    paragraphStyle.firstLineIndent = -CGFloat(twips / 20.0)
+                }
+
+                if let rightStr = attributeDict["w:right"] ?? attributeDict["right"] ?? attributeDict["w:end"] ?? attributeDict["end"], let twips = Double(rightStr) {
                     paragraphStyle.tailIndent = CGFloat(twips / 20.0)
                 }
 

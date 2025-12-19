@@ -59,7 +59,7 @@ class MainWindowController: NSWindowController {
 
     // Document tracking for auto-save
     private var currentDocumentURL: URL?
-    private var currentDocumentFormat: ExportFormat = .quill
+    private var currentDocumentFormat: ExportFormat = .docx
 
     // Sheet field references
     private var columnsSheetField: NSTextField?
@@ -203,6 +203,8 @@ class MainWindowController: NSWindowController {
     private func applyTheme(_ theme: AppTheme) {
         guard let containerLayer = window?.contentView?.layer else { return }
         containerLayer.backgroundColor = theme.pageAround.cgColor
+        containerLayer.setNeedsDisplay()
+
         headerView.applyTheme(theme)
         toolbarView.applyTheme(theme)
         rulerView.applyTheme(theme)
@@ -843,8 +845,8 @@ extension MainWindowController {
         let popup = NSPopUpButton(frame: .zero, pullsDown: false)
         ExportFormat.allCases.forEach { popup.addItem(withTitle: $0.displayName) }
 
-        // Default to .quill native format
-        let defaultFormat: ExportFormat = .quill
+        // Default to .docx format
+        let defaultFormat: ExportFormat = .docx
         let defaultIndex = ExportFormat.allCases.firstIndex(of: defaultFormat) ?? 0
         popup.selectItem(at: defaultIndex)
 
@@ -885,16 +887,6 @@ extension MainWindowController {
     private func saveToURL(_ url: URL, format: ExportFormat) {
         do {
             switch format {
-            case .quill:
-                // Native package format - save directly to directory
-                try QuillDocument.save(
-                    attributedString: mainContentViewController.editorExportReadyAttributedContent(),
-                    title: headerView.documentTitle(),
-                    styles: StyleCatalog.shared.getAllStyles(),
-                    to: url
-                )
-                NSLog("✅ QuillPilot document saved to \(url.path)")
-
             case .docx:
                 // Export to DOCX
                 let stamped = stampImageSizes(in: mainContentViewController.editorExportReadyAttributedContent())
@@ -1023,7 +1015,7 @@ extension MainWindowController {
         NSLog("Creating NSOpenPanel")
         let panel = NSOpenPanel()
         panel.canChooseFiles = true
-        panel.canChooseDirectories = true  // Must allow directories for .quill packages
+        panel.canChooseDirectories = false
         panel.allowsMultipleSelection = false
         panel.title = "Open"
         panel.allowsOtherFileTypes = true  // Allow system to show compatible file types
@@ -1031,11 +1023,6 @@ extension MainWindowController {
 
         // Create UTTypes for supported formats
         var allowedTypes: [UTType] = []
-
-        // Add .quill package type
-        if let quillType = UTType(filenameExtension: "quill", conformingTo: .package) {
-            allowedTypes.append(quillType)
-        }
 
         // Add .docx type - try multiple identifiers
         if let docxType = UTType("org.openxmlformats.wordprocessingml.document") {
@@ -1074,9 +1061,6 @@ extension MainWindowController {
 
     private func exportData(format: ExportFormat) throws -> Data {
         switch format {
-        case .quill:
-            // Package format doesn't use this method - see saveToURL
-            throw NSError(domain: "QuillPilot", code: 100, userInfo: [NSLocalizedDescriptionKey: "Use saveToURL for .quill format"])
         case .rtf:
             let content = mainContentViewController.editorExportReadyAttributedContent()
             let fullRange = NSRange(location: 0, length: content.length)
@@ -1094,26 +1078,8 @@ extension MainWindowController {
         let ext = url.pathExtension.lowercased()
         NSLog("File extension: \(ext)")
 
-        // Support both .quill native format and .docx Word documents
+        // Support .docx Word documents
         switch ext {
-        case "quill":
-            // Try new package format first, then legacy ZIP format
-            do {
-                let document = try QuillDocument.loadLegacy(from: url)
-                mainContentViewController.setEditorAttributedContent(document.attributedString)
-                headerView.setDocumentTitle(document.metadata.title)
-                mainContentViewController.editorViewController.headerText = ""
-                mainContentViewController.editorViewController.footerText = ""
-                mainContentViewController.editorViewController.updatePageCentering()
-                currentDocumentURL = url
-                currentDocumentFormat = .quill
-                NSLog("✅ QuillPilot document loaded: \(document.metadata.title)")
-            } catch {
-                NSLog("❌ .quill import failed: \(error.localizedDescription)")
-                presentErrorAlert(message: "Failed to open document", details: error.localizedDescription)
-                throw error
-            }
-
         case "docx":
             // Import Word document
             let filename = url.deletingPathExtension().lastPathComponent
@@ -1168,7 +1134,7 @@ extension MainWindowController {
         default:
             presentErrorAlert(
                 message: "Unsupported format",
-                details: "QuillPilot opens .quill and .docx documents.\n\nUse Export to save as .rtf or .pdf."
+                details: "QuillPilot opens .docx documents.\n\nUse Export to save as .rtf or .pdf."
             )
             return
         }
@@ -2258,14 +2224,12 @@ extension OutlineViewController: NSOutlineViewDataSource, NSOutlineViewDelegate 
 
 // MARK: - Export Formats
 private enum ExportFormat: CaseIterable {
-    case quill      // Native format (save + open)
     case docx       // Full support (save + open)
     case rtf        // Export only
     case pdf        // Export only
 
     var displayName: String {
         switch self {
-        case .quill: return "QuillPilot Document (.quill)"
         case .docx: return "Word Document (.docx)"
         case .rtf: return "Rich Text (.rtf)"
         case .pdf: return "PDF Document (.pdf)"
@@ -2274,7 +2238,6 @@ private enum ExportFormat: CaseIterable {
 
     var fileExtension: String {
         switch self {
-        case .quill: return "quill"
         case .docx: return "docx"
         case .rtf: return "rtf"
         case .pdf: return "pdf"
@@ -2283,12 +2246,6 @@ private enum ExportFormat: CaseIterable {
 
     var contentTypes: [UTType] {
         switch self {
-        case .quill:
-            // Try custom type first, fall back to package type
-            if let quillType = UTType(filenameExtension: "quill", conformingTo: .package) {
-                return [quillType]
-            }
-            return [.package]
         case .docx:
             // Use official DOCX identifier, with data as fallback
             if let docxType = UTType("org.openxmlformats.wordprocessingml.document") {
@@ -2308,9 +2265,155 @@ private enum ExportFormat: CaseIterable {
     /// Whether this format can be opened (not just exported)
     var canOpen: Bool {
         switch self {
-        case .quill, .docx: return true
+        case .docx: return true
         case .rtf, .pdf: return false
         }
+    }
+}
+
+// MARK: - DOCX Style Sheet Builder
+private enum StyleSheetBuilder {
+    static func makeStylesXml() -> String {
+        let catalog = StyleCatalog.shared
+        let names = catalog.styleNames(for: catalog.currentTemplateName)
+
+        var styleNodes: [String] = []
+
+        // Always add a "Normal" style definition as a fallback
+        styleNodes.append("""
+        <w:style w:type="paragraph" w:default="1" w:styleId="Normal">
+          <w:name w:val="Normal"/>
+          <w:qFormat/>
+        </w:style>
+        """)
+
+        // Add "Default Paragraph Font"
+        styleNodes.append("""
+        <w:style w:type="character" w:default="1" w:styleId="DefaultParagraphFont">
+          <w:name w:val="Default Paragraph Font"/>
+          <w:uiPriority w:val="1"/>
+          <w:semiHidden/>
+          <w:unhideWhenUsed/>
+        </w:style>
+        """)
+
+        for name in names {
+            guard let def = catalog.style(named: name) else { continue }
+            let styleId = name.components(separatedBy: CharacterSet.alphanumerics.inverted).joined()
+            if styleId == "Normal" { continue } // Skip if user named a style Normal (unlikely but safe)
+
+            let pPr = makeParagraphProps(from: def)
+            let rPr = makeRunProps(from: def)
+
+            styleNodes.append("""
+            <w:style w:type="paragraph" w:customStyle="1" w:styleId="\(styleId)">
+              <w:name w:val="\(name)"/>
+              <w:basedOn w:val="Normal"/>
+              <w:qFormat/>
+              \(pPr)
+              \(rPr)
+            </w:style>
+            """)
+        }
+
+        return """
+        <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+        <w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+          <w:docDefaults>
+            <w:rPrDefault>
+              <w:rPr>
+                <w:rFonts w:asciiTheme="minorHAnsi" w:eastAsiaTheme="minorEastAsia" w:hansiTheme="minorHAnsi" w:cstheme="minorBidi"/>
+                <w:sz w:val="24"/>
+                <w:szCs w:val="24"/>
+                <w:lang w:val="en-US" w:eastAsia="en-US" w:bidi="ar-SA"/>
+              </w:rPr>
+            </w:rPrDefault>
+            <w:pPrDefault/>
+          </w:docDefaults>
+          \(styleNodes.joined(separator: "\n"))
+        </w:styles>
+        """
+    }
+
+    private static func makeParagraphProps(from def: StyleDefinition) -> String {
+        var components: [String] = []
+
+        // Alignment
+        let alignment: String
+        if let align = NSTextAlignment(rawValue: def.alignmentRawValue) {
+            switch align {
+            case .center: alignment = "center"
+            case .right: alignment = "right"
+            case .justified: alignment = "both"
+            default: alignment = "left"
+            }
+            components.append("<w:jc w:val=\"\(alignment)\"/>")
+        }
+
+        // Spacing
+        let before = max(0, Int(round(def.spacingBefore * 20)))
+        let after = max(0, Int(round(def.spacingAfter * 20)))
+        var spacingAttrs: [String] = []
+        if before > 0 { spacingAttrs.append("w:before=\"\(before)\"") }
+        if after > 0 { spacingAttrs.append("w:after=\"\(after)\"") }
+        if def.lineHeightMultiple > 0 {
+            let line = max(120, Int(round(def.lineHeightMultiple * 240)))
+            spacingAttrs.append("w:line=\"\(line)\"")
+            spacingAttrs.append("w:lineRule=\"auto\"")
+        }
+        if !spacingAttrs.isEmpty {
+            components.append("<w:spacing \(spacingAttrs.joined(separator: " "))/>")
+        }
+
+        // Indentation
+        let leftIndent = max(0, Int(round(def.headIndent * 20)))
+        let indentDiff = Int(round((def.firstLineIndent) * 20)) // StyleDefinition stores relative firstLineIndent directly?
+        // Wait, StyleDefinition.firstLineIndent is usually relative in my catalog?
+        // Let's check StyleCatalog.baseDefinition: firstLine: CGFloat = 36.
+        // And makeParagraphStyle: style.firstLineHeadIndent = headIndent + firstLineIndent.
+        // So yes, def.firstLineIndent IS the difference.
+
+        let rightIndent = def.tailIndent > 0 ? Int(round(def.tailIndent * 20)) : 0
+
+        var indentAttrs: [String] = []
+        if leftIndent > 0 {
+            indentAttrs.append("w:left=\"\(leftIndent)\"")
+        }
+        if indentDiff > 0 {
+            indentAttrs.append("w:firstLine=\"\(indentDiff)\"")
+        } else if indentDiff < 0 {
+            indentAttrs.append("w:hanging=\"\(abs(indentDiff))\"")
+        }
+        if rightIndent > 0 {
+            indentAttrs.append("w:right=\"\(rightIndent)\"")
+        }
+
+        if !indentAttrs.isEmpty {
+            components.append("<w:ind \(indentAttrs.joined(separator: " "))/>")
+        }
+
+        guard !components.isEmpty else { return "" }
+        return "<w:pPr>\n\(components.joined(separator: "\n"))\n</w:pPr>"
+    }
+
+    private static func makeRunProps(from def: StyleDefinition) -> String {
+        var components: [String] = []
+
+        components.append("<w:rFonts w:ascii=\"\(def.fontName)\" w:hansi=\"\(def.fontName)\"/>")
+
+        if def.isBold { components.append("<w:b/>") }
+        if def.isItalic { components.append("<w:i/>") }
+
+        let size = Int(round(def.fontSize * 2))
+        components.append("<w:sz w:val=\"\(size)\"/>")
+
+        // Add text color
+        let hex = def.textColorHex.replacingOccurrences(of: "#", with: "")
+        if !hex.isEmpty && hex.count == 6 {
+            components.append("<w:color w:val=\"\(hex)\"/>")
+        }
+
+        return "<w:rPr>\n\(components.joined(separator: "\n"))\n</w:rPr>"
     }
 }
 
@@ -2328,6 +2431,7 @@ private enum DocxBuilder {
         // First pass: collect images and generate document XML
         var images: [ImageInfo] = []
         let documentXml = makeDocumentXml(from: attributed, images: &images)
+        let stylesXml = StyleSheetBuilder.makeStylesXml()
 
         // Build content types with image extensions
         var defaultTypes = """
@@ -2353,6 +2457,7 @@ private enum DocxBuilder {
         <Types xmlns=\"http://schemas.openxmlformats.org/package/2006/content-types\">
         \(defaultTypes)
           <Override PartName=\"/word/document.xml\" ContentType=\"application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml\"/>
+          <Override PartName=\"/word/styles.xml\" ContentType=\"application/vnd.openxmlformats-officedocument.wordprocessingml.styles+xml\"/>
         </Types>
         """
 
@@ -2365,6 +2470,10 @@ private enum DocxBuilder {
 
         // Build document relationships including image references
         var docRelItems: [String] = []
+        docRelItems.append("""
+          <Relationship Id=\"rIdStyles\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles\" Target=\"styles.xml\"/>
+        """)
+
         for img in images {
             docRelItems.append("""
               <Relationship Id=\"\(img.rId)\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/image\" Target=\"media/\(img.filename)\"/>
@@ -2381,6 +2490,7 @@ private enum DocxBuilder {
             ("[Content_Types].xml", Data(contentTypes.utf8)),
             ("_rels/.rels", Data(rels.utf8)),
             ("word/document.xml", Data(documentXml.utf8)),
+            ("word/styles.xml", Data(stylesXml.utf8)),
             ("word/_rels/document.xml.rels", Data(docRels.utf8))
         ]
 
@@ -2418,9 +2528,10 @@ private enum DocxBuilder {
             let paragraphRange = fullString.paragraphRange(for: NSRange(location: location, length: 0))
             let contentRange = trimTrailingNewlines(in: paragraphRange, string: fullString)
             let paragraphStyle = attributed.attribute(.paragraphStyle, at: paragraphRange.location, effectiveRange: nil) as? NSParagraphStyle
+            let styleName = attributed.attribute(NSAttributedString.Key("QuillStyleName"), at: paragraphRange.location, effectiveRange: nil) as? String
 
             let runs = makeRuns(from: attributed, in: contentRange, images: &images)
-            let pPr = paragraphPropertiesXml(from: paragraphStyle)
+            let pPr = paragraphPropertiesXml(from: paragraphStyle, styleName: styleName)
             let paragraphXml = """
             <w:p>
               \(pPr)\(runs.joined())
@@ -2604,51 +2715,67 @@ private enum DocxBuilder {
         return (widthEmu, heightEmu)
     }
 
-    private static func paragraphPropertiesXml(from style: NSParagraphStyle?) -> String {
-        guard let style else { return "" }
-
+    private static func paragraphPropertiesXml(from style: NSParagraphStyle?, styleName: String? = nil) -> String {
         var components: [String] = []
 
-        let alignment: String
-        switch style.alignment {
-        case .center: alignment = "center"
-        case .right: alignment = "right"
-        case .justified: alignment = "both"
-        default: alignment = "left"
-        }
-        components.append("<w:jc w:val=\"\(alignment)\"/>")
-
-        let before = max(0, Int(round(style.paragraphSpacingBefore * 20)))
-        let after = max(0, Int(round(style.paragraphSpacing * 20)))
-        var spacingAttrs: [String] = []
-        if before > 0 { spacingAttrs.append("w:before=\"\(before)\"") }
-        if after > 0 { spacingAttrs.append("w:after=\"\(after)\"") }
-        let lineMultiple = style.lineHeightMultiple
-        if lineMultiple > 0 {
-            let line = max(120, Int(round(lineMultiple * 240)))
-            spacingAttrs.append("w:line=\"\(line)\"")
-            spacingAttrs.append("w:lineRule=\"auto\"")
-        }
-        if !spacingAttrs.isEmpty {
-            components.append("<w:spacing \(spacingAttrs.joined(separator: " "))/>")
+        if let name = styleName {
+            // Simple sanitization for style ID (remove spaces/parens)
+            // e.g. "Heading 1" -> "Heading1", "Body Text" -> "BodyText"
+            let styleId = name.components(separatedBy: CharacterSet.alphanumerics.inverted).joined()
+            components.append("<w:pStyle w:val=\"\(styleId)\"/>")
         }
 
-        let leftIndent = max(0, Int(round(style.headIndent * 20)))
-        let indentDiff = Int(round((style.firstLineHeadIndent - style.headIndent) * 20))
-        let rightIndent = style.tailIndent > 0 ? Int(round(style.tailIndent * 20)) : 0
+        if let style = style {
+            let alignment: String
+            switch style.alignment {
+            case .center: alignment = "center"
+            case .right: alignment = "right"
+            case .justified: alignment = "both"
+            default: alignment = "left"
+            }
+            components.append("<w:jc w:val=\"\(alignment)\"/>")
 
-        var indentAttrs: [String] = []
-        if leftIndent > 0 { indentAttrs.append("w:left=\"\(leftIndent)\"") }
+            let before = max(0, Int(round(style.paragraphSpacingBefore * 20)))
+            let after = max(0, Int(round(style.paragraphSpacing * 20)))
+            var spacingAttrs: [String] = []
+            if before > 0 { spacingAttrs.append("w:before=\"\(before)\"") }
+            if after > 0 { spacingAttrs.append("w:after=\"\(after)\"") }
+            let lineMultiple = style.lineHeightMultiple
+            if lineMultiple > 0 {
+                let line = max(120, Int(round(lineMultiple * 240)))
+                spacingAttrs.append("w:line=\"\(line)\"")
+                spacingAttrs.append("w:lineRule=\"auto\"")
+            }
+            if !spacingAttrs.isEmpty {
+                components.append("<w:spacing \(spacingAttrs.joined(separator: " "))/>")
+            }
 
-        if indentDiff > 0 {
-            indentAttrs.append("w:firstLine=\"\(indentDiff)\"")
-        } else if indentDiff < 0 {
-            indentAttrs.append("w:hanging=\"\(abs(indentDiff))\"")
-        }
+            let leftIndent = max(0, Int(round(style.headIndent * 20)))
+            let indentDiff = Int(round((style.firstLineHeadIndent - style.headIndent) * 20))
+            let rightIndent = style.tailIndent > 0 ? Int(round(style.tailIndent * 20)) : 0
 
-        if rightIndent > 0 { indentAttrs.append("w:right=\"\(rightIndent)\"") }
-        if !indentAttrs.isEmpty {
-            components.append("<w:ind \(indentAttrs.joined(separator: " "))/>")
+            var indentAttrs: [String] = []
+            if leftIndent > 0 {
+                indentAttrs.append("w:left=\"\(leftIndent)\"")
+                indentAttrs.append("w:start=\"\(leftIndent)\"")
+            } else if indentDiff != 0 {
+                indentAttrs.append("w:left=\"0\"")
+                indentAttrs.append("w:start=\"0\"")
+            }
+
+            if indentDiff > 0 {
+                indentAttrs.append("w:firstLine=\"\(indentDiff)\"")
+            } else if indentDiff < 0 {
+                indentAttrs.append("w:hanging=\"\(abs(indentDiff))\"")
+            }
+
+            if rightIndent > 0 {
+                indentAttrs.append("w:right=\"\(rightIndent)\"")
+                indentAttrs.append("w:end=\"\(rightIndent)\"")
+            }
+            if !indentAttrs.isEmpty {
+                components.append("<w:ind \(indentAttrs.joined(separator: " "))/>")
+            }
         }
 
         guard !components.isEmpty else { return "" }
@@ -2886,6 +3013,87 @@ private enum DocxTextExtractor {
         private var currentParagraphHasImage = false
         private var relationships: [String: String] = [:]
 
+        struct RunAttributes {
+            var fontName: String? = nil
+            var fontSize: CGFloat? = nil
+            var isBold: Bool = false
+            var isItalic: Bool = false
+            var foregroundColor: NSColor? = nil
+            var backgroundColor: NSColor? = nil
+            var themeColorName: String? = nil
+            var themeTint: Double? = nil
+            var themeShade: Double? = nil
+            var shadingThemeColorName: String? = nil
+            var shadingThemeTint: Double? = nil
+            var shadingThemeShade: Double? = nil
+
+            static func color(fromHex hex: String) -> NSColor? {
+                var cString: String = hex.trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
+                if cString.hasPrefix("#") { cString.remove(at: cString.startIndex) }
+                if cString.count != 6 { return nil }
+                var rgbValue: UInt64 = 0
+                Scanner(string: cString).scanHexInt64(&rgbValue)
+                return NSColor(
+                    red: CGFloat((rgbValue & 0xFF0000) >> 16) / 255.0,
+                    green: CGFloat((rgbValue & 0x00FF00) >> 8) / 255.0,
+                    blue: CGFloat(rgbValue & 0x0000FF) / 255.0,
+                    alpha: 1.0
+                )
+            }
+
+            static func tintShadeFactor(from val: String) -> Double? {
+                // Value is hex string of 0-255 (00-FF)
+                guard let intVal = Int(val, radix: 16) else { return nil }
+                return Double(intVal) / 255.0
+            }
+
+            static func color(fromTheme themeName: String?, tint: Double?, shade: Double?) -> NSColor? {
+                guard let themeName = themeName else { return nil }
+                var baseColor: NSColor?
+                switch themeName {
+                case "dark1": baseColor = .black
+                case "light1": baseColor = .white
+                case "dark2": baseColor = NSColor(srgbRed: 0.2, green: 0.2, blue: 0.2, alpha: 1.0)
+                case "light2": baseColor = NSColor(srgbRed: 0.9, green: 0.9, blue: 0.9, alpha: 1.0)
+                case "accent1": baseColor = .systemBlue
+                case "accent2": baseColor = .systemOrange
+                case "accent3": baseColor = .systemGray
+                case "accent4": baseColor = .systemYellow
+                case "accent5": baseColor = .systemGreen
+                case "accent6": baseColor = .systemRed
+                default: baseColor = nil
+                }
+
+                guard let color = baseColor else { return nil }
+                var finalColor = color
+                if let tint = tint {
+                    finalColor = applyTint(finalColor, factor: tint)
+                }
+                if let shade = shade {
+                    finalColor = applyShade(finalColor, factor: shade)
+                }
+                return finalColor
+            }
+
+            private static func applyTint(_ color: NSColor, factor: Double) -> NSColor {
+                let f = max(0.0, min(1.0, factor))
+                let srgb = (color.usingColorSpace(.sRGB) ?? color)
+                let r = srgb.redComponent + (1.0 - srgb.redComponent) * f
+                let g = srgb.greenComponent + (1.0 - srgb.greenComponent) * f
+                let b = srgb.blueComponent + (1.0 - srgb.blueComponent) * f
+                return NSColor(calibratedRed: r, green: g, blue: b, alpha: srgb.alphaComponent)
+            }
+
+            private static func applyShade(_ color: NSColor, factor: Double) -> NSColor {
+                let f = max(0.0, min(1.0, factor))
+                let srgb = (color.usingColorSpace(.sRGB) ?? color)
+                let r = srgb.redComponent * (1.0 - f)
+                let g = srgb.greenComponent * (1.0 - f)
+                let b = srgb.blueComponent * (1.0 - f)
+                return NSColor(calibratedRed: r, green: g, blue: b, alpha: srgb.alphaComponent)
+            }
+        }
+
         static func makeAttributedString(from data: Data, docxData: Data, relationships: [String: String]) throws -> NSAttributedString {
             let collector = DocumentXMLAttributedCollector()
             collector.docxData = docxData
@@ -2953,6 +3161,11 @@ private enum DocxTextExtractor {
                 paragraphStyle = ParagraphStyleProps()
                 hasActiveParagraph = true
                 currentParagraphHasImage = false
+
+            case "w:pStyle", "pStyle":
+                if let val = attributeDict["w:val"] ?? attributeDict["val"] {
+                    paragraphStyle.styleName = val
+                }
 
             case "w:jc", "jc":
                 let val = attributeDict["w:val"] ?? attributeDict["val"] ?? "left"
@@ -3271,6 +3484,11 @@ private enum DocxTextExtractor {
             if paragraphBuffer.length > 0 {
                 let paragraph = paragraphStyle.makeParagraphStyle()
                 paragraphBuffer.addAttribute(.paragraphStyle, value: paragraph, range: NSRange(location: 0, length: paragraphBuffer.length))
+
+                if let styleName = paragraphStyle.styleName {
+                    paragraphBuffer.addAttribute(NSAttributedString.Key("QuillStyleName"), value: styleName, range: NSRange(location: 0, length: paragraphBuffer.length))
+                }
+
                 result.append(paragraphBuffer)
             }
 
@@ -3307,85 +3525,6 @@ private enum DocxTextExtractor {
             }
         }
 
-        private struct RunAttributes {
-            var fontName: String? = nil
-            var fontSize: CGFloat? = nil
-            var isBold: Bool = false
-            var isItalic: Bool = false
-            var foregroundColor: NSColor? = nil
-            var backgroundColor: NSColor? = nil
-            var themeColorName: String? = nil
-            var themeTint: Double? = nil
-            var themeShade: Double? = nil
-            var shadingThemeColorName: String? = nil
-            var shadingThemeTint: Double? = nil
-            var shadingThemeShade: Double? = nil
-
-            static func color(fromHex hex: String) -> NSColor? {
-                let cleaned = hex.trimmingCharacters(in: .whitespacesAndNewlines).trimmingCharacters(in: CharacterSet(charactersIn: "#"))
-                guard cleaned.count == 6 else { return nil }
-                guard cleaned.lowercased() != "auto" else { return nil }
-                let scanner = Scanner(string: cleaned)
-                var value: UInt64 = 0
-                guard scanner.scanHexInt64(&value) else { return nil }
-                let r = CGFloat((value & 0xFF0000) >> 16) / 255.0
-                let g = CGFloat((value & 0x00FF00) >> 8) / 255.0
-                let b = CGFloat(value & 0x0000FF) / 255.0
-                return NSColor(calibratedRed: r, green: g, blue: b, alpha: 1.0)
-            }
-
-            static func color(fromTheme name: String?, tint: Double?, shade: Double?) -> NSColor? {
-                guard let name else { return nil }
-                let baseHex: String?
-                switch name.lowercased() {
-                case "dark1": baseHex = "000000"
-                case "light1": baseHex = "FFFFFF"
-                case "dark2": baseHex = "44546A"
-                case "light2": baseHex = "E7E6E6"
-                case "accent1": baseHex = "4472C4"
-                case "accent2": baseHex = "ED7D31"
-                case "accent3": baseHex = "A5A5A5"
-                case "accent4": baseHex = "FFC000"
-                case "accent5": baseHex = "5B9BD5"
-                case "accent6": baseHex = "70AD47"
-                case "hyperlink": baseHex = "0563C1"
-                case "followedhyperlink": baseHex = "954F72"
-                default: baseHex = nil
-                }
-                guard let hex = baseHex, var color = color(fromHex: hex) else { return nil }
-                if let tint = tint {
-                    color = applyTint(color, factor: tint)
-                }
-                if let shade = shade {
-                    color = applyShade(color, factor: shade)
-                }
-                return color
-            }
-
-            static func tintShadeFactor(from hex: String) -> Double? {
-                let cleaned = hex.trimmingCharacters(in: .whitespacesAndNewlines)
-                guard let value = Int(cleaned, radix: 16) else { return nil }
-                return Double(value) / 255.0
-            }
-
-            private static func applyTint(_ color: NSColor, factor: Double) -> NSColor {
-                let f = max(0.0, min(1.0, factor))
-                let srgb = (color.usingColorSpace(.sRGB) ?? color)
-                let r = srgb.redComponent + (1.0 - srgb.redComponent) * f
-                let g = srgb.greenComponent + (1.0 - srgb.greenComponent) * f
-                let b = srgb.blueComponent + (1.0 - srgb.blueComponent) * f
-                return NSColor(calibratedRed: r, green: g, blue: b, alpha: srgb.alphaComponent)
-            }
-
-            private static func applyShade(_ color: NSColor, factor: Double) -> NSColor {
-                let f = max(0.0, min(1.0, factor))
-                let srgb = (color.usingColorSpace(.sRGB) ?? color)
-                let r = srgb.redComponent * (1.0 - 0.8 * f)
-                let g = srgb.greenComponent * (1.0 - 0.8 * f)
-                let b = srgb.blueComponent * (1.0 - 0.8 * f)
-                return NSColor(calibratedRed: r, green: g, blue: b, alpha: srgb.alphaComponent)
-            }
-        }
 
         private struct ParagraphStyleProps {
             var alignment: NSTextAlignment = .left
@@ -3395,6 +3534,7 @@ private enum DocxTextExtractor {
             var headIndent: CGFloat = 0
             var firstLineIndent: CGFloat = 0
             var tailIndent: CGFloat = 0
+            var styleName: String?
 
             func makeParagraphStyle() -> NSParagraphStyle {
                 let style = NSMutableParagraphStyle()

@@ -3401,8 +3401,11 @@ case "Book Subtitle":
     func applyTheme(_ theme: AppTheme) {
         currentTheme = theme
         view.layer?.backgroundColor = theme.pageAround.cgColor
+        view.layer?.setNeedsDisplay()
+
         scrollView?.backgroundColor = theme.pageAround
         documentView?.layer?.backgroundColor = theme.pageAround.cgColor
+        documentView?.layer?.setNeedsDisplay()
 
         // Update PageContainerView to draw with theme colors
         if let pageContainerView = pageContainer as? PageContainerView {

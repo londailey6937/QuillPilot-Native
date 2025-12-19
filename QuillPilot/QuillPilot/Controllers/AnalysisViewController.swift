@@ -129,6 +129,11 @@ class AnalysisViewController: NSViewController {
         switchToCategory(category)
     }
 
+    @objc private func updateButtonTapped() {
+        NSLog("🔄 Update button tapped in analysis panel")
+        analyzeCallback?()
+    }
+
     private func updateSelectedButton() {
         for (index, button) in menuButtons.enumerated() {
             if index == AnalysisCategory.allCases.firstIndex(of: currentCategory) {
@@ -278,12 +283,26 @@ class AnalysisViewController: NSViewController {
             layer.masksToBounds = true
         }
 
-        // Header
+        // Header with update button
+        let headerContainer = NSStackView()
+        headerContainer.translatesAutoresizingMaskIntoConstraints = false
+        headerContainer.orientation = .horizontal
+        headerContainer.spacing = 12
+        headerContainer.alignment = .centerY
+
         let header = makeLabel("Document Analysis", size: 18, bold: true)
-        contentStack.addArrangedSubview(header)
+        headerContainer.addArrangedSubview(header)
+
+        let updateButton = NSButton(title: "Update", target: self, action: #selector(updateButtonTapped))
+        updateButton.bezelStyle = .rounded
+        updateButton.controlSize = .small
+        updateButton.translatesAutoresizingMaskIntoConstraints = false
+        headerContainer.addArrangedSubview(updateButton)
+
+        contentStack.addArrangedSubview(headerContainer)
 
         // Info label
-        let info = makeLabel("Analysis updates automatically.", size: 13, bold: false)
+        let info = makeLabel("Click Update to refresh all analysis.", size: 13, bold: false)
         info.textColor = .secondaryLabelColor
         info.lineBreakMode = .byWordWrapping
         info.maximumNumberOfLines = 0

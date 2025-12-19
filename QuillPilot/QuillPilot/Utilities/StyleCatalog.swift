@@ -158,7 +158,7 @@ final class StyleCatalog {
         styles["Part Title"] = baseDefinition(font: "Times New Roman", size: 20, alignment: .center, before: 24, after: 18, headIndent: 0, firstLine: 0)
         styles["Part Subtitle"] = baseDefinition(font: "Times New Roman", size: 14, alignment: .center, before: 0, after: 18, headIndent: 0, firstLine: 0)
         styles["Chapter Number"] = baseDefinition(font: "Times New Roman", size: 14, alignment: .center, before: 24, after: 12, headIndent: 0, firstLine: 0)
-        styles["Chapter Title"] = baseDefinition(font: "Times New Roman", size: 18, alignment: .center, before: 0, after: 18, headIndent: 0, firstLine: 0)
+        styles["Chapter Title"] = baseDefinition(font: "Times New Roman", size: 18, alignment: .center, before: 0, after: 0, headIndent: 0, firstLine: 0)
         styles["Chapter Subtitle"] = baseDefinition(font: "Times New Roman", size: 14, alignment: .center, before: 0, after: 18, headIndent: 0, firstLine: 0)
         styles["Heading 1"] = baseDefinition(font: "Times New Roman", size: 14, bold: true, alignment: .left, before: 24, after: 12, headIndent: 0, firstLine: 0)
         styles["Heading 2"] = baseDefinition(font: "Times New Roman", size: 13, bold: true, alignment: .left, before: 18, after: 6, headIndent: 0, firstLine: 0)
@@ -204,5 +204,14 @@ final class StyleCatalog {
         styles["Screenplay — Transition"] = baseDefinition(font: font, size: 12, alignment: .right, lineHeight: 1.0, before: 12, after: 0, headIndent: 0, firstLine: 0, tailIndent: 0)
         styles["Screenplay — Shot"] = baseDefinition(font: font, size: 12, alignment: .left, lineHeight: 1.0, before: 12, after: 0, headIndent: 0, firstLine: 0, tailIndent: 0)
         return styles
+    }
+
+    func getAllStyles() -> [String: StyleDefinition] {
+        let overrides = loadOverrides(for: currentTemplateName)
+        var allStyles = templates[currentTemplateName]?.styles ?? [:]
+        for (key, value) in overrides {
+            allStyles[key] = value
+        }
+        return allStyles
     }
 }

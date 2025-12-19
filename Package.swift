@@ -16,8 +16,8 @@ let package = Package(
         .executableTarget(
             name: "QuillPilot",
             dependencies: [],
-            path: ".",
-            exclude: ["README.md"],
+            path: "QuillPilot/QuillPilot",
+            exclude: ["Assets.xcassets"],
             sources: [
                 "Sources/AppDelegate.swift",
                 "Controllers/MainWindowController.swift",
@@ -25,16 +25,15 @@ let package = Package(
                 "Controllers/EditorViewController.swift",
                 "Controllers/AnalysisViewController.swift",
                 "Models/AnalysisEngine.swift",
+                "Models/QuillDocument.swift",
                 "Utilities/ThemeManager.swift",
                 "Utilities/StyleCatalog.swift",
+                "Extensions/NSColor+Hex.swift",
                 "Views/DocumentInfoPanel.swift",
                 "Views/RulerView.swift",
                 "Views/HeaderFooterSettingsWindow.swift",
                 "Views/StyleEditorWindow.swift",
                 "Views/DocumentationWindow.swift"
-            ],
-            resources: [
-                .process("Resources/Info.plist")
             ]
         )
     ]

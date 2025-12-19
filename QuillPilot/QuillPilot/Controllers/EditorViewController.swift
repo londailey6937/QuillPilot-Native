@@ -14,6 +14,17 @@ class FlippedView: NSView {
     override var isFlipped: Bool { return true }
 }
 
+// MARK: - Image Utilities
+
+private extension NSImage {
+    /// Convert the image to PNG data for consistent on-disk representation
+    func pngData() -> Data? {
+        guard let tiff = tiffRepresentation,
+              let bitmap = NSBitmapImageRep(data: tiff) else { return nil }
+        return bitmap.representation(using: .png, properties: [:])
+    }
+}
+
 protocol EditorViewControllerDelegate: AnyObject {
     func textDidChange()
     func titleDidChange(_ title: String)
@@ -80,18 +91,24 @@ class EditorViewController: NSViewController {
         override func draw(_ dirtyRect: NSRect) {
             super.draw(dirtyRect)
 
+            NSLog("📄 PageContainerView.draw called: numPages=\(numPages), pageHeight=\(pageHeight), bounds=\(bounds)")
+
             // Draw ALL page backgrounds regardless of dirtyRect
             // The dirtyRect optimization was preventing pages beyond a certain point from rendering
             for pageNum in 0..<numPages {
                 let pageY = CGFloat(pageNum) * (pageHeight + pageGap)
                 let pageRect = NSRect(x: 0, y: pageY, width: bounds.width, height: pageHeight)
 
+                NSLog("📄 Drawing page \(pageNum) at y=\(pageY), rect=\(pageRect)")
+
                 pageBackgroundColor.setFill()
                 pageRect.fill()
 
                 // Draw page border
                 NSColor.lightGray.setStroke()
-                NSBezierPath.stroke(pageRect)
+                let path = NSBezierPath(rect: pageRect)
+                path.lineWidth = 1
+                path.stroke()
             }
         }
     }
@@ -166,6 +183,10 @@ class EditorViewController: NSViewController {
         textView.textContainerInset = NSSize(width: 0, height: 0)
         textView.delegate = self
 
+        // Make text view transparent so page backgrounds show through
+        textView.drawsBackground = false
+        textView.backgroundColor = .clear
+
         // Enable drag and drop for images
         textView.registerForDraggedTypes([.fileURL, .tiff, .png])
 
@@ -204,6 +225,55 @@ class EditorViewController: NSViewController {
 
     func getTextContent() -> String? {
         return textView.string
+    }
+
+    /// Update the page container to accommodate all content with proper pagination
+    func updatePageLayout() {
+        guard let layoutManager = textView.layoutManager,
+              let textContainer = textView.textContainer else { return }
+
+        // Force layout of all text
+        layoutManager.ensureLayout(for: textContainer)
+
+        // Get the actual used rect for all the text
+        let usedRect = layoutManager.usedRect(for: textContainer)
+
+        // Calculate how many pages we need
+        let contentHeight = usedRect.height + (standardMargin * editorZoom * 2)
+        let scaledPageHeight = pageHeight * editorZoom
+        let neededPages = max(1, Int(ceil(contentHeight / scaledPageHeight)))
+
+        // Update page container
+        if let pageContainerView = pageContainer as? PageContainerView {
+            if pageContainerView.numPages != neededPages {
+                NSLog("📄 Updating page count from \(pageContainerView.numPages) to \(neededPages)")
+                pageContainerView.numPages = neededPages
+                pageContainerView.pageHeight = scaledPageHeight
+                pageContainerView.pageGap = 20
+
+                // Update container frame to hold all pages
+                let totalHeight = CGFloat(neededPages) * (scaledPageHeight + pageContainerView.pageGap) - pageContainerView.pageGap
+                let containerWidth = pageWidth * editorZoom
+                pageContainer.frame = NSRect(x: 0, y: 0, width: containerWidth, height: totalHeight)
+
+                // Update text view frame
+                let textFrame = NSRect(
+                    x: standardMargin * editorZoom,
+                    y: standardMargin * editorZoom,
+                    width: containerWidth - (standardMargin * editorZoom * 2),
+                    height: totalHeight - (standardMargin * editorZoom * 2)
+                )
+                textView.frame = textFrame
+
+                // Update document view to fit all pages
+                documentView.frame = NSRect(x: 0, y: 0, width: containerWidth, height: totalHeight)
+
+                // Force redraw of entire view
+                pageContainer.setNeedsDisplay(pageContainer.bounds)
+                documentView.setNeedsDisplay(documentView.bounds)
+                updatePageCentering()
+            }
+        }
     }
 
     // MARK: - Search and Replace
@@ -624,6 +694,7 @@ class EditorViewController: NSViewController {
         // Calculate max width based on text container width (accounts for margins and zoom)
         let textContainerWidth = textView.textContainer?.size.width ?? ((pageWidth - standardMargin * 2) * editorZoom)
         var maxWidth = textContainerWidth
+        let maxHeight = (pageHeight - headerHeight - footerHeight - (standardMargin * 2)) * editorZoom // keep inside a single page
 
         // Check if cursor is in a table cell - if so, use much smaller max width to avoid breaking the cell
         let cursorLocation = textView.selectedRange().location
@@ -640,12 +711,24 @@ class EditorViewController: NSViewController {
             }
         }
 
-        let scale = min(1.0, maxWidth / image.size.width)
+        let scale = min(1.0, maxWidth / image.size.width, maxHeight / image.size.height)
         let targetSize = NSSize(width: image.size.width * scale, height: image.size.height * scale)
 
         let attachment = NSTextAttachment()
         attachment.image = image
         attachment.bounds = NSRect(origin: .zero, size: targetSize)
+
+        // Preserve image data and size in fileWrapper; normalize to PNG for consistency
+        if let pngData = image.pngData() {
+            let wrapper = FileWrapper(regularFileWithContents: pngData)
+            wrapper.preferredFilename = encodeImageFilename(size: targetSize, ext: "png")
+            attachment.fileWrapper = wrapper
+        } else if let data = try? Data(contentsOf: url) { // fallback to source data
+            let ext = url.pathExtension.isEmpty ? "png" : url.pathExtension
+            let wrapper = FileWrapper(regularFileWithContents: data)
+            wrapper.preferredFilename = encodeImageFilename(size: targetSize, ext: ext)
+            attachment.fileWrapper = wrapper
+        }
 
         textView.window?.makeFirstResponder(textView)
 
@@ -667,7 +750,9 @@ class EditorViewController: NSViewController {
         if isInTableCell {
             // In table cell: insert as inline attachment using current attributes
             let currentAttrs = textView.typingAttributes
-            imageString = NSAttributedString(attachment: attachment, attributes: currentAttrs)
+            let mutableImageString = NSMutableAttributedString(attachment: attachment)
+            mutableImageString.addAttributes(currentAttrs, range: NSRange(location: 0, length: mutableImageString.length))
+            imageString = mutableImageString
         } else {
             // Not in table: use centered paragraph style
             let para = NSMutableParagraphStyle()
@@ -682,8 +767,11 @@ class EditorViewController: NSViewController {
             mutableImageString.addAttribute(.paragraphStyle, value: para, range: NSRange(location: 0, length: mutableImageString.length))
             imageString = mutableImageString
         }
+        // Stamp size attribute so reopen can restore dimensions
+        let finalImageString = NSMutableAttributedString(attributedString: imageString)
+        finalImageString.addAttribute(NSAttributedString.Key("QuillPilotImageSize"), value: NSStringFromRect(NSRect(origin: .zero, size: targetSize)), range: NSRange(location: 0, length: finalImageString.length))
 
-        replaceCharacters(in: insertionRange, with: imageString, undoPlaceholder: "\u{FFFC}")
+        replaceCharacters(in: insertionRange, with: finalImageString, undoPlaceholder: "\u{FFFC}")
 
         // Update page layout to account for the new image
         updatePageCentering()
@@ -701,6 +789,14 @@ class EditorViewController: NSViewController {
         lastImageRange = NSRange(location: attachmentPos, length: 1)
         showImageControlsIfNeeded()
     }
+
+    private func encodeImageFilename(size: CGSize, ext: String) -> String {
+        let cleanExt = ext.lowercased()
+        let w = Int(round(size.width * 100))
+        let h = Int(round(size.height * 100))
+        return "image_w\(w)_h\(h).\(cleanExt)"
+    }
+
 
     private func imageAttachmentRange(at location: Int) -> NSRange? {
         guard let storage = textView.textStorage, storage.length > 0 else { return nil }
@@ -948,10 +1044,21 @@ class EditorViewController: NSViewController {
         guard let attachment = storage.attribute(.attachment, at: range.location, effectiveRange: nil) as? NSTextAttachment else { return }
 
         let maxWidth = textView.textContainer?.size.width ?? ((pageWidth - standardMargin * 2) * editorZoom)
-        let naturalSize = attachment.image?.size ?? attachment.bounds.size
+        let maxHeight = (pageHeight - headerHeight - footerHeight - (standardMargin * 2)) * editorZoom
+        let naturalSize = attachment.bounds.size.width > 0 && attachment.bounds.size.height > 0
+            ? attachment.bounds.size
+            : (attachment.image?.size ?? NSSize(width: maxWidth, height: maxWidth))
+
         let clampedScale = max(0.25, min(1.5, scale))
-        let targetWidth = max(40, maxWidth * clampedScale)
         let aspect = (naturalSize.width > 0) ? (naturalSize.height / naturalSize.width) : 1
+
+        // Width constrained by slider and container
+        var targetWidth = max(40, maxWidth * clampedScale)
+        // Height constraint to keep on page; if too tall, reduce width accordingly
+        let heightForWidth = targetWidth * aspect
+        if heightForWidth > maxHeight {
+            targetWidth = max(40, maxHeight / aspect)
+        }
         let targetHeight = targetWidth * aspect
 
         attachment.bounds = NSRect(origin: .zero, size: NSSize(width: targetWidth, height: targetHeight))
@@ -1084,28 +1191,33 @@ class EditorViewController: NSViewController {
     func rtfData() throws -> Data {
         let attributed = exportReadyAttributedContent()
         let fullRange = NSRange(location: 0, length: attributed.length)
+        // Always emit true RTF data so the file stays a single .rtf and doesn't corrupt when reopened
+        let attrs: [NSAttributedString.DocumentAttributeKey: Any] = [
+            .documentType: NSAttributedString.DocumentType.rtf
+        ]
+        let data = try attributed.data(from: fullRange, documentAttributes: attrs)
+        return data
+    }
 
-        // Check if there are any attachments (images) in the content
-        var hasAttachments = false
-        attributed.enumerateAttribute(.attachment, in: fullRange, options: []) { value, _, stop in
+    func rtfdData() throws -> Data {
+        let attributed = exportReadyAttributedContent()
+        let fullRange = NSRange(location: 0, length: attributed.length)
+        guard let data = attributed.rtfd(from: fullRange, documentAttributes: [:]) else {
+            throw NSError(domain: "QuillPilot", code: 1, userInfo: [NSLocalizedDescriptionKey: "Failed to generate RTFD with images."])
+        }
+        return data
+    }
+
+    func hasAttachments() -> Bool {
+        guard let storage = textView.textStorage else { return false }
+        var found = false
+        storage.enumerateAttribute(.attachment, in: NSRange(location: 0, length: storage.length), options: []) { value, _, stop in
             if value != nil {
-                hasAttachments = true
+                found = true
                 stop.pointee = true
             }
         }
-
-        // Use RTFD if there are images, otherwise use RTF
-        if hasAttachments {
-            guard let rtfdData = attributed.rtfd(from: fullRange, documentAttributes: [:]) else {
-                throw NSError(domain: "QuillPilot", code: 1, userInfo: [NSLocalizedDescriptionKey: "Failed to generate RTFD with images."])
-            }
-            return rtfdData
-        } else {
-            guard let data = attributed.rtf(from: fullRange, documentAttributes: [:]) else {
-                throw NSError(domain: "QuillPilot", code: 1, userInfo: [NSLocalizedDescriptionKey: "Failed to generate RTF."])
-            }
-            return data
-        }
+        return found
     }
 
     /// Returns an attributed string with paragraph, font, and color attributes normalized for export.
@@ -1333,6 +1445,7 @@ class EditorViewController: NSViewController {
 
         // Force immediate layout and page resize to accommodate all content
         updatePageCentering()
+        updatePageLayout()
         scrollToTop()
 
         // Notify delegate that content changed (for analysis, etc.)
@@ -1449,6 +1562,8 @@ class EditorViewController: NSViewController {
         let attributed = NSAttributedString(string: text, attributes: textView.typingAttributes)
         setAttributedContent(attributed)
         // Note: delegate?.textDidChange() is called inside setAttributedContent
+
+
     }
 
     func clearAll() {
@@ -3455,6 +3570,7 @@ extension EditorViewController: NSTextViewDelegate {
 
     @objc private func updatePageCenteringDelayed() {
         updatePageCentering()
+        updatePageLayout()
     }
 
     private func checkAndUpdateTitle() {

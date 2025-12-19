@@ -54,6 +54,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
+    @objc private func showFind(_ sender: Any?) {
+        NotificationCenter.default.post(name: NSNotification.Name("ShowSearchPanel"), object: nil)
+    }
+
     @objc private func openDocument(_ sender: Any?) {
         NSLog("=== AppDelegate.openDocument called ===")
         Task { @MainActor [weak self] in
@@ -132,6 +136,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         editMenu.addItem(NSMenuItem(title: "Copy", action: #selector(NSText.copy(_:)), keyEquivalent: "c"))
         editMenu.addItem(NSMenuItem(title: "Paste", action: #selector(NSText.paste(_:)), keyEquivalent: "v"))
         editMenu.addItem(NSMenuItem(title: "Select All", action: #selector(NSText.selectAll(_:)), keyEquivalent: "a"))
+        editMenu.addItem(.separator())
+
+        let findItem = NSMenuItem(title: "Find & Replace…", action: #selector(showFind(_:)), keyEquivalent: "f")
+        findItem.target = self
+        editMenu.addItem(findItem)
 
         // View Menu
         let viewMenuItem = NSMenuItem()
@@ -188,6 +197,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         guard let window = controller.window else { return }
 
+        
         window.isReleasedWhenClosed = false
         window.deminiaturize(nil)
         window.center()

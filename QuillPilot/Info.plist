@@ -26,5 +26,53 @@
 	<string></string>
 	<key>NSHumanReadableCopyright</key>
 	<string>Copyright © 2025 QuillPilot. All rights reserved.</string>
+	<key>CFBundleDocumentTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleTypeName</key>
+			<string>QuillPilot Document</string>
+			<key>CFBundleTypeRole</key>
+			<string>Editor</string>
+			<key>LSItemContentTypes</key>
+			<array>
+				<string>com.quillpilot.quill</string>
+			</array>
+			<key>LSHandlerRank</key>
+			<string>Owner</string>
+		</dict>
+		<dict>
+			<key>CFBundleTypeName</key>
+			<string>Word Document</string>
+			<key>CFBundleTypeRole</key>
+			<string>Editor</string>
+			<key>LSItemContentTypes</key>
+			<array>
+				<string>org.openxmlformats.wordprocessingml.document</string>
+			</array>
+			<key>LSHandlerRank</key>
+			<string>Alternate</string>
+		</dict>
+	</array>
+	<key>UTExportedTypeDeclarations</key>
+	<array>
+		<dict>
+			<key>UTTypeIdentifier</key>
+			<string>com.quillpilot.quill</string>
+			<key>UTTypeDescription</key>
+			<string>QuillPilot Document</string>
+			<key>UTTypeConformsTo</key>
+			<array>
+				<string>com.apple.package</string>
+				<string>public.composite-content</string>
+			</array>
+			<key>UTTypeTagSpecification</key>
+			<dict>
+				<key>public.filename-extension</key>
+				<array>
+					<string>quill</string>
+				</array>
+			</dict>
+		</dict>
+	</array>
 </dict>
 </plist>

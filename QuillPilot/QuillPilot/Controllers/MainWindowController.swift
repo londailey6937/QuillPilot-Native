@@ -10,6 +10,7 @@ import Cocoa
 import UniformTypeIdentifiers
 import ObjectiveC
 
+@MainActor
 protocol FormattingToolbarDelegate: AnyObject {
     func formattingToolbarDidIndent(_ toolbar: FormattingToolbar)
     func formattingToolbarDidOutdent(_ toolbar: FormattingToolbar)
@@ -58,7 +59,7 @@ class MainWindowController: NSWindowController {
 
     // Document tracking for auto-save
     private var currentDocumentURL: URL?
-    private var currentDocumentFormat: ExportFormat = .rtf
+    private var currentDocumentFormat: ExportFormat = .quill
 
     // Sheet field references
     private var columnsSheetField: NSTextField?
@@ -842,8 +843,8 @@ extension MainWindowController {
         let popup = NSPopUpButton(frame: .zero, pullsDown: false)
         ExportFormat.allCases.forEach { popup.addItem(withTitle: $0.displayName) }
 
-        // Default to RTF so formatting stays intact when reopening saved documents
-        let defaultFormat: ExportFormat = .rtf
+        // Default to .quill native format
+        let defaultFormat: ExportFormat = .quill
         let defaultIndex = ExportFormat.allCases.firstIndex(of: defaultFormat) ?? 0
         popup.selectItem(at: defaultIndex)
 
@@ -883,12 +884,117 @@ extension MainWindowController {
 
     private func saveToURL(_ url: URL, format: ExportFormat) {
         do {
-            let data = try self.exportData(format: format)
-            try data.write(to: url, options: .atomic)
-            NSLog("Document saved to \(url.path)")
+            switch format {
+            case .quill:
+                // Native package format - save directly to directory
+                try QuillDocument.save(
+                    attributedString: mainContentViewController.editorExportReadyAttributedContent(),
+                    title: headerView.documentTitle(),
+                    styles: StyleCatalog.shared.getAllStyles(),
+                    to: url
+                )
+                NSLog("✅ QuillPilot document saved to \(url.path)")
+
+            case .docx:
+                // Export to DOCX
+                let stamped = stampImageSizes(in: mainContentViewController.editorExportReadyAttributedContent())
+                let data = try DocxBuilder.makeDocxData(from: stamped)
+                try data.write(to: url, options: .atomic)
+                NSLog("✅ DOCX exported to \(url.path)")
+
+            case .rtf:
+                // Export to RTF (text only, images stripped)
+                let content = mainContentViewController.editorExportReadyAttributedContent()
+                let fullRange = NSRange(location: 0, length: content.length)
+                let data = try content.data(from: fullRange, documentAttributes: [.documentType: NSAttributedString.DocumentType.rtf])
+                try data.write(to: url, options: .atomic)
+                NSLog("✅ RTF exported to \(url.path)")
+
+            case .pdf:
+                // Export to PDF
+                let data = mainContentViewController.editorPDFData()
+                try data.write(to: url, options: .atomic)
+                NSLog("✅ PDF exported to \(url.path)")
+            }
         } catch {
+            NSLog("❌ Save failed: \(error.localizedDescription)")
             self.presentErrorAlert(message: "Save failed", details: error.localizedDescription)
         }
+    }
+
+    private func restoreImageSizes(in attributed: NSAttributedString) -> NSAttributedString {
+        let mutable = NSMutableAttributedString(attributedString: attributed)
+        let fullRange = NSRange(location: 0, length: mutable.length)
+
+        mutable.enumerateAttribute(.attachment, in: fullRange, options: []) { value, range, _ in
+            guard let attachment = value as? NSTextAttachment else { return }
+
+            // Check for stored size attribute
+            if let sizeString = mutable.attribute(NSAttributedString.Key("QuillPilotImageSize"), at: range.location, effectiveRange: nil) as? String {
+                let storedBounds = NSRectFromString(sizeString)
+                if storedBounds.width > 0 && storedBounds.height > 0 {
+                    attachment.bounds = storedBounds
+                    NSLog("📷 Restored image size: \(storedBounds.width) x \(storedBounds.height)")
+                }
+            } else if let filename = attachment.fileWrapper?.preferredFilename,
+                      let parsedSize = parseImageSize(from: filename) {
+                let bounds = CGRect(origin: .zero, size: parsedSize)
+                attachment.bounds = bounds
+                NSLog("📷 Restored image size from filename: \(bounds.width) x \(bounds.height)")
+            }
+        }
+
+        return mutable
+    }
+
+    private func stampImageSizes(in attributed: NSAttributedString) -> NSAttributedString {
+        let mutable = NSMutableAttributedString(attributedString: attributed)
+        let fullRange = NSRange(location: 0, length: mutable.length)
+
+        mutable.enumerateAttribute(.attachment, in: fullRange, options: []) { value, range, _ in
+            guard let attachment = value as? NSTextAttachment else { return }
+            let bounds = attachment.bounds
+            if bounds.width > 0 && bounds.height > 0 {
+                mutable.addAttribute(NSAttributedString.Key("QuillPilotImageSize"), value: NSStringFromRect(bounds), range: range)
+
+                if let wrapper = attachment.fileWrapper {
+                    let ext = ((wrapper.preferredFilename as NSString?)?.pathExtension).flatMap { $0.isEmpty ? nil : $0 } ?? "png"
+                    let filename = encodeImageFilename(size: bounds.size, ext: ext)
+                    wrapper.preferredFilename = filename
+                }
+            }
+        }
+
+        return mutable
+    }
+
+    private func encodeImageFilename(size: CGSize, ext: String) -> String {
+        let cleanExt = ext.lowercased()
+        let w = Int(round(size.width * 100))
+        let h = Int(round(size.height * 100))
+        return "image_w\(w)_h\(h).\(cleanExt)"
+    }
+
+    private func parseImageSize(from filename: String) -> CGSize? {
+        // Expect format: image_w{int}_h{int}.ext where values are hundredths of a point
+        // Example: image_w12345_h6789.png
+        let pattern = "_w(\\d+)_h(\\d+)"
+        guard let regex = try? NSRegularExpression(pattern: pattern) else { return nil }
+        let range = NSRange(location: 0, length: filename.utf16.count)
+        guard let match = regex.firstMatch(in: filename, options: [], range: range), match.numberOfRanges == 3 else { return nil }
+
+        func value(_ idx: Int) -> CGFloat? {
+            let r = match.range(at: idx)
+            guard let swiftRange = Range(r, in: filename) else { return nil }
+            let str = String(filename[swiftRange])
+            guard let intVal = Int(str) else { return nil }
+            return CGFloat(intVal) / 100.0
+        }
+
+        if let w = value(1), let h = value(2), w > 0, h > 0 {
+            return CGSize(width: w, height: h)
+        }
+        return nil
     }
 
     @objc private func _saveFormatChanged(_ sender: NSPopUpButton) {
@@ -917,10 +1023,33 @@ extension MainWindowController {
         NSLog("Creating NSOpenPanel")
         let panel = NSOpenPanel()
         panel.canChooseFiles = true
-        panel.canChooseDirectories = false
+        panel.canChooseDirectories = true  // Must allow directories for .quill packages
         panel.allowsMultipleSelection = false
         panel.title = "Open"
-        panel.allowedContentTypes = [.plainText, UTType(filenameExtension: "md") ?? .plainText, .rtf, .rtfd, UTType(filenameExtension: "docx") ?? .data, .pdf]
+        panel.allowsOtherFileTypes = true  // Allow system to show compatible file types
+        panel.treatsFilePackagesAsDirectories = false  // Show packages as files
+
+        // Create UTTypes for supported formats
+        var allowedTypes: [UTType] = []
+
+        // Add .quill package type
+        if let quillType = UTType(filenameExtension: "quill", conformingTo: .package) {
+            allowedTypes.append(quillType)
+        }
+
+        // Add .docx type - try multiple identifiers
+        if let docxType = UTType("org.openxmlformats.wordprocessingml.document") {
+            allowedTypes.append(docxType)
+        } else if let docxType = UTType(filenameExtension: "docx", conformingTo: .data) {
+            allowedTypes.append(docxType)
+        }
+
+        // If we have types, use them; otherwise allow all
+        if !allowedTypes.isEmpty {
+            panel.allowedContentTypes = allowedTypes
+        }
+
+        NSLog("Allowed content types: \(allowedTypes.map { $0.identifier })")
 
         panel.beginSheetModal(for: window) { response in
             NSLog("Open panel response: \(response.rawValue)")
@@ -945,16 +1074,18 @@ extension MainWindowController {
 
     private func exportData(format: ExportFormat) throws -> Data {
         switch format {
+        case .quill:
+            // Package format doesn't use this method - see saveToURL
+            throw NSError(domain: "QuillPilot", code: 100, userInfo: [NSLocalizedDescriptionKey: "Use saveToURL for .quill format"])
         case .rtf:
-            return try mainContentViewController.editorRTFData()
-        case .markdown:
-            return Data(mainContentViewController.editorPlainText().utf8)
+            let content = mainContentViewController.editorExportReadyAttributedContent()
+            let fullRange = NSRange(location: 0, length: content.length)
+            return try content.data(from: fullRange, documentAttributes: [.documentType: NSAttributedString.DocumentType.rtf])
         case .pdf:
             return mainContentViewController.editorPDFData()
         case .docx:
-            return try DocxBuilder.makeDocxData(from: mainContentViewController.editorExportReadyAttributedContent())
-        case .shunnManuscript:
-            return try mainContentViewController.editorShunnManuscriptRTFData(documentTitle: headerView.documentTitle())
+            let stamped = stampImageSizes(in: mainContentViewController.editorExportReadyAttributedContent())
+            return try DocxBuilder.makeDocxData(from: stamped)
         }
     }
 
@@ -963,189 +1094,93 @@ extension MainWindowController {
         let ext = url.pathExtension.lowercased()
         NSLog("File extension: \(ext)")
 
-        if ext == "pdf" {
-            presentErrorAlert(message: "PDF import not supported", details: "PDF to editable text import isn't implemented yet.")
-            return
-        }
-
-        if ext == "docx" {
-            func colorHex(_ color: NSColor) -> String {
-                let srgb = color.usingColorSpace(.sRGB) ?? color
-                let r = Int((srgb.redComponent * 255).rounded())
-                let g = Int((srgb.greenComponent * 255).rounded())
-                let b = Int((srgb.blueComponent * 255).rounded())
-                return String(format: "%02X%02X%02X", r, g, b)
-            }
-
-            struct ColorSummary {
-                var coloredRuns: Int
-                var totalRuns: Int
-                var uniqueForegrounds: Set<String>
-                var uniqueBackgrounds: Set<String>
-            }
-
-            func summarizeColors(in attributed: NSAttributedString) -> ColorSummary {
-                var coloredRuns = 0
-                var totalRuns = 0
-                var fg: Set<String> = []
-                var bg: Set<String> = []
-
-                attributed.enumerateAttributes(in: NSRange(location: 0, length: attributed.length), options: []) { attrs, _, _ in
-                    totalRuns += 1
-                    if let color = attrs[.foregroundColor] as? NSColor {
-                        coloredRuns += 1
-                        fg.insert(colorHex(color))
-                    }
-                    if let color = attrs[.backgroundColor] as? NSColor, color.alphaComponent > 0.01 {
-                        bg.insert(colorHex(color))
-                    }
-                }
-
-                return ColorSummary(coloredRuns: coloredRuns, totalRuns: totalRuns, uniqueForegrounds: fg, uniqueBackgrounds: bg)
-            }
-
-            let docxType = NSAttributedString.DocumentType(rawValue: "org.openxmlformats.wordprocessingml.document")
+        // Support both .quill native format and .docx Word documents
+        switch ext {
+        case "quill":
+            // Try new package format first, then legacy ZIP format
             do {
-                // Prefer rich-text import; fall back to plain text if unavailable
-                let attributed = try NSAttributedString(url: url, options: [.documentType: docxType], documentAttributes: nil)
-
-                // Debug: log loaded attributes
-                let str = attributed.string as NSString
-                var loc = 0
-                print("=== DOCX IMPORT DEBUG ===")
-                while loc < str.length {
-                    let pRange = str.paragraphRange(for: NSRange(location: loc, length: 0))
-                    let attrs = attributed.attributes(at: pRange.location, effectiveRange: nil)
-                    let text = str.substring(with: pRange).prefix(30)
-                    let fontDesc = String(describing: attrs[.font] ?? "nil")
-                    let colorDesc = String(describing: attrs[.foregroundColor] ?? "nil")
-                    let alignVal = (attrs[.paragraphStyle] as? NSParagraphStyle)?.alignment.rawValue ?? -1
-                    print("P[\(pRange.location)]: \"\(text)\" font=\(fontDesc) color=\(colorDesc) align=\(alignVal)")
-                    loc = NSMaxRange(pRange)
-                }
-                print("=========================")
-
-                // If native importer yielded weak color data, try custom rich importer and pick the richer result
-                let nativeSummary = summarizeColors(in: attributed)
-                var finalAttributed: NSAttributedString = attributed
-
-                if nativeSummary.coloredRuns == 0 || nativeSummary.uniqueForegrounds.count <= 1 {
-                    NSLog("DOCX native import has limited colors (fg unique=\(nativeSummary.uniqueForegrounds.count)); attempting custom rich import")
-                    if let custom = try? DocxTextExtractor.extractAttributedString(fromDocxFileURL: url) {
-                        let customSummary = summarizeColors(in: custom)
-                        if customSummary.uniqueForegrounds.count > nativeSummary.uniqueForegrounds.count || (nativeSummary.coloredRuns == 0 && customSummary.coloredRuns > 0) {
-                            NSLog("DOCX custom import selected (native fg=\(nativeSummary.uniqueForegrounds.count) -> custom fg=\(customSummary.uniqueForegrounds.count))")
-                            finalAttributed = custom
-                        } else {
-                            NSLog("DOCX custom import offered no color improvement; keeping native")
-                        }
-                    }
-                }
-
-                mainContentViewController.setEditorAttributedContent(finalAttributed)
-                // Reset header/footer custom text when loading new document
+                let document = try QuillDocument.loadLegacy(from: url)
+                mainContentViewController.setEditorAttributedContent(document.attributedString)
+                headerView.setDocumentTitle(document.metadata.title)
                 mainContentViewController.editorViewController.headerText = ""
                 mainContentViewController.editorViewController.footerText = ""
                 mainContentViewController.editorViewController.updatePageCentering()
-                return
+                currentDocumentURL = url
+                currentDocumentFormat = .quill
+                NSLog("✅ QuillPilot document loaded: \(document.metadata.title)")
             } catch {
-                NSLog("DOCX rich-text import failed, attempting custom importer: \(error.localizedDescription)")
-                do {
-                    let attributed = try DocxTextExtractor.extractAttributedString(fromDocxFileURL: url)
+                NSLog("❌ .quill import failed: \(error.localizedDescription)")
+                presentErrorAlert(message: "Failed to open document", details: error.localizedDescription)
+                throw error
+            }
 
-                    // Debug: log loaded attributes
-                    let str = attributed.string as NSString
-                    var loc = 0
-                    print("=== DOCX CUSTOM IMPORT DEBUG ===")
-                    while loc < str.length {
-                        let pRange = str.paragraphRange(for: NSRange(location: loc, length: 0))
-                        let attrs = attributed.attributes(at: pRange.location, effectiveRange: nil)
-                        let text = str.substring(with: pRange).prefix(30)
-                        print("P[\(pRange.location)]: \"\(text)\" font=\(attrs[.font] ?? "nil") color=\(attrs[.foregroundColor] ?? "nil") align=\((attrs[.paragraphStyle] as? NSParagraphStyle)?.alignment.rawValue ?? -1)")
-                        loc = NSMaxRange(pRange)
+        case "docx":
+            // Import Word document
+            do {
+                NSLog("📄 Importing Word document...")
+
+                // Check file size and warn for large files
+                let fileSize = try FileManager.default.attributesOfItem(atPath: url.path)[.size] as? UInt64 ?? 0
+                let fileSizeMB = Double(fileSize) / 1_048_576.0
+                NSLog("📄 File size: \(String(format: "%.2f", fileSizeMB)) MB")
+
+// For very large files (>10MB), show a warning
+                // For extremely large files (>100MB), limit to first portion
+                if fileSizeMB > 100 {
+                    let alert = NSAlert()
+                    alert.messageText = "Document Too Large"
+                    alert.informativeText = "This document is \(String(format: "%.1f", fileSizeMB)) MB, which exceeds the recommended limit of 100 MB.\n\nVery large documents may cause performance issues. Consider using a dedicated Word processor for files this size."
+                    alert.addButton(withTitle: "OK")
+                    alert.alertStyle = .critical
+                    alert.runModal()
+                    NSLog("📄 Document too large: \(fileSizeMB) MB")
+                    return
+                } else if fileSizeMB > 10 {
+                    let alert = NSAlert()
+                    alert.messageText = "Large Document"
+                    alert.informativeText = "This document is \(String(format: "%.1f", fileSizeMB)) MB. It may take a moment to load and could impact performance.\n\nDo you want to continue?"
+                    alert.addButton(withTitle: "Continue")
+                    alert.addButton(withTitle: "Cancel")
+                    alert.alertStyle = .warning
+
+                    guard alert.runModal() == .alertFirstButtonReturn else {
+                        NSLog("📄 User cancelled large file import")
+                        return
                     }
-                    print("=========================")
 
-                    mainContentViewController.setEditorAttributedContent(attributed)
-                    // Reset header/footer custom text when loading new document
-                    mainContentViewController.editorViewController.headerText = ""
-                    mainContentViewController.editorViewController.footerText = ""
-                    mainContentViewController.editorViewController.updatePageCentering()
-
-                    // Store URL and format for auto-save
-                    currentDocumentURL = url
-                    currentDocumentFormat = .docx
-                    return
-                } catch {
-                    NSLog("DOCX custom import failed, falling back to plain text: \(error.localizedDescription)")
+                    NSLog("📄 Loading large document...")
                 }
-                do {
-                    let text = try DocxTextExtractor.extractPlainText(fromDocxFileURL: url)
-                    mainContentViewController.setEditorPlainText(text)
-                    // Reset header/footer custom text when loading new document
-                    mainContentViewController.editorViewController.headerText = ""
-                    mainContentViewController.editorViewController.footerText = ""
-                    mainContentViewController.editorViewController.updatePageCentering()
 
-                    // Store URL and format for auto-save (will export as DOCX)
-                    currentDocumentURL = url
-                    currentDocumentFormat = .docx
-                    return
-                } catch {
-                    throw NSError(domain: "QuillPilot", code: 2, userInfo: [
-                        NSLocalizedDescriptionKey: "Failed to import DOCX.",
-                        NSLocalizedFailureReasonErrorKey: "DOCX rich-text and plain-text imports both failed.",
-                        NSUnderlyingErrorKey: error
-                    ])
-                }
+                let attributedString = try DocxTextExtractor.extractAttributedString(fromDocxFileURL: url)
+
+                // Restore image sizes that were encoded in filenames during export
+                let restored = restoreImageSizes(in: attributedString)
+
+                mainContentViewController.setEditorAttributedContent(restored)
+
+                // Use filename as title
+                let filename = url.deletingPathExtension().lastPathComponent
+                headerView.setDocumentTitle(filename)
+
+                mainContentViewController.editorViewController.headerText = ""
+                mainContentViewController.editorViewController.footerText = ""
+                mainContentViewController.editorViewController.updatePageCentering()
+                currentDocumentURL = url
+                currentDocumentFormat = .docx
+                NSLog("✅ Word document loaded: \(filename) (\(attributedString.length) characters)")
+            } catch {
+                NSLog("❌ .docx import failed: \(error.localizedDescription)")
+                presentErrorAlert(message: "Failed to open Word document", details: error.localizedDescription)
+                throw error
             }
-        }
 
-        if ext == "rtf" || ext == "rtfd" {
-            NSLog("About to create NSAttributedString from RTF")
-            let attributed = try NSAttributedString(url: url, options: [:], documentAttributes: nil)
-            NSLog("NSAttributedString created successfully, length: \(attributed.length)")
-
-            // Debug: log loaded attributes
-            let str = attributed.string as NSString
-            var loc = 0
-            print("=== RTF IMPORT DEBUG ===")
-            while loc < str.length {
-                let pRange = str.paragraphRange(for: NSRange(location: loc, length: 0))
-                let attrs = attributed.attributes(at: pRange.location, effectiveRange: nil)
-                let text = str.substring(with: pRange).prefix(30)
-                print("P[\(pRange.location)]: \"\(text)\" font=\(attrs[.font] ?? "nil") color=\(attrs[.foregroundColor] ?? "nil") align=\((attrs[.paragraphStyle] as? NSParagraphStyle)?.alignment.rawValue ?? -1)")
-                loc = NSMaxRange(pRange)
-            }
-            print("========================")
-
-            NSLog("About to call setEditorAttributedContent")
-            mainContentViewController.setEditorAttributedContent(attributed)
-            NSLog("Finished setEditorAttributedContent")
-            // Reset header/footer custom text when loading new document
-            mainContentViewController.editorViewController.headerText = ""
-            mainContentViewController.editorViewController.footerText = ""
-            NSLog("About to call updatePageCentering")
-            mainContentViewController.editorViewController.updatePageCentering()
-            NSLog("Finished updatePageCentering")
-            NSLog("RTF import completed successfully")
-
-            // Store URL and format for auto-save
-            currentDocumentURL = url
-            currentDocumentFormat = .rtf
+        default:
+            presentErrorAlert(
+                message: "Unsupported format",
+                details: "QuillPilot opens .quill and .docx documents.\n\nUse Export to save as .rtf or .pdf."
+            )
             return
         }
-
-        let text = try String(contentsOf: url, encoding: .utf8)
-        mainContentViewController.setEditorPlainText(text)
-        // Reset header/footer custom text when loading new document
-        mainContentViewController.editorViewController.headerText = ""
-        mainContentViewController.editorViewController.footerText = ""
-        mainContentViewController.editorViewController.updatePageCentering()
-
-        // Store URL for auto-save (plain text treated as RTF)
-        currentDocumentURL = url
-        currentDocumentFormat = .rtf
     }
 
     private func presentErrorAlert(message: String, details: String) {
@@ -1940,6 +1975,14 @@ class ContentViewController: NSViewController {
         try editorViewController.rtfData()
     }
 
+    func editorRTFDData() throws -> Data {
+        try editorViewController.rtfdData()
+    }
+
+    func editorHasAttachments() -> Bool {
+        editorViewController.hasAttachments()
+    }
+
     func editorShunnManuscriptRTFData(documentTitle: String) throws -> Data {
         try editorViewController.shunnManuscriptRTFData(documentTitle: documentTitle)
     }
@@ -1961,13 +2004,23 @@ class ContentViewController: NSViewController {
         editorViewController.setFirstLineIndent(ruler.firstLineIndent)
     }
 
+    private var isAnalyzing = false
+
     private func performAnalysis() {
         NSLog("🔍 performAnalysis called in ContentViewController")
+
+        // Skip if already analyzing to prevent queue buildup
+        guard !isAnalyzing else {
+            NSLog("⏸️ Analysis already in progress, skipping")
+            return
+        }
 
         guard let text = editorViewController.getTextContent(), !text.isEmpty else {
             NSLog("⚠️ No text to analyze")
             return
         }
+
+        isAnalyzing = true
 
         // Run analysis on background thread to avoid blocking UI
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
@@ -1979,6 +2032,7 @@ class ContentViewController: NSViewController {
             // Update UI on main thread
             DispatchQueue.main.async {
                 self?.analysisViewController.displayResults(results)
+                self?.isAnalyzing = false
             }
         }
     }
@@ -2213,56 +2267,100 @@ extension OutlineViewController: NSOutlineViewDataSource, NSOutlineViewDelegate 
 
 // MARK: - Export Formats
 private enum ExportFormat: CaseIterable {
-    case docx
-    case pdf
-    case markdown
-    case rtf
-    case shunnManuscript
+    case quill      // Native format (save + open)
+    case docx       // Full support (save + open)
+    case rtf        // Export only
+    case pdf        // Export only
 
     var displayName: String {
         switch self {
-        case .docx: return "DOCX"
-        case .pdf: return "PDF"
-        case .markdown: return "Markdown"
-        case .rtf: return "RTF"
-        case .shunnManuscript: return "Shunn Manuscript (RTF)"
+        case .quill: return "QuillPilot Document (.quill)"
+        case .docx: return "Word Document (.docx)"
+        case .rtf: return "Rich Text (.rtf)"
+        case .pdf: return "PDF Document (.pdf)"
         }
     }
 
     var fileExtension: String {
         switch self {
+        case .quill: return "quill"
         case .docx: return "docx"
-        case .pdf: return "pdf"
-        case .markdown: return "md"
         case .rtf: return "rtf"
-        case .shunnManuscript: return "rtf"
+        case .pdf: return "pdf"
         }
     }
 
     var contentTypes: [UTType] {
         switch self {
+        case .quill:
+            // Try custom type first, fall back to package type
+            if let quillType = UTType(filenameExtension: "quill", conformingTo: .package) {
+                return [quillType]
+            }
+            return [.package]
         case .docx:
-            return [UTType(filenameExtension: "docx") ?? .data]
-        case .pdf:
-            return [.pdf]
-        case .markdown:
-            return [UTType(filenameExtension: "md") ?? .plainText]
+            // Use official DOCX identifier, with data as fallback
+            if let docxType = UTType("org.openxmlformats.wordprocessingml.document") {
+                return [docxType]
+            }
+            if let docxType = UTType(filenameExtension: "docx", conformingTo: .data) {
+                return [docxType]
+            }
+            return [.data]
         case .rtf:
             return [.rtf]
-        case .shunnManuscript:
-            return [.rtf]
+        case .pdf:
+            return [.pdf]
+        }
+    }
+
+    /// Whether this format can be opened (not just exported)
+    var canOpen: Bool {
+        switch self {
+        case .quill, .docx: return true
+        case .rtf, .pdf: return false
         }
     }
 }
 
-// MARK: - DOCX builder (rich text)
+// MARK: - DOCX builder (rich text with images)
 private enum DocxBuilder {
+    /// Collected image info during document generation
+    private struct ImageInfo {
+        let rId: String
+        let filename: String
+        let data: Data
+        let ext: String
+    }
+
     static func makeDocxData(from attributed: NSAttributedString) throws -> Data {
+        // First pass: collect images and generate document XML
+        var images: [ImageInfo] = []
+        let documentXml = makeDocumentXml(from: attributed, images: &images)
+
+        // Build content types with image extensions
+        var defaultTypes = """
+          <Default Extension=\"rels\" ContentType=\"application/vnd.openxmlformats-package.relationships+xml\"/>
+          <Default Extension=\"xml\" ContentType=\"application/xml\"/>
+        """
+        let usedExtensions = Set(images.map { $0.ext })
+        if usedExtensions.contains("png") {
+            defaultTypes += "\n  <Default Extension=\"png\" ContentType=\"image/png\"/>"
+        }
+        if usedExtensions.contains("jpeg") || usedExtensions.contains("jpg") {
+            defaultTypes += "\n  <Default Extension=\"jpeg\" ContentType=\"image/jpeg\"/>"
+        }
+        if usedExtensions.contains("gif") {
+            defaultTypes += "\n  <Default Extension=\"gif\" ContentType=\"image/gif\"/>"
+        }
+        if usedExtensions.contains("tiff") || usedExtensions.contains("tif") {
+            defaultTypes += "\n  <Default Extension=\"tiff\" ContentType=\"image/tiff\"/>"
+        }
+
         let contentTypes = """
         <?xml version=\"1.0\" encoding=\"UTF-8\"?>
         <Types xmlns=\"http://schemas.openxmlformats.org/package/2006/content-types\">
-          <Default Extension=\"rels\" ContentType=\"application/vnd.openxmlformats-package.relationships+xml\"/>
-          <Default Extension=\"xml\" ContentType=\"application/xml\"/>
+        \(defaultTypes)
           <Override PartName=\"/word/document.xml\" ContentType=\"application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml\"/>
         </Types>
         """
@@ -2274,28 +2372,44 @@ private enum DocxBuilder {
         </Relationships>
         """
 
+        // Build document relationships including image references
+        var docRelItems: [String] = []
+        for img in images {
+            docRelItems.append("""
+              <Relationship Id=\"\(img.rId)\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/image\" Target=\"media/\(img.filename)\"/>
+            """)
+        }
         let docRels = """
         <?xml version=\"1.0\" encoding=\"UTF-8\"?>
-        <Relationships xmlns=\"http://schemas.openxmlformats.org/package/2006/relationships\"/>
+        <Relationships xmlns=\"http://schemas.openxmlformats.org/package/2006/relationships\">
+        \(docRelItems.joined(separator: "\n"))
+        </Relationships>
         """
 
-        let documentXml = makeDocumentXml(from: attributed)
-
-        let entries: [(String, Data)] = [
+        var entries: [(String, Data)] = [
             ("[Content_Types].xml", Data(contentTypes.utf8)),
             ("_rels/.rels", Data(rels.utf8)),
             ("word/document.xml", Data(documentXml.utf8)),
             ("word/_rels/document.xml.rels", Data(docRels.utf8))
         ]
 
+        // Add image files
+        for img in images {
+            entries.append(("word/media/\(img.filename)", img.data))
+        }
+
         return ZipWriter.makeZip(entries: entries)
     }
 
-    private static func makeDocumentXml(from attributed: NSAttributedString) -> String {
-        let body = makeParagraphs(from: attributed)
+    private static func makeDocumentXml(from attributed: NSAttributedString, images: inout [ImageInfo]) -> String {
+        let body = makeParagraphs(from: attributed, images: &images)
         return """
         <?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>
-        <w:document xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\">
+        <w:document xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"
+                    xmlns:wp=\"http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing\"
+                    xmlns:a=\"http://schemas.openxmlformats.org/drawingml/2006/main\"
+                    xmlns:pic=\"http://schemas.openxmlformats.org/drawingml/2006/picture\"
+                    xmlns:r=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships\">
           <w:body>
             \(body)
             <w:sectPr/>
@@ -2304,7 +2418,7 @@ private enum DocxBuilder {
         """
     }
 
-    private static func makeParagraphs(from attributed: NSAttributedString) -> String {
+    private static func makeParagraphs(from attributed: NSAttributedString, images: inout [ImageInfo]) -> String {
         let fullString = attributed.string as NSString
         var location = 0
         var paragraphs: [String] = []
@@ -2314,7 +2428,7 @@ private enum DocxBuilder {
             let contentRange = trimTrailingNewlines(in: paragraphRange, string: fullString)
             let paragraphStyle = attributed.attribute(.paragraphStyle, at: paragraphRange.location, effectiveRange: nil) as? NSParagraphStyle
 
-            let runs = makeRuns(from: attributed, in: contentRange)
+            let runs = makeRuns(from: attributed, in: contentRange, images: &images)
             let pPr = paragraphPropertiesXml(from: paragraphStyle)
             let paragraphXml = """
             <w:p>
@@ -2328,25 +2442,175 @@ private enum DocxBuilder {
         return paragraphs.joined(separator: "\n")
     }
 
-    private static func makeRuns(from attributed: NSAttributedString, in range: NSRange) -> [String] {
+    private static func makeRuns(from attributed: NSAttributedString, in range: NSRange, images: inout [ImageInfo]) -> [String] {
         let fullString = attributed.string as NSString
         var runs: [String] = []
+        var hasImageAttachment = false
 
         if range.length == 0 {
             return ["<w:r><w:t/></w:r>"]
         }
 
         attributed.enumerateAttributes(in: range, options: []) { attrs, subRange, _ in
-            let text = fullString.substring(with: subRange)
-            let runXml = runXml(for: text, attributes: attrs)
-            runs.append(runXml)
+            // Check for image attachment
+            if let attachment = attrs[.attachment] as? NSTextAttachment,
+               let imageRunXml = imageRunXml(for: attachment, images: &images) {
+                runs.append(imageRunXml)
+                hasImageAttachment = true
+            } else {
+                let text = fullString.substring(with: subRange)
+                // Skip the attachment placeholder character (U+FFFC)
+                let filteredText = text.replacingOccurrences(of: "\u{FFFC}", with: "")
+                if !filteredText.isEmpty {
+                    let runXml = runXml(for: filteredText, attributes: attrs)
+                    runs.append(runXml)
+                }
+            }
         }
 
-        if runs.isEmpty {
+        // Only add empty run if we have no content AND no image attachments
+        if runs.isEmpty && !hasImageAttachment {
             runs.append("<w:r><w:t/></w:r>")
         }
 
         return runs
+    }
+
+    private static func imageRunXml(for attachment: NSTextAttachment, images: inout [ImageInfo]) -> String? {
+        // Try to get image data from attachment
+        guard let imageData = extractImageData(from: attachment) else { return nil }
+
+        let imageIndex = images.count + 1
+        let rId = "rId\(imageIndex + 100)" // Offset to avoid conflicts
+        let ext = imageData.ext
+        let filename = "image\(imageIndex).\(ext)"
+
+        // Get image dimensions
+        let (widthEmu, heightEmu) = imageDimensionsEmu(from: attachment, data: imageData.data)
+
+        images.append(ImageInfo(rId: rId, filename: filename, data: imageData.data, ext: ext))
+
+        // Generate drawing XML for inline image
+        return """
+        <w:r>
+          <w:drawing>
+            <wp:inline distT=\"0\" distB=\"0\" distL=\"0\" distR=\"0\">
+              <wp:extent cx=\"\(widthEmu)\" cy=\"\(heightEmu)\"/>
+              <wp:docPr id=\"\(imageIndex)\" name=\"Picture \(imageIndex)\"/>
+              <a:graphic>
+                <a:graphicData uri=\"http://schemas.openxmlformats.org/drawingml/2006/picture\">
+                  <pic:pic>
+                    <pic:nvPicPr>
+                      <pic:cNvPr id=\"\(imageIndex)\" name=\"image\(imageIndex).\(ext)\"/>
+                      <pic:cNvPicPr/>
+                    </pic:nvPicPr>
+                    <pic:blipFill>
+                      <a:blip r:embed=\"\(rId)\"/>
+                      <a:stretch><a:fillRect/></a:stretch>
+                    </pic:blipFill>
+                    <pic:spPr>
+                      <a:xfrm>
+                        <a:off x=\"0\" y=\"0\"/>
+                        <a:ext cx=\"\(widthEmu)\" cy=\"\(heightEmu)\"/>
+                      </a:xfrm>
+                      <a:prstGeom prst=\"rect\"><a:avLst/></a:prstGeom>
+                    </pic:spPr>
+                  </pic:pic>
+                </a:graphicData>
+              </a:graphic>
+            </wp:inline>
+          </w:drawing>
+        </w:r>
+        """
+    }
+
+    private static func extractImageData(from attachment: NSTextAttachment) -> (data: Data, ext: String)? {
+        // Try contents first (file wrapper data)
+        if let data = attachment.contents {
+            let ext = detectImageExtension(from: data)
+            return (data, ext)
+        }
+
+        // Try fileWrapper
+        if let wrapper = attachment.fileWrapper, let data = wrapper.regularFileContents {
+            let ext = detectImageExtension(from: data)
+            return (data, ext)
+        }
+
+        // Try to render the image from the attachment cell
+        if let cell = attachment.attachmentCell as? NSCell, let image = cell.image {
+            if let tiffData = image.tiffRepresentation,
+               let bitmap = NSBitmapImageRep(data: tiffData),
+               let pngData = bitmap.representation(using: .png, properties: [:]) {
+                return (pngData, "png")
+            }
+        }
+
+        // Try image property directly
+        if let image = attachment.image {
+            if let tiffData = image.tiffRepresentation,
+               let bitmap = NSBitmapImageRep(data: tiffData),
+               let pngData = bitmap.representation(using: .png, properties: [:]) {
+                return (pngData, "png")
+            }
+        }
+
+        return nil
+    }
+
+    private static func detectImageExtension(from data: Data) -> String {
+        guard data.count >= 8 else { return "png" }
+        let header = [UInt8](data.prefix(8))
+
+        // PNG: 89 50 4E 47 0D 0A 1A 0A
+        if header[0] == 0x89 && header[1] == 0x50 && header[2] == 0x4E && header[3] == 0x47 {
+            return "png"
+        }
+        // JPEG: FF D8 FF
+        if header[0] == 0xFF && header[1] == 0xD8 && header[2] == 0xFF {
+            return "jpeg"
+        }
+        // GIF: GIF87a or GIF89a
+        if header[0] == 0x47 && header[1] == 0x49 && header[2] == 0x46 {
+            return "gif"
+        }
+        // TIFF: 49 49 2A 00 (little endian) or 4D 4D 00 2A (big endian)
+        if (header[0] == 0x49 && header[1] == 0x49) || (header[0] == 0x4D && header[1] == 0x4D) {
+            return "tiff"
+        }
+
+        return "png" // Default to PNG
+    }
+
+    private static func imageDimensionsEmu(from attachment: NSTextAttachment, data: Data) -> (Int, Int) {
+        // EMU = English Metric Units, 914400 EMU = 1 inch, 72 points = 1 inch
+        // So 1 point = 914400/72 = 12700 EMU
+
+        var width: CGFloat = 200
+        var height: CGFloat = 200
+
+        // Try attachment bounds
+        if attachment.bounds.width > 0 && attachment.bounds.height > 0 {
+            width = attachment.bounds.width
+            height = attachment.bounds.height
+        } else if let image = attachment.image {
+            width = image.size.width
+            height = image.size.height
+        } else if let wrapper = attachment.fileWrapper,
+                  let imgData = wrapper.regularFileContents,
+                  let image = NSImage(data: imgData) {
+            width = image.size.width
+            height = image.size.height
+        } else if let image = NSImage(data: data) {
+            width = image.size.width
+            height = image.size.height
+        }
+
+        // Convert points to EMU (1 point = 12700 EMU)
+        let widthEmu = Int(width * 12700)
+        let heightEmu = Int(height * 12700)
+
+        return (widthEmu, heightEmu)
     }
 
     private static func paragraphPropertiesXml(from style: NSParagraphStyle?) -> String {
@@ -2474,7 +2738,39 @@ private enum DocxTextExtractor {
 
     static func extractAttributedString(fromDocxData data: Data) throws -> NSAttributedString {
         let documentXml = try ZipReader.extractFile(named: "word/document.xml", fromZipData: data)
-        return try DocumentXMLAttributedCollector.makeAttributedString(from: documentXml)
+
+        // Clean the XML data by removing invalid control characters that cause parse errors
+        let cleanedXml = cleanXMLData(documentXml)
+
+        // Pre-parse relationships to avoid reentrant parsing
+        var relationships: [String: String] = [:]
+        if let relsData = try? ZipReader.extractFile(named: "word/_rels/document.xml.rels", fromZipData: data) {
+            let parser = RelationshipsParser()
+            let xmlParser = XMLParser(data: relsData)
+            xmlParser.delegate = parser
+            xmlParser.parse()
+            relationships = parser.relationships
+            NSLog("📷 Parsed \(relationships.count) relationships from word/_rels/document.xml.rels")
+        } else {
+            NSLog("📷 Failed to find word/_rels/document.xml.rels")
+        }
+
+        return try DocumentXMLAttributedCollector.makeAttributedString(from: cleanedXml, docxData: data, relationships: relationships)
+    }
+
+    /// Cleans XML data by removing invalid control characters that can cause parser errors
+    private static func cleanXMLData(_ data: Data) -> Data {
+        guard var xmlString = String(data: data, encoding: .utf8) else {
+            return data
+        }
+
+        // Remove invalid XML control characters (0x00-0x08, 0x0B-0x0C, 0x0E-0x1F)
+        // Keep valid ones: 0x09 (tab), 0x0A (LF), 0x0D (CR)
+        let invalidChars = CharacterSet(charactersIn: "\u{0000}\u{0001}\u{0002}\u{0003}\u{0004}\u{0005}\u{0006}\u{0007}\u{0008}\u{000B}\u{000C}\u{000E}\u{000F}\u{0010}\u{0011}\u{0012}\u{0013}\u{0014}\u{0015}\u{0016}\u{0017}\u{0018}\u{0019}\u{001A}\u{001B}\u{001C}\u{001D}\u{001E}\u{001F}")
+
+        xmlString = xmlString.components(separatedBy: invalidChars).joined()
+
+        return xmlString.data(using: .utf8) ?? data
     }
 
     static func extractPlainText(fromDocxFileURL url: URL) throws -> String {
@@ -2491,6 +2787,18 @@ private enum DocxTextExtractor {
             throw parser.parserError ?? NSError(domain: "QuillPilot", code: 3, userInfo: [NSLocalizedDescriptionKey: "Failed to parse DOCX document.xml"])
         }
         return collector.text
+    }
+
+    private final class RelationshipsParser: NSObject, XMLParserDelegate {
+        var relationships: [String: String] = [:]
+
+        func parser(_ parser: XMLParser, didStartElement elementName: String, namespaceURI: String?, qualifiedName qName: String?, attributes attributeDict: [String: String] = [:]) {
+            if (qName ?? elementName).lowercased() == "relationship" {
+                if let id = attributeDict["Id"], let target = attributeDict["Target"] {
+                    relationships[id] = target
+                }
+            }
+        }
     }
 
     private final class DocumentXMLTextCollector: NSObject, XMLParserDelegate {
@@ -2531,15 +2839,57 @@ private enum DocxTextExtractor {
         private var runAttributes = RunAttributes()
         private var currentText: String = ""
         private var inText = false
+        private var docxData: Data?
+        private var inDrawing = false
+        private var currentImageRId: String?
+        private var currentImageWidth: Int?
+        private var currentImageHeight: Int?
+        private var currentParagraphHasImage = false
+        private var relationships: [String: String] = [:]
 
-        static func makeAttributedString(from data: Data) throws -> NSAttributedString {
+        static func makeAttributedString(from data: Data, docxData: Data, relationships: [String: String]) throws -> NSAttributedString {
             let collector = DocumentXMLAttributedCollector()
+            collector.docxData = docxData
+            collector.relationships = relationships
             let parser = XMLParser(data: data)
             parser.delegate = collector
-            guard parser.parse() else {
-                throw parser.parserError ?? NSError(domain: "QuillPilot", code: 12, userInfo: [NSLocalizedDescriptionKey: "Failed to parse DOCX rich text"])
+            parser.shouldProcessNamespaces = false
+            parser.shouldReportNamespacePrefixes = false
+            parser.shouldResolveExternalEntities = false
+
+            NSLog("📷 Starting XML parse of \(data.count) bytes")
+            let parseResult = parser.parse()
+
+            // If parsing failed but we got some content, return it anyway (best effort)
+            let output = collector.output()
+            if !parseResult {
+                NSLog("📷 XML parsing had errors, but recovered \(output.length) characters (out of \(data.count) bytes)")
+                NSLog("📷 Error was at line \(parser.lineNumber), column \(parser.columnNumber)")
+
+                // Log a snippet of where the error occurred
+                if let xmlString = String(data: data, encoding: .utf8) {
+                    let lines = xmlString.components(separatedBy: .newlines)
+                    if parser.lineNumber > 0 && parser.lineNumber <= lines.count {
+                        let errorLineIndex = parser.lineNumber - 1
+                        let start = max(0, errorLineIndex - 2)
+                        let end = min(lines.count, errorLineIndex + 3)
+                        NSLog("📷 XML context around error:")
+                        for i in start..<end {
+                            let marker = (i == errorLineIndex) ? " >>> " : "     "
+                            NSLog("📷\(marker)Line \(i+1): \(lines[i].prefix(120))")
+                        }
+                    }
+                }
+
+                // Only throw if we got no content at all
+                if output.length == 0 {
+                    throw parser.parserError ?? NSError(domain: "QuillPilot", code: 12, userInfo: [NSLocalizedDescriptionKey: "Failed to parse DOCX rich text"])
+                }
+                NSLog("📷 Returning partial content despite parse errors")
+            } else {
+                NSLog("📷 Successfully parsed \(output.length) characters")
             }
-            return collector.output()
+            return output
         }
 
         func parserDidEndDocument(_ parser: XMLParser) {
@@ -2547,6 +2897,23 @@ private enum DocxTextExtractor {
             // Trim one trailing newline if present to avoid introducing an extra empty paragraph.
             if result.string.hasSuffix("\n") {
                 result.deleteCharacters(in: NSRange(location: result.length - 1, length: 1))
+            }
+
+            // Fallback: ensure readable text color if DOCX lacked explicit colors or used very light ink.
+            normalizeTextColors()
+        }
+
+        func parser(_ parser: XMLParser, parseErrorOccurred parseError: Error) {
+            let nsError = parseError as NSError
+            NSLog("📷 XML Parse Error (code \(nsError.code)): \(parseError)")
+            NSLog("📷 Parser line: \(parser.lineNumber), column: \(parser.columnNumber)")
+
+            // For non-fatal errors (like entities, formatting), continue parsing
+            // Fatal errors like "no document" will still stop the parser
+            if nsError.code == 4 || nsError.code == 9 || nsError.code == 68 {
+                // Code 4: Tag mismatch, 9: Undeclared entity, 68: Entity boundary issues
+                // These are often recoverable - log but continue
+                NSLog("📷 Non-fatal XML error, attempting to continue...")
             }
         }
 
@@ -2559,6 +2926,7 @@ private enum DocxTextExtractor {
                 paragraphBuffer = NSMutableAttributedString()
                 paragraphStyle = ParagraphStyleProps()
                 hasActiveParagraph = true
+                currentParagraphHasImage = false
 
             case "w:jc", "jc":
                 let val = attributeDict["w:val"] ?? attributeDict["val"] ?? "left"
@@ -2640,6 +3008,29 @@ private enum DocxTextExtractor {
             case "w:br", "br":
                 currentText.append("\n")
 
+            case "w:drawing", "drawing", "wp:inline", "inline":
+                inDrawing = true
+                NSLog("📷 Found drawing element: \(name)")
+
+            case "wp:extent", "extent":
+                // Parse image dimensions in EMU units
+                if inDrawing {
+                    if let cxStr = attributeDict["cx"], let cx = Int(cxStr) {
+                        currentImageWidth = cx
+                    }
+                    if let cyStr = attributeDict["cy"], let cy = Int(cyStr) {
+                        currentImageHeight = cy
+                    }
+                    NSLog("📷 Parsed extent: cx=\(currentImageWidth ?? 0) cy=\(currentImageHeight ?? 0)")
+                }
+
+            case "a:blip", "blip":
+                // Extract the relationship ID for the image
+                if inDrawing {
+                    currentImageRId = attributeDict["r:embed"] ?? attributeDict["embed"]
+                    NSLog("📷 Found blip with rId: \(currentImageRId ?? "nil")")
+                }
+
             default:
                 break
             }
@@ -2660,6 +3051,14 @@ private enum DocxTextExtractor {
                 finalizeRun()
             case "w:p", "p":
                 finalizeParagraph()
+            case "w:drawing", "drawing":
+                // Only finalize when we exit the main drawing element
+                if inDrawing && currentImageRId != nil && name.hasSuffix("drawing") {
+                    finalizeImage()
+                }
+                if name.hasSuffix("drawing") {
+                    inDrawing = false
+                }
             default:
                 break
             }
@@ -2700,6 +3099,137 @@ private enum DocxTextExtractor {
             currentText = ""
         }
 
+        private func finalizeImage() {
+            guard let rId = currentImageRId, let docxData = docxData else {
+                NSLog("📷 finalizeImage: rId=\(currentImageRId ?? "nil"), hasDocxData=\(docxData != nil)")
+                return
+            }
+
+            let widthEmu = currentImageWidth
+            let heightEmu = currentImageHeight
+            currentImageRId = nil
+            currentImageWidth = nil
+            currentImageHeight = nil
+
+            NSLog("📷 Attempting to load image for rId: \(rId), dimensions: \(widthEmu ?? 0) x \(heightEmu ?? 0) EMU")
+
+            // Load and decode image immediately
+            guard let imageData = loadImageFromDocx(rId: rId, docxData: docxData) else {
+                NSLog("📷 Failed to load image data from DOCX")
+                return
+            }
+
+            guard let image = NSImage(data: imageData) else {
+                NSLog("📷 Failed to decode image data (\(imageData.count) bytes)")
+                return
+            }
+
+            NSLog("📷 Created NSImage: \(image.size.width) x \(image.size.height)")
+
+            // Create attachment with fileWrapper for proper preservation
+            let attachment = NSTextAttachment()
+            attachment.image = image
+
+            // Set fileWrapper so image data (and size) are preserved on save
+            let wrapper = FileWrapper(regularFileWithContents: imageData)
+            let encodedName = encodeImageFilename(size: image.size, ext: imageExtension(from: imageData))
+            wrapper.preferredFilename = encodedName
+            attachment.fileWrapper = wrapper
+
+            // Set bounds from stored dimensions or intrinsic size
+            let finalBounds: CGRect
+            if let wEmu = widthEmu, let hEmu = heightEmu {
+                let widthPt = CGFloat(wEmu) / 12700.0
+                let heightPt = CGFloat(hEmu) / 12700.0
+                finalBounds = CGRect(x: 0, y: 0, width: widthPt, height: heightPt)
+                NSLog("📷 Using stored dimensions: \(widthPt) x \(heightPt) pt")
+            } else {
+                let maxWidth: CGFloat = 400
+                var bounds = CGRect(origin: .zero, size: image.size)
+                if bounds.width > maxWidth {
+                    let scale = maxWidth / bounds.width
+                    bounds.size.width = maxWidth
+                    bounds.size.height *= scale
+                }
+                finalBounds = bounds
+                NSLog("📷 Using intrinsic dimensions: \(bounds.width) x \(bounds.height) pt")
+            }
+
+            attachment.bounds = finalBounds
+
+            // Create attributed string with the attachment and explicitly store bounds
+            let attachmentString = NSMutableAttributedString(attachment: attachment)
+            // Store original size as custom attribute so it survives RTFD round-trip
+            attachmentString.addAttribute(
+                NSAttributedString.Key("QuillPilotImageSize"),
+                value: NSStringFromRect(finalBounds),
+                range: NSRange(location: 0, length: 1)
+            )
+
+            // Add image to paragraph buffer
+            paragraphBuffer.append(attachmentString)
+
+            // Mark that this paragraph contains an image
+            currentParagraphHasImage = true
+
+            NSLog("📷 Added image to paragraph buffer")
+        }
+
+        private func encodeImageFilename(size: CGSize, ext: String) -> String {
+            // Store size in hundredths of a point to persist across RTFD round-trips
+            let w = Int(round(size.width * 100))
+            let h = Int(round(size.height * 100))
+            return "image_w\(w)_h\(h).\(ext)"
+        }
+
+        private func imageExtension(from data: Data) -> String {
+            guard data.count >= 8 else { return "png" }
+            let header = data.prefix(8).map { $0 }
+
+            if header[0] == 0xFF && header[1] == 0xD8 && header[2] == 0xFF {
+                return "jpg"
+            }
+            if header[0] == 0x89 && header[1] == 0x50 && header[2] == 0x4E && header[3] == 0x47 {
+                return "png"
+            }
+            if header[0] == 0x47 && header[1] == 0x49 && header[2] == 0x46 {
+                return "gif"
+            }
+            return "png"
+        }
+
+        private func loadImageFromDocx(rId: String, docxData: Data) -> Data? {
+            guard let target = relationships[rId] else {
+                NSLog("📷 Failed to find relationship for rId: \(rId). Available keys: \(relationships.keys.joined(separator: ", "))")
+                return nil
+            }
+
+            // Handle target path
+            var cleanTarget = target.replacingOccurrences(of: "\\", with: "/")
+            let imagePath: String
+            if cleanTarget.hasPrefix("/") {
+                // Absolute path from root (remove leading slash)
+                imagePath = String(cleanTarget.dropFirst())
+            } else if cleanTarget.hasPrefix("../") {
+                // Relative to word/ parent -> root
+                imagePath = String(cleanTarget.dropFirst(3))
+            } else {
+                // Relative path from word/ directory
+                imagePath = "word/\(cleanTarget)"
+            }
+
+            NSLog("📷 Found image path: \(imagePath)")
+
+            // Extract image from zip
+            guard let imageData = try? ZipReader.extractFile(named: imagePath, fromZipData: docxData) else {
+                NSLog("📷 Failed to extract image from zip at path: \(imagePath)")
+                return nil
+            }
+
+            NSLog("📷 Successfully extracted image: \(imageData.count) bytes")
+            return imageData
+        }
+
         private func finalizeParagraph() {
             guard hasActiveParagraph else { return }
             finalizeRun()
@@ -2710,13 +3240,37 @@ private enum DocxTextExtractor {
                 result.append(paragraphBuffer)
             }
 
+            // Always add newline to separate paragraphs.
+            // Previous logic skipped newline for images, causing them to merge with the next paragraph.
             result.append(NSAttributedString(string: "\n"))
+
             paragraphBuffer = NSMutableAttributedString()
             hasActiveParagraph = false
         }
 
         private func output() -> NSAttributedString {
             return result.copy() as! NSAttributedString
+        }
+
+        /// Ensures imported text has a readable foreground color. Some DOCX files omit color or use white text;
+        /// we normalize to the current theme's text color when the color is missing, extremely transparent, or very bright.
+        private func normalizeTextColors() {
+            let fallback = ThemeManager.shared.currentTheme.textColor
+            let fullRange = NSRange(location: 0, length: result.length)
+
+            result.enumerateAttribute(.foregroundColor, in: fullRange, options: []) { value, range, _ in
+                if let color = value as? NSColor {
+                    let rgb = (color.usingColorSpace(.sRGB) ?? color)
+                    let alpha = rgb.alphaComponent
+                    let brightness = (0.299 * rgb.redComponent) + (0.587 * rgb.greenComponent) + (0.114 * rgb.blueComponent)
+
+                    if alpha < 0.25 || brightness > 0.92 {
+                        result.addAttribute(.foregroundColor, value: fallback, range: range)
+                    }
+                } else {
+                    result.addAttribute(.foregroundColor, value: fallback, range: range)
+                }
+            }
         }
 
         private struct RunAttributes {
@@ -2860,7 +3414,8 @@ private enum DocxTextExtractor {
                 cursor += 46 + fileNameLen + extraLen + commentLen
             }
 
-            throw NSError(domain: "QuillPilot", code: 5, userInfo: [NSLocalizedDescriptionKey: "DOCX is missing word/document.xml"])
+            NSLog("📷 ZipReader failed to find: \(targetName). Total entries: \(totalEntries)")
+            throw NSError(domain: "QuillPilot", code: 5, userInfo: [NSLocalizedDescriptionKey: "DOCX is missing \(targetName)"])
         }
 
         private static func extractFromLocalHeader(at offset: Int, compression: UInt16, compressedSize: Int, in data: Data) throws -> Data {
@@ -2919,7 +3474,7 @@ private enum DocxTextExtractor {
             throw NSError(domain: "QuillPilot", code: 10, userInfo: [NSLocalizedDescriptionKey: "Invalid ZIP: missing end of central directory."])
         }
     }
-}
+} // End DocxTextExtractor
 
 
 // MARK: - EditorViewController Delegate

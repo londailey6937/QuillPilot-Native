@@ -21,16 +21,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if mainWindowController == nil {
             mainWindowController = MainWindowController()
         }
-
+        Task { @MainActor [weak self] in
+            self?.presentMainWindow(orderingSource: self)
+        }
+    }
 
     func application(_ application: NSApplication, open urls: [URL]) {
         guard let url = urls.first else { return }
         Task { @MainActor [weak self] in
             self?.mainWindowController?.performOpenDocumentForURL(url)
-        }
-    }
-        Task { @MainActor [weak self] in
-            self?.presentMainWindow(orderingSource: self)
         }
     }
 
@@ -197,7 +196,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         guard let window = controller.window else { return }
 
-        
+
         window.isReleasedWhenClosed = false
         window.deminiaturize(nil)
         window.center()

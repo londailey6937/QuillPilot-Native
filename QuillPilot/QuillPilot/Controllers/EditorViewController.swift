@@ -91,15 +91,10 @@ class EditorViewController: NSViewController {
         override func draw(_ dirtyRect: NSRect) {
             super.draw(dirtyRect)
 
-            NSLog("📄 PageContainerView.draw called: numPages=\(numPages), pageHeight=\(pageHeight), bounds=\(bounds)")
-
             // Draw ALL page backgrounds regardless of dirtyRect
-            // The dirtyRect optimization was preventing pages beyond a certain point from rendering
             for pageNum in 0..<numPages {
                 let pageY = CGFloat(pageNum) * (pageHeight + pageGap)
                 let pageRect = NSRect(x: 0, y: pageY, width: bounds.width, height: pageHeight)
-
-                NSLog("📄 Drawing page \(pageNum) at y=\(pageY), rect=\(pageRect)")
 
                 pageBackgroundColor.setFill()
                 pageRect.fill()
@@ -110,6 +105,32 @@ class EditorViewController: NSViewController {
                 path.lineWidth = 1
                 path.stroke()
             }
+        }
+    }
+
+    // Attachment cell that occupies vertical space without drawing
+    private final class SpacerAttachmentCell: NSTextAttachmentCell {
+        private var spacerSize: NSSize
+
+        init(height: CGFloat) {
+            self.spacerSize = NSSize(width: 0.1, height: max(0, height))
+            super.init(textCell: "")
+        }
+
+        required init(coder: NSCoder) {
+            fatalError("init(coder:) has not been implemented")
+        }
+
+        nonisolated override func cellSize() -> NSSize {
+            spacerSize
+        }
+
+        nonisolated override func draw(withFrame cellFrame: NSRect, in controlView: NSView?) {
+            // Intentionally empty – spacer is invisible
+        }
+
+        func setHeight(_ height: CGFloat) {
+            spacerSize.height = max(0, height)
         }
     }
 
@@ -152,7 +173,9 @@ class EditorViewController: NSViewController {
 
         // Page container grows to fit all content (support up to 2000 pages)
         // 2000 pages × 792pt + 1999 gaps × 20pt = ~1,624,000pts
-        let initialPageContainer = PageContainerView(frame: NSRect(x: 0, y: 0, width: 612 * editorZoom, height: 1650000 * editorZoom))
+        // Start with a reasonable initial size (10 pages) - will expand as needed
+        let initialHeight = pageHeight * editorZoom * 10
+        let initialPageContainer = PageContainerView(frame: NSRect(x: 0, y: 0, width: 612 * editorZoom, height: initialHeight))
         initialPageContainer.pageHeight = pageHeight * editorZoom
         initialPageContainer.pageGap = 20
         pageContainer = initialPageContainer
@@ -229,51 +252,40 @@ class EditorViewController: NSViewController {
 
     /// Update the page container to accommodate all content with proper pagination
     func updatePageLayout() {
-        guard let layoutManager = textView.layoutManager,
-              let textContainer = textView.textContainer else { return }
+        // Use estimated page count from text length to avoid forcing full layout
+        let charCount = textView.string.count
+        // Roughly 3000 chars per page at standard formatting
+        let estimatedPages = max(1, Int(ceil(Double(charCount) / 3000.0)))
 
-        // Force layout of all text
-        layoutManager.ensureLayout(for: textContainer)
+        setPageCount(estimatedPages)
+    }
 
-        // Get the actual used rect for all the text
-        let usedRect = layoutManager.usedRect(for: textContainer)
+    /// Set exact page count and resize containers
+    private func setPageCount(_ neededPages: Int) {
+        guard let pageContainerView = pageContainer as? PageContainerView else { return }
+        guard pageContainerView.numPages != neededPages else { return }
 
-        // Calculate how many pages we need
-        let contentHeight = usedRect.height + (standardMargin * editorZoom * 2)
         let scaledPageHeight = pageHeight * editorZoom
-        let neededPages = max(1, Int(ceil(contentHeight / scaledPageHeight)))
+        pageContainerView.numPages = neededPages
+        pageContainerView.pageHeight = scaledPageHeight
+        pageContainerView.pageGap = 20
 
-        // Update page container
-        if let pageContainerView = pageContainer as? PageContainerView {
-            if pageContainerView.numPages != neededPages {
-                NSLog("📄 Updating page count from \(pageContainerView.numPages) to \(neededPages)")
-                pageContainerView.numPages = neededPages
-                pageContainerView.pageHeight = scaledPageHeight
-                pageContainerView.pageGap = 20
+        let totalHeight = CGFloat(neededPages) * (scaledPageHeight + pageContainerView.pageGap) - pageContainerView.pageGap
+        let containerWidth = pageWidth * editorZoom
+        pageContainer.frame = NSRect(x: 0, y: 0, width: containerWidth, height: totalHeight)
 
-                // Update container frame to hold all pages
-                let totalHeight = CGFloat(neededPages) * (scaledPageHeight + pageContainerView.pageGap) - pageContainerView.pageGap
-                let containerWidth = pageWidth * editorZoom
-                pageContainer.frame = NSRect(x: 0, y: 0, width: containerWidth, height: totalHeight)
+        let textFrame = NSRect(
+            x: standardMargin * editorZoom,
+            y: standardMargin * editorZoom,
+            width: containerWidth - (standardMargin * editorZoom * 2),
+            height: totalHeight - (standardMargin * editorZoom * 2)
+        )
+        textView.frame = textFrame
+        textView.textContainer?.containerSize = NSSize(width: textFrame.width, height: CGFloat.greatestFiniteMagnitude)
 
-                // Update text view frame
-                let textFrame = NSRect(
-                    x: standardMargin * editorZoom,
-                    y: standardMargin * editorZoom,
-                    width: containerWidth - (standardMargin * editorZoom * 2),
-                    height: totalHeight - (standardMargin * editorZoom * 2)
-                )
-                textView.frame = textFrame
-
-                // Update document view to fit all pages
-                documentView.frame = NSRect(x: 0, y: 0, width: containerWidth, height: totalHeight)
-
-                // Force redraw of entire view
-                pageContainer.setNeedsDisplay(pageContainer.bounds)
-                documentView.setNeedsDisplay(documentView.bounds)
-                updatePageCentering()
-            }
-        }
+        documentView.frame = NSRect(x: 0, y: 0, width: containerWidth, height: totalHeight)
+        pageContainer.needsDisplay = true
+        updatePageCentering()
     }
 
     // MARK: - Search and Replace
@@ -620,48 +632,68 @@ class EditorViewController: NSViewController {
         let currentRange = textView.selectedRange()
 
         // Force layout to ensure we have accurate glyph information
-            layoutManager.ensureLayout(for: textView.textContainer!)
-            let fullGlyphRange = NSRange(location: 0, length: layoutManager.numberOfGlyphs)
-            layoutManager.ensureLayout(forGlyphRange: fullGlyphRange)
+        layoutManager.ensureLayout(for: textView.textContainer!)
 
-        // Get the current Y position of the cursor
+        // Get the current Y position of the cursor (in text view coordinates)
         let glyphRange = layoutManager.glyphRange(forCharacterRange: currentRange, actualCharacterRange: nil)
-        let glyphRect = layoutManager.boundingRect(forGlyphRange: glyphRange, in: textView.textContainer!)
-        let currentY = glyphRect.origin.y
+        let lineFragmentRect = layoutManager.lineFragmentRect(forGlyphAt: glyphRange.location, effectiveRange: nil, withoutAdditionalLayout: true)
+        let currentY = lineFragmentRect.maxY
 
-        // Calculate which page we're on and how much space until next page
+        // Text container uses scaled coordinates (zoom applied)
         let scaledPageHeight = pageHeight * editorZoom
-        let pageGap: CGFloat = 20
-        let pageWithGap = scaledPageHeight + pageGap
+        let scaledMargin = standardMargin * editorZoom
+        let textHeightPerPage = scaledPageHeight - (scaledMargin * 2)
 
-        let currentPage = floor(currentY / pageWithGap)
-        let nextPageY = (currentPage + 1) * pageWithGap
-        let spaceToNextPage = nextPageY - currentY
+        // Find which page we're on and where the next page starts
+        let currentPage = Int(floor(currentY / textHeightPerPage))
+        let targetY = CGFloat(currentPage + 1) * textHeightPerPage
 
-        // Create a paragraph style with spacing to reach next page
+        // How much space to add to reach the next page top
+        let remainingHeight = max(0, targetY - currentY)
+
+        NSLog("📄 Page Break: currentY=\(currentY), targetY=\(targetY), remaining=\(remainingHeight)")
+
+        // Create a paragraph style that adds spacing AFTER this paragraph
         let breakStyle = NSMutableParagraphStyle()
-        breakStyle.paragraphSpacing = max(0, spaceToNextPage)
+        breakStyle.paragraphSpacing = remainingHeight
         breakStyle.paragraphSpacingBefore = 0
+        breakStyle.lineHeightMultiple = 0
+        breakStyle.lineSpacing = 0
+        breakStyle.minimumLineHeight = 0.1
+        breakStyle.maximumLineHeight = 0.1
 
-        // Begin editing to register with undo manager
-        textStorage.beginEditing()
-
-        // Insert a newline with the page break style
-        let breakString = NSAttributedString(string: "\n", attributes: [
+        // Use form feed character (traditional page break) with tiny font
+        let breakString = NSAttributedString(string: "\u{000C}\n", attributes: [
             .paragraphStyle: breakStyle,
-            .font: textView.font ?? NSFont.systemFont(ofSize: 12)
+            .font: NSFont.systemFont(ofSize: 0.1),
+            .foregroundColor: NSColor.clear
         ])
 
-        if textView.shouldChangeText(in: currentRange, replacementString: "\n") {
+        textStorage.beginEditing()
+        if textView.shouldChangeText(in: currentRange, replacementString: "\u{000C}\n") {
             textStorage.replaceCharacters(in: currentRange, with: breakString)
             textStorage.endEditing()
             textView.didChangeText()
-            textView.setSelectedRange(NSRange(location: currentRange.location + 1, length: 0))
+
+            let newPosition = currentRange.location + 2
+            textView.setSelectedRange(NSRange(location: newPosition, length: 0))
+
+            // Reset typing attributes to normal for next paragraph
+            var newTypingAttrs = textView.typingAttributes
+            if let defaultStyle = textView.defaultParagraphStyle {
+                newTypingAttrs[.paragraphStyle] = defaultStyle
+            }
+            textView.typingAttributes = newTypingAttrs
+
+            // Check result
+            layoutManager.ensureLayout(for: textView.textContainer!)
+            let newGlyphRange = layoutManager.glyphRange(forCharacterRange: NSRange(location: newPosition, length: 0), actualCharacterRange: nil)
+            let newLineRect = layoutManager.lineFragmentRect(forGlyphAt: newGlyphRange.location, effectiveRange: nil)
+            NSLog("📄 Cursor now at Y=\(newLineRect.origin.y) (target=\(targetY))")
         } else {
             textStorage.endEditing()
         }
 
-        // Force layout update
         updatePageCentering()
     }
 
@@ -1401,30 +1433,45 @@ class EditorViewController: NSViewController {
     }
 
     func setAttributedContent(_ attributed: NSAttributedString) {
-        // Before setting content, detect and re-tag catalog styles based on font/size/alignment
+        // For native .quill docs, apply style retagging
         let retagged = detectAndRetagStyles(in: attributed)
         textView.textStorage?.setAttributedString(retagged)
+        applyDefaultTypingAttributes()
+        updatePageLayout()
+        scrollToTop()
+        delegate?.textDidChange()
+    }
 
-        // Verify colors after setting into textStorage
-        // NSLog("=== AFTER setAttributedString ===")
-        /*
-        if let storage = textView.textStorage {
-            let str = storage.string as NSString
-            var loc = 0
-            var count = 0
-            while loc < str.length && count < 3 {
-                let pRange = str.paragraphRange(for: NSRange(location: loc, length: 0))
-                let attrs = storage.attributes(at: pRange.location, effectiveRange: nil)
-                let text = str.substring(with: pRange).prefix(20)
-                NSLog("P[\(pRange.location)]: \"\(text)\" color=\(attrs[.foregroundColor] ?? "nil")")
-                loc = NSMaxRange(pRange)
-                count += 1
-            }
+    /// Fast content setter for imported documents - skips expensive style processing
+    func setAttributedContentDirect(_ attributed: NSAttributedString) {
+        // For large documents, defer layout to prevent UI freeze
+        let isLargeDocument = attributed.length > 100_000
+
+        if isLargeDocument {
+            // Disable layout during bulk insert
+            textView.layoutManager?.backgroundLayoutEnabled = false
         }
-        */
-        // NSLog("=================================")
 
-        // Use neutral defaults for new typing so loaded heading styles don't bleed into new paragraphs
+        textView.textStorage?.setAttributedString(attributed)
+        applyDefaultTypingAttributes()
+
+        if isLargeDocument {
+            // Re-enable and do layout in chunks
+            textView.layoutManager?.backgroundLayoutEnabled = true
+            // Defer heavy layout work
+            DispatchQueue.main.async { [weak self] in
+                self?.updatePageLayout()
+                self?.scrollToTop()
+                self?.delegate?.textDidChange()
+            }
+        } else {
+            updatePageLayout()
+            scrollToTop()
+            delegate?.textDidChange()
+        }
+    }
+
+    private func applyDefaultTypingAttributes() {
         let neutralParagraph = NSMutableParagraphStyle()
         neutralParagraph.alignment = .left
         neutralParagraph.lineHeightMultiple = 2.0
@@ -1432,25 +1479,12 @@ class EditorViewController: NSViewController {
         neutralParagraph.firstLineHeadIndent = 36
         textView.defaultParagraphStyle = neutralParagraph
 
-        // Update typing attributes for new text without overwriting existing content
         let defaultFont = NSFont(name: "Times New Roman", size: 14) ?? NSFont.systemFont(ofSize: 14)
         var newTypingAttributes = textView.typingAttributes
         newTypingAttributes[.font] = defaultFont
         newTypingAttributes[.paragraphStyle] = neutralParagraph
         textView.typingAttributes = newTypingAttributes
-
-        // Don't set textView.textColor - it can interfere with attributed string colors
-        // textView.textColor = currentTheme.textColor
         refreshTypingAttributesUsingDefaultParagraphStyle()
-
-        // Force immediate layout and page resize to accommodate all content
-        updatePageCentering()
-        updatePageLayout()
-        scrollToTop()
-
-        // Notify delegate that content changed (for analysis, etc.)
-        NSLog("📄 setAttributedContent complete, notifying delegate")
-        delegate?.textDidChange()
     }
 
     private func detectAndRetagStyles(in attributed: NSAttributedString) -> NSAttributedString {

@@ -89,6 +89,8 @@ class SplitViewController: NSSplitViewController {
 
     // MARK: - Analysis
 
+    private var analysisWorkItem: DispatchWorkItem?
+
     private func performAnalysis() {
         print("🔍 performAnalysis called")
 
@@ -107,11 +109,23 @@ class SplitViewController: NSSplitViewController {
         }
         print("📝 Text length: \(text.count)")
 
-        let results = analysisEngine.analyzeText(text)
-        print("✅ Analysis complete: wordCount=\(results.wordCount), sentenceCount=\(results.sentenceCount)")
+        // Cancel any pending analysis
+        analysisWorkItem?.cancel()
 
-        analysisViewController.displayResults(results)
-        print("✅ displayResults called")
+        // Run analysis on background thread to prevent UI freeze
+        let workItem = DispatchWorkItem { [weak self] in
+            guard let self = self else { return }
+            let results = self.analysisEngine.analyzeText(text)
+            print("✅ Analysis complete: wordCount=\(results.wordCount), sentenceCount=\(results.sentenceCount)")
+
+            // Update UI on main thread
+            DispatchQueue.main.async { [weak self] in
+                self?.analysisViewController.displayResults(results)
+                print("✅ displayResults called")
+            }
+        }
+        analysisWorkItem = workItem
+        DispatchQueue.global(qos: .userInitiated).async(execute: workItem)
     }
 }
 

@@ -43,20 +43,24 @@ struct AnalysisResults {
 class AnalysisEngine {
 
     // Passive voice patterns
-    private let passiveVoicePatterns = [
+    private static let passiveVoicePatterns = [
         "was \\w+ed", "were \\w+ed", "is \\w+ed", "are \\w+ed",
         "been \\w+ed", "being \\w+ed", "be \\w+ed",
         "was written", "were written", "was made", "were made",
         "was given", "were given", "was taken", "were taken"
     ]
 
+    private static let passiveVoiceRegexes: [NSRegularExpression] = {
+        return passiveVoicePatterns.compactMap { try? NSRegularExpression(pattern: $0, options: .caseInsensitive) }
+    }()
+
     // Common non-adverb words ending in -ly
-    private let adverbExceptions: Set<String> = [
+    private static let adverbExceptions: Set<String> = [
         "family", "only", "lovely", "lonely", "friendly", "silly", "ugly", "early", "daily", "weekly", "monthly", "yearly", "holy", "jelly", "belly", "bully", "fly", "rely", "supply", "apply", "reply"
     ]
 
     // Sensory words
-    private let sensoryWords = [
+    private static let sensoryWords = [
         // Visual
         "see", "saw", "look", "looked", "bright", "dark", "colorful", "gleaming", "shadowy", "shimmering",
         // Auditory
@@ -69,8 +73,13 @@ class AnalysisEngine {
         "taste", "tasted", "flavor", "sweet", "sour", "bitter", "salty", "savory", "delicious"
     ]
 
+    private static let sensoryWordRegex: NSRegularExpression? = {
+        let pattern = "\\b(" + sensoryWords.joined(separator: "|") + ")\\w*\\b"
+        return try? NSRegularExpression(pattern: pattern, options: .caseInsensitive)
+    }()
+
     // Weak verbs to avoid
-    private let weakVerbs: Set<String> = [
+    private static let weakVerbs: Set<String> = [
         "is", "are", "was", "were", "be", "being", "been",
         "have", "has", "had", "having",
         "do", "does", "did", "doing",
@@ -86,7 +95,7 @@ class AnalysisEngine {
     ]
 
     // Common clichés to detect
-    private let cliches = [
+    private static let cliches = [
         "at the end of the day", "think outside the box", "bottom line",
         "hit the ground running", "low-hanging fruit", "move the needle",
         "eyes sparkled", "eyes gleamed", "heart raced", "blood ran cold",
@@ -103,7 +112,7 @@ class AnalysisEngine {
     ]
 
     // Filter words that create distance
-    private let filterWords: Set<String> = [
+    private static let filterWords: Set<String> = [
         "saw", "see", "sees", "seeing", "seen",
         "heard", "hear", "hears", "hearing",
         "felt", "feel", "feels", "feeling",
@@ -117,15 +126,30 @@ class AnalysisEngine {
         "smelled", "smell", "smells", "smelling"
     ]
 
+    // Maximum text length to analyze (500KB) - prevents system overload
+    private let maxAnalysisLength = 500_000
+
     func analyzeText(_ text: String) -> AnalysisResults {
         var results = AnalysisResults()
 
-        // Basic counts
+        // Truncate extremely long text to prevent system overload
+        let analysisText: String
+        if text.count > maxAnalysisLength {
+            analysisText = String(text.prefix(maxAnalysisLength))
+            print("⚠️ Text truncated for analysis: \(text.count) -> \(maxAnalysisLength) chars")
+        } else {
+            analysisText = text
+        }
+
+        // Tokenize once for word-based analysis
+        let words = analysisText.components(separatedBy: .whitespacesAndNewlines).filter { !$0.isEmpty }
+
+        // Basic counts (use full text for accurate word count)
         results.wordCount = countWords(text)
-        results.sentenceCount = countSentences(text)
+        results.sentenceCount = countSentences(analysisText)
 
         // Paragraph analysis
-        let paragraphs = text.components(separatedBy: .newlines).filter { !$0.trimmingCharacters(in: .whitespaces).isEmpty }
+        let paragraphs = analysisText.components(separatedBy: .newlines).filter { !$0.trimmingCharacters(in: .whitespaces).isEmpty }
         results.paragraphCount = paragraphs.count
 
         if results.paragraphCount > 0 {
@@ -143,37 +167,37 @@ class AnalysisEngine {
         }
 
         // Passive voice detection
-        (results.passiveVoiceCount, results.passiveVoicePhrases) = detectPassiveVoice(text)
+        (results.passiveVoiceCount, results.passiveVoicePhrases) = detectPassiveVoice(analysisText)
 
         // Adverb detection
-        (results.adverbCount, results.adverbPhrases) = detectAdverbs(text)
+        (results.adverbCount, results.adverbPhrases) = detectAdverbs(words)
 
         // Sensory detail analysis
-        results.sensoryDetailCount = countSensoryWords(text)
+        results.sensoryDetailCount = countSensoryWords(analysisText)
         // Missing sensory detail if: no sensory words at all, OR less than 2% sensory words (with minimum threshold of 1)
         let minSensoryWords = max(1, results.wordCount / 50)
         results.missingSensoryDetail = results.wordCount > 0 && results.sensoryDetailCount < minSensoryWords
 
         // Weak verb detection
-        (results.weakVerbCount, results.weakVerbPhrases) = detectWeakVerbs(text)
+        (results.weakVerbCount, results.weakVerbPhrases) = detectWeakVerbs(words)
 
         // Cliché detection
-        (results.clicheCount, results.clichePhrases) = detectCliches(text)
+        (results.clicheCount, results.clichePhrases) = detectCliches(analysisText)
 
         // Filter word detection
-        (results.filterWordCount, results.filterWordPhrases) = detectFilterWords(text)
+        (results.filterWordCount, results.filterWordPhrases) = detectFilterWords(words)
 
         // Sentence variety
-        (results.sentenceVarietyScore, results.sentenceLengths) = analyzeSentenceVariety(text)
+        (results.sentenceVarietyScore, results.sentenceLengths) = analyzeSentenceVariety(analysisText)
 
         // Readability
-        results.readingLevel = calculateReadingLevel(text: text, wordCount: results.wordCount, sentenceCount: results.sentenceCount)
+        results.readingLevel = calculateReadingLevel(text: analysisText, wordCount: results.wordCount, sentenceCount: results.sentenceCount)
 
         // Dialogue
-        results.dialoguePercentage = calculateDialoguePercentage(text: text)
+        results.dialoguePercentage = calculateDialoguePercentage(text: analysisText)
 
         // Paragraph break suggestions
-        results.suggestedParagraphBreaks = suggestParagraphBreaks(text)
+        results.suggestedParagraphBreaks = suggestParagraphBreaks(analysisText)
 
         // Page count (industry standard: ~250 words per manuscript page)
         results.pageCount = max(1, (results.wordCount + 249) / 250)
@@ -195,21 +219,17 @@ class AnalysisEngine {
         var count = 0
         var phrases: [String] = []
 
-        let lowercasedText = text.lowercased()
+        let range = NSRange(text.startIndex..., in: text)
 
-        for pattern in passiveVoicePatterns {
-            if let regex = try? NSRegularExpression(pattern: pattern, options: []) {
-                let range = NSRange(lowercasedText.startIndex..., in: lowercasedText)
-                let matches = regex.matches(in: lowercasedText, range: range)
+        for regex in AnalysisEngine.passiveVoiceRegexes {
+            let matches = regex.matches(in: text, range: range)
+            count += matches.count
 
-                count += matches.count
-
-                for match in matches.prefix(10) {
-                    if let range = Range(match.range, in: lowercasedText) {
-                        let phrase = String(lowercasedText[range])
-                        if !phrases.contains(phrase) {
-                            phrases.append(phrase)
-                        }
+            for match in matches.prefix(10) {
+                if let range = Range(match.range, in: text) {
+                    let phrase = String(text[range]).lowercased()
+                    if !phrases.contains(phrase) {
+                        phrases.append(phrase)
                     }
                 }
             }
@@ -219,30 +239,18 @@ class AnalysisEngine {
     }
 
     private func countSensoryWords(_ text: String) -> Int {
-        let lowercasedText = text.lowercased()
-        var count = 0
-
-        for word in sensoryWords {
-            let pattern = "\\b\(word)\\w*\\b"
-            if let regex = try? NSRegularExpression(pattern: pattern, options: []) {
-                let range = NSRange(lowercasedText.startIndex..., in: lowercasedText)
-                let matches = regex.numberOfMatches(in: lowercasedText, range: range)
-                count += matches
-            }
-        }
-
-        return count
+        guard let regex = AnalysisEngine.sensoryWordRegex else { return 0 }
+        let range = NSRange(text.startIndex..., in: text)
+        return regex.numberOfMatches(in: text, range: range)
     }
 
-    private func detectAdverbs(_ text: String) -> (Int, [String]) {
+    private func detectAdverbs(_ words: [String]) -> (Int, [String]) {
         var count = 0
         var phrases: [String] = []
 
-        let words = text.components(separatedBy: .whitespacesAndNewlines)
-
         for word in words {
             let cleanWord = word.trimmingCharacters(in: .punctuationCharacters).lowercased()
-            if cleanWord.hasSuffix("ly") && !adverbExceptions.contains(cleanWord) && cleanWord.count > 2 {
+            if cleanWord.hasSuffix("ly") && !AnalysisEngine.adverbExceptions.contains(cleanWord) && cleanWord.count > 2 {
                 count += 1
                 if phrases.count < 10 && !phrases.contains(cleanWord) {
                     phrases.append(cleanWord)
@@ -308,15 +316,13 @@ class AnalysisEngine {
 
         return Int((Double(dialogueLength) / Double(totalLength)) * 100)
     }
-    private func detectWeakVerbs(_ text: String) -> (Int, [String]) {
+    private func detectWeakVerbs(_ words: [String]) -> (Int, [String]) {
         var count = 0
         var phrases: [String] = []
 
-        let words = text.components(separatedBy: .whitespacesAndNewlines)
-
         for word in words {
             let cleanWord = word.trimmingCharacters(in: .punctuationCharacters).lowercased()
-            if weakVerbs.contains(cleanWord) {
+            if AnalysisEngine.weakVerbs.contains(cleanWord) {
                 count += 1
                 if phrases.count < 10 && !phrases.contains(cleanWord) {
                     phrases.append(cleanWord)
@@ -333,7 +339,7 @@ class AnalysisEngine {
 
         let lowercased = text.lowercased()
 
-        for cliche in cliches {
+        for cliche in AnalysisEngine.cliches {
             if lowercased.contains(cliche) {
                 count += 1
                 if found.count < 10 && !found.contains(cliche) {
@@ -345,15 +351,13 @@ class AnalysisEngine {
         return (count, found)
     }
 
-    private func detectFilterWords(_ text: String) -> (Int, [String]) {
+    private func detectFilterWords(_ words: [String]) -> (Int, [String]) {
         var count = 0
         var phrases: [String] = []
 
-        let words = text.components(separatedBy: .whitespacesAndNewlines)
-
         for word in words {
             let cleanWord = word.trimmingCharacters(in: .punctuationCharacters).lowercased()
-            if filterWords.contains(cleanWord) {
+            if AnalysisEngine.filterWords.contains(cleanWord) {
                 count += 1
                 if phrases.count < 10 && !phrases.contains(cleanWord) {
                     phrases.append(cleanWord)

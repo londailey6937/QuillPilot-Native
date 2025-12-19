@@ -1116,62 +1116,53 @@ extension MainWindowController {
 
         case "docx":
             // Import Word document
-            do {
-                NSLog("📄 Importing Word document...")
+            let filename = url.deletingPathExtension().lastPathComponent
+            headerView.setDocumentTitle(filename)
+            currentDocumentURL = url
+            currentDocumentFormat = .docx
+            mainContentViewController.editorViewController.headerText = ""
+            mainContentViewController.editorViewController.footerText = ""
 
-                // Check file size and warn for large files
-                let fileSize = try FileManager.default.attributesOfItem(atPath: url.path)[.size] as? UInt64 ?? 0
-                let fileSizeMB = Double(fileSize) / 1_048_576.0
-                NSLog("📄 File size: \(String(format: "%.2f", fileSizeMB)) MB")
+            // Show placeholder text immediately so user sees the app is working
+            mainContentViewController.editorViewController.textView?.string = "Loading document..."
 
-// For very large files (>10MB), show a warning
-                // For extremely large files (>100MB), limit to first portion
-                if fileSizeMB > 100 {
-                    let alert = NSAlert()
-                    alert.messageText = "Document Too Large"
-                    alert.informativeText = "This document is \(String(format: "%.1f", fileSizeMB)) MB, which exceeds the recommended limit of 100 MB.\n\nVery large documents may cause performance issues. Consider using a dedicated Word processor for files this size."
-                    alert.addButton(withTitle: "OK")
-                    alert.alertStyle = .critical
-                    alert.runModal()
-                    NSLog("📄 Document too large: \(fileSizeMB) MB")
-                    return
-                } else if fileSizeMB > 10 {
-                    let alert = NSAlert()
-                    alert.messageText = "Large Document"
-                    alert.informativeText = "This document is \(String(format: "%.1f", fileSizeMB)) MB. It may take a moment to load and could impact performance.\n\nDo you want to continue?"
-                    alert.addButton(withTitle: "Continue")
-                    alert.addButton(withTitle: "Cancel")
-                    alert.alertStyle = .warning
+            // Get file size for logging
+            let fileSize = (try? FileManager.default.attributesOfItem(atPath: url.path)[.size] as? Int) ?? 0
+            NSLog("📄 File size: \(fileSize) bytes (\(fileSize / 1024 / 1024) MB)")
 
-                    guard alert.runModal() == .alertFirstButtonReturn else {
-                        NSLog("📄 User cancelled large file import")
-                        return
+            // Parse in background, set content directly on main thread
+            DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+                NSLog("📄 Starting DOCX extraction for: \(url.lastPathComponent)")
+                let startTime = CFAbsoluteTimeGetCurrent()
+                do {
+                    NSLog("📄 Reading file data...")
+                    let data = try Data(contentsOf: url)
+                    NSLog("📄 File data read: \(data.count) bytes in \(CFAbsoluteTimeGetCurrent() - startTime)s")
+
+                    let parseStart = CFAbsoluteTimeGetCurrent()
+                    NSLog("📄 Starting XML parsing...")
+                    let attributedString = try DocxTextExtractor.extractAttributedString(fromDocxData: data)
+                    NSLog("📄 Parsing complete: \(attributedString.length) chars in \(CFAbsoluteTimeGetCurrent() - parseStart)s")
+
+                    let restoreStart = CFAbsoluteTimeGetCurrent()
+                    let restored = self?.restoreImageSizes(in: attributedString) ?? attributedString
+                    NSLog("📄 Image restore took \(CFAbsoluteTimeGetCurrent() - restoreStart)s")
+
+                    NSLog("📄 Total extraction time: \(CFAbsoluteTimeGetCurrent() - startTime)s")
+
+                    DispatchQueue.main.async {
+                        guard let self = self else { return }
+                        NSLog("📄 Setting content on main thread, length: \(restored.length)")
+                        let setStart = CFAbsoluteTimeGetCurrent()
+                        self.mainContentViewController.editorViewController.setAttributedContentDirect(restored)
+                        NSLog("📄 Content set complete in \(CFAbsoluteTimeGetCurrent() - setStart)s")
                     }
-
-                    NSLog("📄 Loading large document...")
+                } catch {
+                    NSLog("📄 DOCX extraction failed: \(error)")
+                    DispatchQueue.main.async {
+                        self?.presentErrorAlert(message: "Failed to open Word document", details: error.localizedDescription)
+                    }
                 }
-
-                let attributedString = try DocxTextExtractor.extractAttributedString(fromDocxFileURL: url)
-
-                // Restore image sizes that were encoded in filenames during export
-                let restored = restoreImageSizes(in: attributedString)
-
-                mainContentViewController.setEditorAttributedContent(restored)
-
-                // Use filename as title
-                let filename = url.deletingPathExtension().lastPathComponent
-                headerView.setDocumentTitle(filename)
-
-                mainContentViewController.editorViewController.headerText = ""
-                mainContentViewController.editorViewController.footerText = ""
-                mainContentViewController.editorViewController.updatePageCentering()
-                currentDocumentURL = url
-                currentDocumentFormat = .docx
-                NSLog("✅ Word document loaded: \(filename) (\(attributedString.length) characters)")
-            } catch {
-                NSLog("❌ .docx import failed: \(error.localizedDescription)")
-                presentErrorAlert(message: "Failed to open Word document", details: error.localizedDescription)
-                throw error
             }
 
         default:
@@ -2739,8 +2730,17 @@ private enum DocxTextExtractor {
     static func extractAttributedString(fromDocxData data: Data) throws -> NSAttributedString {
         let documentXml = try ZipReader.extractFile(named: "word/document.xml", fromZipData: data)
 
+        NSLog("📄 Extracted document.xml: \(documentXml.count) bytes")
+
         // Clean the XML data by removing invalid control characters that cause parse errors
         let cleanedXml = cleanXMLData(documentXml)
+
+        NSLog("📄 After cleaning: \(cleanedXml.count) bytes")
+
+        // Debug: Log first 1000 chars to see structure
+        if let preview = String(data: cleanedXml.prefix(1000), encoding: .utf8) {
+            NSLog("📄 XML preview: \(preview.prefix(500))")
+        }
 
         // Pre-parse relationships to avoid reentrant parsing
         var relationships: [String: String] = [:]
@@ -2750,43 +2750,75 @@ private enum DocxTextExtractor {
             xmlParser.delegate = parser
             xmlParser.parse()
             relationships = parser.relationships
-            NSLog("📷 Parsed \(relationships.count) relationships from word/_rels/document.xml.rels")
-        } else {
-            NSLog("📷 Failed to find word/_rels/document.xml.rels")
+            NSLog("📄 Found \(relationships.count) relationships")
         }
 
         return try DocumentXMLAttributedCollector.makeAttributedString(from: cleanedXml, docxData: data, relationships: relationships)
     }
 
-    /// Cleans XML data by removing invalid control characters that can cause parser errors
+    /// Cleans XML data by removing invalid control characters that cause parser errors
     private static func cleanXMLData(_ data: Data) -> Data {
-        guard var xmlString = String(data: data, encoding: .utf8) else {
+        guard let xmlString = String(data: data, encoding: .utf8) else {
+            NSLog("📄 Failed to decode XML as UTF-8, returning original data")
             return data
         }
 
-        // Remove invalid XML control characters (0x00-0x08, 0x0B-0x0C, 0x0E-0x1F)
-        // Keep valid ones: 0x09 (tab), 0x0A (LF), 0x0D (CR)
-        let invalidChars = CharacterSet(charactersIn: "\u{0000}\u{0001}\u{0002}\u{0003}\u{0004}\u{0005}\u{0006}\u{0007}\u{0008}\u{000B}\u{000C}\u{000E}\u{000F}\u{0010}\u{0011}\u{0012}\u{0013}\u{0014}\u{0015}\u{0016}\u{0017}\u{0018}\u{0019}\u{001A}\u{001B}\u{001C}\u{001D}\u{001E}\u{001F}")
+        var cleaned = xmlString
+        var changesMade = false
 
-        xmlString = xmlString.components(separatedBy: invalidChars).joined()
-
-        return xmlString.data(using: .utf8) ?? data
-    }
-
-    static func extractPlainText(fromDocxFileURL url: URL) throws -> String {
-        let data = try Data(contentsOf: url)
-        return try extractPlainText(fromDocxData: data)
-    }
-
-    static func extractPlainText(fromDocxData data: Data) throws -> String {
-        let documentXml = try ZipReader.extractFile(named: "word/document.xml", fromZipData: data)
-        let collector = DocumentXMLTextCollector()
-        let parser = XMLParser(data: documentXml)
-        parser.delegate = collector
-        guard parser.parse() else {
-            throw parser.parserError ?? NSError(domain: "QuillPilot", code: 3, userInfo: [NSLocalizedDescriptionKey: "Failed to parse DOCX document.xml"])
+        // 1. Remove NULL bytes and other invalid control characters
+        let validChars = cleaned.unicodeScalars.filter { scalar in
+            let value = scalar.value
+            return value == 0x09 || value == 0x0A || value == 0x0D ||
+                   (value >= 0x20 && value <= 0xD7FF) ||
+                   (value >= 0xE000 && value <= 0xFFFD) ||
+                   (value >= 0x10000 && value <= 0x10FFFF)
         }
-        return collector.text
+        let withoutInvalidChars = String(String.UnicodeScalarView(validChars))
+        if withoutInvalidChars.count != cleaned.count {
+            NSLog("📄 Removed \(cleaned.count - withoutInvalidChars.count) invalid XML characters")
+            cleaned = withoutInvalidChars
+            changesMade = true
+        }
+
+        // 2. Fix unclosed tags or malformed attribute syntax
+        // Replace common issues like missing quotes, broken tags
+        if cleaned.contains("< ") || cleaned.contains(" >") {
+            cleaned = cleaned.replacingOccurrences(of: "< ", with: "<")
+            cleaned = cleaned.replacingOccurrences(of: " >", with: ">")
+            changesMade = true
+            NSLog("📄 Fixed malformed tag spacing")
+        }
+
+        // 3. Remove any embedded binary data between tags (non-printable sequences)
+        // Look for stretches of non-XML-like content between tags
+        let pattern = try! NSRegularExpression(pattern: ">([^<]*?[\\x00-\\x08\\x0B\\x0C\\x0E-\\x1F]+[^<]*?)<", options: [])
+        let matches = pattern.matches(in: cleaned, range: NSRange(cleaned.startIndex..., in: cleaned))
+        if !matches.isEmpty {
+            var result = cleaned
+            for match in matches.reversed() {
+                if let range = Range(match.range(at: 1), in: result) {
+                    let problematic = String(result[range])
+                    let filtered = problematic.filter { char in
+                        let scalar = char.unicodeScalars.first!
+                        let value = scalar.value
+                        return value >= 0x20 || value == 0x09 || value == 0x0A || value == 0x0D
+                    }
+                    result.replaceSubrange(range, with: filtered)
+                }
+            }
+            if result != cleaned {
+                NSLog("📄 Removed embedded binary data from XML content")
+                cleaned = result
+                changesMade = true
+            }
+        }
+
+        if changesMade {
+            NSLog("📄 XML repair completed")
+        }
+
+        return cleaned.data(using: .utf8) ?? data
     }
 
     private final class RelationshipsParser: NSObject, XMLParserDelegate {
@@ -2857,38 +2889,25 @@ private enum DocxTextExtractor {
             parser.shouldReportNamespacePrefixes = false
             parser.shouldResolveExternalEntities = false
 
-            NSLog("📷 Starting XML parse of \(data.count) bytes")
             let parseResult = parser.parse()
 
-            // If parsing failed but we got some content, return it anyway (best effort)
-            let output = collector.output()
-            if !parseResult {
-                NSLog("📷 XML parsing had errors, but recovered \(output.length) characters (out of \(data.count) bytes)")
-                NSLog("📷 Error was at line \(parser.lineNumber), column \(parser.columnNumber)")
-
-                // Log a snippet of where the error occurred
-                if let xmlString = String(data: data, encoding: .utf8) {
-                    let lines = xmlString.components(separatedBy: .newlines)
-                    if parser.lineNumber > 0 && parser.lineNumber <= lines.count {
-                        let errorLineIndex = parser.lineNumber - 1
-                        let start = max(0, errorLineIndex - 2)
-                        let end = min(lines.count, errorLineIndex + 3)
-                        NSLog("📷 XML context around error:")
-                        for i in start..<end {
-                            let marker = (i == errorLineIndex) ? " >>> " : "     "
-                            NSLog("📷\(marker)Line \(i+1): \(lines[i].prefix(120))")
-                        }
-                    }
-                }
-
-                // Only throw if we got no content at all
-                if output.length == 0 {
-                    throw parser.parserError ?? NSError(domain: "QuillPilot", code: 12, userInfo: [NSLocalizedDescriptionKey: "Failed to parse DOCX rich text"])
-                }
-                NSLog("📷 Returning partial content despite parse errors")
-            } else {
-                NSLog("📷 Successfully parsed \(output.length) characters")
+            // Always finalize any pending paragraph when parsing ends (even on error)
+            if collector.hasActiveParagraph {
+                collector.finalizeParagraph()
             }
+
+            let output = collector.output()
+
+            // If parsing failed and we got little/no content, throw error
+            if !parseResult && output.length < 10 {
+                throw parser.parserError ?? NSError(domain: "QuillPilot", code: 12, userInfo: [NSLocalizedDescriptionKey: "Failed to parse DOCX rich text"])
+            }
+
+            // If we got some content despite parse errors, use it
+            if !parseResult {
+                NSLog("📄 Parser failed but recovered \(output.length) characters")
+            }
+
             return output
         }
 
@@ -3205,7 +3224,7 @@ private enum DocxTextExtractor {
             }
 
             // Handle target path
-            var cleanTarget = target.replacingOccurrences(of: "\\", with: "/")
+            let cleanTarget = target.replacingOccurrences(of: "\\", with: "/")
             let imagePath: String
             if cleanTarget.hasPrefix("/") {
                 // Absolute path from root (remove leading slash)

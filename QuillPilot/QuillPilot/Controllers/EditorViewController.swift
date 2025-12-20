@@ -57,6 +57,9 @@ class EditorViewController: NSViewController {
     private var formatPainterActive: Bool = false
     private var copiedAttributes: [NSAttributedString.Key: Any]?
 
+    // Flag to suppress text change notifications during programmatic edits
+    private var suppressTextChangeNotifications: Bool = false
+
     // Helper to register undo/redo and notify text system
     private func replaceCharacters(in range: NSRange, with attributed: NSAttributedString, undoPlaceholder: String) {
         guard let storage = textView.textStorage else { return }
@@ -1273,13 +1276,17 @@ class EditorViewController: NSViewController {
             let paragraphRange = fullString.paragraphRange(for: NSRange(location: location, length: 0))
             if let styleName = normalized.attribute(styleAttributeKey, at: paragraphRange.location, effectiveRange: nil) as? String,
                let definition = StyleCatalog.shared.style(named: styleName) {
-                let paragraph = paragraphStyle(from: definition)
+                let catalogParagraph = paragraphStyle(from: definition)
                 let font = font(from: definition)
                 let textColor = color(fromHex: definition.textColorHex, fallback: defaultColor)
                 let backgroundColor = definition.backgroundColorHex.flatMap { color(fromHex: $0, fallback: .clear) }
 
+                // Get existing paragraph style to preserve textBlocks (columns/tables)
+                let existingParagraph = normalized.attribute(.paragraphStyle, at: paragraphRange.location, effectiveRange: nil) as? NSParagraphStyle
+                let finalParagraph = mergedParagraphStyle(existing: existingParagraph, style: catalogParagraph)
+
                 // Apply paragraph style at paragraph level
-                normalized.addAttribute(.paragraphStyle, value: paragraph, range: paragraphRange)
+                normalized.addAttribute(.paragraphStyle, value: finalParagraph, range: paragraphRange)
 
                 // Apply font and colors per run to preserve inline formatting (bold, italic, size changes)
                 normalized.enumerateAttributes(in: paragraphRange, options: []) { attrs, runRange, _ in
@@ -1453,7 +1460,7 @@ class EditorViewController: NSViewController {
         }
 
         textView.textStorage?.setAttributedString(attributed)
-        
+
         // Don't reset typing attributes - let them inherit from document content
         // This preserves the Body Text style and other attributes when typing
         updateTypingAttributesFromContent()
@@ -1481,18 +1488,18 @@ class EditorViewController: NSViewController {
             applyDefaultTypingAttributes()
             return
         }
-        
+
         // Get attributes from the start of the document
         let attrs = textStorage.attributes(at: 0, effectiveRange: nil)
-        
+
         // Start with those attributes for typing
         var newTypingAttributes = attrs
-        
+
         // Ensure we have a font
         if newTypingAttributes[.font] == nil {
             newTypingAttributes[.font] = NSFont(name: "Times New Roman", size: 14) ?? NSFont.systemFont(ofSize: 14)
         }
-        
+
         // Ensure we have a paragraph style
         if newTypingAttributes[.paragraphStyle] == nil {
             let neutralParagraph = NSMutableParagraphStyle()
@@ -1505,7 +1512,7 @@ class EditorViewController: NSViewController {
         } else if let paraStyle = newTypingAttributes[.paragraphStyle] as? NSParagraphStyle {
             textView.defaultParagraphStyle = paraStyle
         }
-        
+
         textView.typingAttributes = newTypingAttributes
     }
 
@@ -2375,6 +2382,11 @@ case "Book Subtitle":
             mutable.alignment = existing.alignment
         }
 
+        // CRITICAL: Preserve textBlocks (columns and tables) from existing style
+        if !existing.textBlocks.isEmpty {
+            mutable.textBlocks = existing.textBlocks
+        }
+
         return mutable.copy() as! NSParagraphStyle
     }
 
@@ -2785,6 +2797,10 @@ case "Book Subtitle":
         let currentRange = textView.selectedRange()
         NSLog("setColumnCount: inserting at location \(currentRange.location)")
 
+        // Suppress text change notifications during column insertion to prevent hang
+        suppressTextChangeNotifications = true
+        defer { suppressTextChangeNotifications = false }
+
         // Disable background layout to prevent hang during table insertion
         let wasBackgroundLayoutEnabled = textView.layoutManager?.backgroundLayoutEnabled ?? false
         textView.layoutManager?.backgroundLayoutEnabled = false
@@ -2845,11 +2861,21 @@ case "Book Subtitle":
         let finalNewline = NSAttributedString(string: "\n", attributes: textView.typingAttributes)
         result.append(finalNewline)
 
+        // Wrap insertion in beginEditing/endEditing to batch all text notifications
+        textStorage.beginEditing()
         textStorage.insert(result, at: currentRange.location)
-        textView.setSelectedRange(NSRange(location: currentRange.location + 1, length: 0))
 
-        // Re-enable background layout and trigger async layout
+        // Set cursor position BEFORE endEditing to prevent multiple layout passes
+        let newCursorLocation = currentRange.location + 1
+        textView.setSelectedRange(NSRange(location: newCursorLocation, length: 0))
+
+        textStorage.endEditing()
+
+        // Re-enable background layout
         textView.layoutManager?.backgroundLayoutEnabled = wasBackgroundLayoutEnabled
+
+        // Manually trigger a single text change notification now that insertion is complete
+        delegate?.textDidChange()
 
         NSLog("setColumnCount: columns inserted successfully")
     }
@@ -3054,8 +3080,23 @@ case "Book Subtitle":
         ]
         result.append(NSAttributedString(string: "\n", attributes: exitAttrs))
 
+        // Suppress text change notifications during table insertion
+        suppressTextChangeNotifications = true
+        defer { suppressTextChangeNotifications = false }
+
+        // Wrap insertion in beginEditing/endEditing to batch notifications
+        textStorage.beginEditing()
         textStorage.insert(result, at: currentRange.location)
-        textView.setSelectedRange(NSRange(location: currentRange.location + 1, length: 0))
+
+        // Set cursor position BEFORE endEditing
+        let newCursorLocation = currentRange.location + 1
+        textView.setSelectedRange(NSRange(location: newCursorLocation, length: 0))
+
+        textStorage.endEditing()
+
+        // Manually trigger a single text change notification
+        delegate?.textDidChange()
+
         NSLog("insertTable: table inserted successfully")
     }
 
@@ -3637,6 +3678,9 @@ case "Book Subtitle":
 
 extension EditorViewController: NSTextViewDelegate {
     func textDidChange(_ notification: Notification) {
+        // Skip notification if we're suppressing changes (e.g., during column insertion)
+        guard !suppressTextChangeNotifications else { return }
+
         delegate?.textDidChange()
 
         // Throttle expensive operations to improve typing performance
@@ -3749,6 +3793,9 @@ extension EditorViewController: NSTextViewDelegate {
     }
 
     func textViewDidChangeSelection(_ notification: Notification) {
+        // Skip if we're suppressing notifications (e.g., during column insertion)
+        guard !suppressTextChangeNotifications else { return }
+
         showImageControlsIfNeeded()
 
         // If format painter is active and user makes a selection, apply the formatting

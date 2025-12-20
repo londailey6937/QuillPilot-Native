@@ -126,7 +126,14 @@ class CharacterLibrary {
     func loadCharacters() {
         do {
             let data = try Data(contentsOf: libraryURL)
-            characters = try JSONDecoder().decode([CharacterProfile].self, from: data)
+            let decoded = try JSONDecoder().decode([CharacterProfile].self, from: data)
+            if decoded.isEmpty {
+                // Seed with samples when the persisted library is empty
+                characters = createSampleCharacters()
+                saveCharacters()
+            } else {
+                characters = decoded
+            }
         } catch {
             // If no saved characters, load sample characters
             characters = createSampleCharacters()
@@ -144,7 +151,7 @@ class CharacterLibrary {
     }
 
     func addCharacter(_ character: CharacterProfile) {
-        characters.append(character)
+        characters.insert(character, at: 0) // Insert at beginning
         saveCharacters()
         NotificationCenter.default.post(name: .characterLibraryDidChange, object: nil)
     }

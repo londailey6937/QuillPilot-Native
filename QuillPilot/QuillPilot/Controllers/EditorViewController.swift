@@ -628,78 +628,6 @@ class EditorViewController: NSViewController {
         )
     }
 
-    func insertPageBreak() {
-        guard let textStorage = textView.textStorage,
-              let layoutManager = textView.layoutManager else { return }
-
-        let currentRange = textView.selectedRange()
-
-        // Force layout to ensure we have accurate glyph information
-        layoutManager.ensureLayout(for: textView.textContainer!)
-
-        // Get the current Y position of the cursor (in text view coordinates)
-        let glyphRange = layoutManager.glyphRange(forCharacterRange: currentRange, actualCharacterRange: nil)
-        let lineFragmentRect = layoutManager.lineFragmentRect(forGlyphAt: glyphRange.location, effectiveRange: nil, withoutAdditionalLayout: true)
-        let currentY = lineFragmentRect.maxY
-
-        // Text container uses scaled coordinates (zoom applied)
-        let scaledPageHeight = pageHeight * editorZoom
-        let scaledMargin = standardMargin * editorZoom
-        let textHeightPerPage = scaledPageHeight - (scaledMargin * 2)
-
-        // Find which page we're on and where the next page starts
-        let currentPage = Int(floor(currentY / textHeightPerPage))
-        let targetY = CGFloat(currentPage + 1) * textHeightPerPage
-
-        // How much space to add to reach the next page top
-        let remainingHeight = max(0, targetY - currentY)
-
-        NSLog("📄 Page Break: currentY=\(currentY), targetY=\(targetY), remaining=\(remainingHeight)")
-
-        // Create a paragraph style that adds spacing AFTER this paragraph
-        let breakStyle = NSMutableParagraphStyle()
-        breakStyle.paragraphSpacing = remainingHeight
-        breakStyle.paragraphSpacingBefore = 0
-        breakStyle.lineHeightMultiple = 0
-        breakStyle.lineSpacing = 0
-        breakStyle.minimumLineHeight = 0.1
-        breakStyle.maximumLineHeight = 0.1
-
-        // Use form feed character (traditional page break) with tiny font
-        let breakString = NSAttributedString(string: "\u{000C}\n", attributes: [
-            .paragraphStyle: breakStyle,
-            .font: NSFont.systemFont(ofSize: 0.1),
-            .foregroundColor: NSColor.clear
-        ])
-
-        textStorage.beginEditing()
-        if textView.shouldChangeText(in: currentRange, replacementString: "\u{000C}\n") {
-            textStorage.replaceCharacters(in: currentRange, with: breakString)
-            textStorage.endEditing()
-            textView.didChangeText()
-
-            let newPosition = currentRange.location + 2
-            textView.setSelectedRange(NSRange(location: newPosition, length: 0))
-
-            // Reset typing attributes to normal for next paragraph
-            var newTypingAttrs = textView.typingAttributes
-            if let defaultStyle = textView.defaultParagraphStyle {
-                newTypingAttrs[.paragraphStyle] = defaultStyle
-            }
-            textView.typingAttributes = newTypingAttrs
-
-            // Check result
-            layoutManager.ensureLayout(for: textView.textContainer!)
-            let newGlyphRange = layoutManager.glyphRange(forCharacterRange: NSRange(location: newPosition, length: 0), actualCharacterRange: nil)
-            let newLineRect = layoutManager.lineFragmentRect(forGlyphAt: newGlyphRange.location, effectiveRange: nil)
-            NSLog("📄 Cursor now at Y=\(newLineRect.origin.y) (target=\(targetY))")
-        } else {
-            textStorage.endEditing()
-        }
-
-        updatePageCentering()
-    }
-
     func insertColumnBreak() {
         guard let textStorage = textView.textStorage else { return }
         let range = textView.selectedRange()
@@ -1440,7 +1368,7 @@ class EditorViewController: NSViewController {
     }
 
     func setAttributedContent(_ attributed: NSAttributedString) {
-        // For native .quill docs, apply style retagging
+        // Apply style retagging to infer paragraph styles
         let retagged = detectAndRetagStyles(in: attributed)
         textView.textStorage?.setAttributedString(retagged)
         applyDefaultTypingAttributes()
@@ -2105,10 +2033,11 @@ case "Book Subtitle":
                 return NSFontManager.shared.convert(base, toHaveTrait: .italicFontMask)
             }
         case "Figure Caption", "Table Caption":
+            suppressTextChangeNotifications = true
             applyManuscriptParagraphStyle { style in
                 style.alignment = .left
-                style.headIndent = 18
-                style.firstLineHeadIndent = 18
+                style.headIndent = 0
+                style.firstLineHeadIndent = 0
                 style.tailIndent = 0
                 style.paragraphSpacingBefore = 6
                 style.paragraphSpacing = 12
@@ -2117,6 +2046,8 @@ case "Book Subtitle":
             applyFontChange { current in
                 NSFont(name: "Times New Roman", size: 11) ?? current
             }
+            suppressTextChangeNotifications = false
+            delegate?.textDidChange()
         case "Footnote / Endnote":
             applyManuscriptParagraphStyle { style in
                 style.alignment = .left
@@ -2538,9 +2469,15 @@ case "Book Subtitle":
             numPages = max(1, Int(ceil(Double(textLength) / charsPerPageEstimate)))
         }
 
-        // Only do expensive full layout calculation if document is small (< 10 pages estimated)
-        // or if explicitly needed (like when printing)
-        if numPages < 10, let layoutManager = textView.layoutManager,
+        // Skip expensive layout calculation if currently in columns or tables
+        // Modifying textContainer geometry while in a table/column can cause layout loops
+        let isInColumnsOrTables = isCurrentPositionInColumns() || isCurrentPositionInTable()
+
+        // Only do expensive full layout calculation if:
+        // - Document is small (< 10 pages estimated)
+        // - NOT currently in columns or tables (to avoid layout loops)
+        if numPages < 10 && !isInColumnsOrTables,
+           let layoutManager = textView.layoutManager,
            let textContainer = textView.textContainer {
             let activeHeaderHeight = showHeaders ? headerHeight : 0
             let activeFooterHeight = showFooters ? footerHeight : 0
@@ -2817,18 +2754,15 @@ case "Book Subtitle":
         for i in 0..<columns {
             let textBlock = NSTextTableBlock(table: textTable, startingRow: 0, rowSpan: 1, startingColumn: i, columnSpan: 1)
 
-            // Separator line on the right of each column except the last one
-            if i < columns - 1 {
-                textBlock.setBorderColor(currentTheme.textColor.withAlphaComponent(0.2), for: .maxX)
-                textBlock.setWidth(1.0, type: .absoluteValueType, for: .border, edge: .maxX)
-            } else {
-                textBlock.setBorderColor(.clear, for: .maxX)
-                textBlock.setWidth(0.0, type: .absoluteValueType, for: .border, edge: .maxX)
-            }
-
+            // No borders for columns - just use padding for spacing
             textBlock.setBorderColor(.clear, for: .minX)
+            textBlock.setBorderColor(.clear, for: .maxX)
             textBlock.setBorderColor(.clear, for: .minY)
             textBlock.setBorderColor(.clear, for: .maxY)
+            textBlock.setWidth(0.0, type: .absoluteValueType, for: .border, edge: .minX)
+            textBlock.setWidth(0.0, type: .absoluteValueType, for: .border, edge: .maxX)
+            textBlock.setWidth(0.0, type: .absoluteValueType, for: .border, edge: .minY)
+            textBlock.setWidth(0.0, type: .absoluteValueType, for: .border, edge: .maxY)
 
             // Add padding for column spacing
             textBlock.setWidth(12.0, type: .absoluteValueType, for: .padding, edge: .minX)
@@ -2963,18 +2897,15 @@ case "Book Subtitle":
         for i in 0..<newColumnCount {
             let textBlock = NSTextTableBlock(table: newTable, startingRow: 0, rowSpan: 1, startingColumn: i, columnSpan: 1)
 
-            // Separator line on the right of each column except the last one
-            if i < newColumnCount - 1 {
-                textBlock.setBorderColor(currentTheme.textColor.withAlphaComponent(0.2), for: .maxX)
-                textBlock.setWidth(1.0, type: .absoluteValueType, for: .border, edge: .maxX)
-            } else {
-                textBlock.setBorderColor(.clear, for: .maxX)
-                textBlock.setWidth(0.0, type: .absoluteValueType, for: .border, edge: .maxX)
-            }
-
+            // No borders for columns - just use padding for spacing
             textBlock.setBorderColor(.clear, for: .minX)
+            textBlock.setBorderColor(.clear, for: .maxX)
             textBlock.setBorderColor(.clear, for: .minY)
             textBlock.setBorderColor(.clear, for: .maxY)
+            textBlock.setWidth(0.0, type: .absoluteValueType, for: .border, edge: .minX)
+            textBlock.setWidth(0.0, type: .absoluteValueType, for: .border, edge: .maxX)
+            textBlock.setWidth(0.0, type: .absoluteValueType, for: .border, edge: .minY)
+            textBlock.setWidth(0.0, type: .absoluteValueType, for: .border, edge: .maxY)
 
             textBlock.setWidth(12.0, type: .absoluteValueType, for: .padding, edge: .minX)
             textBlock.setWidth(12.0, type: .absoluteValueType, for: .padding, edge: .maxX)
@@ -3038,22 +2969,25 @@ case "Book Subtitle":
 
         let result = NSMutableAttributedString()
 
-        // Create table with visible borders
+        // Create table with visible borders - use collapsesBorders for consistent border widths
         let textTable = NSTextTable()
         textTable.numberOfColumns = columns
         textTable.layoutAlgorithm = .automaticLayoutAlgorithm
-        textTable.collapsesBorders = false
+        textTable.collapsesBorders = true
 
         for row in 0..<rows {
             for col in 0..<columns {
                 let textBlock = NSTextTableBlock(table: textTable, startingRow: row, rowSpan: 1, startingColumn: col, columnSpan: 1)
 
-                // Add visible borders to table cells
+                // Add visible borders to table cells - set width for each edge individually
                 textBlock.setBorderColor(borderColor, for: .minX)
                 textBlock.setBorderColor(borderColor, for: .maxX)
                 textBlock.setBorderColor(borderColor, for: .minY)
                 textBlock.setBorderColor(borderColor, for: .maxY)
-                textBlock.setWidth(1.0, type: .absoluteValueType, for: .border)
+                textBlock.setWidth(1.0, type: .absoluteValueType, for: .border, edge: .minX)
+                textBlock.setWidth(1.0, type: .absoluteValueType, for: .border, edge: .maxX)
+                textBlock.setWidth(1.0, type: .absoluteValueType, for: .border, edge: .minY)
+                textBlock.setWidth(1.0, type: .absoluteValueType, for: .border, edge: .maxY)
 
                 // Cell padding - increased for 14pt text
                 textBlock.setWidth(10.0, type: .absoluteValueType, for: .padding, edge: .minX)
@@ -3354,7 +3288,7 @@ case "Book Subtitle":
         let newTable = NSTextTable()
         newTable.numberOfColumns = totalColumns - 1
         newTable.layoutAlgorithm = .automaticLayoutAlgorithm
-        newTable.collapsesBorders = false
+        newTable.collapsesBorders = true
 
         let borderColor = (ThemeManager.shared.currentTheme.headerBackground).withAlphaComponent(0.5)
         let result = NSMutableAttributedString()

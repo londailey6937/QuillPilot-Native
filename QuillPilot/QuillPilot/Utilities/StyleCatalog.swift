@@ -175,7 +175,7 @@ final class StyleCatalog {
         styles["Bibliography Entry"] = styles["Notes Entry"]
         styles["Index Entry"] = styles["Notes Entry"]
         styles["Callout"] = baseDefinition(font: "Times New Roman", size: 11, italic: true, alignment: .left, lineHeight: 1.0, before: 12, after: 12, headIndent: 18, firstLine: 18, tailIndent: -18)
-        styles["Figure Caption"] = baseDefinition(font: "Times New Roman", size: 11, alignment: .left, lineHeight: 1.0, before: 6, after: 12, headIndent: 18, firstLine: 18, tailIndent: 0)
+        styles["Figure Caption"] = baseDefinition(font: "Times New Roman", size: 11, alignment: .left, lineHeight: 1.0, before: 6, after: 12, headIndent: 0, firstLine: 0, tailIndent: 0)
         styles["Table Caption"] = styles["Figure Caption"]
         styles["Footnote / Endnote"] = baseDefinition(font: "Times New Roman", size: 10, alignment: .left, lineHeight: 1.0, before: 6, after: 6, headIndent: 0, firstLine: 0, tailIndent: 0)
         return styles

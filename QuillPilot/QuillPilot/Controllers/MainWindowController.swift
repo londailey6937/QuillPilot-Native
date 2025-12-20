@@ -33,7 +33,6 @@ protocol FormattingToolbarDelegate: AnyObject {
     func formattingToolbarDidToggleBullets(_ toolbar: FormattingToolbar)
     func formattingToolbarDidToggleNumbering(_ toolbar: FormattingToolbar)
 
-    func formattingToolbarDidInsertPageBreak(_ toolbar: FormattingToolbar)
     func formattingToolbarDidInsertColumnBreak(_ toolbar: FormattingToolbar)
     func formattingToolbarDidInsertImage(_ toolbar: FormattingToolbar)
     func formattingToolbarDidColumns(_ toolbar: FormattingToolbar)
@@ -508,10 +507,6 @@ extension MainWindowController: FormattingToolbarDelegate {
 
     func formattingToolbarDidInsertImage(_ toolbar: FormattingToolbar) {
         mainContentViewController.insertImage()
-    }
-
-    func formattingToolbarDidInsertPageBreak(_ toolbar: FormattingToolbar) {
-        mainContentViewController.insertPageBreak()
     }
 
     func formattingToolbarDidInsertColumnBreak(_ toolbar: FormattingToolbar) {
@@ -1508,7 +1503,6 @@ class FormattingToolbar: NSView {
         // Layout
         let columnsBtn = createToolbarButton("⫼", fontSize: 20) // Column icon
         let tableBtn = createToolbarButton("⊞", fontSize: 20) // Table icon
-        let pageBreakBtn = createToolbarButton("⤓") // Page break icon
 
         columnsBtn.target = self
         columnsBtn.action = #selector(columnsTapped)
@@ -1516,9 +1510,6 @@ class FormattingToolbar: NSView {
         tableBtn.target = self
         tableBtn.action = #selector(tableTapped)
         tableBtn.toolTip = "Table Operations"
-        pageBreakBtn.target = self
-        pageBreakBtn.action = #selector(pageBreakTapped)
-        pageBreakBtn.toolTip = "Page Break"
         let clearBtn = createToolbarButton("⌧") // Clear icon
         clearBtn.target = self
         clearBtn.action = #selector(clearAllTapped)
@@ -1545,7 +1536,7 @@ class FormattingToolbar: NSView {
             alignLeftBtn, alignCenterBtn, alignRightBtn, justifyBtn,
             bulletsBtn, numberingBtn,
             imageButton,
-            columnsBtn, tableBtn, pageBreakBtn,
+            columnsBtn, tableBtn,
             outdentBtn, indentBtn,
             searchBtn, clearBtn
         ])
@@ -1669,10 +1660,6 @@ class FormattingToolbar: NSView {
 
     @objc private func columnsTapped() {
         delegate?.formattingToolbarDidColumns(self)
-    }
-
-    @objc private func pageBreakTapped() {
-        delegate?.formattingToolbarDidInsertPageBreak(self)
     }
 
     @objc private func columnBreakTapped() {
@@ -1906,10 +1893,6 @@ class ContentViewController: NSViewController {
 
     func toggleNumberedList() {
         editorViewController.toggleNumberedList()
-    }
-
-    func insertPageBreak() {
-        editorViewController.insertPageBreak()
     }
 
     func insertImage() {
@@ -3274,7 +3257,7 @@ private enum DocxTextExtractor {
                 currentTable = NSTextTable()
                 currentTable?.numberOfColumns = 1 // Will be adjusted as we encounter cells
                 currentTable?.layoutAlgorithm = .automaticLayoutAlgorithm
-                currentTable?.collapsesBorders = false  // Don't collapse borders for regular tables
+                currentTable?.collapsesBorders = true  // Collapse borders for consistent width
                 currentTableRow = 0
                 currentTableCol = 0
                 currentTableIsColumnLayout = false
@@ -3315,28 +3298,29 @@ private enum DocxTextExtractor {
 
                     // Style based on whether it's a column layout or regular table
                     if currentTableIsColumnLayout {
-                        // Column layout: no visible borders except vertical separators
+                        // Column layout: no visible borders at all
                         textBlock.setBorderColor(.clear, for: .minX)
+                        textBlock.setBorderColor(.clear, for: .maxX)
                         textBlock.setBorderColor(.clear, for: .minY)
                         textBlock.setBorderColor(.clear, for: .maxY)
-
-                        if currentTableCol < table.numberOfColumns - 1 {
-                            textBlock.setBorderColor(NSColor.gray.withAlphaComponent(0.2), for: .maxX)
-                            textBlock.setWidth(1.0, type: .absoluteValueType, for: .border, edge: .maxX)
-                        } else {
-                            textBlock.setBorderColor(.clear, for: .maxX)
-                        }
+                        textBlock.setWidth(0.0, type: .absoluteValueType, for: .border, edge: .minX)
+                        textBlock.setWidth(0.0, type: .absoluteValueType, for: .border, edge: .maxX)
+                        textBlock.setWidth(0.0, type: .absoluteValueType, for: .border, edge: .minY)
+                        textBlock.setWidth(0.0, type: .absoluteValueType, for: .border, edge: .maxY)
 
                         textBlock.setWidth(12.0, type: .absoluteValueType, for: .padding, edge: .minX)
                         textBlock.setWidth(12.0, type: .absoluteValueType, for: .padding, edge: .maxX)
                     } else {
-                        // Regular table: visible borders on all sides
+                        // Regular table: visible borders on all sides with consistent width
                         let borderColor = NSColor.gray.withAlphaComponent(0.5)
                         textBlock.setBorderColor(borderColor, for: .minX)
                         textBlock.setBorderColor(borderColor, for: .maxX)
                         textBlock.setBorderColor(borderColor, for: .minY)
                         textBlock.setBorderColor(borderColor, for: .maxY)
-                        textBlock.setWidth(1.0, type: .absoluteValueType, for: .border)
+                        textBlock.setWidth(1.0, type: .absoluteValueType, for: .border, edge: .minX)
+                        textBlock.setWidth(1.0, type: .absoluteValueType, for: .border, edge: .maxX)
+                        textBlock.setWidth(1.0, type: .absoluteValueType, for: .border, edge: .minY)
+                        textBlock.setWidth(1.0, type: .absoluteValueType, for: .border, edge: .maxY)
 
                         // Cell padding
                         textBlock.setWidth(10.0, type: .absoluteValueType, for: .padding, edge: .minX)
@@ -3351,14 +3335,31 @@ private enum DocxTextExtractor {
             case "w:pStyle", "pStyle":
                 if let val = attributeDict["w:val"] ?? attributeDict["val"] {
                     // Map DOCX style IDs back to QuillPilot style names
-                    // DOCX uses "BodyText" but QuillPilot uses "Body Text"
+                    // DOCX export removes spaces/special chars, so we need to reverse that
                     let mappedName: String
                     switch val {
+                    case "Normal", "normal": mappedName = "Body Text"  // Default DOCX style maps to Body Text
                     case "BodyText": mappedName = "Body Text"
                     case "BodyTextNoIndent": mappedName = "Body Text – No Indent"
                     case "Heading1": mappedName = "Heading 1"
                     case "Heading2": mappedName = "Heading 2"
                     case "Heading3": mappedName = "Heading 3"
+                    case "BookTitle": mappedName = "Book Title"
+                    case "BookSubtitle": mappedName = "Book Subtitle"
+                    case "AuthorName": mappedName = "Author Name"
+                    case "FrontMatterHeading": mappedName = "Front Matter Heading"
+                    case "EpigraphAttribution": mappedName = "Epigraph Attribution"
+                    case "PartTitle": mappedName = "Part Title"
+                    case "PartSubtitle": mappedName = "Part Subtitle"
+                    case "ChapterNumber": mappedName = "Chapter Number"
+                    case "ChapterTitle": mappedName = "Chapter Title"
+                    case "ChapterSubtitle": mappedName = "Chapter Subtitle"
+                    case "SceneBreak": mappedName = "Scene Break"
+                    case "InternalThought": mappedName = "Internal Thought"
+                    case "LetterDocument": mappedName = "Letter / Document"
+                    case "BlockQuote": mappedName = "Block Quote"
+                    case "Epigraph": mappedName = "Epigraph"
+                    case "Dialogue": mappedName = "Dialogue"
                     default: mappedName = val
                     }
                     paragraphStyle.styleName = mappedName
@@ -3747,7 +3748,7 @@ private enum DocxTextExtractor {
             var headIndent: CGFloat = 0
             var firstLineIndent: CGFloat = 0
             var tailIndent: CGFloat = 0
-            var styleName: String?
+            var styleName: String? = "Body Text"  // Default to Body Text for imported paragraphs
             var textBlock: NSTextTableBlock? = nil
 
             func makeParagraphStyle() -> NSParagraphStyle {

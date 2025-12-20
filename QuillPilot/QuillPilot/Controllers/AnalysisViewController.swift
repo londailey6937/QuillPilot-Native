@@ -372,10 +372,6 @@ class AnalysisViewController: NSViewController {
         if !results.longParagraphs.isEmpty {
             addWarning("⚠️ \(results.longParagraphs.count) long paragraph(s)")
         }
-        if !results.suggestedParagraphBreaks.isEmpty {
-            addWarning("💡 \(results.suggestedParagraphBreaks.count) suggested paragraph break(s)")
-            addDetail("Consider breaking at lines: \(results.suggestedParagraphBreaks.prefix(5).map(String.init).joined(separator: ", "))")
-        }
         addDivider()
 
         // Passive voice

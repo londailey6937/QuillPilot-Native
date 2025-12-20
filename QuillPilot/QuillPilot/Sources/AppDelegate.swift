@@ -8,6 +8,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         setupMenuBar()
         NSApp.setActivationPolicy(.regular)
 
+        // Set dock icon programmatically
+        NSApp.applicationIconImage = createAppIcon()
+
         if mainWindowController == nil {
             mainWindowController = MainWindowController()
         }
@@ -15,6 +18,133 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         Task { @MainActor [weak self] in
             self?.presentMainWindow(orderingSource: nil)
         }
+    }
+
+    /// Creates the QuillPilot app icon programmatically
+    private func createAppIcon() -> NSImage {
+        let size = NSSize(width: 512, height: 512)
+        let image = NSImage(size: size)
+
+        image.lockFocus()
+
+        // Background - warm cream color
+        let bgColor = NSColor(red: 0.97, green: 0.90, blue: 0.82, alpha: 1.0)
+        bgColor.setFill()
+        NSBezierPath(roundedRect: NSRect(origin: .zero, size: size), xRadius: 80, yRadius: 80).fill()
+
+        // Orange accent color
+        let accentColor = NSColor(red: 0.94, green: 0.52, blue: 0.20, alpha: 1.0)
+
+        // Dark color for details
+        let darkColor = NSColor(red: 0.17, green: 0.24, blue: 0.31, alpha: 1.0)
+
+        // Draw outer hexagon frame
+        let hexPath = NSBezierPath()
+        let cx: CGFloat = 256, cy: CGFloat = 256
+        let outerRadius: CGFloat = 180
+        for i in 0..<6 {
+            let angle = CGFloat(i) * .pi / 3 - .pi / 2
+            let x = cx + outerRadius * cos(angle)
+            let y = cy + outerRadius * sin(angle)
+            if i == 0 {
+                hexPath.move(to: NSPoint(x: x, y: y))
+            } else {
+                hexPath.line(to: NSPoint(x: x, y: y))
+            }
+        }
+        hexPath.close()
+        accentColor.withAlphaComponent(0.8).setStroke()
+        hexPath.lineWidth = 6
+        hexPath.stroke()
+
+        // Draw inner hexagon
+        let innerHex = NSBezierPath()
+        let innerRadius: CGFloat = 120
+        for i in 0..<6 {
+            let angle = CGFloat(i) * .pi / 3 - .pi / 2
+            let x = cx + innerRadius * cos(angle)
+            let y = cy + innerRadius * sin(angle)
+            if i == 0 {
+                innerHex.move(to: NSPoint(x: x, y: y))
+            } else {
+                innerHex.line(to: NSPoint(x: x, y: y))
+            }
+        }
+        innerHex.close()
+        darkColor.withAlphaComponent(0.6).setStroke()
+        innerHex.lineWidth = 4
+        innerHex.stroke()
+
+        // Draw stylized quill/pen
+        let quillPath = NSBezierPath()
+        quillPath.move(to: NSPoint(x: 200, y: 320))
+        quillPath.curve(to: NSPoint(x: 320, y: 180),
+                       controlPoint1: NSPoint(x: 220, y: 280),
+                       controlPoint2: NSPoint(x: 280, y: 220))
+        quillPath.line(to: NSPoint(x: 330, y: 170))
+        quillPath.curve(to: NSPoint(x: 190, y: 330),
+                       controlPoint1: NSPoint(x: 290, y: 230),
+                       controlPoint2: NSPoint(x: 230, y: 290))
+        quillPath.close()
+        accentColor.setFill()
+        quillPath.fill()
+
+        // Quill tip
+        let tipPath = NSBezierPath()
+        tipPath.move(to: NSPoint(x: 320, y: 180))
+        tipPath.line(to: NSPoint(x: 350, y: 145))
+        tipPath.line(to: NSPoint(x: 330, y: 170))
+        tipPath.close()
+        darkColor.setFill()
+        tipPath.fill()
+
+        // Neural network dots
+        let dotPositions: [(CGFloat, CGFloat)] = [
+            (256, 320), (200, 280), (312, 280),
+            (180, 220), (256, 240), (332, 220),
+            (200, 180), (312, 180)
+        ]
+
+        for (x, y) in dotPositions {
+            let dotRect = NSRect(x: x - 8, y: y - 8, width: 16, height: 16)
+            let dot = NSBezierPath(ovalIn: dotRect)
+            accentColor.setFill()
+            dot.fill()
+        }
+
+        // Connection lines between dots
+        darkColor.withAlphaComponent(0.4).setStroke()
+        let linePath = NSBezierPath()
+        linePath.lineWidth = 2
+
+        // Horizontal connections
+        linePath.move(to: NSPoint(x: 200, y: 280))
+        linePath.line(to: NSPoint(x: 312, y: 280))
+
+        linePath.move(to: NSPoint(x: 180, y: 220))
+        linePath.line(to: NSPoint(x: 332, y: 220))
+
+        linePath.move(to: NSPoint(x: 200, y: 180))
+        linePath.line(to: NSPoint(x: 312, y: 180))
+
+        // Diagonal connections
+        linePath.move(to: NSPoint(x: 200, y: 280))
+        linePath.line(to: NSPoint(x: 256, y: 240))
+
+        linePath.move(to: NSPoint(x: 312, y: 280))
+        linePath.line(to: NSPoint(x: 256, y: 240))
+
+        linePath.move(to: NSPoint(x: 256, y: 240))
+        linePath.line(to: NSPoint(x: 180, y: 220))
+
+        linePath.move(to: NSPoint(x: 256, y: 240))
+        linePath.line(to: NSPoint(x: 332, y: 220))
+
+        linePath.stroke()
+
+        image.unlockFocus()
+
+        return image
     }
 
     func applicationDidBecomeActive(_ notification: Notification) {

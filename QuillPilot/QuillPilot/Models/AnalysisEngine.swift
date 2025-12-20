@@ -33,9 +33,6 @@ struct AnalysisResults {
     var sentenceVarietyScore: Int = 0 // 0-100
     var sentenceLengths: [Int] = [] // For graphing
 
-    // Paragraph break suggestions (line numbers where breaks should be added)
-    var suggestedParagraphBreaks: [Int] = []
-
     // Page count (estimated at ~250 words per page)
     var pageCount: Int = 0
 }
@@ -108,7 +105,25 @@ class AnalysisEngine {
         "each and every", "first and foremost", "sad but true",
         "only time will tell", "easier said than done", "better late than never",
         "actions speak louder than words", "the tip of the iceberg",
-        "a blessing in disguise", "add insult to injury", "beat around the bush"
+        "a blessing in disguise", "add insult to injury", "beat around the bush",
+        // Physical reaction clichés
+        "heart pounded", "heart sank", "heart skipped", "heart leaped",
+        "stomach churned", "stomach dropped", "stomach turned",
+        "knees buckled", "knees weak", "jaw dropped", "jaw clenched",
+        "fists clenched", "pulse quickened", "palms sweaty",
+        "spine tingled", "hair stood on end", "goosebumps",
+        "butterflies in stomach", "lump in throat", "face flushed",
+        "cheeks burned", "ears burned", "blood boiled",
+        // Emotional clichés
+        "breath away", "swept off feet", "head over heels",
+        "love at first sight", "match made in heaven",
+        "writing on the wall", "threw caution to the wind",
+        "caught between a rock and a hard place",
+        "avoid like the plague", "bite the bullet", "break the ice",
+        "cutting corners", "give the benefit of the doubt",
+        "hit the nail on the head", "in the heat of the moment",
+        "jump on the bandwagon", "let the cat out of the bag",
+        "piece of cake", "raining cats and dogs", "bite off more than you can chew"
     ]
 
     // Filter words that create distance
@@ -195,9 +210,6 @@ class AnalysisEngine {
 
         // Dialogue
         results.dialoguePercentage = calculateDialoguePercentage(text: analysisText)
-
-        // Paragraph break suggestions
-        results.suggestedParagraphBreaks = suggestParagraphBreaks(analysisText)
 
         // Page count (industry standard: ~250 words per manuscript page)
         results.pageCount = max(1, (results.wordCount + 249) / 250)
@@ -390,65 +402,4 @@ class AnalysisEngine {
 
         return (varietyScore, lengths)
     }
-
-    private func suggestParagraphBreaks(_ text: String) -> [Int] {
-        var suggestions: [Int] = []
-
-        // Split text into lines
-        let lines = text.components(separatedBy: .newlines)
-
-        var currentParagraphSentences = 0
-        var currentParagraphWords = 0
-        var lineInParagraph = 0
-
-        for (index, line) in lines.enumerated() {
-            let trimmed = line.trimmingCharacters(in: .whitespaces)
-
-            // Empty line indicates an existing paragraph break
-            if trimmed.isEmpty {
-                currentParagraphSentences = 0
-                currentParagraphWords = 0
-                lineInParagraph = 0
-                continue
-            }
-
-            lineInParagraph += 1
-            let sentencesInLine = trimmed.components(separatedBy: CharacterSet(charactersIn: ".!?")).filter { !$0.trimmingCharacters(in: .whitespaces).isEmpty }.count
-            let wordsInLine = trimmed.components(separatedBy: .whitespacesAndNewlines).filter { !$0.isEmpty }.count
-
-            currentParagraphSentences += sentencesInLine
-            currentParagraphWords += wordsInLine
-
-            // Suggest a break if:
-            // 1. Paragraph has 5+ sentences and this line ends with a sentence-ending punctuation
-            // 2. Paragraph has 100+ words and this line ends with a sentence-ending punctuation
-            // 3. Line contains dialogue transition ("he said", "she asked", etc) after dialogue
-
-            let endsWithSentence = trimmed.last == "." || trimmed.last == "!" || trimmed.last == "?"
-            let hasDialogueTransition = trimmed.range(of: #"["""].+["""][,.]? (he|she|they|it|[A-Z]\w+) (said|asked|replied|shouted|whispered|muttered|exclaimed)"#, options: .regularExpression) != nil
-
-            if endsWithSentence {
-                if currentParagraphSentences >= 5 && lineInParagraph >= 3 {
-                    // Suggest break after long paragraph with multiple sentences
-                    suggestions.append(index + 1) // Next line should start new paragraph
-                    currentParagraphSentences = 0
-                    currentParagraphWords = 0
-                    lineInParagraph = 0
-                } else if currentParagraphWords >= 100 && lineInParagraph >= 4 {
-                    // Suggest break after long paragraph by word count
-                    suggestions.append(index + 1)
-                    currentParagraphSentences = 0
-                    currentParagraphWords = 0
-                    lineInParagraph = 0
-                } else if hasDialogueTransition && currentParagraphSentences >= 2 {
-                    // Suggest break after dialogue with transition
-                    suggestions.append(index + 1)
-                    currentParagraphSentences = 0
-                    currentParagraphWords = 0
-                    lineInParagraph = 0
-                }
-            }
-        }
-
-        return suggestions
-    }}
+}

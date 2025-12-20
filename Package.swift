@@ -17,7 +17,9 @@ let package = Package(
             name: "QuillPilot",
             dependencies: [],
             path: "QuillPilot/QuillPilot",
-            exclude: ["Assets.xcassets"],
+            exclude: [
+                "Assets.xcassets"
+            ],
             sources: [
                 "Sources/AppDelegate.swift",
                 "Controllers/MainWindowController.swift",
@@ -25,7 +27,6 @@ let package = Package(
                 "Controllers/EditorViewController.swift",
                 "Controllers/AnalysisViewController.swift",
                 "Models/AnalysisEngine.swift",
-                "Models/QuillDocument.swift",
                 "Utilities/ThemeManager.swift",
                 "Utilities/StyleCatalog.swift",
                 "Extensions/NSColor+Hex.swift",

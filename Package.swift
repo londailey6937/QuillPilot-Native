@@ -27,6 +27,7 @@ let package = Package(
                 "Controllers/EditorViewController.swift",
                 "Controllers/AnalysisViewController.swift",
                 "Models/AnalysisEngine.swift",
+                "Models/CharacterLibrary.swift",
                 "Utilities/ThemeManager.swift",
                 "Utilities/StyleCatalog.swift",
                 "Extensions/NSColor+Hex.swift",
@@ -34,7 +35,8 @@ let package = Package(
                 "Views/RulerView.swift",
                 "Views/HeaderFooterSettingsWindow.swift",
                 "Views/StyleEditorWindow.swift",
-                "Views/DocumentationWindow.swift"
+                "Views/DocumentationWindow.swift",
+                "Views/CharacterLibraryWindow.swift"
             ]
         )
     ]

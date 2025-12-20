@@ -110,7 +110,7 @@ class EditorViewController: NSViewController {
 
     // Attachment cell that occupies vertical space without drawing
     private final class SpacerAttachmentCell: NSTextAttachmentCell {
-        private var spacerSize: NSSize
+        nonisolated(unsafe) private var spacerSize: NSSize
 
         init(height: CGFloat) {
             self.spacerSize = NSSize(width: 0.1, height: max(0, height))
@@ -1453,7 +1453,10 @@ class EditorViewController: NSViewController {
         }
 
         textView.textStorage?.setAttributedString(attributed)
-        applyDefaultTypingAttributes()
+        
+        // Don't reset typing attributes - let them inherit from document content
+        // This preserves the Body Text style and other attributes when typing
+        updateTypingAttributesFromContent()
 
         if isLargeDocument {
             // Re-enable and do layout in chunks
@@ -1469,6 +1472,41 @@ class EditorViewController: NSViewController {
             scrollToTop()
             delegate?.textDidChange()
         }
+    }
+
+    private func updateTypingAttributesFromContent() {
+        // If document has content, inherit attributes from it
+        // Otherwise use default manuscript formatting
+        guard let textStorage = textView.textStorage, textStorage.length > 0 else {
+            applyDefaultTypingAttributes()
+            return
+        }
+        
+        // Get attributes from the start of the document
+        let attrs = textStorage.attributes(at: 0, effectiveRange: nil)
+        
+        // Start with those attributes for typing
+        var newTypingAttributes = attrs
+        
+        // Ensure we have a font
+        if newTypingAttributes[.font] == nil {
+            newTypingAttributes[.font] = NSFont(name: "Times New Roman", size: 14) ?? NSFont.systemFont(ofSize: 14)
+        }
+        
+        // Ensure we have a paragraph style
+        if newTypingAttributes[.paragraphStyle] == nil {
+            let neutralParagraph = NSMutableParagraphStyle()
+            neutralParagraph.alignment = .left
+            neutralParagraph.lineHeightMultiple = 2.0
+            neutralParagraph.paragraphSpacing = 0
+            neutralParagraph.firstLineHeadIndent = 36
+            newTypingAttributes[.paragraphStyle] = neutralParagraph
+            textView.defaultParagraphStyle = neutralParagraph
+        } else if let paraStyle = newTypingAttributes[.paragraphStyle] as? NSParagraphStyle {
+            textView.defaultParagraphStyle = paraStyle
+        }
+        
+        textView.typingAttributes = newTypingAttributes
     }
 
     private func applyDefaultTypingAttributes() {
@@ -2747,6 +2785,10 @@ case "Book Subtitle":
         let currentRange = textView.selectedRange()
         NSLog("setColumnCount: inserting at location \(currentRange.location)")
 
+        // Disable background layout to prevent hang during table insertion
+        let wasBackgroundLayoutEnabled = textView.layoutManager?.backgroundLayoutEnabled ?? false
+        textView.layoutManager?.backgroundLayoutEnabled = false
+
         // Create text table for columns - but with NO visible borders
         let textTable = NSTextTable()
         textTable.numberOfColumns = columns
@@ -2805,6 +2847,10 @@ case "Book Subtitle":
 
         textStorage.insert(result, at: currentRange.location)
         textView.setSelectedRange(NSRange(location: currentRange.location + 1, length: 0))
+
+        // Re-enable background layout and trigger async layout
+        textView.layoutManager?.backgroundLayoutEnabled = wasBackgroundLayoutEnabled
+
         NSLog("setColumnCount: columns inserted successfully")
     }
 
@@ -3597,8 +3643,29 @@ extension EditorViewController: NSTextViewDelegate {
         NSObject.cancelPreviousPerformRequests(withTarget: self, selector: #selector(checkAndUpdateTitleDelayed), object: nil)
         NSObject.cancelPreviousPerformRequests(withTarget: self, selector: #selector(updatePageCenteringDelayed), object: nil)
 
-        perform(#selector(checkAndUpdateTitleDelayed), with: nil, afterDelay: 0.3)
-        perform(#selector(updatePageCenteringDelayed), with: nil, afterDelay: 0.5)
+        // Different delays for columns vs tables: columns are simpler formatting, tables are complex structures
+        let isInColumns = isCurrentPositionInColumns()
+        let isInTable = isCurrentPositionInTable()
+
+        let titleDelay: TimeInterval
+        let layoutDelay: TimeInterval
+
+        if isInTable {
+            // Data tables need aggressive throttling
+            titleDelay = 1.0
+            layoutDelay = 5.0
+        } else if isInColumns {
+            // Columns are lighter - just text flow formatting
+            titleDelay = 0.5
+            layoutDelay = 1.0
+        } else {
+            // Normal text
+            titleDelay = 0.3
+            layoutDelay = 0.5
+        }
+
+        perform(#selector(checkAndUpdateTitleDelayed), with: nil, afterDelay: titleDelay)
+        perform(#selector(updatePageCenteringDelayed), with: nil, afterDelay: layoutDelay)
     }
 
     @objc private func checkAndUpdateTitleDelayed() {
@@ -3607,7 +3674,43 @@ extension EditorViewController: NSTextViewDelegate {
 
     @objc private func updatePageCenteringDelayed() {
         updatePageCentering()
-        updatePageLayout()
+        // Only update page layout if not actively typing in tables or columns
+        if !isCurrentPositionInTable() && !isCurrentPositionInColumns() {
+            updatePageLayout()
+        }
+    }
+
+    private func isCurrentPositionInTable() -> Bool {
+        guard let textStorage = textView?.textStorage else { return false }
+        let location = textView.selectedRange().location
+        guard location < textStorage.length else { return false }
+
+        let attrs = textStorage.attributes(at: location, effectiveRange: nil)
+        if let style = attrs[.paragraphStyle] as? NSParagraphStyle,
+           let blocks = style.textBlocks as? [NSTextTableBlock],
+           let block = blocks.first {
+            // Data tables have cells with different startingRow values
+            // Column layouts have all cells with startingRow=0
+            // Just check the current row - if it's > 0, it's definitely a data table
+            return block.startingRow > 0
+        }
+        return false
+    }
+
+    private func isCurrentPositionInColumns() -> Bool {
+        guard let textStorage = textView?.textStorage else { return false }
+        let location = textView.selectedRange().location
+        guard location < textStorage.length else { return false }
+
+        let attrs = textStorage.attributes(at: location, effectiveRange: nil)
+        if let style = attrs[.paragraphStyle] as? NSParagraphStyle,
+           let blocks = style.textBlocks as? [NSTextTableBlock],
+           let block = blocks.first {
+            // Column layouts: all cells have startingRow=0, multiple columns
+            // Data tables: cells have varying startingRow values
+            return block.startingRow == 0 && block.table.numberOfColumns > 1
+        }
+        return false
     }
 
     private func checkAndUpdateTitle() {

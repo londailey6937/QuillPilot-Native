@@ -2523,6 +2523,9 @@ private enum DocxBuilder {
         let fullString = attributed.string as NSString
         var location = 0
         var paragraphs: [String] = []
+        var currentTableRef: NSTextTable? = nil
+        var currentTableRows: [[String]] = []
+        var isCurrentTableColumnLayout = false
 
         while location < fullString.length {
             let paragraphRange = fullString.paragraphRange(for: NSRange(location: location, length: 0))
@@ -2530,18 +2533,122 @@ private enum DocxBuilder {
             let paragraphStyle = attributed.attribute(.paragraphStyle, at: paragraphRange.location, effectiveRange: nil) as? NSParagraphStyle
             let styleName = attributed.attribute(NSAttributedString.Key("QuillStyleName"), at: paragraphRange.location, effectiveRange: nil) as? String
 
-            let runs = makeRuns(from: attributed, in: contentRange, images: &images)
-            let pPr = paragraphPropertiesXml(from: paragraphStyle, styleName: styleName)
-            let paragraphXml = """
-            <w:p>
-              \(pPr)\(runs.joined())
-            </w:p>
-            """
-            paragraphs.append(paragraphXml)
+            // Check if this paragraph is part of a table
+            if let blocks = paragraphStyle?.textBlocks as? [NSTextTableBlock], let block = blocks.first {
+                let table = block.table
+                let row = block.startingRow
+                let col = block.startingColumn
+
+                let runs = makeRuns(from: attributed, in: contentRange, images: &images)
+                let cellContent = """
+                <w:p>
+                  \(paragraphPropertiesXml(from: paragraphStyle, styleName: styleName))\(runs.joined())
+                </w:p>
+                """
+
+                // Check if we're starting a new table or continuing the current one
+                if let currentTable = currentTableRef, currentTable === table {
+                    // Same table - add to existing rows
+                    while currentTableRows.count <= row {
+                        currentTableRows.append([])
+                    }
+                    while currentTableRows[row].count <= col {
+                        currentTableRows[row].append("")
+                    }
+                    currentTableRows[row][col] = cellContent
+                } else {
+                    // New table - finish previous table if exists
+                    if let prevTable = currentTableRef {
+                        paragraphs.append(makeTableXml(rows: currentTableRows, columns: prevTable.numberOfColumns, isColumnLayout: isCurrentTableColumnLayout))
+                    }
+                    // Start new table - check if it's a column layout by checking starting row
+                    currentTableRef = table
+                    isCurrentTableColumnLayout = (row == 0)  // Column layouts all have row=0
+                    currentTableRows = []
+                    currentTableRows.append([])
+                    while currentTableRows[0].count <= col {
+                        currentTableRows[0].append("")
+                    }
+                    currentTableRows[0][col] = cellContent
+                }
+            } else {
+                // Not in a table - finish any pending table
+                if let prevTable = currentTableRef {
+                    paragraphs.append(makeTableXml(rows: currentTableRows, columns: prevTable.numberOfColumns, isColumnLayout: isCurrentTableColumnLayout))
+                    currentTableRef = nil
+                    currentTableRows = []
+                    isCurrentTableColumnLayout = false
+                }
+
+                // Regular paragraph
+                let runs = makeRuns(from: attributed, in: contentRange, images: &images)
+                let pPr = paragraphPropertiesXml(from: paragraphStyle, styleName: styleName)
+                let paragraphXml = """
+                <w:p>
+                  \(pPr)\(runs.joined())
+                </w:p>
+                """
+                paragraphs.append(paragraphXml)
+            }
+
             location = NSMaxRange(paragraphRange)
         }
 
+        // Finish any remaining table
+        if let prevTable = currentTableRef {
+            paragraphs.append(makeTableXml(rows: currentTableRows, columns: prevTable.numberOfColumns, isColumnLayout: isCurrentTableColumnLayout))
+        }
+
         return paragraphs.joined(separator: "\n")
+    }
+
+    private static func makeTableXml(rows: [[String]], columns: Int, isColumnLayout: Bool) -> String {
+        var rowsXml: [String] = []
+
+        for row in rows {
+            var cellsXml: [String] = []
+            for col in 0..<columns {
+                let content = col < row.count ? row[col] : "<w:p><w:pPr/></w:p>"
+                cellsXml.append("""
+                <w:tc>
+                  <w:tcPr>
+                    <w:tcW w:w="0" w:type="auto"/>
+                  </w:tcPr>
+                  \(content)
+                </w:tc>
+                """)
+            }
+
+            rowsXml.append("""
+            <w:tr>
+              \(cellsXml.joined(separator: "\n"))
+            </w:tr>
+            """)
+        }
+
+        let styleMarker = isColumnLayout ? "<w:tblStyle w:val=\"QuillPilotColumnLayout\"/>" : ""
+        return """
+        <w:tbl>
+          <w:tblPr>
+            \(styleMarker)
+            <w:tblW w:w="0" w:type="auto"/>
+            <w:tblBorders>
+              <w:top w:val="none" w:sz="0" w:space="0" w:color="auto"/>
+              <w:left w:val="none" w:sz="0" w:space="0" w:color="auto"/>
+              <w:bottom w:val="none" w:sz="0" w:space="0" w:color="auto"/>
+              <w:right w:val="none" w:sz="0" w:space="0" w:color="auto"/>
+              <w:insideH w:val="none" w:sz="0" w:space="0" w:color="auto"/>
+              <w:insideV w:val="single" w:sz="4" w:space="0" w:color="CCCCCC"/>
+            </w:tblBorders>
+            <w:tblLayout w:type="autofit"/>
+          </w:tblPr>
+          <w:tblGrid>
+        """ + (0..<columns).map { _ in "    <w:gridCol/>" }.joined(separator: "\n") + """
+
+          </w:tblGrid>
+          \(rowsXml.joined(separator: "\n"))
+        </w:tbl>
+        """
     }
 
     private static func makeRuns(from attributed: NSAttributedString, in range: NSRange, images: inout [ImageInfo]) -> [String] {
@@ -3013,6 +3120,13 @@ private enum DocxTextExtractor {
         private var currentParagraphHasImage = false
         private var relationships: [String: String] = [:]
 
+        // Table tracking
+        private var currentTable: NSTextTable? = nil
+        private var currentTableRow = 0
+        private var currentTableCol = 0
+        private var inTableCell = false
+        private var currentTableIsColumnLayout = false
+
         struct RunAttributes {
             var fontName: String? = nil
             var fontSize: CGFloat? = nil
@@ -3155,6 +3269,39 @@ private enum DocxTextExtractor {
             let name = (qName ?? elementName).lowercased()
 
             switch name {
+            case "w:tbl", "tbl":
+                // Start a new table
+                currentTable = NSTextTable()
+                currentTable?.numberOfColumns = 1 // Will be adjusted as we encounter cells
+                currentTable?.layoutAlgorithm = .automaticLayoutAlgorithm
+                currentTable?.collapsesBorders = true
+                currentTableRow = 0
+                currentTableCol = 0
+                currentTableIsColumnLayout = false
+
+            case "w:tblStyle", "tblStyle":
+                // Check if this is a column layout marker
+                if let val = attributeDict["w:val"] ?? attributeDict["val"],
+                   val == "QuillPilotColumnLayout" {
+                    currentTableIsColumnLayout = true
+                }
+
+            case "w:tr", "tr":
+                // New row in the table
+                if currentTable != nil {
+                    currentTableCol = 0
+                }
+
+            case "w:tc", "tc":
+                // New cell in the table
+                if let table = currentTable {
+                    inTableCell = true
+                    // Update table column count if needed
+                    if currentTableCol >= table.numberOfColumns {
+                        table.numberOfColumns = currentTableCol + 1
+                    }
+                }
+
             case "w:p", "p":
                 if hasActiveParagraph { finalizeParagraph() }
                 paragraphBuffer = NSMutableAttributedString()
@@ -3162,9 +3309,42 @@ private enum DocxTextExtractor {
                 hasActiveParagraph = true
                 currentParagraphHasImage = false
 
+                // If we're in a table cell, add the text block
+                if inTableCell, let table = currentTable {
+                    let textBlock = NSTextTableBlock(table: table, startingRow: currentTableRow, rowSpan: 1, startingColumn: currentTableCol, columnSpan: 1)
+
+                    // Style the table block (no visible borders except vertical separators)
+                    textBlock.setBorderColor(.clear, for: .minX)
+                    textBlock.setBorderColor(.clear, for: .minY)
+                    textBlock.setBorderColor(.clear, for: .maxY)
+
+                    if currentTableCol < table.numberOfColumns - 1 {
+                        textBlock.setBorderColor(NSColor.gray.withAlphaComponent(0.2), for: .maxX)
+                        textBlock.setWidth(1.0, type: .absoluteValueType, for: .border, edge: .maxX)
+                    } else {
+                        textBlock.setBorderColor(.clear, for: .maxX)
+                    }
+
+                    textBlock.setWidth(12.0, type: .absoluteValueType, for: .padding, edge: .minX)
+                    textBlock.setWidth(12.0, type: .absoluteValueType, for: .padding, edge: .maxX)
+
+                    paragraphStyle.textBlock = textBlock
+                }
+
             case "w:pStyle", "pStyle":
                 if let val = attributeDict["w:val"] ?? attributeDict["val"] {
-                    paragraphStyle.styleName = val
+                    // Map DOCX style IDs back to QuillPilot style names
+                    // DOCX uses "BodyText" but QuillPilot uses "Body Text"
+                    let mappedName: String
+                    switch val {
+                    case "BodyText": mappedName = "Body Text"
+                    case "BodyTextNoIndent": mappedName = "Body Text – No Indent"
+                    case "Heading1": mappedName = "Heading 1"
+                    case "Heading2": mappedName = "Heading 2"
+                    case "Heading3": mappedName = "Heading 3"
+                    default: mappedName = val
+                    }
+                    paragraphStyle.styleName = mappedName
                 }
 
             case "w:jc", "jc":
@@ -3298,6 +3478,22 @@ private enum DocxTextExtractor {
                 finalizeRun()
             case "w:p", "p":
                 finalizeParagraph()
+            case "w:tc", "tc":
+                // Finished with this cell, move to next column
+                if currentTable != nil {
+                    inTableCell = false
+                    currentTableCol += 1
+                }
+            case "w:tr", "tr":
+                // Finished with this row, move to next row
+                if currentTable != nil {
+                    currentTableRow += 1
+                }
+            case "w:tbl", "tbl":
+                // Finished with table
+                currentTable = nil
+                currentTableRow = 0
+                currentTableCol = 0
             case "w:drawing", "drawing":
                 // Only finalize when we exit the main drawing element
                 if inDrawing && currentImageRId != nil && name.hasSuffix("drawing") {
@@ -3535,6 +3731,7 @@ private enum DocxTextExtractor {
             var firstLineIndent: CGFloat = 0
             var tailIndent: CGFloat = 0
             var styleName: String?
+            var textBlock: NSTextTableBlock? = nil
 
             func makeParagraphStyle() -> NSParagraphStyle {
                 let style = NSMutableParagraphStyle()
@@ -3546,6 +3743,12 @@ private enum DocxTextExtractor {
                 style.firstLineHeadIndent = headIndent + firstLineIndent
                 style.tailIndent = tailIndent
                 style.lineBreakMode = .byWordWrapping
+
+                // Add text block if this paragraph is part of a table
+                if let block = textBlock {
+                    style.textBlocks = [block]
+                }
+
                 return style.copy() as! NSParagraphStyle
             }
 
@@ -3657,12 +3860,38 @@ extension ContentViewController: EditorViewControllerDelegate {
         // Throttle stats update and outline refresh to improve typing performance
         NSObject.cancelPreviousPerformRequests(withTarget: self, selector: #selector(updateStatsDelayed), object: nil)
         NSObject.cancelPreviousPerformRequests(withTarget: self, selector: #selector(refreshOutlineDelayed), object: nil)
-        perform(#selector(updateStatsDelayed), with: nil, afterDelay: 0.5)
-        perform(#selector(refreshOutlineDelayed), with: nil, afterDelay: 0.5)
+
+        // Different delays for columns vs tables: columns are simpler text formatting
+        let isInColumns = isCurrentlyInColumns()
+        let isInTable = isCurrentlyInTable()
+
+        let statsDelay: TimeInterval
+        let outlineDelay: TimeInterval
+        let analysisDelay: TimeInterval
+
+        if isInTable {
+            // Data tables need aggressive throttling
+            statsDelay = 3.0
+            outlineDelay = 3.0
+            analysisDelay = 10.0
+        } else if isInColumns {
+            // Columns are lighter - just text flow formatting
+            statsDelay = 1.0
+            outlineDelay = 1.0
+            analysisDelay = 3.0
+        } else {
+            // Normal text
+            statsDelay = 0.5
+            outlineDelay = 0.5
+            analysisDelay = 2.0
+        }
+
+        perform(#selector(updateStatsDelayed), with: nil, afterDelay: statsDelay)
+        perform(#selector(refreshOutlineDelayed), with: nil, afterDelay: outlineDelay)
 
         // Trigger auto-analysis after a longer delay
         NSObject.cancelPreviousPerformRequests(withTarget: self, selector: #selector(performAnalysisDelayed), object: nil)
-        perform(#selector(performAnalysisDelayed), with: nil, afterDelay: 2.0)
+        perform(#selector(performAnalysisDelayed), with: nil, afterDelay: analysisDelay)
     }
 
     func titleDidChange(_ title: String) {
@@ -3673,6 +3902,38 @@ extension ContentViewController: EditorViewControllerDelegate {
         // Get current style name at cursor and notify
         let styleName = editorViewController?.getCurrentStyleName()
         onSelectionChange?(styleName)
+    }
+
+    private func isCurrentlyInTable() -> Bool {
+        guard let textStorage = editorViewController?.textView?.textStorage else { return false }
+        let location = editorViewController?.textView?.selectedRange().location ?? 0
+        guard location < textStorage.length else { return false }
+
+        let attrs = textStorage.attributes(at: location, effectiveRange: nil)
+        if let style = attrs[.paragraphStyle] as? NSParagraphStyle,
+           let blocks = style.textBlocks as? [NSTextTableBlock],
+           let block = blocks.first {
+            // Data tables have cells with startingRow > 0
+            // Column layouts have all cells with startingRow == 0
+            return block.startingRow > 0
+        }
+        return false
+    }
+
+    private func isCurrentlyInColumns() -> Bool {
+        guard let textStorage = editorViewController?.textView?.textStorage else { return false }
+        let location = editorViewController?.textView?.selectedRange().location ?? 0
+        guard location < textStorage.length else { return false }
+
+        let attrs = textStorage.attributes(at: location, effectiveRange: nil)
+        if let style = attrs[.paragraphStyle] as? NSParagraphStyle,
+           let blocks = style.textBlocks as? [NSTextTableBlock],
+           let block = blocks.first {
+            // Column layouts: startingRow == 0, multiple columns
+            // Data tables: startingRow varies
+            return block.startingRow == 0 && block.table.numberOfColumns > 1
+        }
+        return false
     }
 
     @objc private func performAnalysisDelayed() {

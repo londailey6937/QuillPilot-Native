@@ -22,6 +22,14 @@ class CharacterLibraryWindowController: NSWindowController {
         window.title = "Character Library"
         window.minSize = NSSize(width: 800, height: 600)
 
+        // Center the window
+        if let screen = NSScreen.main {
+            let screenFrame = screen.frame
+            let x = (screenFrame.width - 1000) / 2
+            let y = (screenFrame.height - 700) / 2
+            window.setFrame(NSRect(x: x, y: y, width: 1000, height: 700), display: true)
+        }
+
         self.init(window: window)
         setupUI()
     }

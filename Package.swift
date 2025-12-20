@@ -26,6 +26,7 @@ let package = Package(
                 "Controllers/SplitViewController.swift",
                 "Controllers/EditorViewController.swift",
                 "Controllers/AnalysisViewController.swift",
+                "Controllers/CharacterLibraryViewController.swift",
                 "Models/AnalysisEngine.swift",
                 "Models/CharacterLibrary.swift",
                 "Utilities/ThemeManager.swift",

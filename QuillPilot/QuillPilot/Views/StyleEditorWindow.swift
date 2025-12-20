@@ -198,7 +198,7 @@ final class StyleEditorViewController: NSViewController {
     }
 
     private func buildDefinition() -> StyleDefinition? {
-        guard let styleName = stylePopup.titleOfSelectedItem else { return nil }
+        guard let _ = stylePopup.titleOfSelectedItem else { return nil }
         let fontName = fontPopup.titleOfSelectedItem ?? "Times New Roman"
         let fontSize = CGFloat(sizeField.doubleValue == 0 ? 12 : sizeField.doubleValue)
         let isBold = boldCheckbox.state == .on

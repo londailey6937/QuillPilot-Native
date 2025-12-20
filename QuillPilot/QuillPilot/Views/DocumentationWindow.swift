@@ -73,7 +73,6 @@ class DocumentationWindowController: NSWindowController {
         let titleColor = theme.textColor
         let headingColor = theme.textColor
         let bodyColor = theme.textColor
-        let accentColor = theme.headerBackground
 
         let content = NSMutableAttributedString()
 

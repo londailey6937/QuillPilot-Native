@@ -3274,7 +3274,7 @@ private enum DocxTextExtractor {
                 currentTable = NSTextTable()
                 currentTable?.numberOfColumns = 1 // Will be adjusted as we encounter cells
                 currentTable?.layoutAlgorithm = .automaticLayoutAlgorithm
-                currentTable?.collapsesBorders = true
+                currentTable?.collapsesBorders = false  // Don't collapse borders for regular tables
                 currentTableRow = 0
                 currentTableCol = 0
                 currentTableIsColumnLayout = false
@@ -3313,20 +3313,37 @@ private enum DocxTextExtractor {
                 if inTableCell, let table = currentTable {
                     let textBlock = NSTextTableBlock(table: table, startingRow: currentTableRow, rowSpan: 1, startingColumn: currentTableCol, columnSpan: 1)
 
-                    // Style the table block (no visible borders except vertical separators)
-                    textBlock.setBorderColor(.clear, for: .minX)
-                    textBlock.setBorderColor(.clear, for: .minY)
-                    textBlock.setBorderColor(.clear, for: .maxY)
+                    // Style based on whether it's a column layout or regular table
+                    if currentTableIsColumnLayout {
+                        // Column layout: no visible borders except vertical separators
+                        textBlock.setBorderColor(.clear, for: .minX)
+                        textBlock.setBorderColor(.clear, for: .minY)
+                        textBlock.setBorderColor(.clear, for: .maxY)
 
-                    if currentTableCol < table.numberOfColumns - 1 {
-                        textBlock.setBorderColor(NSColor.gray.withAlphaComponent(0.2), for: .maxX)
-                        textBlock.setWidth(1.0, type: .absoluteValueType, for: .border, edge: .maxX)
+                        if currentTableCol < table.numberOfColumns - 1 {
+                            textBlock.setBorderColor(NSColor.gray.withAlphaComponent(0.2), for: .maxX)
+                            textBlock.setWidth(1.0, type: .absoluteValueType, for: .border, edge: .maxX)
+                        } else {
+                            textBlock.setBorderColor(.clear, for: .maxX)
+                        }
+
+                        textBlock.setWidth(12.0, type: .absoluteValueType, for: .padding, edge: .minX)
+                        textBlock.setWidth(12.0, type: .absoluteValueType, for: .padding, edge: .maxX)
                     } else {
-                        textBlock.setBorderColor(.clear, for: .maxX)
-                    }
+                        // Regular table: visible borders on all sides
+                        let borderColor = NSColor.gray.withAlphaComponent(0.5)
+                        textBlock.setBorderColor(borderColor, for: .minX)
+                        textBlock.setBorderColor(borderColor, for: .maxX)
+                        textBlock.setBorderColor(borderColor, for: .minY)
+                        textBlock.setBorderColor(borderColor, for: .maxY)
+                        textBlock.setWidth(1.0, type: .absoluteValueType, for: .border)
 
-                    textBlock.setWidth(12.0, type: .absoluteValueType, for: .padding, edge: .minX)
-                    textBlock.setWidth(12.0, type: .absoluteValueType, for: .padding, edge: .maxX)
+                        // Cell padding
+                        textBlock.setWidth(10.0, type: .absoluteValueType, for: .padding, edge: .minX)
+                        textBlock.setWidth(10.0, type: .absoluteValueType, for: .padding, edge: .maxX)
+                        textBlock.setWidth(8.0, type: .absoluteValueType, for: .padding, edge: .minY)
+                        textBlock.setWidth(8.0, type: .absoluteValueType, for: .padding, edge: .maxY)
+                    }
 
                     paragraphStyle.textBlock = textBlock
                 }

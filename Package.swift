@@ -41,7 +41,8 @@ let package = Package(
                 "Views/ThemeWindow.swift",
                 "Views/StoryOutlineWindow.swift",
                 "Views/LocationsWindow.swift",
-                "Views/StoryDirectionsWindow.swift"
+                "Views/StoryDirectionsWindow.swift",
+                "Views/DialogueTipsWindow.swift"
             ]
         )
     ]

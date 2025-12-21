@@ -23,19 +23,25 @@ class AnalysisViewController: NSViewController {
 
     // Character Library Window (Navigator panel only)
     private var characterLibraryWindow: CharacterLibraryWindowController?
+    private var themeWindow: ThemeWindowController?
+    private var storyOutlineWindow: StoryOutlineWindowController?
 
     var outlineViewController: OutlineViewController?
     var isOutlinePanel: Bool = false
     var analyzeCallback: (() -> Void)?
 
-    // Navigator panel categories (left side - has Characters)
+    // Navigator panel categories (left side - has Theme, Story Outline, and Characters)
     enum NavigatorCategory: String, CaseIterable {
         case basic = "Outline"
+        case theme = "Theme"
+        case storyOutline = "Story Outline"
         case characters = "Characters"
 
         var icon: String {
             switch self {
             case .basic: return "📝"
+            case .theme: return "🎭"
+            case .storyOutline: return "📚"
             case .characters: return "👥"
             }
         }
@@ -183,6 +189,26 @@ class AnalysisViewController: NSViewController {
 
     @objc private func navigatorButtonTapped(_ sender: NSButton) {
         let category = NavigatorCategory.allCases[sender.tag]
+
+        if category == .theme {
+            // Open Theme window
+            if themeWindow == nil {
+                themeWindow = ThemeWindowController()
+            }
+            themeWindow?.showWindow(nil)
+            themeWindow?.window?.makeKeyAndOrderFront(nil)
+            return
+        }
+
+        if category == .storyOutline {
+            // Open Story Outline window
+            if storyOutlineWindow == nil {
+                storyOutlineWindow = StoryOutlineWindowController()
+            }
+            storyOutlineWindow?.showWindow(nil)
+            storyOutlineWindow?.window?.makeKeyAndOrderFront(nil)
+            return
+        }
 
         if category == .characters {
             // Open Character Library window

@@ -37,7 +37,9 @@ let package = Package(
                 "Views/HeaderFooterSettingsWindow.swift",
                 "Views/StyleEditorWindow.swift",
                 "Views/DocumentationWindow.swift",
-                "Views/CharacterLibraryWindow.swift"
+                "Views/CharacterLibraryWindow.swift",
+                "Views/ThemeWindow.swift",
+                "Views/StoryOutlineWindow.swift"
             ]
         )
     ]

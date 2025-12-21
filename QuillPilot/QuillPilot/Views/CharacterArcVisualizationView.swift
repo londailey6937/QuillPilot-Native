@@ -122,9 +122,9 @@ struct EmotionalJourneyChart: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            Text("📈 Emotional Journey")
-                .font(.title2)
-                .fontWeight(.bold)
+            Text("Emotional Journey")
+                .font(.headline)
+                .fontWeight(.semibold)
 
             Text("Track each character's emotional state throughout the story")
                 .font(.caption)
@@ -275,9 +275,9 @@ struct CharacterInteractionChart: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            Text("🔗 Character Network")
-                .font(.title2)
-                .fontWeight(.bold)
+            Text("Character Network")
+                .font(.headline)
+                .fontWeight(.semibold)
 
             Text("See which characters appear together most frequently")
                 .font(.caption)
@@ -352,9 +352,9 @@ struct CharacterPresenceHeatmap: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            Text("📊 Character Presence by Chapter")
-                .font(.title2)
-                .fontWeight(.bold)
+            Text("Character Presence by Chapter")
+                .font(.headline)
+                .fontWeight(.semibold)
 
             Text("Heatmap showing how often each character appears")
                 .font(.caption)

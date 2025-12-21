@@ -43,13 +43,13 @@ class SplitViewController: NSSplitViewController {
         editorItem.minimumThickness = 480
         addSplitViewItem(editorItem)
 
-        // Analysis panel on the right
+        // Analysis panel on the right (wider for visualizations)
         analysisViewController = AnalysisViewController()
         analysisViewController.isOutlinePanel = false
         let analysisItem = NSSplitViewItem(sidebarWithViewController: analysisViewController)
         analysisItem.canCollapse = true
-        analysisItem.minimumThickness = 280
-        analysisItem.maximumThickness = 400
+        analysisItem.minimumThickness = 350
+        analysisItem.maximumThickness = 600
         analysisItem.holdingPriority = .init(250)
         analysisItem.isCollapsed = false
         addSplitViewItem(analysisItem)

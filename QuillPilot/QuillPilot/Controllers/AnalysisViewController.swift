@@ -905,7 +905,7 @@ class AnalysisViewController: NSViewController {
     @available(macOS 13.0, *)
     private func displayVisualizations() {
         guard let results = latestAnalysisResults else {
-            let placeholder = makeLabel("📊 No analysis data available\n\nRun an analysis first to see visualizations", size: 16, bold: true)
+            let placeholder = makeLabel("📊 No visualization data available\n\nRun an analysis first to see plot and character graphs", size: 14, bold: true)
             placeholder.alignment = .center
             placeholder.textColor = .secondaryLabelColor
             placeholder.maximumNumberOfLines = 0
@@ -913,15 +913,16 @@ class AnalysisViewController: NSViewController {
             return
         }
 
-        // Create tabs for different visualizations
+        // Create tabs for different visualizations (simplified layout)
         let tabView = NSTabView()
         tabView.translatesAutoresizingMaskIntoConstraints = false
         tabView.tabViewType = .topTabsBezelBorder
+        tabView.font = .systemFont(ofSize: 12)
 
         // Plot Point Tab
         if let plotAnalysis = results.plotAnalysis {
             let plotTab = NSTabViewItem(identifier: "plot")
-            plotTab.label = "📊 Plot Points"
+            plotTab.label = "Plot Structure"
 
             let plotContainer = NSView()
             plotContainer.translatesAutoresizingMaskIntoConstraints = false
@@ -942,7 +943,7 @@ class AnalysisViewController: NSViewController {
         // Character Arc Tab
         if !results.characterArcs.isEmpty {
             let characterTab = NSTabViewItem(identifier: "characters")
-            characterTab.label = "👥 Character Arcs"
+            characterTab.label = "Character Arcs"
 
             let characterContainer = NSView()
             characterContainer.translatesAutoresizingMaskIntoConstraints = false
@@ -964,12 +965,12 @@ class AnalysisViewController: NSViewController {
             tabView.addTabViewItem(characterTab)
         }
 
-        // Add tab view to results stack
+        // Add tab view to results stack (full height for better visualization)
         resultsStack.addArrangedSubview(tabView)
 
         NSLayoutConstraint.activate([
             tabView.widthAnchor.constraint(equalTo: resultsStack.widthAnchor),
-            tabView.heightAnchor.constraint(greaterThanOrEqualToConstant: 500)
+            tabView.heightAnchor.constraint(greaterThanOrEqualToConstant: 600)
         ])
     }
 }

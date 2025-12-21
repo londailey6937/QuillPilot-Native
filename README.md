@@ -5,12 +5,14 @@ A powerful native macOS writing application with advanced story analysis, plot v
 ## ✨ Features
 
 ### 📝 Core Writing
+
 - **Native Text Editing**: Rock-solid NSTextView with undo/redo
 - **Rich Text Formatting**: Bold, italic, fonts, colors
 - **Document Management**: New, open, save, save as
 - **Split View Interface**: Editor + analysis sidebar
 
 ### 📊 Advanced Analysis
+
 - **Real-time Writing Analysis**:
   - Paragraph length and pacing
   - Passive voice detection
@@ -21,7 +23,9 @@ A powerful native macOS writing application with advanced story analysis, plot v
   - Reading level calculation
 
 ### 💬 Dialogue Quality Analysis (10 Metrics)
+
 Based on professional writing tips:
+
 1. **Depth**: Checks for subtext vs. surface statements
 2. **Repetition**: Identifies repeated phrases
 3. **Filler Words**: Counts "uh", "um", "well"
@@ -34,6 +38,7 @@ Based on professional writing tips:
 10. **Pacing**: Measures sentence length variation
 
 ### 📈 Plot Point Visualization (NEW!)
+
 - **Tension Arc Graph**: See story tension throughout manuscript
 - **Plot Beat Detection**: Automatic identification of:
   - Inciting Incident
@@ -48,15 +53,18 @@ Based on professional writing tips:
 - **Missing Beats Warning**: Identifies gaps in story structure
 
 ### 👥 Character Arc Tracking (NEW!)
+
 Three powerful visualization modes:
 
 1. **Emotional Journey Charts**:
+
    - Line graphs showing sentiment over time
    - Track positive/negative emotional states
    - Arc type detection (Positive/Negative/Flat/Transformational)
    - Arc strength scoring (0-100%)
 
 2. **Character Network Graph**:
+
    - Bar charts of character co-appearances
    - Relationship strength calculation
    - Identify under-developed relationships
@@ -68,6 +76,7 @@ Three powerful visualization modes:
    - Balance protagonist screen time
 
 ### 🎨 Story Construction Tools
+
 - **Character Library**: Detailed character profiles
 - **Theme Explorer**: Define and reference story themes
 - **Story Outline**: Multi-part story structure template
@@ -75,6 +84,7 @@ Three powerful visualization modes:
 - **Story Directions**: Explore multiple narrative possibilities
 
 ### 📚 Help & Documentation
+
 - **QuillPilot Help**: Comprehensive feature guide
 - **Dialogue Writing Tips**: 10 professional tips with examples
 
@@ -90,12 +100,14 @@ Three powerful visualization modes:
 ### Building from Source
 
 1. **Clone the repository**:
+
    ```bash
    git clone https://github.com/londailey6937/QuillPilot-Native.git
    cd QuillPilot
    ```
 
 2. **Build with Swift Package Manager**:
+
    ```bash
    swift build -c release
    ```
@@ -129,18 +141,20 @@ Three powerful visualization modes:
 3. Switch between tabs:
    - **📝 Outline**: Basic metrics and style analysis
    - **🔬 Advanced**: Coming soon
-   - **📖 Plot**: Coming soon  
+   - **📖 Plot**: Coming soon
    - **📊 Graphs**: Plot points and character arcs
 
 ### Understanding Visualizations
 
 #### Plot Points Tab
+
 - View tension arc across your story
 - See detected story structure beats
 - Check structure score (aim for 80%+)
 - Click any plot point to jump to that location
 
 #### Character Arcs Tab
+
 - Switch between 3 chart types using segment control
 - **Emotional Journey**: Track each character's sentiment
 - **Character Network**: See who appears with whom
@@ -203,17 +217,20 @@ QuillPilot/
 ## 🔬 Technical Details
 
 ### Analysis Algorithms
+
 - **Tension Detection**: 100+ tension/action/revelation words
 - **Sentiment Analysis**: 300+ emotion words with polarity
 - **Plot Structure**: Heuristic-based beat detection
 - **Character Tracking**: Name extraction + context analysis
 
 ### Performance
+
 - Analysis: ~1-5 seconds for 50K words
 - Visualization: Real-time rendering with Swift Charts
 - Memory: Efficient text processing, <200MB for large documents
 
 ### Data Privacy
+
 - All analysis happens on-device
 - No data sent to servers
 - No tracking or telemetry
@@ -222,12 +239,14 @@ QuillPilot/
 ## 🚧 Coming Soon
 
 ### AI Story Generation
+
 - Local AI models (MLX Swift)
 - Cloud AI options (OpenAI, Claude)
 - Generate stories from story elements
 - See `docs/AI_STORY_GENERATION_IMPLEMENTATION.md`
 
 ### Additional Features
+
 - Export visualizations as images
 - Compare multiple drafts
 - Scene-level analysis

@@ -64,17 +64,18 @@ struct PlotTensionChart: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            // Header
+            // Header (no redundant button)
             VStack(alignment: .leading, spacing: 4) {
-                Text("📊 Story Tension Arc")
-                    .font(.title2)
-                    .fontWeight(.bold)
+                Text("Story Tension Arc")
+                    .font(.headline)
+                    .fontWeight(.semibold)
 
-                Text("Track tension throughout your story • Tap plot points to jump to location")
+                Text("Tap plot points to jump to location in editor")
                     .font(.caption)
                     .foregroundColor(.secondary)
             }
             .padding(.horizontal)
+            .padding(.top, 8)
 
             // Structure Score
             if plotAnalysis.structureScore > 0 {

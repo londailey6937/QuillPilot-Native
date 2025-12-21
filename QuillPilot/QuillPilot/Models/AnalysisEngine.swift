@@ -776,12 +776,8 @@ class AnalysisEngine {
     func analyzeCharacterArcs(text: String, characterNames: [String]) -> ([DecisionBeliefLoop], [CharacterInteraction], [CharacterPresence]) {
         let analyzer = DecisionBeliefLoopAnalyzer()
 
-        // Count chapters in the text
-        let chapters = splitIntoChapters(text: text)
-        let chapterCount = chapters.count
-
-        // Initialize Decision-Belief Loop entries for each character
-        let loops = analyzer.initializeLoops(characterNames: characterNames, chapterCount: chapterCount)
+        // Analyze text and populate Decision-Belief Loop with actual detected patterns
+        let loops = analyzer.analyzeLoops(text: text, characterNames: characterNames)
         let interactions = analyzer.analyzeInteractions(text: text, characterNames: characterNames)
         let presence = analyzer.analyzePresenceByChapter(text: text, characterNames: characterNames)
 

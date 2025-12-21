@@ -88,9 +88,37 @@ struct CharacterInteraction {
 
 class DecisionBeliefLoopAnalyzer {
 
-    /// Initialize loop entries for each character based on chapter structure
-    /// Note: This creates empty templates - the writer fills them in as they write
+    // Pressure indicators (conflict, dilemma, force)
+    private let pressureWords = [
+        "must", "need", "forced", "threatened", "danger", "risk", "challenge", "problem",
+        "confronted", "demanded", "urgent", "crisis", "deadline", "pressure", "choice",
+        "decide", "conflict", "struggle", "dilemma", "torn", "caught", "trapped"
+    ]
+
+    // Decision indicators
+    private let decisionWords = [
+        "decided", "chose", "choose", "picked", "selected", "agreed", "refused",
+        "accepted", "rejected", "committed", "promised", "vowed", "resolved",
+        "determined", "opted", "went with", "settled on"
+    ]
+
+    // Outcome indicators
+    private let outcomeWords = [
+        "resulted", "consequence", "outcome", "happened", "led to", "caused",
+        "because of", "as a result", "therefore", "thus", "success", "failed",
+        "worked", "backfired", "paid off", "cost", "gained", "lost"
+    ]
+
+    // Belief/value words
+    private let beliefWords = [
+        "believe", "think", "thought", "realize", "understand", "see", "know",
+        "trust", "faith", "doubt", "sure", "certain", "convinced", "learned",
+        "always", "never", "must", "should", "wrong", "right", "value"
+    ]
+
+    /// Analyze and populate loop entries for each character from the actual text
     func initializeLoops(characterNames: [String], chapterCount: Int) -> [DecisionBeliefLoop] {
+        // For now, create empty templates - full analysis requires the chapter text
         var loops: [DecisionBeliefLoop] = []
 
         for characterName in characterNames {
@@ -106,6 +134,164 @@ class DecisionBeliefLoopAnalyzer {
         }
 
         return loops
+    }
+
+    /// Analyze text and populate Decision-Belief Loop with detected patterns
+    func analyzeLoops(text: String, characterNames: [String]) -> [DecisionBeliefLoop] {
+        let chapters = splitIntoChapters(text: text)
+        var loops: [DecisionBeliefLoop] = []
+
+        for characterName in characterNames {
+            var loop = DecisionBeliefLoop(characterName: characterName)
+
+            for (chapterIndex, chapterText) in chapters.enumerated() {
+                let chapterNum = chapterIndex + 1
+
+                // Only analyze chapters where the character appears
+                guard chapterText.lowercased().contains(characterName.lowercased()) else {
+                    continue
+                }
+
+                // Extract elements from the chapter
+                let pressure = extractPressure(from: chapterText, character: characterName)
+                let belief = extractBelief(from: chapterText, character: characterName)
+                let decision = extractDecision(from: chapterText, character: characterName)
+                let outcome = extractOutcome(from: chapterText, character: characterName)
+                let shift = extractBeliefShift(from: chapterText, character: characterName)
+
+                let entry = DecisionBeliefLoop.LoopEntry(
+                    chapter: chapterNum,
+                    pressure: pressure,
+                    beliefInPlay: belief,
+                    decision: decision,
+                    outcome: outcome,
+                    beliefShift: shift
+                )
+
+                loop.entries.append(entry)
+            }
+
+            loops.append(loop)
+        }
+
+        return loops
+    }
+
+    private func extractPressure(from text: String, character: String) -> String {
+        let sentences = getSentencesNear(character: character, in: text, proximity: 3)
+
+        for sentence in sentences {
+            let lower = sentence.lowercased()
+            // Look for pressure indicators
+            for word in pressureWords {
+                if lower.contains(word) {
+                    return cleanExtract(sentence)
+                }
+            }
+
+            // Look for question marks (dilemma)
+            if sentence.contains("?") {
+                return cleanExtract(sentence)
+            }
+        }
+
+        return ""
+    }
+
+    private func extractBelief(from text: String, character: String) -> String {
+        let sentences = getSentencesNear(character: character, in: text, proximity: 3)
+
+        for sentence in sentences {
+            let lower = sentence.lowercased()
+            // Look for belief indicators
+            for word in beliefWords {
+                if lower.contains(word) {
+                    return cleanExtract(sentence)
+                }
+            }
+        }
+
+        return ""
+    }
+
+    private func extractDecision(from text: String, character: String) -> String {
+        let sentences = getSentencesNear(character: character, in: text, proximity: 3)
+
+        for sentence in sentences {
+            let lower = sentence.lowercased()
+            // Look for decision indicators
+            for word in decisionWords {
+                if lower.contains(word) {
+                    return cleanExtract(sentence)
+                }
+            }
+        }
+
+        return ""
+    }
+
+    private func extractOutcome(from text: String, character: String) -> String {
+        let sentences = getSentencesNear(character: character, in: text, proximity: 3)
+
+        for sentence in sentences {
+            let lower = sentence.lowercased()
+            // Look for outcome indicators
+            for word in outcomeWords {
+                if lower.contains(word) {
+                    return cleanExtract(sentence)
+                }
+            }
+        }
+
+        return ""
+    }
+
+    private func extractBeliefShift(from text: String, character: String) -> String {
+        let sentences = getSentencesNear(character: character, in: text, proximity: 5)
+
+        // Look for words indicating change
+        let changeWords = ["realized", "learned", "understood", "saw", "discovered",
+                          "changed", "shifted", "no longer", "now", "finally"]
+
+        for sentence in sentences {
+            let lower = sentence.lowercased()
+            for word in changeWords {
+                if lower.contains(word) {
+                    return cleanExtract(sentence)
+                }
+            }
+        }
+
+        return ""
+    }
+
+    private func getSentencesNear(character: String, in text: String, proximity: Int) -> [String] {
+        let allSentences = text.components(separatedBy: CharacterSet(charactersIn: ".!?"))
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+
+        var nearSentences: [String] = []
+
+        for (index, sentence) in allSentences.enumerated() {
+            if sentence.lowercased().contains(character.lowercased()) {
+                // Get surrounding sentences
+                let start = max(0, index - proximity)
+                let end = min(allSentences.count, index + proximity + 1)
+                nearSentences.append(contentsOf: allSentences[start..<end])
+            }
+        }
+
+        return Array(Set(nearSentences)) // Remove duplicates
+    }
+
+    private func cleanExtract(_ text: String) -> String {
+        var clean = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        // Limit to first 150 characters for readability
+        if clean.count > 150 {
+            let index = clean.index(clean.startIndex, offsetBy: 150)
+            clean = String(clean[..<index]) + "..."
+        }
+        return clean
     }
 
     /// Analyze character presence across chapters for the presence graph

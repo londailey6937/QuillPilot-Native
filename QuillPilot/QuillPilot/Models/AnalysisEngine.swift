@@ -35,6 +35,18 @@ struct AnalysisResults {
 
     // Page count (estimated at ~250 words per page)
     var pageCount: Int = 0
+
+    // Dialogue analysis (based on 10 dialogue quality tips)
+    var dialogueQualityScore: Int = 0 // 0-100 overall score
+    var dialogueSegmentCount: Int = 0
+    var dialogueFillerCount: Int = 0 // "uh", "um", "well"
+    var dialogueRepetitionScore: Int = 0 // 0-100 (higher = more repetitive)
+    var dialogueTagVariety: Int = 0 // Unique dialogue tags count
+    var dialogueMonotonyIssues: [String] = [] // Examples of same voice
+    var dialoguePredictablePhrases: [String] = [] // Clichéd dialogue
+    var dialogueExpositionCount: Int = 0 // Info-dump lines
+    var dialoguePacingScore: Int = 0 // 0-100 (length variety)
+    var hasDialogueConflict: Bool = false // Tension/disagreement present
 }
 
 class AnalysisEngine {
@@ -141,6 +153,33 @@ class AnalysisEngine {
         "smelled", "smell", "smells", "smelling"
     ]
 
+    // Dialogue filler words (Tip #3: Overuse of Filler)
+    private static let dialogueFillers: Set<String> = [
+        "uh", "um", "well", "like", "you know", "actually",
+        "basically", "literally", "honestly", "i mean",
+        "sort of", "kind of", "you see", "right"
+    ]
+
+    // Predictable/clichéd dialogue phrases (Tip #5: Predictability)
+    private static let predictableDialogue = [
+        "we need to talk", "it's not what it looks like",
+        "i can explain", "you wouldn't understand",
+        "this isn't over", "we meet again",
+        "you have no idea", "trust me", "believe me",
+        "i'm fine", "everything's fine", "don't worry about it",
+        "it's complicated", "long story", "never mind",
+        "forget about it", "what are you doing here",
+        "who are you", "what do you want"
+    ]
+
+    // Conflict/tension indicators (Tip #8: Lack of Conflict)
+    private static let conflictWords: Set<String> = [
+        "but", "no", "never", "don't", "can't", "won't",
+        "disagree", "wrong", "impossible", "ridiculous",
+        "stupid", "idiot", "fool", "liar", "lie",
+        "fight", "argue", "angry", "furious", "hate"
+    ]
+
     // Maximum text length to analyze (500KB) - prevents system overload
     private let maxAnalysisLength = 500_000
 
@@ -208,8 +247,21 @@ class AnalysisEngine {
         // Readability
         results.readingLevel = calculateReadingLevel(text: analysisText, wordCount: results.wordCount, sentenceCount: results.sentenceCount)
 
-        // Dialogue
+        // Dialogue percentage
         results.dialoguePercentage = calculateDialoguePercentage(text: analysisText)
+
+        // Dialogue quality analysis (10 tips from The Silent Operator_Dialogue)
+        let dialogueAnalysis = analyzeDialogueQuality(text: analysisText)
+        results.dialogueQualityScore = dialogueAnalysis.qualityScore
+        results.dialogueSegmentCount = dialogueAnalysis.segmentCount
+        results.dialogueFillerCount = dialogueAnalysis.fillerCount
+        results.dialogueRepetitionScore = dialogueAnalysis.repetitionScore
+        results.dialogueTagVariety = dialogueAnalysis.tagVariety
+        results.dialogueMonotonyIssues = dialogueAnalysis.monotonyIssues
+        results.dialoguePredictablePhrases = dialogueAnalysis.predictablePhrases
+        results.dialogueExpositionCount = dialogueAnalysis.expositionCount
+        results.dialoguePacingScore = dialogueAnalysis.pacingScore
+        results.hasDialogueConflict = dialogueAnalysis.hasConflict
 
         // Page count (industry standard: ~250 words per manuscript page)
         results.pageCount = max(1, (results.wordCount + 249) / 250)
@@ -378,6 +430,258 @@ class AnalysisEngine {
         }
 
         return (count, phrases)
+    }
+
+    // MARK: - Dialogue Analysis (10 Quality Tips)
+
+    struct DialogueQualityMetrics {
+        var qualityScore: Int = 0
+        var segmentCount: Int = 0
+        var fillerCount: Int = 0
+        var repetitionScore: Int = 0
+        var tagVariety: Int = 0
+        var monotonyIssues: [String] = []
+        var predictablePhrases: [String] = []
+        var expositionCount: Int = 0
+        var pacingScore: Int = 0
+        var hasConflict: Bool = false
+    }
+
+    private func analyzeDialogueQuality(text: String) -> DialogueQualityMetrics {
+        var metrics = DialogueQualityMetrics()
+
+        // Extract dialogue segments
+        let dialogueSegments = extractDialogue(from: text)
+        metrics.segmentCount = dialogueSegments.count
+
+        guard !dialogueSegments.isEmpty else {
+            return metrics // No dialogue to analyze
+        }
+
+        var qualityPoints = 0
+        let maxPoints = 10
+
+        // Tip #1: Lack of Depth (check for subtext vs direct statements)
+        // Good dialogue has variety in length and complexity
+        let avgLength = dialogueSegments.map { $0.count }.reduce(0, +) / dialogueSegments.count
+        if avgLength > 50 { // More complex dialogue suggests depth
+            qualityPoints += 1
+        }
+
+        // Tip #2: Repetition - check for repeated phrases
+        let (hasRepetition, repetitionScore) = detectDialogueRepetition(dialogueSegments)
+        metrics.repetitionScore = repetitionScore
+        if !hasRepetition {
+            qualityPoints += 1
+        }
+
+        // Tip #3: Overuse of Filler
+        metrics.fillerCount = countDialogueFillers(dialogueSegments)
+        let fillerRatio = Double(metrics.fillerCount) / Double(dialogueSegments.count)
+        if fillerRatio < 0.2 { // Less than 20% have fillers
+            qualityPoints += 1
+        }
+
+        // Tip #4: Monotony - check for unique dialogue tags/attribution
+        metrics.tagVariety = detectDialogueTagVariety(text)
+        if metrics.tagVariety > 5 { // More than 5 unique ways to attribute dialogue
+            qualityPoints += 1
+        }
+
+        // Tip #5: Predictability - detect clichéd phrases
+        metrics.predictablePhrases = detectPredictableDialogue(dialogueSegments)
+        if metrics.predictablePhrases.count < 3 {
+            qualityPoints += 1
+        }
+
+        // Tip #6: Character Growth - check if dialogue changes throughout
+        // (simplified: more variety in later segments)
+        if dialogueSegments.count > 10 {
+            let firstHalf = Array(dialogueSegments.prefix(dialogueSegments.count / 2))
+            let secondHalf = Array(dialogueSegments.suffix(dialogueSegments.count / 2))
+            if Set(secondHalf).count > Set(firstHalf).count {
+                qualityPoints += 1
+            }
+        }
+
+        // Tip #7: Over-Exposition - detect info-dump dialogue
+        metrics.expositionCount = detectExpositionDialogue(dialogueSegments)
+        if metrics.expositionCount < dialogueSegments.count / 5 { // Less than 20%
+            qualityPoints += 1
+        }
+
+        // Tip #8: Lack of Conflict/Tension
+        metrics.hasConflict = detectDialogueConflict(dialogueSegments)
+        if metrics.hasConflict {
+            qualityPoints += 1
+        }
+
+        // Tip #9: Emotional Resonance - variety in punctuation (!, ?, ...)
+        let hasEmotionalVariety = detectEmotionalResonance(dialogueSegments)
+        if hasEmotionalVariety {
+            qualityPoints += 1
+        }
+
+        // Tip #10: Pacing - mix of short and long dialogue
+        metrics.pacingScore = calculateDialoguePacing(dialogueSegments)
+        if metrics.pacingScore > 60 {
+            qualityPoints += 1
+        }
+
+        // Calculate overall quality score
+        metrics.qualityScore = (qualityPoints * 100) / maxPoints
+
+        return metrics
+    }
+
+    private func extractDialogue(from text: String) -> [String] {
+        var dialogueSegments: [String] = []
+        var currentDialogue = ""
+        var inDialogue = false
+
+        for char in text {
+            if char == "\"" || char == "\"" || char == "\"" {
+                if inDialogue {
+                    // End of dialogue
+                    dialogueSegments.append(currentDialogue.trimmingCharacters(in: .whitespaces))
+                    currentDialogue = ""
+                }
+                inDialogue.toggle()
+            } else if inDialogue {
+                currentDialogue.append(char)
+            }
+        }
+
+        return dialogueSegments.filter { !$0.isEmpty }
+    }
+
+    private func detectDialogueRepetition(_ segments: [String]) -> (Bool, Int) {
+        guard segments.count > 5 else { return (false, 0) }
+
+        var phraseCounts: [String: Int] = [:]
+
+        for segment in segments {
+            let normalized = segment.lowercased().trimmingCharacters(in: .punctuationCharacters)
+            phraseCounts[normalized, default: 0] += 1
+        }
+
+        let repetitions = phraseCounts.filter { $0.value > 2 }.count
+        let repetitionScore = min(100, (repetitions * 100) / max(1, segments.count))
+
+        return (repetitions > 0, repetitionScore)
+    }
+
+    private func countDialogueFillers(_ segments: [String]) -> Int {
+        var count = 0
+
+        for segment in segments {
+            let lowercased = segment.lowercased()
+            for filler in AnalysisEngine.dialogueFillers {
+                if lowercased.contains(filler) {
+                    count += 1
+                    break // Count segment once even if multiple fillers
+                }
+            }
+        }
+
+        return count
+    }
+
+    private func detectDialogueTagVariety(_ text: String) -> Int {
+        let commonTags = ["said", "asked", "replied", "answered", "whispered",
+                         "shouted", "yelled", "muttered", "murmured", "exclaimed",
+                         "stated", "remarked", "noted", "added", "continued"]
+
+        var foundTags = Set<String>()
+        let lowercased = text.lowercased()
+
+        for tag in commonTags {
+            if lowercased.contains(tag) {
+                foundTags.insert(tag)
+            }
+        }
+
+        return foundTags.count
+    }
+
+    private func detectPredictableDialogue(_ segments: [String]) -> [String] {
+        var found: [String] = []
+
+        for segment in segments {
+            let lowercased = segment.lowercased()
+            for predictable in AnalysisEngine.predictableDialogue {
+                if lowercased.contains(predictable) && !found.contains(predictable) {
+                    found.append(predictable)
+                    if found.count >= 5 {
+                        return found
+                    }
+                }
+            }
+        }
+
+        return found
+    }
+
+    private func detectExpositionDialogue(_ segments: [String]) -> Int {
+        // Exposition dialogue tends to be:
+        // - Very long (>100 characters)
+        // - Contains many factual statements
+        // - Lacks questions or emotional punctuation
+
+        var expositionCount = 0
+
+        for segment in segments {
+            if segment.count > 100 && !segment.contains("?") && !segment.contains("!") {
+                expositionCount += 1
+            }
+        }
+
+        return expositionCount
+    }
+
+    private func detectDialogueConflict(_ segments: [String]) -> Bool {
+        var conflictScore = 0
+
+        for segment in segments {
+            let lowercased = segment.lowercased()
+            for conflictWord in AnalysisEngine.conflictWords {
+                if lowercased.contains(conflictWord) {
+                    conflictScore += 1
+                    break
+                }
+            }
+        }
+
+        // If more than 20% of dialogue contains conflict markers
+        return Double(conflictScore) / Double(max(1, segments.count)) > 0.2
+    }
+
+    private func detectEmotionalResonance(_ segments: [String]) -> Bool {
+        var hasExclamation = false
+        var hasQuestion = false
+        var hasEllipsis = false
+
+        for segment in segments {
+            if segment.contains("!") { hasExclamation = true }
+            if segment.contains("?") { hasQuestion = true }
+            if segment.contains("...") || segment.contains("…") { hasEllipsis = true }
+        }
+
+        // Good emotional variety if at least 2 types present
+        return [hasExclamation, hasQuestion, hasEllipsis].filter { $0 }.count >= 2
+    }
+
+    private func calculateDialoguePacing(_ segments: [String]) -> Int {
+        guard segments.count > 1 else { return 0 }
+
+        let lengths = segments.map { $0.count }
+        let average = Double(lengths.reduce(0, +)) / Double(lengths.count)
+        let variance = lengths.map { pow(Double($0) - average, 2) }.reduce(0, +) / Double(lengths.count)
+        let standardDeviation = sqrt(variance)
+
+        // Higher standard deviation = better pacing variety
+        // Normalize to 0-100 scale (stdev of 30+ = 100%)
+        return min(100, Int((standardDeviation / 30.0) * 100))
     }
 
     private func analyzeSentenceVariety(_ text: String) -> (Int, [Int]) {

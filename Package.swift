@@ -39,7 +39,9 @@ let package = Package(
                 "Views/DocumentationWindow.swift",
                 "Views/CharacterLibraryWindow.swift",
                 "Views/ThemeWindow.swift",
-                "Views/StoryOutlineWindow.swift"
+                "Views/StoryOutlineWindow.swift",
+                "Views/LocationsWindow.swift",
+                "Views/StoryDirectionsWindow.swift"
             ]
         )
     ]

@@ -25,6 +25,8 @@ class AnalysisViewController: NSViewController {
     private var characterLibraryWindow: CharacterLibraryWindowController?
     private var themeWindow: ThemeWindowController?
     private var storyOutlineWindow: StoryOutlineWindowController?
+    private var locationsWindow: LocationsWindowController?
+    private var storyDirectionsWindow: StoryDirectionsWindowController?
 
     var outlineViewController: OutlineViewController?
     var isOutlinePanel: Bool = false
@@ -35,6 +37,8 @@ class AnalysisViewController: NSViewController {
         case basic = "Outline"
         case theme = "Theme"
         case storyOutline = "Story Outline"
+        case locations = "Locations"
+        case storyDirections = "Story Directions"
         case characters = "Characters"
 
         var icon: String {
@@ -42,6 +46,8 @@ class AnalysisViewController: NSViewController {
             case .basic: return "📝"
             case .theme: return "🎭"
             case .storyOutline: return "📚"
+            case .locations: return "📍"
+            case .storyDirections: return "🔀"
             case .characters: return "👥"
             }
         }
@@ -207,6 +213,26 @@ class AnalysisViewController: NSViewController {
             }
             storyOutlineWindow?.showWindow(nil)
             storyOutlineWindow?.window?.makeKeyAndOrderFront(nil)
+            return
+        }
+
+        if category == .locations {
+            // Open Locations window
+            if locationsWindow == nil {
+                locationsWindow = LocationsWindowController()
+            }
+            locationsWindow?.showWindow(nil)
+            locationsWindow?.window?.makeKeyAndOrderFront(nil)
+            return
+        }
+
+        if category == .storyDirections {
+            // Open Story Directions window
+            if storyDirectionsWindow == nil {
+                storyDirectionsWindow = StoryDirectionsWindowController()
+            }
+            storyDirectionsWindow?.showWindow(nil)
+            storyDirectionsWindow?.window?.makeKeyAndOrderFront(nil)
             return
         }
 
@@ -581,6 +607,73 @@ class AnalysisViewController: NSViewController {
             addDetail("Good variety - consider adding more variation")
         } else {
             addSuccess("✓ Excellent variety")
+        }
+        addDivider()
+
+        // Dialogue Quality Analysis (10 Tips from The Silent Operator_Dialogue)
+        if results.dialogueSegmentCount > 0 {
+            addHeader("💬 Dialogue Quality")
+            addStat("Overall Score", "\(results.dialogueQualityScore)%")
+            addStat("Dialogue Segments", "\(results.dialogueSegmentCount)")
+
+            // Tip #3: Filler Words
+            if results.dialogueFillerCount > 0 {
+                let fillerPercent = (results.dialogueFillerCount * 100) / results.dialogueSegmentCount
+                addWarning("⚠️ Filler words in \(fillerPercent)% of dialogue")
+                addDetail("Tip: Remove \"uh\", \"um\", \"well\" unless characterizing speech")
+            } else {
+                addSuccess("✓ Minimal filler words")
+            }
+
+            // Tip #2: Repetition
+            if results.dialogueRepetitionScore > 30 {
+                addWarning("⚠️ Repetitive dialogue detected (\(results.dialogueRepetitionScore)%)")
+                addDetail("Tip: Vary dialogue - characters shouldn't repeat phrases")
+            }
+
+            // Tip #5: Predictability
+            if !results.dialoguePredictablePhrases.isEmpty {
+                addWarning("⚠️ Found \(results.dialoguePredictablePhrases.count) clichéd phrase(s)")
+                for phrase in results.dialoguePredictablePhrases.prefix(3) {
+                    addDetail("• \"\(phrase)\"")
+                }
+                addDetail("Tip: Replace predictable dialogue with fresh, character-specific lines")
+            }
+
+            // Tip #7: Over-Exposition
+            if results.dialogueExpositionCount > 0 {
+                let expositionPercent = (results.dialogueExpositionCount * 100) / results.dialogueSegmentCount
+                if expositionPercent > 20 {
+                    addWarning("⚠️ \(expositionPercent)% of dialogue is info-dumping")
+                    addDetail("Tip: Show through action, not lengthy explanations")
+                }
+            }
+
+            // Tip #8: Conflict/Tension
+            if !results.hasDialogueConflict {
+                addWarning("⚠️ Dialogue lacks conflict or tension")
+                addDetail("Tip: Add disagreement, subtext, or opposing goals")
+            } else {
+                addSuccess("✓ Good tension in dialogue")
+            }
+
+            // Tip #10: Pacing
+            addStat("Pacing Variety", "\(results.dialoguePacingScore)%")
+            if results.dialoguePacingScore < 40 {
+                addWarning("Low pacing variety")
+                addDetail("Tip: Mix short, punchy lines with longer speeches")
+            } else if results.dialoguePacingScore >= 60 {
+                addSuccess("✓ Good pacing variety")
+            }
+
+            // Overall quality assessment
+            if results.dialogueQualityScore >= 80 {
+                addSuccess("✓ Excellent dialogue quality!")
+            } else if results.dialogueQualityScore >= 60 {
+                addDetail("Good dialogue - minor improvements possible")
+            } else {
+                addWarning("Consider revising dialogue for more impact")
+            }
         }
     }
 

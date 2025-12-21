@@ -278,9 +278,15 @@ class AnalysisEngine {
         let plotDetector = PlotPointDetector()
         results.plotAnalysis = plotDetector.detectPlotPoints(text: analysisText, wordCount: results.wordCount)
 
-        // Character arc analysis (only if we have character data)
-        // This will be called with character names from the character library
-        // For now, we'll leave these empty and populate them in the view controller
+        // Character arc analysis
+        // Extract character names from text (capitalized words that appear frequently)
+        let characterNames = extractCharacterNames(from: analysisText)
+        if !characterNames.isEmpty {
+            let (arcs, interactions, presence) = analyzeCharacterArcs(text: analysisText, characterNames: characterNames)
+            results.characterArcs = arcs
+            results.characterInteractions = interactions
+            results.characterPresence = presence
+        }
 
         return results
     }
@@ -724,6 +730,39 @@ class AnalysisEngine {
     }
 
     // MARK: - Character Arc Analysis
+
+    private func extractCharacterNames(from text: String) -> [String] {
+        // Find capitalized words (potential names)
+        let words = text.components(separatedBy: .whitespacesAndNewlines)
+        var nameCounts: [String: Int] = [:]
+
+        // Common words to exclude
+        let excludeWords: Set<String> = [
+            "The", "A", "An", "He", "She", "They", "I", "We", "You",
+            "But", "And", "Or", "If", "When", "Where", "Why", "How",
+            "Chapter", "Part", "Section", "Act"
+        ]
+
+        for word in words {
+            let cleaned = word.trimmingCharacters(in: .punctuationCharacters)
+            // Check if word starts with capital and is 2+ chars
+            if cleaned.count >= 2,
+               let first = cleaned.first,
+               first.isUppercase,
+               !excludeWords.contains(cleaned) {
+                nameCounts[cleaned, default: 0] += 1
+            }
+        }
+
+        // Return names that appear at least 3 times, sorted by frequency
+        let characters = nameCounts
+            .filter { $0.value >= 3 }
+            .sorted { $0.value > $1.value }
+            .prefix(10)
+            .map { $0.key }
+
+        return Array(characters)
+    }
 
     func analyzeCharacterArcs(text: String, characterNames: [String]) -> ([CharacterArc], [CharacterInteraction], [CharacterPresence]) {
         let analyzer = CharacterArcAnalyzer()

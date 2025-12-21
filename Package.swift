@@ -31,6 +31,7 @@ let package = Package(
                 "Models/CharacterLibrary.swift",
                 "Models/PlotAnalysis.swift",
                 "Models/CharacterArcAnalysis.swift",
+                "Models/DecisionBeliefLoop.swift",
                 "Utilities/ThemeManager.swift",
                 "Utilities/StyleCatalog.swift",
                 "Extensions/NSColor+Hex.swift",

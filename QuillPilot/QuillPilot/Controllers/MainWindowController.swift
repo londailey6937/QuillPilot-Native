@@ -1976,12 +1976,12 @@ class ContentViewController: NSViewController {
                 let characterNames = json.compactMap { $0["name"] as? String }
 
                 if !characterNames.isEmpty {
-                    // Perform character arc analysis
-                    let (arcs, interactions, presence) = analysisEngine.analyzeCharacterArcs(
+                    // Perform character arc analysis with Decision-Belief Loop Framework
+                    let (loops, interactions, presence) = analysisEngine.analyzeCharacterArcs(
                         text: text,
                         characterNames: characterNames
                     )
-                    results.characterArcs = arcs
+                    results.decisionBeliefLoops = loops
                     results.characterInteractions = interactions
                     results.characterPresence = presence
                 }

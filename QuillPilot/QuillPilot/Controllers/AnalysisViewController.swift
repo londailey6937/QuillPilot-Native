@@ -1131,7 +1131,7 @@ class AnalysisViewController: NSViewController {
         }
 
         // Add character visualizations below plot
-        if !results.characterArcs.isEmpty {
+        if !results.decisionBeliefLoops.isEmpty {
             // Add spacing between sections
             let spacer = NSView()
             spacer.translatesAutoresizingMaskIntoConstraints = false
@@ -1150,7 +1150,7 @@ class AnalysisViewController: NSViewController {
             ])
 
             characterArcVisualizationView.configure(
-                arcs: results.characterArcs,
+                loops: results.decisionBeliefLoops,
                 interactions: results.characterInteractions,
                 presence: results.characterPresence
             )
@@ -1208,7 +1208,7 @@ class AnalysisViewController: NSViewController {
             return
         }
 
-        guard !results.characterArcs.isEmpty else {
+        guard !results.decisionBeliefLoops.isEmpty else {
             let placeholder = makeLabel("👥 No characters detected yet", size: 14, bold: true)
             placeholder.alignment = .center
             placeholder.textColor = .secondaryLabelColor
@@ -1227,7 +1227,7 @@ class AnalysisViewController: NSViewController {
         ])
 
         characterArcVisualizationView.configure(
-            arcs: results.characterArcs,
+            loops: results.decisionBeliefLoops,
             interactions: results.characterInteractions,
             presence: results.characterPresence
         )
@@ -1365,18 +1365,18 @@ extension AnalysisViewController: CharacterArcVisualizationDelegate {
         )
     }
 
-    func openEmotionalJourneyPopout(arcs: [CharacterArc]) {
+    func openDecisionBeliefPopout(loops: [DecisionBeliefLoop]) {
         // Close existing window if open
         emotionalJourneyPopoutWindow?.close()
         emotionalJourneyPopoutWindow = nil
 
         let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 1000, height: 700),
+            contentRect: NSRect(x: 0, y: 0, width: 1200, height: 800),
             styleMask: [.titled, .closable, .resizable, .miniaturizable],
             backing: .buffered,
             defer: false
         )
-        window.title = "Character Emotional Journeys"
+        window.title = "Decision-Belief Loop Framework"
         window.level = .normal
         window.isMovableByWindowBackground = true
         window.isExcludedFromWindowsMenu = false
@@ -1386,11 +1386,8 @@ extension AnalysisViewController: CharacterArcVisualizationDelegate {
         let theme = ThemeManager.shared.currentTheme
         window.backgroundColor = theme.pageBackground
 
-        let hostingView = NSHostingView(rootView: EmotionalJourneyChart(
-            arcs: arcs,
-            onSectionTap: { [weak self] position in
-                self?.didTapSection(at: position)
-            }
+        let hostingView = NSHostingView(rootView: DecisionBeliefLoopFullView(
+            loops: loops
         ))
         hostingView.translatesAutoresizingMaskIntoConstraints = false
 
@@ -2078,9 +2075,9 @@ extension AnalysisViewController: CharacterArcVisualizationDelegate {
     private func showCharacterAnalysisMenuAfterAnalysis(_ sender: NSButton) {
         let menu = NSMenu()
 
-        let emotionalItem = NSMenuItem(title: "📊 Emotional Journeys", action: #selector(showEmotionalJourney), keyEquivalent: "")
-        emotionalItem.target = self
-        menu.addItem(emotionalItem)
+        let loopItem = NSMenuItem(title: "📊 Decision-Belief Loops", action: #selector(showDecisionBeliefLoops), keyEquivalent: "")
+        loopItem.target = self
+        menu.addItem(loopItem)
 
         let interactionsItem = NSMenuItem(title: "🤝 Character Interactions", action: #selector(showInteractions), keyEquivalent: "")
         interactionsItem.target = self
@@ -2093,9 +2090,9 @@ extension AnalysisViewController: CharacterArcVisualizationDelegate {
         menu.popUp(positioning: nil, at: NSPoint(x: 0, y: sender.bounds.height), in: sender)
     }
 
-    @objc private func showEmotionalJourney() {
+    @objc private func showDecisionBeliefLoops() {
         if let results = latestAnalysisResults {
-            openEmotionalJourneyPopout(arcs: results.characterArcs)
+            openDecisionBeliefPopout(loops: results.decisionBeliefLoops)
         }
     }
 

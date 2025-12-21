@@ -13,7 +13,7 @@ import SwiftUI
 @available(macOS 13.0, *)
 class CharacterArcVisualizationView: NSView {
 
-    private var characterArcs: [CharacterArc] = []
+    private var decisionBeliefLoops: [DecisionBeliefLoop] = []
     private var characterInteractions: [CharacterInteraction] = []
     private var characterPresence: [CharacterPresence] = []
 
@@ -21,11 +21,11 @@ class CharacterArcVisualizationView: NSView {
     weak var delegate: CharacterArcVisualizationDelegate?
 
     func configure(
-        arcs: [CharacterArc],
+        loops: [DecisionBeliefLoop],
         interactions: [CharacterInteraction],
         presence: [CharacterPresence]
     ) {
-        self.characterArcs = arcs
+        self.decisionBeliefLoops = loops
         self.characterInteractions = interactions
         self.characterPresence = presence
         setupChartView()
@@ -36,15 +36,12 @@ class CharacterArcVisualizationView: NSView {
         chartView?.removeFromSuperview()
 
         let chart = CharacterArcCharts(
-            arcs: characterArcs,
+            loops: decisionBeliefLoops,
             interactions: characterInteractions,
             presence: characterPresence,
-            onSectionTap: { [weak self] wordPosition in
-                self?.delegate?.didTapSection(at: wordPosition)
-            },
-            onEmotionalJourneyPopout: { [weak self] in
+            onDecisionBeliefPopout: { [weak self] in
                 guard let self else { return }
-                self.delegate?.openEmotionalJourneyPopout(arcs: self.characterArcs)
+                self.delegate?.openDecisionBeliefPopout(loops: self.decisionBeliefLoops)
             },
             onInteractionsPopout: { [weak self] in
                 guard let self else { return }
@@ -72,8 +69,7 @@ class CharacterArcVisualizationView: NSView {
 }
 
 protocol CharacterArcVisualizationDelegate: AnyObject {
-    func didTapSection(at wordPosition: Int)
-    func openEmotionalJourneyPopout(arcs: [CharacterArc])
+    func openDecisionBeliefPopout(loops: [DecisionBeliefLoop])
     func openInteractionsPopout(interactions: [CharacterInteraction])
     func openPresencePopout(presence: [CharacterPresence])
 }
@@ -82,26 +78,36 @@ protocol CharacterArcVisualizationDelegate: AnyObject {
 
 @available(macOS 13.0, *)
 struct CharacterArcCharts: View {
-    let arcs: [CharacterArc]
+    let loops: [DecisionBeliefLoop]
     let interactions: [CharacterInteraction]
     let presence: [CharacterPresence]
-    let onSectionTap: (Int) -> Void
-    let onEmotionalJourneyPopout: () -> Void
+    let onDecisionBeliefPopout: () -> Void
     let onInteractionsPopout: () -> Void
     let onPresencePopout: () -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 20) {
-            // Emotional Journey Section
+            // Decision-Belief Loop Section
             VStack(alignment: .leading, spacing: 8) {
                 HStack {
-                    Text("Character Emotional Journeys")
+                    Text("Decision-Belief Loop Framework")
                         .font(.headline)
                         .fontWeight(.semibold)
+                    Spacer()
+                    Button(action: onDecisionBeliefPopout) {
+                        Text("Open Full View")
+                            .font(.caption)
+                    }
                 }
                 .padding(.horizontal)
 
-                EmotionalJourneyChart(arcs: arcs, onSectionTap: onSectionTap)
+                Text("Track how decisions reshape beliefs, and beliefs reshape future decisions. This framework works across all fiction types and scales from one character to an ensemble.")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                    .padding(.horizontal)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                DecisionBeliefLoopPreview(loops: loops)
                     .frame(height: 300)
             }
 
@@ -114,17 +120,22 @@ struct CharacterArcCharts: View {
                     Text("Character Interactions")
                         .font(.headline)
                         .fontWeight(.semibold)
+                    Spacer()
+                    Button(action: onInteractionsPopout) {
+                        Text("Open Full View")
+                            .font(.caption)
+                    }
                 }
                 .padding(.horizontal)
 
-                Text("Shows which characters appear together in scenes. Strong connections suggest key relationships and dialogue opportunities. Use this to identify under-developed character pairings or to balance your story's social dynamics.")
+                Text("Shows which characters appear together in scenes. Strong connections suggest key relationships and dialogue opportunities.")
                     .font(.caption)
                     .foregroundColor(.secondary)
                     .padding(.horizontal)
                     .fixedSize(horizontal: false, vertical: true)
 
                 CharacterNetworkChart(interactions: interactions)
-                    .frame(height: 300)
+                    .frame(height: 250)
             }
 
             Divider()
@@ -136,10 +147,15 @@ struct CharacterArcCharts: View {
                     Text("Character Presence")
                         .font(.headline)
                         .fontWeight(.semibold)
+                    Spacer()
+                    Button(action: onPresencePopout) {
+                        Text("Open Full View")
+                            .font(.caption)
+                    }
                 }
                 .padding(.horizontal)
 
-                Text("Shows per-chapter mentions for each character with a clear x/y axis. Use this to ensure pacing is balanced and to spot chapters where key characters drop out.")
+                Text("Shows per-chapter mentions for each character. Use this to ensure pacing is balanced and to spot chapters where key characters drop out.")
                     .font(.caption)
                     .foregroundColor(.secondary)
                     .padding(.horizontal)
@@ -154,45 +170,53 @@ struct CharacterArcCharts: View {
 }
 
 @available(macOS 13.0, *)
-struct EmotionalJourneyChart: View {
-    let arcs: [CharacterArc]
-    let onSectionTap: (Int) -> Void
+struct DecisionBeliefLoopPreview: View {
+    let loops: [DecisionBeliefLoop]
 
     var body: some View {
-        if arcs.isEmpty {
-            Text("No character arcs detected")
+        if loops.isEmpty {
+            Text("No characters detected")
                 .foregroundColor(.secondary)
                 .frame(maxWidth: .infinity, alignment: .center)
                 .padding()
         } else {
             ScrollView {
                 VStack(alignment: .leading, spacing: 16) {
-                    ForEach(Array(arcs.enumerated()), id: \.offset) { _, arc in
-                        VStack(alignment: .leading, spacing: 8) {
-                            Text(arc.characterName)
-                                .font(.subheadline)
-                                .fontWeight(.semibold)
+                    ForEach(Array(loops.enumerated()), id: \.offset) { _, loop in
+                        VStack(alignment: .leading, spacing: 12) {
+                            HStack {
+                                Text(loop.characterName)
+                                    .font(.subheadline)
+                                    .fontWeight(.semibold)
+                                Spacer()
+                                Text(loop.arcQuality.rawValue)
+                                    .font(.caption)
+                                    .foregroundColor(arcQualityColor(loop.arcQuality))
+                                    .padding(.horizontal, 8)
+                                    .padding(.vertical, 4)
+                                    .background(arcQualityColor(loop.arcQuality).opacity(0.2))
+                                    .cornerRadius(4)
+                            }
 
-                            if !arc.emotionalJourney.isEmpty {
-                                Chart {
-                                    ForEach(Array(arc.emotionalJourney.enumerated()), id: \.offset) { _, state in
-                                        LineMark(
-                                            x: .value("Section", state.sectionIndex),
-                                            y: .value("Sentiment", state.sentiment)
-                                        )
-                                        .foregroundStyle(Color.blue)
+                            Text("The Decision–Belief Loop Framework tracks five elements per chapter:")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
 
-                                        PointMark(
-                                            x: .value("Section", state.sectionIndex),
-                                            y: .value("Sentiment", state.sentiment)
-                                        )
-                                        .foregroundStyle(Color.blue)
-                                    }
+                            VStack(alignment: .leading, spacing: 4) {
+                                ForEach(["Pressure: New forces acting on the character",
+                                        "Belief in Play: Core belief being tested",
+                                        "Decision: Choice made because of that belief",
+                                        "Outcome: Immediate result of the decision",
+                                        "Belief Shift: How the belief changes"], id: \.self) { item in
+                                    Text("• \(item)")
+                                        .font(.caption)
+                                        .foregroundColor(.secondary)
                                 }
-                                .frame(height: 150)
-                                .chartYScale(domain: -1...1)
-                            } else {
-                                Text("No emotional data")
+                            }
+                            .padding(.leading, 8)
+
+                            if loop.entries.count > 0 {
+                                Text("\(loop.entries.count) chapter\(loop.entries.count == 1 ? "" : "s") tracked")
                                     .font(.caption)
                                     .foregroundColor(.secondary)
                             }
@@ -201,9 +225,23 @@ struct EmotionalJourneyChart: View {
                         .background(Color.gray.opacity(0.1))
                         .cornerRadius(8)
                     }
+
+                    Text("Click 'Open Full View' to see the complete tracking table for all characters.")
+                        .font(.caption)
+                        .foregroundColor(.blue)
+                        .padding(.horizontal)
                 }
                 .padding(.horizontal)
             }
+        }
+    }
+
+    private func arcQualityColor(_ quality: DecisionBeliefLoop.ArcQuality) -> Color {
+        switch quality {
+        case .insufficient: return .gray
+        case .flat: return .orange
+        case .developing: return .blue
+        case .evolving: return .green
         }
     }
 }
@@ -313,6 +351,213 @@ struct CharacterPresenceBarChart: View {
                 }
             }
             .frame(height: 320)
+        }
+    }
+}
+
+// MARK: - Decision-Belief Loop Full View
+
+@available(macOS 13.0, *)
+struct DecisionBeliefLoopFullView: View {
+    let loops: [DecisionBeliefLoop]
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 24) {
+                // Header with framework explanation
+                VStack(alignment: .leading, spacing: 12) {
+                    Text("The Decision–Belief Loop Framework")
+                        .font(.title)
+                        .fontWeight(.bold)
+
+                    Text("Characters evolve because decisions reshape beliefs, and beliefs reshape future decisions. Everything you track flows through that loop.")
+                        .font(.body)
+                        .foregroundColor(.secondary)
+
+                    Divider()
+
+                    Text("The Loop (per chapter or major scene)")
+                        .font(.headline)
+                        .fontWeight(.semibold)
+
+                    VStack(alignment: .leading, spacing: 8) {
+                        LoopElementRow(number: "1", title: "Pressure", description: "What new force acts on the character here? (external event, emotional demand, moral dilemma)")
+                        LoopElementRow(number: "2", title: "Belief in Play", description: "Which core belief is being tested? (often unstated in the prose)")
+                        LoopElementRow(number: "3", title: "Decision", description: "What choice does the character make because of that belief?")
+                        LoopElementRow(number: "4", title: "Outcome", description: "What happens immediately because of the decision? (success, partial win, failure, avoidance)")
+                        LoopElementRow(number: "5", title: "Belief Shift", description: "How does the belief change after the outcome? (reinforced, weakened, reframed, contradicted)")
+                    }
+                    .padding(.leading)
+
+                    Divider()
+
+                    Text("How Evolution Emerges")
+                        .font(.headline)
+                        .fontWeight(.semibold)
+
+                    Text("Character growth becomes visible when:")
+                        .font(.body)
+
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("• Decisions stop being automatic")
+                        Text("• Beliefs gain nuance")
+                        Text("• Outcomes carry moral or emotional cost")
+                        Text("• The same pressure produces different choices later")
+                    }
+                    .padding(.leading)
+                    .foregroundColor(.secondary)
+
+                    Text("You don't measure intensity—you observe pattern change.")
+                        .font(.body)
+                        .fontWeight(.medium)
+                        .italic()
+                }
+                .padding()
+                .background(Color.gray.opacity(0.1))
+                .cornerRadius(12)
+
+                // Character tracking tables
+                ForEach(Array(loops.enumerated()), id: \.offset) { _, loop in
+                    VStack(alignment: .leading, spacing: 12) {
+                        HStack {
+                            Text(loop.characterName)
+                                .font(.title2)
+                                .fontWeight(.bold)
+                            Spacer()
+                            Text(loop.arcQuality.rawValue)
+                                .font(.subheadline)
+                                .foregroundColor(.white)
+                                .padding(.horizontal, 12)
+                                .padding(.vertical, 6)
+                                .background(arcQualityColor(loop.arcQuality))
+                                .cornerRadius(8)
+                        }
+
+                        // Table header
+                        HStack(spacing: 8) {
+                            Text("Ch")
+                                .frame(width: 40, alignment: .center)
+                                .fontWeight(.semibold)
+                            Text("Pressure")
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .fontWeight(.semibold)
+                            Text("Belief in Play")
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .fontWeight(.semibold)
+                            Text("Decision")
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .fontWeight(.semibold)
+                            Text("Outcome")
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .fontWeight(.semibold)
+                            Text("Belief Shift")
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .fontWeight(.semibold)
+                        }
+                        .font(.caption)
+                        .padding(8)
+                        .background(Color.gray.opacity(0.2))
+                        .cornerRadius(4)
+
+                        // Table rows
+                        ForEach(loop.entries) { entry in
+                            HStack(alignment: .top, spacing: 8) {
+                                Text("\(entry.chapter)")
+                                    .frame(width: 40, alignment: .center)
+                                    .font(.body)
+                                Text(entry.pressure.isEmpty ? "—" : entry.pressure)
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                                    .font(.caption)
+                                Text(entry.beliefInPlay.isEmpty ? "—" : entry.beliefInPlay)
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                                    .font(.caption)
+                                Text(entry.decision.isEmpty ? "—" : entry.decision)
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                                    .font(.caption)
+                                Text(entry.outcome.isEmpty ? "—" : entry.outcome)
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                                    .font(.caption)
+                                Text(entry.beliefShift.isEmpty ? "—" : entry.beliefShift)
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                                    .font(.caption)
+                            }
+                            .padding(8)
+                            .background(Color.gray.opacity(0.05))
+                            .cornerRadius(4)
+                        }
+
+                        // Diagnostic hints
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("💡 Tracking Tips:")
+                                .font(.caption)
+                                .fontWeight(.semibold)
+                            Text("• If this table looks repetitive, your arc is flat.")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                            Text("• If the belief shifts feel unearned, the pressure is too weak.")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                            Text("• If a character's belief changes but their decisions don't, the change isn't real.")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
+                        .padding(8)
+                        .background(Color.blue.opacity(0.1))
+                        .cornerRadius(4)
+                    }
+                    .padding()
+                    .background(Color.gray.opacity(0.05))
+                    .cornerRadius(12)
+                }
+
+                // Rule of Thumb
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Rule of Thumb")
+                        .font(.headline)
+                        .fontWeight(.semibold)
+
+                    Text("If a character's belief changes but their decisions don't, the change isn't real.")
+                        .font(.body)
+
+                    Text("If decisions change without belief change, it's plot convenience.")
+                        .font(.body)
+                }
+                .padding()
+                .background(Color.orange.opacity(0.1))
+                .cornerRadius(12)
+            }
+            .padding()
+        }
+    }
+
+    private func arcQualityColor(_ quality: DecisionBeliefLoop.ArcQuality) -> Color {
+        switch quality {
+        case .insufficient: return .gray
+        case .flat: return .orange
+        case .developing: return .blue
+        case .evolving: return .green
+        }
+    }
+}
+
+@available(macOS 13.0, *)
+struct LoopElementRow: View {
+    let number: String
+    let title: String
+    let description: String
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 8) {
+            Text("\(number).")
+                .fontWeight(.semibold)
+                .frame(width: 20, alignment: .leading)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title)
+                    .fontWeight(.semibold)
+                Text(description)
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
         }
     }
 }

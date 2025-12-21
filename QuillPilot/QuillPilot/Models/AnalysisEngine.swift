@@ -51,8 +51,8 @@ struct AnalysisResults {
     // Plot point analysis
     var plotAnalysis: PlotAnalysis?
 
-    // Character arc analysis
-    var characterArcs: [CharacterArc] = []
+    // Decision-Belief Loop Framework
+    var decisionBeliefLoops: [DecisionBeliefLoop] = []
     var characterInteractions: [CharacterInteraction] = []
     var characterPresence: [CharacterPresence] = []
 }
@@ -282,8 +282,8 @@ class AnalysisEngine {
         // Extract character names from text (capitalized words that appear frequently)
         let characterNames = extractCharacterNames(from: analysisText)
         if !characterNames.isEmpty {
-            let (arcs, interactions, presence) = analyzeCharacterArcs(text: analysisText, characterNames: characterNames)
-            results.characterArcs = arcs
+            let (loops, interactions, presence) = analyzeCharacterArcs(text: analysisText, characterNames: characterNames)
+            results.decisionBeliefLoops = loops
             results.characterInteractions = interactions
             results.characterPresence = presence
         }
@@ -732,15 +732,22 @@ class AnalysisEngine {
     // MARK: - Character Arc Analysis
 
     private func extractCharacterNames(from text: String) -> [String] {
+        // Get library character names first
+        let libraryNames = Set(CharacterLibrary.shared.characters.map { $0.fullName })
+
         // Find capitalized words (potential names)
         let words = text.components(separatedBy: .whitespacesAndNewlines)
         var nameCounts: [String: Int] = [:]
 
-        // Common words to exclude
+        // Common words to exclude - only used for non-library characters
         let excludeWords: Set<String> = [
             "The", "A", "An", "He", "She", "They", "I", "We", "You",
             "But", "And", "Or", "If", "When", "Where", "Why", "How",
-            "Chapter", "Part", "Section", "Act"
+            "Chapter", "Part", "Section", "Act",
+            "His", "Her", "Their", "Its", "My", "Our", "Your",
+            "It", "As", "At", "In", "On", "To", "From", "With",
+            "This", "That", "These", "Those", "What", "Which", "Who",
+            "All", "Some", "Any", "No", "Not", "Yes"
         ]
 
         for word in words {
@@ -748,9 +755,11 @@ class AnalysisEngine {
             // Check if word starts with capital and is 2+ chars
             if cleaned.count >= 2,
                let first = cleaned.first,
-               first.isUppercase,
-               !excludeWords.contains(cleaned) {
-                nameCounts[cleaned, default: 0] += 1
+               first.isUppercase {
+                // If in library, always include; otherwise check excludeWords
+                if libraryNames.contains(cleaned) || !excludeWords.contains(cleaned) {
+                    nameCounts[cleaned, default: 0] += 1
+                }
             }
         }
 
@@ -764,14 +773,63 @@ class AnalysisEngine {
         return Array(characters)
     }
 
-    func analyzeCharacterArcs(text: String, characterNames: [String]) -> ([CharacterArc], [CharacterInteraction], [CharacterPresence]) {
-        let analyzer = CharacterArcAnalyzer()
+    func analyzeCharacterArcs(text: String, characterNames: [String]) -> ([DecisionBeliefLoop], [CharacterInteraction], [CharacterPresence]) {
+        let analyzer = DecisionBeliefLoopAnalyzer()
 
-        let arcs = analyzer.analyzeCharacterArcs(text: text, characterNames: characterNames, wordCount: countWords(text))
+        // Count chapters in the text
+        let chapters = splitIntoChapters(text: text)
+        let chapterCount = chapters.count
+
+        // Initialize Decision-Belief Loop entries for each character
+        let loops = analyzer.initializeLoops(characterNames: characterNames, chapterCount: chapterCount)
         let interactions = analyzer.analyzeInteractions(text: text, characterNames: characterNames)
         let presence = analyzer.analyzePresenceByChapter(text: text, characterNames: characterNames)
 
-        return (arcs, interactions, presence)
+        return (loops, interactions, presence)
+    }
+
+    private func splitIntoChapters(text: String) -> [String] {
+        // Split by common chapter markers
+        let patterns = [
+            "Chapter \\d+",
+            "CHAPTER \\d+",
+            "Ch\\. \\d+",
+            "\\d+\\.",
+            "# Chapter"
+        ]
+
+        var chapters: [String] = []
+        let lines = text.components(separatedBy: .newlines)
+        var currentChapter = ""
+
+        for line in lines {
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+            var isChapterMarker = false
+
+            // Check if line matches any chapter pattern
+            for pattern in patterns {
+                if let regex = try? NSRegularExpression(pattern: pattern, options: []),
+                   regex.firstMatch(in: trimmed, options: [], range: NSRange(trimmed.startIndex..., in: trimmed)) != nil {
+                    isChapterMarker = true
+                    break
+                }
+            }
+
+            if isChapterMarker && !currentChapter.isEmpty {
+                chapters.append(currentChapter)
+                currentChapter = line + "\n"
+            } else {
+                currentChapter += line + "\n"
+            }
+        }
+
+        // Add the last chapter
+        if !currentChapter.isEmpty {
+            chapters.append(currentChapter)
+        }
+
+        // If no chapters found, treat entire text as one chapter
+        return chapters.isEmpty ? [text] : chapters
     }
 }
 

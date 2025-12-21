@@ -33,18 +33,8 @@ enum ArcType: String {
     case transformational = "Transformational"  // Major change
 }
 
-struct CharacterInteraction {
-    let character1: String
-    let character2: String
-    var coAppearances: Int = 0
-    var sections: [Int] = []  // Which sections they appear together
-    var relationshipStrength: Double = 0.0  // 0-1
-}
-
-struct CharacterPresence {
-    let characterName: String
-    var chapterPresence: [Int: Int] = [:]  // Chapter # -> mention count
-}
+// NOTE: CharacterInteraction and CharacterPresence are now defined in DecisionBeliefLoop.swift
+// These old definitions are kept for backward compatibility but should not be used
 
 // MARK: - Character Arc Analyzer
 

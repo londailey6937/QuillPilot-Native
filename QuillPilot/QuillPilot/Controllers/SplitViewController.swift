@@ -61,6 +61,9 @@ class SplitViewController: NSSplitViewController {
             NSLog("🔗 Callback triggered from button")
             self?.performAnalysis()
         }
+        analysisViewController.getOutlineEntriesCallback = { [weak self] in
+            return self?.editorViewController.buildOutlineEntries() ?? []
+        }
         NSLog("✅ analyzeCallback set successfully, is nil? \(analysisViewController.analyzeCallback == nil)")
 
         // Configure split view

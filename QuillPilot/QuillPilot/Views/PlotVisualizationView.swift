@@ -81,15 +81,6 @@ struct PlotTensionChart: View {
                         .font(.caption)
                         .foregroundColor(.secondary)
                 }
-
-                Spacer()
-
-                Button(action: { onPopout() }) {
-                    Label("Open Large View", systemImage: "arrow.up.left.and.arrow.down.right")
-                        .labelStyle(.titleAndIcon)
-                }
-                .buttonStyle(.link)
-                .controlSize(.small)
             }
             .padding(.horizontal)
             .padding(.top, 8)

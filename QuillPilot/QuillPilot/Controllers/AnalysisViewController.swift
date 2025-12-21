@@ -913,65 +913,41 @@ class AnalysisViewController: NSViewController {
             return
         }
 
-        // Create tabs for different visualizations (simplified layout)
-        let tabView = NSTabView()
-        tabView.translatesAutoresizingMaskIntoConstraints = false
-        tabView.tabViewType = .topTabsBezelBorder
-        tabView.font = .systemFont(ofSize: 12)
-
-        // Plot Point Tab
+        // Show plot visualization directly - no tabs/buttons
         if let plotAnalysis = results.plotAnalysis {
-            let plotTab = NSTabViewItem(identifier: "plot")
-            plotTab.label = "Plot Structure"
-
-            let plotContainer = NSView()
-            plotContainer.translatesAutoresizingMaskIntoConstraints = false
-            plotContainer.addSubview(plotVisualizationView)
-
+            resultsStack.addArrangedSubview(plotVisualizationView)
+            
             NSLayoutConstraint.activate([
-                plotVisualizationView.topAnchor.constraint(equalTo: plotContainer.topAnchor),
-                plotVisualizationView.leadingAnchor.constraint(equalTo: plotContainer.leadingAnchor),
-                plotVisualizationView.trailingAnchor.constraint(equalTo: plotContainer.trailingAnchor),
-                plotVisualizationView.bottomAnchor.constraint(equalTo: plotContainer.bottomAnchor)
+                plotVisualizationView.widthAnchor.constraint(equalTo: resultsStack.widthAnchor),
+                plotVisualizationView.heightAnchor.constraint(greaterThanOrEqualToConstant: 600)
             ])
-
+            
             plotVisualizationView.configure(with: plotAnalysis)
-            plotTab.view = plotContainer
-            tabView.addTabViewItem(plotTab)
         }
 
-        // Character Arc Tab
+        // Add character visualizations below plot
         if !results.characterArcs.isEmpty {
-            let characterTab = NSTabViewItem(identifier: "characters")
-            characterTab.label = "Character Arcs"
-
-            let characterContainer = NSView()
-            characterContainer.translatesAutoresizingMaskIntoConstraints = false
-            characterContainer.addSubview(characterArcVisualizationView)
-
+            // Add spacing
+            let spacer = NSView()
+            spacer.translatesAutoresizingMaskIntoConstraints = false
+            resultsStack.addArrangedSubview(spacer)
             NSLayoutConstraint.activate([
-                characterArcVisualizationView.topAnchor.constraint(equalTo: characterContainer.topAnchor),
-                characterArcVisualizationView.leadingAnchor.constraint(equalTo: characterContainer.leadingAnchor),
-                characterArcVisualizationView.trailingAnchor.constraint(equalTo: characterContainer.trailingAnchor),
-                characterArcVisualizationView.bottomAnchor.constraint(equalTo: characterContainer.bottomAnchor)
+                spacer.heightAnchor.constraint(equalToConstant: 30)
             ])
-
+            
+            resultsStack.addArrangedSubview(characterArcVisualizationView)
+            
+            NSLayoutConstraint.activate([
+                characterArcVisualizationView.widthAnchor.constraint(equalTo: resultsStack.widthAnchor),
+                characterArcVisualizationView.heightAnchor.constraint(greaterThanOrEqualToConstant: 600)
+            ])
+            
             characterArcVisualizationView.configure(
                 arcs: results.characterArcs,
                 interactions: results.characterInteractions,
                 presence: results.characterPresence
             )
-            characterTab.view = characterContainer
-            tabView.addTabViewItem(characterTab)
         }
-
-        // Add tab view to results stack (full height for better visualization)
-        resultsStack.addArrangedSubview(tabView)
-
-        NSLayoutConstraint.activate([
-            tabView.widthAnchor.constraint(equalTo: resultsStack.widthAnchor),
-            tabView.heightAnchor.constraint(greaterThanOrEqualToConstant: 600)
-        ])
     }
 }
 

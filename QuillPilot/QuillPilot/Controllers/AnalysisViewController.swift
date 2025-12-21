@@ -29,7 +29,19 @@ class AnalysisViewController: NSViewController {
     private var resultsStack: NSStackView!
     private var currentTheme: AppTheme = ThemeManager.shared.currentTheme
     private var currentCategory: AnalysisCategory = .basic
+    private var isOutlineVisible = false
+
+    // Analysis popout windows
+    private var outlinePopoutWindow: NSWindow?
+    private var analysisPopoutWindow: NSWindow?
     private var plotPopoutWindow: NSWindow?
+    private weak var analysisPopoutStack: NSStackView?
+    private weak var analysisPopoutContainer: NSView?
+
+    // Character analysis popouts
+    private var emotionalJourneyPopoutWindow: NSWindow?
+    private var interactionsPopoutWindow: NSWindow?
+    private var presencePopoutWindow: NSWindow?
 
     // Character Library Window (Navigator panel only)
     private var characterLibraryWindow: CharacterLibraryWindowController?
@@ -58,11 +70,11 @@ class AnalysisViewController: NSViewController {
     var outlineViewController: OutlineViewController?
     var isOutlinePanel: Bool = false
     var analyzeCallback: (() -> Void)?
+    var getOutlineEntriesCallback: (() -> [EditorViewController.OutlineEntry])?
 
     private func scrollToTop() {
-        guard let scrollView else { return }
-        let topPoint = NSPoint(x: 0, y: 0)
-        scrollView.contentView.scroll(to: topPoint)
+        guard let scrollView = scrollView else { return }
+        scrollView.contentView.scroll(to: .zero)
         scrollView.reflectScrolledClipView(scrollView.contentView)
     }
 
@@ -87,19 +99,17 @@ class AnalysisViewController: NSViewController {
         }
     }
 
-    // Analysis panel categories (right side - no Characters)
+    // Analysis panel categories (right side)
     enum AnalysisCategory: String, CaseIterable {
-        case basic = "Outline"
-        case advanced = "Advanced"
-        case plot = "Plot"
-        case visualization = "Graphs"
+        case basic = "Analysis"
+        case plot = "Plot Structure"
+        case characters = "Characters"
 
         var icon: String {
             switch self {
-            case .basic: return "📝"
-            case .advanced: return "🔬"
+            case .basic: return "📊"
             case .plot: return "📖"
-            case .visualization: return "📊"
+            case .characters: return "👥"
             }
         }
     }
@@ -115,7 +125,14 @@ class AnalysisViewController: NSViewController {
         setupScrollView()
         setupContent()
         applyTheme(currentTheme)
-        switchToCategory(currentCategory)
+
+        // Hide inline analysis for the analysis panel; use popout only
+        if !isOutlinePanel {
+            scrollContainer.isHidden = true
+        }
+
+        // Don't auto-switch to category on load - let it stay empty until user clicks
+        // Only show content when user explicitly clicks a button
 
         // Listen for theme changes
         NotificationCenter.default.addObserver(forName: .themeDidChange, object: nil, queue: .main) { [weak self] notification in
@@ -224,9 +241,48 @@ class AnalysisViewController: NSViewController {
 
     @objc private func categoryButtonTapped(_ sender: NSButton) {
         let category = AnalysisCategory.allCases[sender.tag]
-        currentCategory = category
-        updateSelectedButton()
-        switchToCategory(category)
+
+        // For basic analysis, open popout window
+        if category == .basic {
+            // Kick off analysis if we have no data yet
+            if latestAnalysisResults == nil {
+                analyzeCallback?()
+            }
+
+            if analysisPopoutWindow == nil {
+                analysisPopoutWindow = createAnalysisPopoutWindow()
+            }
+            refreshAnalysisPopoutContent()
+            analysisPopoutWindow?.makeKeyAndOrderFront(nil)
+            return
+        }
+
+        // For plot and characters, open popout windows
+        if category == .plot {
+            // Trigger analysis if no data exists
+            if latestAnalysisResults == nil {
+                analyzeCallback?()
+                // Give a moment for analysis to complete
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
+                    if self?.plotPopoutWindow == nil {
+                        self?.plotPopoutWindow = self?.createPlotPopoutWindow()
+                    }
+                    self?.plotPopoutWindow?.makeKeyAndOrderFront(nil)
+                }
+            } else {
+                if plotPopoutWindow == nil {
+                    plotPopoutWindow = createPlotPopoutWindow()
+                }
+                plotPopoutWindow?.makeKeyAndOrderFront(nil)
+            }
+            return
+        }
+
+        if category == .characters {
+            // Show menu to choose which character analysis to view
+            showCharacterAnalysisMenu(sender)
+            return
+        }
     }
 
     @objc private func navigatorButtonTapped(_ sender: NSButton) {
@@ -282,34 +338,54 @@ class AnalysisViewController: NSViewController {
             return
         }
 
-        // For outline, switch to it
-        currentCategory = .basic
-        updateSelectedButton()
-        switchToCategory(.basic)
+        // For outline, toggle it
+        if isOutlineVisible {
+            // Already showing - hide it immediately
+            outlineViewController?.view.isHidden = true
+            scrollContainer.isHidden = false
+            isOutlineVisible = false
+            updateSelectedButton()
+        } else {
+            // Show it immediately without expensive operations
+            scrollContainer.isHidden = true
+            if let outlineVC = outlineViewController {
+                if outlineVC.view.superview == nil {
+                    view.addSubview(outlineVC.view)
+                    outlineVC.view.translatesAutoresizingMaskIntoConstraints = false
+                    NSLayoutConstraint.activate([
+                        outlineVC.view.topAnchor.constraint(equalTo: view.topAnchor),
+                        outlineVC.view.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+                        outlineVC.view.trailingAnchor.constraint(equalTo: menuSeparator.leadingAnchor),
+                        outlineVC.view.bottomAnchor.constraint(equalTo: view.bottomAnchor)
+                    ])
+                }
+                outlineVC.view.isHidden = false
+            }
+            isOutlineVisible = true
+            currentCategory = .basic
+            updateSelectedButton()
+            // Trigger refresh asynchronously to avoid blocking UI
+            DispatchQueue.main.async {
+                NotificationCenter.default.post(name: Notification.Name("QuillPilotOutlineRefresh"), object: nil)
+            }
+        }
     }
 
     @objc private func updateButtonTapped() {
         NSLog("🔄 Update button tapped in analysis panel")
-        analyzeCallback?()
+        NSLog("🔄 analyzeCallback is nil? \(analyzeCallback == nil)")
+        if let callback = analyzeCallback {
+            NSLog("🔄 Calling analyzeCallback now")
+            callback()
+        } else {
+            NSLog("❌ analyzeCallback is nil - cannot trigger analysis")
+        }
     }
 
     private func updateSelectedButton() {
-        for (index, button) in menuButtons.enumerated() {
-            let isSelected: Bool
-            if isOutlinePanel {
-                // Navigator panel - only highlight outline button (index 0) when showing outline
-                isSelected = (index == 0 && currentCategory == .basic)
-            } else {
-                // Analysis panel - highlight based on current category
-                isSelected = (index == AnalysisCategory.allCases.firstIndex(of: currentCategory))
-            }
-
-            if isSelected {
-                button.layer?.backgroundColor = currentTheme.headerBackground.withAlphaComponent(0.3).cgColor
-                button.layer?.cornerRadius = 8
-            } else {
-                button.layer?.backgroundColor = NSColor.clear.cgColor
-            }
+        for (_, button) in menuButtons.enumerated() {
+            // No highlighting for any buttons - they all open popouts or toggle inline content
+            button.layer?.backgroundColor = NSColor.clear.cgColor
         }
     }
 
@@ -319,7 +395,7 @@ class AnalysisViewController: NSViewController {
         let showOutline = isOutlinePanel && category == .basic
 
         if showOutline {
-            // Show outline, hide analysis content
+            // Show outline, hide analysis content (navigator panel only)
             scrollContainer.isHidden = true
             if let outlineVC = outlineViewController {
                 if outlineVC.view.superview == nil {
@@ -340,130 +416,85 @@ class AnalysisViewController: NSViewController {
             return
         }
 
-        // Show analysis content, hide outline
-        scrollContainer.isHidden = false
-        outlineViewController?.view.isHidden = true
-
-        // Clear current analysis content
-        resultsStack.arrangedSubviews.forEach { view in
-            resultsStack.removeArrangedSubview(view)
-            view.removeFromSuperview()
-        }
-
+        // For analysis panel showing basic analysis inline
         if !isOutlinePanel && category == .basic {
-            // Restore basic analysis - trigger a re-analysis
+            scrollContainer.isHidden = false
+            outlineViewController?.view.isHidden = true
+
+            // Clear and show basic analysis
+            resultsStack.arrangedSubviews.forEach { view in
+                resultsStack.removeArrangedSubview(view)
+                view.removeFromSuperview()
+            }
+
             headerLabel.stringValue = "Document Analysis"
             updateButton.isHidden = false
             infoLabel.stringValue = "Click Update to refresh all analysis."
-            scrollToTop()
-            analyzeCallback?()
-        } else if category == .plot {
-            headerLabel.stringValue = "Plot Analysis"
-            updateButton.isHidden = true
-            infoLabel.stringValue = "Plot structure and tension insights"
-            scrollToTop()
-            if #available(macOS 13.0, *) {
-                displayPlotAnalysis()
-            } else {
-                let placeholder = makeLabel("📖 Plot Analysis requires macOS 13.0 or later", size: 14, bold: true)
-                placeholder.alignment = .center
-                placeholder.textColor = .secondaryLabelColor
-                resultsStack.addArrangedSubview(placeholder)
-            }
-        } else if category == .visualization {
-            headerLabel.stringValue = "Graphs"
-            updateButton.isHidden = true
-            infoLabel.stringValue = "Plot and character visualizations"
-            scrollToTop()
-            // Show visualizations
-            if #available(macOS 13.0, *) {
-                displayVisualizations()
-            } else {
-                let placeholder = makeLabel("📊 Visualizations require macOS 13.0 or later", size: 14, bold: true)
-                placeholder.alignment = .center
-                placeholder.textColor = .secondaryLabelColor
-                resultsStack.addArrangedSubview(placeholder)
-            }
-        } else {
-            // Add placeholder for non-basic categories
-            let placeholder = makeLabel("\(category.icon) \(category.rawValue) Analysis\n\nComing soon...", size: 16, bold: true)
-            placeholder.alignment = .center
+
+            // Add placeholder
+            let placeholder = makeLabel("Click Update to analyze your document", size: 13, bold: false)
             placeholder.textColor = .secondaryLabelColor
-            placeholder.maximumNumberOfLines = 0
             resultsStack.addArrangedSubview(placeholder)
+
+            // Make sure scroll content is visible
+            scrollContainer.isHidden = false
+
+            updateSelectedButton()
+            return
         }
 
+        // Analysis panel buttons (plot, characters) are popouts only - do nothing for inline content
+        outlineViewController?.view.isHidden = true
         updateSelectedButton()
     }
 
     private func setupScrollView() {
-        // Outer container - transparent, no styling (contentStack provides the card)
-        scrollContainer = NSView()
-        scrollContainer.translatesAutoresizingMaskIntoConstraints = false
-        scrollContainer.wantsLayer = true
-        scrollContainer.layer?.backgroundColor = NSColor.clear.cgColor
-
+        // Simple scroll view setup matching OutlineViewController structure
         scrollView = NSScrollView()
-        scrollView.translatesAutoresizingMaskIntoConstraints = false
         scrollView.hasVerticalScroller = false
-        scrollView.hasHorizontalScroller = false
         scrollView.autohidesScrollers = true
         scrollView.scrollerStyle = .overlay
         scrollView.drawsBackground = false
         scrollView.borderType = .noBorder
-        scrollView.wantsLayer = true
-        scrollView.layer?.backgroundColor = NSColor.clear.cgColor
-        scrollView.contentView.drawsBackground = false
         scrollView.verticalScroller?.isHidden = true
         scrollView.horizontalScroller?.isHidden = true
+        scrollView.translatesAutoresizingMaskIntoConstraints = false
 
-        // Performance optimizations for scrolling
-        scrollView.usesPredominantAxisScrolling = false
-        scrollView.scrollerInsets = NSEdgeInsets(top: 0, left: 0, bottom: 0, right: 0)
-
-        // Clip view stays transparent
-        scrollView.contentView.wantsLayer = true
-        scrollView.contentView.layer?.cornerRadius = 0
-        scrollView.contentView.layer?.masksToBounds = false
-        scrollView.contentView.layer?.backgroundColor = NSColor.clear.cgColor
-
+        // Document view - simple flipped view, no constraints
         documentView = AnalysisFlippedView()
         documentView.translatesAutoresizingMaskIntoConstraints = false
-        documentView.wantsLayer = true
-        documentView.layer?.backgroundColor = NSColor.clear.cgColor
         scrollView.documentView = documentView
 
-        scrollContainer.addSubview(scrollView)
-        view.addSubview(scrollContainer)
-
-        let containerConstraints: [NSLayoutConstraint]
-        if isOutlinePanel {
-            containerConstraints = [
-                scrollContainer.topAnchor.constraint(equalTo: view.topAnchor, constant: 12),
-                scrollContainer.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 0),
-                scrollContainer.trailingAnchor.constraint(equalTo: menuSeparator.leadingAnchor, constant: 0),
-                scrollContainer.bottomAnchor.constraint(equalTo: view.bottomAnchor, constant: -12)
-            ]
-        } else {
-            containerConstraints = [
-                scrollContainer.topAnchor.constraint(equalTo: view.topAnchor, constant: 12),
-                scrollContainer.leadingAnchor.constraint(equalTo: menuSeparator.trailingAnchor, constant: 0),
-                scrollContainer.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -12),
-                scrollContainer.bottomAnchor.constraint(equalTo: view.bottomAnchor, constant: -12)
-            ]
+        if let clipView = scrollView.contentView as NSClipView? {
+            NSLayoutConstraint.activate([
+                documentView.leadingAnchor.constraint(equalTo: clipView.leadingAnchor),
+                documentView.trailingAnchor.constraint(equalTo: clipView.trailingAnchor),
+                documentView.topAnchor.constraint(equalTo: clipView.topAnchor),
+                documentView.widthAnchor.constraint(equalTo: clipView.widthAnchor)
+            ])
         }
 
-        NSLayoutConstraint.activate(containerConstraints + [
-            scrollView.topAnchor.constraint(equalTo: scrollContainer.topAnchor),
-            scrollView.leadingAnchor.constraint(equalTo: scrollContainer.leadingAnchor),
-            scrollView.trailingAnchor.constraint(equalTo: scrollContainer.trailingAnchor),
-            scrollView.bottomAnchor.constraint(equalTo: scrollContainer.bottomAnchor),
+        view.addSubview(scrollView)
 
-            documentView.leadingAnchor.constraint(equalTo: scrollView.contentView.leadingAnchor),
-            documentView.trailingAnchor.constraint(equalTo: scrollView.contentView.trailingAnchor),
-            documentView.topAnchor.constraint(equalTo: scrollView.contentView.topAnchor),
-            documentView.widthAnchor.constraint(equalTo: scrollView.contentView.widthAnchor)
-        ])
+        // Position based on panel type
+        if isOutlinePanel {
+            NSLayoutConstraint.activate([
+                scrollView.topAnchor.constraint(equalTo: view.topAnchor, constant: 12),
+                scrollView.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 8),
+                scrollView.trailingAnchor.constraint(equalTo: menuSeparator.leadingAnchor, constant: -8),
+                scrollView.bottomAnchor.constraint(equalTo: view.bottomAnchor, constant: -8)
+            ])
+        } else {
+            NSLayoutConstraint.activate([
+                scrollView.topAnchor.constraint(equalTo: view.topAnchor, constant: 12),
+                scrollView.leadingAnchor.constraint(equalTo: menuSeparator.trailingAnchor, constant: 8),
+                scrollView.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -8),
+                scrollView.bottomAnchor.constraint(equalTo: view.bottomAnchor, constant: -8)
+            ])
+        }
+
+        // Keep reference to scrollContainer for show/hide toggling
+        scrollContainer = scrollView
     }
 
     private func setupContent() {
@@ -473,9 +504,9 @@ class AnalysisViewController: NSViewController {
         contentStack.alignment = .leading
         contentStack.spacing = 16
         contentStack.edgeInsets = NSEdgeInsets(top: 24, left: 24, bottom: 24, right: 24)
-        contentStack.wantsLayer = true
 
-        // Set background and corner radius so the card shows its rounding
+        // Simple background, no layer manipulation
+        contentStack.wantsLayer = true
         if let layer = contentStack.layer {
             layer.backgroundColor = currentTheme.toolbarBackground.cgColor
             layer.cornerRadius = 12
@@ -497,6 +528,9 @@ class AnalysisViewController: NSViewController {
         updateButton.bezelStyle = .rounded
         updateButton.controlSize = .small
         updateButton.translatesAutoresizingMaskIntoConstraints = false
+        updateButton.isEnabled = true
+        // Hide update button entirely for analysis popout flow
+        updateButton.isHidden = true
         headerContainer.addArrangedSubview(updateButton)
 
         contentStack.addArrangedSubview(headerContainer)
@@ -506,6 +540,7 @@ class AnalysisViewController: NSViewController {
         infoLabel.textColor = .secondaryLabelColor
         infoLabel.lineBreakMode = .byWordWrapping
         infoLabel.maximumNumberOfLines = 0
+        infoLabel.isHidden = !isOutlinePanel
         contentStack.addArrangedSubview(infoLabel)
 
         // Results container
@@ -532,15 +567,14 @@ class AnalysisViewController: NSViewController {
         scrollToTop()
 
         documentView.addSubview(contentStack)
+
+        // Simple constraints - just pin to edges with padding
         NSLayoutConstraint.activate([
             contentStack.topAnchor.constraint(equalTo: documentView.topAnchor, constant: 12),
             contentStack.leadingAnchor.constraint(equalTo: documentView.leadingAnchor, constant: 12),
             contentStack.trailingAnchor.constraint(equalTo: documentView.trailingAnchor, constant: -12),
             contentStack.bottomAnchor.constraint(equalTo: documentView.bottomAnchor, constant: -32)
         ])
-
-        // Ensure documentView height grows with content
-        contentStack.setContentHuggingPriority(.defaultHigh, for: .vertical)
     }
 
     func displayResults(_ results: AnalysisResults) {
@@ -549,12 +583,15 @@ class AnalysisViewController: NSViewController {
         // Store results for visualization
         storeAnalysisResults(results)
 
-        // Scroll to top first
-        scrollToTop()
-
+        // For analysis panel we show results only in the popout
+        if !isOutlinePanel {
+            refreshAnalysisPopoutContent()
+            return
+        }
 
         // Only display if we're on the basic category
         guard currentCategory == .basic else { return }
+
         // Clear previous results
         resultsStack.arrangedSubviews.forEach { view in
             resultsStack.removeArrangedSubview(view)
@@ -753,6 +790,9 @@ class AnalysisViewController: NSViewController {
                 addWarning("Consider revising dialogue for more impact")
             }
         }
+
+        // Refresh popout if open
+        refreshAnalysisPopoutContent()
     }
 
     private func makeLabel(_ text: String, size: CGFloat, bold: Bool) -> NSTextField {
@@ -911,6 +951,104 @@ class AnalysisViewController: NSViewController {
         return container
     }
 
+    private func createSentenceGraphForPopout(_ lengths: [Int]) -> NSView {
+        // Fixed width for popout
+        let graphWidth: CGFloat = 560
+        let graphHeight: CGFloat = 180
+
+        let container = NSView(frame: NSRect(x: 0, y: 0, width: graphWidth, height: graphHeight))
+        container.wantsLayer = true
+        container.translatesAutoresizingMaskIntoConstraints = false
+        // Use slightly darker shade of pageAround for graph to match theme
+        let graphBackground = currentTheme.pageAround.blended(withFraction: 0.05, of: .black) ?? currentTheme.pageAround
+        container.layer?.backgroundColor = graphBackground.cgColor
+        container.layer?.cornerRadius = 8
+        container.layer?.borderWidth = 1.0
+        let borderColor = currentTheme == .day ? NSColor(red: 0.7, green: 0.65, blue: 0.6, alpha: 1.0) : NSColor(white: 0.3, alpha: 1.0)
+        container.layer?.borderColor = borderColor.cgColor
+
+        // Create bar chart
+        guard !lengths.isEmpty else {
+            NSLayoutConstraint.activate([
+                container.heightAnchor.constraint(equalToConstant: graphHeight),
+                container.widthAnchor.constraint(equalToConstant: graphWidth)
+            ])
+
+            // Add "No data" label
+            let noDataLabel = NSTextField(labelWithString: "Not enough sentences")
+            noDataLabel.isEditable = false
+            noDataLabel.isBezeled = false
+            noDataLabel.drawsBackground = false
+            noDataLabel.font = .systemFont(ofSize: 11)
+            noDataLabel.textColor = .tertiaryLabelColor
+            noDataLabel.frame = NSRect(x: 10, y: graphHeight/2 - 10, width: graphWidth - 20, height: 20)
+            container.addSubview(noDataLabel)
+
+            return container
+        }
+
+        let maxLength = lengths.max() ?? 1
+        let barWidth: CGFloat = max(4.0, min(graphWidth / CGFloat(lengths.count), 12.0))
+        let spacing: CGFloat = 2
+        let chartWidth = graphWidth - 20
+        let maxBars = Int(chartWidth / (barWidth + spacing))
+        let chartHeight = graphHeight - 35  // Space for legend at bottom
+
+        // Draw bars directly on container
+        for (index, length) in lengths.prefix(maxBars).enumerated() {
+            let barHeight = max(4, (CGFloat(length) / CGFloat(maxLength)) * (chartHeight - 10))
+            let x = 10 + CGFloat(index) * (barWidth + spacing)
+            let y: CGFloat = 25  // Start from bottom, bars grow upward
+
+            let bar = NSView(frame: NSRect(x: x, y: y, width: barWidth, height: barHeight))
+            bar.wantsLayer = true
+
+            // Color by length: green (short), yellow (medium), red (long)
+            if length < 12 {
+                bar.layer?.backgroundColor = NSColor.systemGreen.withAlphaComponent(0.85).cgColor
+            } else if length < 20 {
+                bar.layer?.backgroundColor = NSColor.systemYellow.withAlphaComponent(0.85).cgColor
+            } else {
+                bar.layer?.backgroundColor = NSColor.systemRed.withAlphaComponent(0.85).cgColor
+            }
+
+            bar.layer?.cornerRadius = 2
+            container.addSubview(bar)
+        }
+
+        // Add legend labels at bottom
+        let legendY: CGFloat = 8
+        let legendX: CGFloat = 10
+
+        func addLegendItem(_ color: NSColor, _ label: String, xOffset: CGFloat) {
+            let dot = NSView(frame: NSRect(x: legendX + xOffset, y: legendY, width: 7, height: 7))
+            dot.wantsLayer = true
+            dot.layer?.backgroundColor = color.cgColor
+            dot.layer?.cornerRadius = 3.5
+            container.addSubview(dot)
+
+            let text = NSTextField(labelWithString: label)
+            text.isEditable = false
+            text.isBezeled = false
+            text.drawsBackground = false
+            text.font = .systemFont(ofSize: 10)
+            text.textColor = NSColor(red: 0.3, green: 0.3, blue: 0.3, alpha: 1.0)
+            text.frame = NSRect(x: legendX + xOffset + 10, y: legendY - 2, width: 50, height: 14)
+            container.addSubview(text)
+        }
+
+        addLegendItem(NSColor.systemGreen.withAlphaComponent(0.85), "Short (<12)", xOffset: 0)
+        addLegendItem(NSColor.systemYellow.withAlphaComponent(0.85), "Medium (12-20)", xOffset: 80)
+        addLegendItem(NSColor.systemRed.withAlphaComponent(0.85), "Long (20+)", xOffset: 180)
+
+        NSLayoutConstraint.activate([
+            container.heightAnchor.constraint(equalToConstant: graphHeight),
+            container.widthAnchor.constraint(equalToConstant: graphWidth)
+        ])
+
+        return container
+    }
+
     func applyTheme(_ theme: AppTheme) {
         currentTheme = theme
         let panelBackground = isOutlinePanel ? theme.outlineBackground : theme.toolbarBackground
@@ -938,6 +1076,8 @@ class AnalysisViewController: NSViewController {
 
         contentStack?.wantsLayer = true
         contentStack?.layer?.backgroundColor = panelBackground.cgColor
+
+        applyThemeToAnalysisPopout()
 
         // Force redisplay
         view.needsDisplay = true
@@ -972,9 +1112,12 @@ class AnalysisViewController: NSViewController {
 
         NSLog("📊 plotAnalysis exists: \(results.plotAnalysis != nil)")
 
-        // Show plot visualization directly - no tabs/buttons
+        // Show plot visualization
         if let plotAnalysis = results.plotAnalysis {
             NSLog("📊 Adding plotVisualizationView to stack")
+
+            // Remove from previous parent if needed
+            plotVisualizationView.removeFromSuperview()
             resultsStack.addArrangedSubview(plotVisualizationView)
 
             NSLayoutConstraint.activate([
@@ -989,7 +1132,7 @@ class AnalysisViewController: NSViewController {
 
         // Add character visualizations below plot
         if !results.characterArcs.isEmpty {
-            // Add spacing
+            // Add spacing between sections
             let spacer = NSView()
             spacer.translatesAutoresizingMaskIntoConstraints = false
             resultsStack.addArrangedSubview(spacer)
@@ -997,6 +1140,8 @@ class AnalysisViewController: NSViewController {
                 spacer.heightAnchor.constraint(equalToConstant: 30)
             ])
 
+            // Remove from previous parent if needed
+            characterArcVisualizationView.removeFromSuperview()
             resultsStack.addArrangedSubview(characterArcVisualizationView)
 
             NSLayoutConstraint.activate([
@@ -1037,6 +1182,8 @@ class AnalysisViewController: NSViewController {
             return
         }
 
+        // Remove from previous parent if needed
+        plotVisualizationView.removeFromSuperview()
         resultsStack.addArrangedSubview(plotVisualizationView)
 
         NSLayoutConstraint.activate([
@@ -1046,6 +1193,95 @@ class AnalysisViewController: NSViewController {
 
         plotVisualizationView.configure(with: plotAnalysis)
         scrollToTop()
+    }
+
+    @available(macOS 13.0, *)
+    private func displayCharacterAnalysis() {
+        NSLog("👥 displayCharacterAnalysis() called")
+
+        guard let results = latestAnalysisResults else {
+            let placeholder = makeLabel("👥 Run analysis first to view character insights", size: 14, bold: true)
+            placeholder.alignment = .center
+            placeholder.textColor = .secondaryLabelColor
+            placeholder.maximumNumberOfLines = 0
+            resultsStack.addArrangedSubview(placeholder)
+            return
+        }
+
+        guard !results.characterArcs.isEmpty else {
+            let placeholder = makeLabel("👥 No characters detected yet", size: 14, bold: true)
+            placeholder.alignment = .center
+            placeholder.textColor = .secondaryLabelColor
+            placeholder.maximumNumberOfLines = 0
+            resultsStack.addArrangedSubview(placeholder)
+            return
+        }
+
+        // Remove from previous parent if needed
+        characterArcVisualizationView.removeFromSuperview()
+        resultsStack.addArrangedSubview(characterArcVisualizationView)
+
+        NSLayoutConstraint.activate([
+            characterArcVisualizationView.widthAnchor.constraint(equalTo: resultsStack.widthAnchor),
+            characterArcVisualizationView.heightAnchor.constraint(greaterThanOrEqualToConstant: 800)
+        ])
+
+        characterArcVisualizationView.configure(
+            arcs: results.characterArcs,
+            interactions: results.characterInteractions,
+            presence: results.characterPresence
+        )
+        scrollToTop()
+    }
+
+    private func displayReadabilityAnalysis() {
+        NSLog("👁️ displayReadabilityAnalysis() called")
+
+        let placeholder = makeLabel("👁️ Readability Analysis\n\nAnalyze sentence complexity, vocabulary diversity, and reading level.\n\nComing soon...", size: 14, bold: false)
+        placeholder.alignment = .center
+        placeholder.textColor = .secondaryLabelColor
+        placeholder.maximumNumberOfLines = 0
+        resultsStack.addArrangedSubview(placeholder)
+    }
+
+    private func displayPacingAnalysis() {
+        NSLog("⚡ displayPacingAnalysis() called")
+
+        let placeholder = makeLabel("⚡ Pacing Analysis\n\nTrack scene lengths, chapter distribution, and narrative rhythm.\n\nComing soon...", size: 14, bold: false)
+        placeholder.alignment = .center
+        placeholder.textColor = .secondaryLabelColor
+        placeholder.maximumNumberOfLines = 0
+        resultsStack.addArrangedSubview(placeholder)
+    }
+
+    private func displayDialogueAnalysis() {
+        NSLog("💬 displayDialogueAnalysis() called")
+
+        let placeholder = makeLabel("💬 Dialogue Analysis\n\nAnalyze speech patterns, conversation balance, and dialogue tags.\n\nComing soon...", size: 14, bold: false)
+        placeholder.alignment = .center
+        placeholder.textColor = .secondaryLabelColor
+        placeholder.maximumNumberOfLines = 0
+        resultsStack.addArrangedSubview(placeholder)
+    }
+
+    private func displayThemeAnalysis() {
+        NSLog("🎭 displayThemeAnalysis() called")
+
+        let placeholder = makeLabel("🎭 Theme Analysis\n\nDetect recurring motifs, symbols, and thematic elements.\n\nComing soon...", size: 14, bold: false)
+        placeholder.alignment = .center
+        placeholder.textColor = .secondaryLabelColor
+        placeholder.maximumNumberOfLines = 0
+        resultsStack.addArrangedSubview(placeholder)
+    }
+
+    private func displayWorldbuildingAnalysis() {
+        NSLog("🌍 displayWorldbuildingAnalysis() called")
+
+        let placeholder = makeLabel("🌍 Worldbuilding Analysis\n\nTrack locations, time references, and world consistency.\n\nComing soon...", size: 14, bold: false)
+        placeholder.alignment = .center
+        placeholder.textColor = .secondaryLabelColor
+        placeholder.maximumNumberOfLines = 0
+        resultsStack.addArrangedSubview(placeholder)
     }
 }
 
@@ -1063,10 +1299,9 @@ extension AnalysisViewController: PlotVisualizationDelegate {
     }
 
     func openPlotPopout(_ analysis: PlotAnalysis) {
-        guard #available(macOS 13.0, *) else { return }
-
         // Close existing popout if any
         plotPopoutWindow?.close()
+        plotPopoutWindow = nil
 
         let contentRect = NSRect(x: 0, y: 0, width: 1100, height: 760)
         let window = NSWindow(
@@ -1076,6 +1311,10 @@ extension AnalysisViewController: PlotVisualizationDelegate {
             defer: false
         )
         window.title = "Story Progress"
+        window.level = .normal
+        window.isMovableByWindowBackground = true
+        window.isExcludedFromWindowsMenu = false
+        window.isReleasedWhenClosed = false
 
         let hostingView = NSHostingView(rootView: PlotTensionChart(
             plotAnalysis: analysis,
@@ -1102,7 +1341,16 @@ extension AnalysisViewController: PlotVisualizationDelegate {
         window.contentView = container
         window.center()
         window.makeKeyAndOrderFront(nil)
+
+        // Store window reference and set up cleanup
         plotPopoutWindow = window
+        NotificationCenter.default.addObserver(
+            forName: NSWindow.willCloseNotification,
+            object: window,
+            queue: .main
+        ) { [weak self] _ in
+            self?.plotPopoutWindow = nil
+        }
     }
 }
 
@@ -1115,6 +1363,752 @@ extension AnalysisViewController: CharacterArcVisualizationDelegate {
             object: nil,
             userInfo: ["wordPosition": wordPosition]
         )
+    }
+
+    func openEmotionalJourneyPopout(arcs: [CharacterArc]) {
+        // Close existing window if open
+        emotionalJourneyPopoutWindow?.close()
+        emotionalJourneyPopoutWindow = nil
+
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 1000, height: 700),
+            styleMask: [.titled, .closable, .resizable, .miniaturizable],
+            backing: .buffered,
+            defer: false
+        )
+        window.title = "Character Emotional Journeys"
+        window.level = .normal
+        window.isMovableByWindowBackground = true
+        window.isExcludedFromWindowsMenu = false
+        window.isReleasedWhenClosed = false
+
+        // Apply theme colors
+        let theme = ThemeManager.shared.currentTheme
+        window.backgroundColor = theme.pageBackground
+
+        let hostingView = NSHostingView(rootView: EmotionalJourneyChart(
+            arcs: arcs,
+            onSectionTap: { [weak self] position in
+                self?.didTapSection(at: position)
+            }
+        ))
+        hostingView.translatesAutoresizingMaskIntoConstraints = false
+
+        let container = NSView()
+        container.translatesAutoresizingMaskIntoConstraints = false
+        container.wantsLayer = true
+        container.layer?.backgroundColor = theme.pageBackground.cgColor
+        container.addSubview(hostingView)
+
+        NSLayoutConstraint.activate([
+            hostingView.topAnchor.constraint(equalTo: container.topAnchor, constant: 12),
+            hostingView.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 12),
+            hostingView.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -12),
+            hostingView.bottomAnchor.constraint(equalTo: container.bottomAnchor, constant: -12)
+        ])
+
+        window.contentView = container
+        window.center()
+        window.makeKeyAndOrderFront(nil)
+
+        // Store window reference and set up cleanup
+        emotionalJourneyPopoutWindow = window
+        NotificationCenter.default.addObserver(
+            forName: NSWindow.willCloseNotification,
+            object: window,
+            queue: .main
+        ) { [weak self] _ in
+            self?.emotionalJourneyPopoutWindow = nil
+        }
+    }
+
+    func openInteractionsPopout(interactions: [CharacterInteraction]) {
+        // Close existing window if open
+        interactionsPopoutWindow?.close()
+        interactionsPopoutWindow = nil
+
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 900, height: 700),
+            styleMask: [.titled, .closable, .resizable, .miniaturizable],
+            backing: .buffered,
+            defer: false
+        )
+        window.title = "Character Interactions"
+        window.level = .normal
+        window.isMovableByWindowBackground = true
+        window.isExcludedFromWindowsMenu = false
+        window.isReleasedWhenClosed = false
+
+        // Apply theme colors
+        let theme = ThemeManager.shared.currentTheme
+        window.backgroundColor = theme.pageBackground
+
+        let hostingView = NSHostingView(rootView: CharacterNetworkChart(interactions: interactions))
+        hostingView.translatesAutoresizingMaskIntoConstraints = false
+
+        let container = NSView()
+        container.translatesAutoresizingMaskIntoConstraints = false
+        container.wantsLayer = true
+        container.layer?.backgroundColor = theme.pageBackground.cgColor
+        container.addSubview(hostingView)
+
+        NSLayoutConstraint.activate([
+            hostingView.topAnchor.constraint(equalTo: container.topAnchor, constant: 12),
+            hostingView.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 12),
+            hostingView.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -12),
+            hostingView.bottomAnchor.constraint(equalTo: container.bottomAnchor, constant: -12)
+        ])
+
+        window.contentView = container
+        window.center()
+        window.makeKeyAndOrderFront(nil)
+
+        // Store window reference and set up cleanup
+        interactionsPopoutWindow = window
+        NotificationCenter.default.addObserver(
+            forName: NSWindow.willCloseNotification,
+            object: window,
+            queue: .main
+        ) { [weak self] _ in
+            self?.interactionsPopoutWindow = nil
+        }
+    }
+
+    func openPresencePopout(presence: [CharacterPresence]) {
+        // Close existing window if open
+        presencePopoutWindow?.close()
+        presencePopoutWindow = nil
+
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 1100, height: 700),
+            styleMask: [.titled, .closable, .resizable, .miniaturizable],
+            backing: .buffered,
+            defer: false
+        )
+        window.title = "Character Presence"
+        window.level = .normal
+        window.isMovableByWindowBackground = true
+        window.isExcludedFromWindowsMenu = false
+        window.isReleasedWhenClosed = false
+
+        // Apply theme colors
+        let theme = ThemeManager.shared.currentTheme
+        window.backgroundColor = theme.pageBackground
+
+        let hostingView = NSHostingView(rootView: CharacterPresenceBarChart(presence: presence))
+        hostingView.translatesAutoresizingMaskIntoConstraints = false
+
+        let container = NSView()
+        container.translatesAutoresizingMaskIntoConstraints = false
+        container.wantsLayer = true
+        container.layer?.backgroundColor = theme.pageBackground.cgColor
+        container.addSubview(hostingView)
+
+        NSLayoutConstraint.activate([
+            hostingView.topAnchor.constraint(equalTo: container.topAnchor, constant: 12),
+            hostingView.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 12),
+            hostingView.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -12),
+            hostingView.bottomAnchor.constraint(equalTo: container.bottomAnchor, constant: -12)
+        ])
+
+        window.contentView = container
+        window.center()
+        window.makeKeyAndOrderFront(nil)
+
+        // Store window reference and set up cleanup
+        presencePopoutWindow = window
+        NotificationCenter.default.addObserver(
+            forName: NSWindow.willCloseNotification,
+            object: window,
+            queue: .main
+        ) { [weak self] _ in
+            self?.presencePopoutWindow = nil
+        }
+    }
+
+    // MARK: - Analysis Popout Windows
+
+    private func refreshAnalysisPopoutContent() {
+        guard let stack = analysisPopoutStack else { return }
+
+        // Clear current content
+        stack.arrangedSubviews.forEach { view in
+            stack.removeArrangedSubview(view)
+            view.removeFromSuperview()
+        }
+
+        let header = NSTextField(labelWithString: "Document Analysis")
+        header.font = NSFont.boldSystemFont(ofSize: 18)
+        header.textColor = NSColor(red: 0.2, green: 0.2, blue: 0.2, alpha: 1.0)
+        stack.addArrangedSubview(header)
+
+        guard let results = latestAnalysisResults, results.wordCount > 0 else {
+            let placeholder = NSTextField(labelWithString: "No content to analyze.\n\nWrite some text and click Update.")
+            placeholder.textColor = NSColor(red: 0.4, green: 0.4, blue: 0.4, alpha: 1.0)
+            placeholder.maximumNumberOfLines = 0
+            stack.addArrangedSubview(placeholder)
+            return
+        }
+
+        // Helper functions for building UI elements in the popout
+        func addHeader(_ text: String) {
+            let label = makeLabel(text, size: 14, bold: true)
+            label.textColor = NSColor(red: 0.2, green: 0.2, blue: 0.2, alpha: 1.0)
+            label.alignment = .center
+            stack.addArrangedSubview(label)
+        }
+
+        func addStat(_ name: String, _ value: String) {
+            let label = makeLabel("\(name): \(value)", size: 12, bold: false)
+            label.textColor = NSColor(red: 0.3, green: 0.3, blue: 0.3, alpha: 1.0)
+            stack.addArrangedSubview(label)
+        }
+
+        func addWarning(_ text: String) {
+            let label = makeLabel(text, size: 12, bold: false)
+            label.textColor = .systemOrange
+            label.lineBreakMode = .byWordWrapping
+            label.maximumNumberOfLines = 0
+            stack.addArrangedSubview(label)
+        }
+
+        func addSuccess(_ text: String) {
+            let label = makeLabel(text, size: 12, bold: false)
+            label.textColor = .systemGreen
+            stack.addArrangedSubview(label)
+        }
+
+        func addDetail(_ text: String) {
+            let label = makeLabel(text, size: 11, bold: false)
+            label.textColor = NSColor(red: 0.45, green: 0.45, blue: 0.45, alpha: 1.0)
+            label.lineBreakMode = .byWordWrapping
+            label.maximumNumberOfLines = 0
+            stack.addArrangedSubview(label)
+        }
+
+        func addDivider() {
+            let box = NSBox()
+            box.boxType = .separator
+            box.translatesAutoresizingMaskIntoConstraints = false
+            stack.addArrangedSubview(box)
+        }
+
+        // Basic stats
+        addStat("Words", "\(results.wordCount)")
+        addStat("Sentences", "\(results.sentenceCount)")
+        addStat("Reading Level", results.readingLevel)
+        addDivider()
+
+        // Paragraph analysis
+        addHeader("📊 Paragraphs")
+        addStat("Count", "\(results.paragraphCount)")
+        addStat("Pages", "~\(results.pageCount)")
+        addStat("Avg Length", "\(results.averageParagraphLength) words")
+        addStat("Dialogue", "\(results.dialoguePercentage)%")
+        if !results.longParagraphs.isEmpty {
+            addWarning("⚠️ \(results.longParagraphs.count) long paragraph(s)")
+        }
+        addDivider()
+
+        // Passive voice
+        addHeader("🔍 Passive Voice")
+        if results.passiveVoiceCount > 0 {
+            addWarning("Found \(results.passiveVoiceCount) instance(s)")
+            for phrase in results.passiveVoicePhrases.prefix(3) {
+                addDetail("• \"\(phrase)\"")
+            }
+        } else {
+            addSuccess("✓ None detected")
+        }
+        addDivider()
+
+        // Adverbs
+        addHeader("🐢 Adverbs")
+        if results.adverbCount > 0 {
+            addWarning("Found \(results.adverbCount)")
+            for phrase in results.adverbPhrases.prefix(3) {
+                addDetail("• \"\(phrase)\"")
+            }
+        } else {
+            addSuccess("✓ Minimal usage")
+        }
+        addDivider()
+
+        // Sensory details
+        addHeader("🌟 Sensory Details")
+        addStat("Count", "\(results.sensoryDetailCount)")
+        if results.missingSensoryDetail {
+            addWarning("Consider adding more")
+        } else {
+            addSuccess("✓ Good usage")
+        }
+        addDivider()
+
+        // Weak verbs
+        addHeader("💪 Weak Verbs")
+        if results.weakVerbCount > 0 {
+            addWarning("Found \(results.weakVerbCount) instance(s)")
+            for phrase in results.weakVerbPhrases.prefix(5) {
+                addDetail("• \"\(phrase)\"")
+            }
+            addDetail("Tip: Use stronger, more specific verbs")
+        } else {
+            addSuccess("✓ Minimal usage")
+        }
+        addDivider()
+
+        // Clichés
+        addHeader("🚫 Clichés")
+        if results.clicheCount > 0 {
+            addWarning("Found \(results.clicheCount) cliché(s)")
+            for phrase in results.clichePhrases.prefix(3) {
+                addDetail("• \"\(phrase)\"")
+            }
+            addDetail("Tip: Replace with original descriptions")
+        } else {
+            addSuccess("✓ None detected")
+        }
+        addDivider()
+
+        // Filter words
+        addHeader("🔍 Filter Words")
+        if results.filterWordCount > 0 {
+            addWarning("Found \(results.filterWordCount) instance(s)")
+            for phrase in results.filterWordPhrases.prefix(5) {
+                addDetail("• \"\(phrase)\"")
+            }
+            addDetail("Tip: Show directly instead of filtering through perception")
+        } else {
+            addSuccess("✓ Minimal usage")
+        }
+        addDivider()
+
+        // Sentence variety
+        addHeader("📊 Sentence Variety")
+        addStat("Score", "\(results.sentenceVarietyScore)%")
+        if !results.sentenceLengths.isEmpty {
+            let graphView = createSentenceGraphForPopout(results.sentenceLengths)
+            stack.addArrangedSubview(graphView)
+        }
+        if results.sentenceVarietyScore < 40 {
+            addWarning("Low variety - mix short and long sentences")
+        } else if results.sentenceVarietyScore < 70 {
+            addDetail("Good variety - consider adding more variation")
+        } else {
+            addSuccess("✓ Excellent variety")
+        }
+        addDivider()
+
+        // Dialogue Quality Analysis
+        if results.dialogueSegmentCount > 0 {
+            addHeader("💬 Dialogue Quality")
+            addStat("Overall Score", "\(results.dialogueQualityScore)%")
+            addStat("Dialogue Segments", "\(results.dialogueSegmentCount)")
+
+            // Tip #3: Filler Words
+            if results.dialogueFillerCount > 0 {
+                let fillerPercent = (results.dialogueFillerCount * 100) / results.dialogueSegmentCount
+                addWarning("⚠️ Filler words in \(fillerPercent)% of dialogue")
+                addDetail("Tip: Remove \"uh\", \"um\", \"well\" unless characterizing speech")
+            } else {
+                addSuccess("✓ Minimal filler words")
+            }
+
+            // Tip #2: Repetition
+            if results.dialogueRepetitionScore > 30 {
+                addWarning("⚠️ Repetitive dialogue detected (\(results.dialogueRepetitionScore)%)")
+                addDetail("Tip: Vary dialogue - characters shouldn't repeat phrases")
+            }
+
+            // Tip #5: Predictability
+            if !results.dialoguePredictablePhrases.isEmpty {
+                addWarning("⚠️ Found \(results.dialoguePredictablePhrases.count) clichéd phrase(s)")
+                for phrase in results.dialoguePredictablePhrases.prefix(3) {
+                    addDetail("• \"\(phrase)\"")
+                }
+                addDetail("Tip: Replace predictable dialogue with fresh, character-specific lines")
+            }
+
+            // Tip #7: Over-Exposition
+            if results.dialogueExpositionCount > 0 {
+                let expositionPercent = (results.dialogueExpositionCount * 100) / results.dialogueSegmentCount
+                if expositionPercent > 20 {
+                    addWarning("⚠️ \(expositionPercent)% of dialogue is info-dumping")
+                    addDetail("Tip: Show through action, not lengthy explanations")
+                }
+            }
+
+            // Tip #8: Conflict/Tension
+            if !results.hasDialogueConflict {
+                addWarning("⚠️ Dialogue lacks conflict or tension")
+                addDetail("Tip: Add disagreement, subtext, or opposing goals")
+            } else {
+                addSuccess("✓ Good tension in dialogue")
+            }
+
+            // Tip #10: Pacing
+            addStat("Pacing Variety", "\(results.dialoguePacingScore)%")
+            if results.dialoguePacingScore < 40 {
+                addWarning("Low pacing variety")
+                addDetail("Tip: Mix short, punchy lines with longer speeches")
+            } else if results.dialoguePacingScore >= 60 {
+                addSuccess("✓ Good pacing variety")
+            }
+
+            // Overall quality assessment
+            if results.dialogueQualityScore >= 80 {
+                addSuccess("✓ Excellent dialogue quality!")
+            } else if results.dialogueQualityScore >= 60 {
+                addDetail("Good dialogue - minor improvements possible")
+            } else {
+                addWarning("Consider revising dialogue for more impact")
+            }
+        }
+    }
+
+    /// Helper to apply theme colors to any popout window - ensures all analysis popouts match navigator style
+    private func applyThemeToPopout(window: NSWindow, container: NSView?, stack: NSStackView?) {
+        let backgroundColor = currentTheme.pageAround
+
+        window.backgroundColor = backgroundColor
+
+        if let contentView = window.contentView {
+            contentView.wantsLayer = true
+            contentView.layer?.backgroundColor = backgroundColor.cgColor
+        }
+
+        if let container = container {
+            container.wantsLayer = true
+            container.layer?.backgroundColor = backgroundColor.cgColor
+        }
+
+        if let stack = stack {
+            stack.wantsLayer = true
+            stack.layer?.backgroundColor = backgroundColor.cgColor
+            stack.layer?.cornerRadius = 10
+        }
+    }
+
+    private func applyThemeToAnalysisPopout() {
+        guard let window = analysisPopoutWindow else { return }
+        applyThemeToPopout(window: window, container: analysisPopoutContainer, stack: analysisPopoutStack)
+    }
+
+    private func createAnalysisPopoutWindow() -> NSWindow {
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 600, height: 800),
+            styleMask: [.titled, .closable, .resizable, .miniaturizable],
+            backing: .buffered,
+            defer: false
+        )
+        window.title = "📊 Analysis"
+        window.isReleasedWhenClosed = false
+
+        let scrollView = NSScrollView()
+        scrollView.hasVerticalScroller = true
+        scrollView.autohidesScrollers = true
+        scrollView.scrollerStyle = .overlay
+        scrollView.drawsBackground = false
+        scrollView.borderType = .noBorder
+        scrollView.translatesAutoresizingMaskIntoConstraints = false
+
+        let contentView = AnalysisFlippedView()
+        contentView.translatesAutoresizingMaskIntoConstraints = false
+
+        let stack = NSStackView()
+        stack.orientation = .vertical
+        stack.alignment = .leading
+        stack.spacing = 12
+        stack.edgeInsets = NSEdgeInsets(top: 16, left: 16, bottom: 16, right: 16)
+        stack.translatesAutoresizingMaskIntoConstraints = false
+
+        contentView.addSubview(stack)
+        scrollView.documentView = contentView
+
+        if let clipView = scrollView.contentView as NSClipView? {
+            NSLayoutConstraint.activate([
+                contentView.leadingAnchor.constraint(equalTo: clipView.leadingAnchor),
+                contentView.trailingAnchor.constraint(equalTo: clipView.trailingAnchor),
+                contentView.topAnchor.constraint(equalTo: clipView.topAnchor),
+                contentView.widthAnchor.constraint(equalTo: clipView.widthAnchor)
+            ])
+        }
+
+        NSLayoutConstraint.activate([
+            stack.topAnchor.constraint(equalTo: contentView.topAnchor, constant: 12),
+            stack.leadingAnchor.constraint(equalTo: contentView.leadingAnchor, constant: 12),
+            stack.trailingAnchor.constraint(equalTo: contentView.trailingAnchor, constant: -12),
+            stack.bottomAnchor.constraint(equalTo: contentView.bottomAnchor, constant: -12)
+        ])
+
+        let container = NSView()
+        container.translatesAutoresizingMaskIntoConstraints = false
+        container.wantsLayer = true
+        container.addSubview(scrollView)
+
+        NSLayoutConstraint.activate([
+            scrollView.topAnchor.constraint(equalTo: container.topAnchor),
+            scrollView.leadingAnchor.constraint(equalTo: container.leadingAnchor),
+            scrollView.trailingAnchor.constraint(equalTo: container.trailingAnchor),
+            scrollView.bottomAnchor.constraint(equalTo: container.bottomAnchor)
+        ])
+
+        window.contentView = container
+        window.center()
+
+        // Set references before applying theme
+        analysisPopoutStack = stack
+        analysisPopoutContainer = container
+
+        // Apply theme colors directly (can't use applyThemeToAnalysisPopout because analysisPopoutWindow isn't set yet)
+        let backgroundColor = currentTheme.pageAround
+        container.layer?.backgroundColor = backgroundColor.cgColor
+        window.backgroundColor = backgroundColor
+        stack.wantsLayer = true
+        stack.layer?.backgroundColor = backgroundColor.cgColor
+        stack.layer?.cornerRadius = 10
+
+        refreshAnalysisPopoutContent()
+
+        NotificationCenter.default.addObserver(
+            forName: NSWindow.willCloseNotification,
+            object: window,
+            queue: .main
+        ) { [weak self] _ in
+            self?.analysisPopoutWindow = nil
+            self?.analysisPopoutStack = nil
+            self?.analysisPopoutContainer = nil
+        }
+
+        return window
+    }
+
+    private func createOutlinePopoutWindow() -> NSWindow {
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 800, height: 600),
+            styleMask: [.titled, .closable, .resizable, .miniaturizable],
+            backing: .buffered,
+            defer: false
+        )
+        window.title = "📝 Document Outline"
+        window.isReleasedWhenClosed = false
+
+        let scrollView = NSScrollView()
+        scrollView.hasVerticalScroller = true
+        scrollView.autohidesScrollers = true
+        scrollView.scrollerStyle = .overlay
+        scrollView.drawsBackground = false
+        scrollView.borderType = .noBorder
+        scrollView.translatesAutoresizingMaskIntoConstraints = false
+
+        let contentView = AnalysisFlippedView()
+        contentView.translatesAutoresizingMaskIntoConstraints = false
+
+        let stack = NSStackView()
+        stack.orientation = .vertical
+        stack.alignment = .leading
+        stack.spacing = 16
+        stack.edgeInsets = NSEdgeInsets(top: 24, left: 24, bottom: 24, right: 24)
+        stack.translatesAutoresizingMaskIntoConstraints = false
+
+        let header = NSTextField(labelWithString: "Document Outline")
+        header.font = NSFont.boldSystemFont(ofSize: 18)
+        stack.addArrangedSubview(header)
+
+        // Get actual outline entries from editor
+        if let entries = getOutlineEntriesCallback?(), !entries.isEmpty {
+            for entry in entries {
+                let indent = String(repeating: "  ", count: entry.level - 1)
+                let entryLabel = NSTextField(labelWithString: "\(indent)\(entry.title)")
+                entryLabel.font = NSFont.systemFont(ofSize: 13)
+                entryLabel.textColor = entry.level == 1 ? .labelColor : .secondaryLabelColor
+                entryLabel.lineBreakMode = .byTruncatingTail
+                entryLabel.maximumNumberOfLines = 1
+                stack.addArrangedSubview(entryLabel)
+            }
+        } else {
+            let info = NSTextField(labelWithString: "No outline entries found\n\nAdd headings to your document to see the outline")
+            info.textColor = .secondaryLabelColor
+            info.maximumNumberOfLines = 0
+            stack.addArrangedSubview(info)
+        }
+
+        contentView.addSubview(stack)
+        scrollView.documentView = contentView
+
+        NSLayoutConstraint.activate([
+            contentView.widthAnchor.constraint(equalTo: scrollView.widthAnchor),
+
+            stack.topAnchor.constraint(equalTo: contentView.topAnchor, constant: 12),
+            stack.leadingAnchor.constraint(equalTo: contentView.leadingAnchor, constant: 12),
+            stack.trailingAnchor.constraint(equalTo: contentView.trailingAnchor, constant: -12),
+            stack.bottomAnchor.constraint(equalTo: contentView.bottomAnchor, constant: -12),
+            stack.widthAnchor.constraint(equalTo: contentView.widthAnchor, constant: -24)
+        ])
+
+        let container = NSView()
+        container.addSubview(scrollView)
+        scrollView.translatesAutoresizingMaskIntoConstraints = false
+
+        NSLayoutConstraint.activate([
+            scrollView.topAnchor.constraint(equalTo: container.topAnchor),
+            scrollView.leadingAnchor.constraint(equalTo: container.leadingAnchor),
+            scrollView.trailingAnchor.constraint(equalTo: container.trailingAnchor),
+            scrollView.bottomAnchor.constraint(equalTo: container.bottomAnchor)
+        ])
+
+        window.contentView = container
+        window.center()
+
+        NotificationCenter.default.addObserver(
+            forName: NSWindow.willCloseNotification,
+            object: window,
+            queue: .main
+        ) { [weak self] _ in
+            self?.outlinePopoutWindow = nil
+        }
+
+        return window
+    }
+
+    private func createPlotPopoutWindow() -> NSWindow {
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 1000, height: 700),
+            styleMask: [.titled, .closable, .resizable, .miniaturizable],
+            backing: .buffered,
+            defer: false
+        )
+        window.title = "📖 Plot Structure Analysis"
+        window.isReleasedWhenClosed = false
+
+        let scrollView = NSScrollView()
+        scrollView.hasVerticalScroller = true
+        scrollView.autohidesScrollers = true
+        scrollView.scrollerStyle = .overlay
+        scrollView.drawsBackground = false
+        scrollView.borderType = .noBorder
+        scrollView.translatesAutoresizingMaskIntoConstraints = false
+
+        let contentView = AnalysisFlippedView()
+        contentView.translatesAutoresizingMaskIntoConstraints = false
+
+        let stack = NSStackView()
+        stack.orientation = .vertical
+        stack.alignment = .leading
+        stack.spacing = 16
+        stack.edgeInsets = NSEdgeInsets(top: 24, left: 24, bottom: 24, right: 24)
+        stack.translatesAutoresizingMaskIntoConstraints = false
+
+        let header = NSTextField(labelWithString: "Plot Structure Analysis")
+        header.font = NSFont.boldSystemFont(ofSize: 18)
+        stack.addArrangedSubview(header)
+
+        // Add plot visualization if available
+        if let results = latestAnalysisResults, let plotAnalysis = results.plotAnalysis {
+            let plotView = PlotVisualizationView()
+            plotView.translatesAutoresizingMaskIntoConstraints = false
+            plotView.configure(with: plotAnalysis)
+            stack.addArrangedSubview(plotView)
+
+            NSLayoutConstraint.activate([
+                plotView.widthAnchor.constraint(equalTo: stack.widthAnchor),
+                plotView.heightAnchor.constraint(greaterThanOrEqualToConstant: 600)
+            ])
+        } else {
+            let info = NSTextField(labelWithString: "Plot structure visualization will appear here\n\nRun an analysis to see plot tension and pacing")
+            info.textColor = .secondaryLabelColor
+            info.maximumNumberOfLines = 0
+            stack.addArrangedSubview(info)
+        }
+
+        contentView.addSubview(stack)
+        scrollView.documentView = contentView
+
+        NSLayoutConstraint.activate([
+            contentView.widthAnchor.constraint(equalTo: scrollView.widthAnchor),
+
+            stack.topAnchor.constraint(equalTo: contentView.topAnchor, constant: 12),
+            stack.leadingAnchor.constraint(equalTo: contentView.leadingAnchor, constant: 12),
+            stack.trailingAnchor.constraint(equalTo: contentView.trailingAnchor, constant: -12),
+            stack.bottomAnchor.constraint(equalTo: contentView.bottomAnchor, constant: -12),
+            stack.widthAnchor.constraint(equalTo: contentView.widthAnchor, constant: -24)
+        ])
+
+        let container = NSView()
+        container.addSubview(scrollView)
+        scrollView.translatesAutoresizingMaskIntoConstraints = false
+
+        NSLayoutConstraint.activate([
+            scrollView.topAnchor.constraint(equalTo: container.topAnchor),
+            scrollView.leadingAnchor.constraint(equalTo: container.leadingAnchor),
+            scrollView.trailingAnchor.constraint(equalTo: container.trailingAnchor),
+            scrollView.bottomAnchor.constraint(equalTo: container.bottomAnchor)
+        ])
+
+        window.contentView = container
+        window.center()
+
+        // Apply theme colors
+        applyThemeToPopout(window: window, container: container, stack: stack)
+
+        NotificationCenter.default.addObserver(
+            forName: NSWindow.willCloseNotification,
+            object: window,
+            queue: .main
+        ) { [weak self] _ in
+            self?.plotPopoutWindow = nil
+        }
+
+        return window
+    }
+
+    private func showCharacterAnalysisMenu(_ sender: NSButton) {
+        // Trigger analysis if no data exists
+        if latestAnalysisResults == nil {
+            analyzeCallback?()
+            // Give a moment for analysis to complete then show menu
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
+                self?.showCharacterAnalysisMenuAfterAnalysis(sender)
+            }
+        } else {
+            showCharacterAnalysisMenuAfterAnalysis(sender)
+        }
+    }
+
+    private func showCharacterAnalysisMenuAfterAnalysis(_ sender: NSButton) {
+        let menu = NSMenu()
+
+        let emotionalItem = NSMenuItem(title: "📊 Emotional Journeys", action: #selector(showEmotionalJourney), keyEquivalent: "")
+        emotionalItem.target = self
+        menu.addItem(emotionalItem)
+
+        let interactionsItem = NSMenuItem(title: "🤝 Character Interactions", action: #selector(showInteractions), keyEquivalent: "")
+        interactionsItem.target = self
+        menu.addItem(interactionsItem)
+
+        let presenceItem = NSMenuItem(title: "📍 Character Presence", action: #selector(showPresence), keyEquivalent: "")
+        presenceItem.target = self
+        menu.addItem(presenceItem)
+
+        menu.popUp(positioning: nil, at: NSPoint(x: 0, y: sender.bounds.height), in: sender)
+    }
+
+    @objc private func showEmotionalJourney() {
+        if let results = latestAnalysisResults {
+            openEmotionalJourneyPopout(arcs: results.characterArcs)
+        }
+    }
+
+    @objc private func showInteractions() {
+        if let results = latestAnalysisResults {
+            openInteractionsPopout(interactions: results.characterInteractions)
+        }
+    }
+
+    @objc private func showPresence() {
+        if let results = latestAnalysisResults {
+            openPresencePopout(presence: results.characterPresence)
+        }
     }
 }
 

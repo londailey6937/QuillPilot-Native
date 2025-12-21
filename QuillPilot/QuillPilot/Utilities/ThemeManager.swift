@@ -98,15 +98,6 @@ enum AppTheme: String {
         }
     }
 
-    var analysisBackground: NSColor {
-        switch self {
-        case .day:
-            return NSColor(hex: "#FFFDF9") ?? .white
-        case .night:
-            return NSColor(hex: "#1E1E1E") ?? .black
-        }
-    }
-
     // Ruler colors
     var rulerBackground: NSColor {
         switch self {

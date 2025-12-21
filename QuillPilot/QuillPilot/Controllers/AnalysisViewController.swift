@@ -28,6 +28,23 @@ class AnalysisViewController: NSViewController {
     private var locationsWindow: LocationsWindowController?
     private var storyDirectionsWindow: StoryDirectionsWindowController?
 
+    // Visualization views (macOS 13+)
+    @available(macOS 13.0, *)
+    private lazy var plotVisualizationView: PlotVisualizationView = {
+        let view = PlotVisualizationView()
+        view.translatesAutoresizingMaskIntoConstraints = false
+        view.delegate = self
+        return view
+    }()
+
+    @available(macOS 13.0, *)
+    private lazy var characterArcVisualizationView: CharacterArcVisualizationView = {
+        let view = CharacterArcVisualizationView()
+        view.translatesAutoresizingMaskIntoConstraints = false
+        view.delegate = self
+        return view
+    }()
+
     var outlineViewController: OutlineViewController?
     var isOutlinePanel: Bool = false
     var analyzeCallback: (() -> Void)?
@@ -58,12 +75,14 @@ class AnalysisViewController: NSViewController {
         case basic = "Outline"
         case advanced = "Advanced"
         case plot = "Plot"
+        case visualization = "Graphs"
 
         var icon: String {
             switch self {
             case .basic: return "📝"
             case .advanced: return "🔬"
             case .plot: return "📖"
+            case .visualization: return "📊"
             }
         }
     }
@@ -317,6 +336,9 @@ class AnalysisViewController: NSViewController {
         if !isOutlinePanel && category == .basic {
             // Restore basic analysis - trigger a re-analysis
             analyzeCallback?()
+        } else if category == .visualization {
+            // Show visualizations
+            displayVisualizations()
         } else {
             // Add placeholder for non-basic categories
             let placeholder = makeLabel("\(category.icon) \(category.rawValue) Analysis\n\nComing soon...", size: 16, bold: true)
@@ -470,6 +492,9 @@ class AnalysisViewController: NSViewController {
 
     func displayResults(_ results: AnalysisResults) {
         NSLog("📊 Displaying results: \(results.wordCount) words")
+
+        // Store results for visualization
+        storeAnalysisResults(results)
 
         // Scroll to top first
         scrollView?.documentView?.scroll(NSPoint.zero)
@@ -690,7 +715,16 @@ class AnalysisViewController: NSViewController {
 
     private func addHeader(_ text: String) {
         let label = makeLabel(text, size: 14, bold: true)
+        label.alignment = .center
+        label.translatesAutoresizingMaskIntoConstraints = false
+
         resultsStack.addArrangedSubview(label)
+
+        // Ensure label takes full width for centering to work
+        NSLayoutConstraint.activate([
+            label.leadingAnchor.constraint(equalTo: resultsStack.leadingAnchor),
+            label.trailingAnchor.constraint(equalTo: resultsStack.trailingAnchor)
+        ])
     }
 
     private func addStat(_ name: String, _ value: String) {
@@ -859,4 +893,110 @@ class AnalysisViewController: NSViewController {
         outlineViewController?.applyTheme(theme)
         updateSelectedButton()
     }
+
+    // MARK: - Visualization Methods
+
+    private var latestAnalysisResults: AnalysisResults?
+
+    func storeAnalysisResults(_ results: AnalysisResults) {
+        latestAnalysisResults = results
+    }
+
+    @available(macOS 13.0, *)
+    private func displayVisualizations() {
+        guard let results = latestAnalysisResults else {
+            let placeholder = makeLabel("📊 No analysis data available\n\nRun an analysis first to see visualizations", size: 16, bold: true)
+            placeholder.alignment = .center
+            placeholder.textColor = .secondaryLabelColor
+            placeholder.maximumNumberOfLines = 0
+            resultsStack.addArrangedSubview(placeholder)
+            return
+        }
+
+        // Create tabs for different visualizations
+        let tabView = NSTabView()
+        tabView.translatesAutoresizingMaskIntoConstraints = false
+        tabView.tabViewType = .topTabsBezelBorder
+
+        // Plot Point Tab
+        if let plotAnalysis = results.plotAnalysis {
+            let plotTab = NSTabViewItem(identifier: "plot")
+            plotTab.label = "📊 Plot Points"
+
+            let plotContainer = NSView()
+            plotContainer.translatesAutoresizingMaskIntoConstraints = false
+            plotContainer.addSubview(plotVisualizationView)
+
+            NSLayoutConstraint.activate([
+                plotVisualizationView.topAnchor.constraint(equalTo: plotContainer.topAnchor),
+                plotVisualizationView.leadingAnchor.constraint(equalTo: plotContainer.leadingAnchor),
+                plotVisualizationView.trailingAnchor.constraint(equalTo: plotContainer.trailingAnchor),
+                plotVisualizationView.bottomAnchor.constraint(equalTo: plotContainer.bottomAnchor)
+            ])
+
+            plotVisualizationView.configure(with: plotAnalysis)
+            plotTab.view = plotContainer
+            tabView.addTabViewItem(plotTab)
+        }
+
+        // Character Arc Tab
+        if !results.characterArcs.isEmpty {
+            let characterTab = NSTabViewItem(identifier: "characters")
+            characterTab.label = "👥 Character Arcs"
+
+            let characterContainer = NSView()
+            characterContainer.translatesAutoresizingMaskIntoConstraints = false
+            characterContainer.addSubview(characterArcVisualizationView)
+
+            NSLayoutConstraint.activate([
+                characterArcVisualizationView.topAnchor.constraint(equalTo: characterContainer.topAnchor),
+                characterArcVisualizationView.leadingAnchor.constraint(equalTo: characterContainer.leadingAnchor),
+                characterArcVisualizationView.trailingAnchor.constraint(equalTo: characterContainer.trailingAnchor),
+                characterArcVisualizationView.bottomAnchor.constraint(equalTo: characterContainer.bottomAnchor)
+            ])
+
+            characterArcVisualizationView.configure(
+                arcs: results.characterArcs,
+                interactions: results.characterInteractions,
+                presence: results.characterPresence
+            )
+            characterTab.view = characterContainer
+            tabView.addTabViewItem(characterTab)
+        }
+
+        // Add tab view to results stack
+        resultsStack.addArrangedSubview(tabView)
+
+        NSLayoutConstraint.activate([
+            tabView.widthAnchor.constraint(equalTo: resultsStack.widthAnchor),
+            tabView.heightAnchor.constraint(greaterThanOrEqualToConstant: 500)
+        ])
+    }
 }
+
+// MARK: - Visualization Delegates
+
+@available(macOS 13.0, *)
+extension AnalysisViewController: PlotVisualizationDelegate {
+    func didTapPlotPoint(at wordPosition: Int) {
+        // Notify the editor to jump to this position
+        NotificationCenter.default.post(
+            name: Notification.Name("QuillPilotJumpToPosition"),
+            object: nil,
+            userInfo: ["wordPosition": wordPosition]
+        )
+    }
+}
+
+@available(macOS 13.0, *)
+extension AnalysisViewController: CharacterArcVisualizationDelegate {
+    func didTapSection(at wordPosition: Int) {
+        // Notify the editor to jump to this position
+        NotificationCenter.default.post(
+            name: Notification.Name("QuillPilotJumpToPosition"),
+            object: nil,
+            userInfo: ["wordPosition": wordPosition]
+        )
+    }
+}
+

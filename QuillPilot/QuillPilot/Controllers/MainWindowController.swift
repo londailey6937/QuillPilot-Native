@@ -1965,7 +1965,27 @@ class ContentViewController: NSViewController {
         // Run analysis on background thread to avoid blocking UI
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             let analysisEngine = AnalysisEngine()
-            let results = analysisEngine.analyzeText(text)
+            var results = analysisEngine.analyzeText(text)
+
+            // Get character names from Character Library if available
+            let characterLibraryPath = Bundle.main.resourcePath.flatMap { URL(fileURLWithPath: $0).appendingPathComponent("character_library.json").path }
+            if let path = characterLibraryPath, FileManager.default.fileExists(atPath: path),
+               let data = try? Data(contentsOf: URL(fileURLWithPath: path)),
+               let json = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]] {
+
+                let characterNames = json.compactMap { $0["name"] as? String }
+
+                if !characterNames.isEmpty {
+                    // Perform character arc analysis
+                    let (arcs, interactions, presence) = analysisEngine.analyzeCharacterArcs(
+                        text: text,
+                        characterNames: characterNames
+                    )
+                    results.characterArcs = arcs
+                    results.characterInteractions = interactions
+                    results.characterPresence = presence
+                }
+            }
 
             NSLog("📊 Analysis results: \(results.wordCount) words, \(results.sentenceCount) sentences, \(results.paragraphCount) paragraphs")
 

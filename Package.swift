@@ -29,6 +29,8 @@ let package = Package(
                 "Controllers/CharacterLibraryViewController.swift",
                 "Models/AnalysisEngine.swift",
                 "Models/CharacterLibrary.swift",
+                "Models/PlotAnalysis.swift",
+                "Models/CharacterArcAnalysis.swift",
                 "Utilities/ThemeManager.swift",
                 "Utilities/StyleCatalog.swift",
                 "Extensions/NSColor+Hex.swift",
@@ -42,7 +44,9 @@ let package = Package(
                 "Views/StoryOutlineWindow.swift",
                 "Views/LocationsWindow.swift",
                 "Views/StoryDirectionsWindow.swift",
-                "Views/DialogueTipsWindow.swift"
+                "Views/DialogueTipsWindow.swift",
+                "Views/PlotVisualizationView.swift",
+                "Views/CharacterArcVisualizationView.swift"
             ]
         )
     ]

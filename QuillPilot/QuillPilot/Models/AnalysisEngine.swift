@@ -47,6 +47,14 @@ struct AnalysisResults {
     var dialogueExpositionCount: Int = 0 // Info-dump lines
     var dialoguePacingScore: Int = 0 // 0-100 (length variety)
     var hasDialogueConflict: Bool = false // Tension/disagreement present
+
+    // Plot point analysis
+    var plotAnalysis: PlotAnalysis?
+
+    // Character arc analysis
+    var characterArcs: [CharacterArc] = []
+    var characterInteractions: [CharacterInteraction] = []
+    var characterPresence: [CharacterPresence] = []
 }
 
 class AnalysisEngine {
@@ -265,6 +273,14 @@ class AnalysisEngine {
 
         // Page count (industry standard: ~250 words per manuscript page)
         results.pageCount = max(1, (results.wordCount + 249) / 250)
+
+        // Plot point analysis
+        let plotDetector = PlotPointDetector()
+        results.plotAnalysis = plotDetector.detectPlotPoints(text: analysisText, wordCount: results.wordCount)
+
+        // Character arc analysis (only if we have character data)
+        // This will be called with character names from the character library
+        // For now, we'll leave these empty and populate them in the view controller
 
         return results
     }
@@ -706,4 +722,17 @@ class AnalysisEngine {
 
         return (varietyScore, lengths)
     }
+
+    // MARK: - Character Arc Analysis
+
+    func analyzeCharacterArcs(text: String, characterNames: [String]) -> ([CharacterArc], [CharacterInteraction], [CharacterPresence]) {
+        let analyzer = CharacterArcAnalyzer()
+
+        let arcs = analyzer.analyzeCharacterArcs(text: text, characterNames: characterNames, wordCount: countWords(text))
+        let interactions = analyzer.analyzeInteractions(text: text, characterNames: characterNames)
+        let presence = analyzer.analyzePresenceByChapter(text: text, characterNames: characterNames)
+
+        return (arcs, interactions, presence)
+    }
 }
+

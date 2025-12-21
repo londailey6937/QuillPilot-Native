@@ -302,7 +302,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let documentationItem = NSMenuItem(title: "QuillPilot Help", action: #selector(showDocumentation(_:)), keyEquivalent: "?")
         documentationItem.target = self
         helpMenu.addItem(documentationItem)
-        
+
         let dialogueTipsItem = NSMenuItem(title: "Dialogue Writing Tips", action: #selector(showDialogueTips(_:)), keyEquivalent: "")
         dialogueTipsItem.target = self
         helpMenu.addItem(dialogueTipsItem)
@@ -322,7 +322,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         documentationWindow?.showWindow(nil)
         documentationWindow?.window?.makeKeyAndOrderFront(nil)
     }
-    
+
     @objc private func showDialogueTips(_ sender: Any?) {
         if dialogueTipsWindow == nil {
             dialogueTipsWindow = DialogueTipsWindowController()

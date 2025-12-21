@@ -31,6 +31,10 @@ class PlotVisualizationView: NSView {
             plotAnalysis: analysis,
             onPointTap: { [weak self] wordPosition in
                 self?.delegate?.didTapPlotPoint(at: wordPosition)
+            },
+            onPopout: { [weak self] in
+                guard let self else { return }
+                self.delegate?.openPlotPopout(analysis)
             }
         )
 
@@ -51,6 +55,7 @@ class PlotVisualizationView: NSView {
 
 protocol PlotVisualizationDelegate: AnyObject {
     func didTapPlotPoint(at wordPosition: Int)
+    func openPlotPopout(_ analysis: PlotAnalysis)
 }
 
 // MARK: - SwiftUI Chart
@@ -61,18 +66,30 @@ import SwiftUI
 struct PlotTensionChart: View {
     let plotAnalysis: PlotAnalysis
     let onPointTap: (Int) -> Void
+    let onPopout: () -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            // Header (no redundant button)
-            VStack(alignment: .leading, spacing: 4) {
-                Text("Story Tension Arc")
-                    .font(.headline)
-                    .fontWeight(.semibold)
+            // Header with popout
+            HStack(alignment: .center, spacing: 12) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Story Tension Arc")
+                        .font(.headline)
+                        .fontWeight(.semibold)
 
-                Text("Tap plot points to jump to location in editor")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
+                    Text("Tap plot points to jump to location in editor")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+
+                Spacer()
+
+                Button(action: { onPopout() }) {
+                    Label("Open Large View", systemImage: "arrow.up.left.and.arrow.down.right")
+                        .labelStyle(.titleAndIcon)
+                }
+                .buttonStyle(.link)
+                .controlSize(.small)
             }
             .padding(.horizontal)
             .padding(.top, 8)

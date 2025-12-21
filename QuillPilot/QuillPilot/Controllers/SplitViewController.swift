@@ -15,6 +15,7 @@ class SplitViewController: NSSplitViewController {
     private var outlinePanelController: AnalysisViewController!
     private var analysisViewController: AnalysisViewController!
     private var analysisEngine: AnalysisEngine!
+    private var didSetInitialSplitPositions = false
 
     override func viewDidLoad() {
         super.viewDidLoad()
@@ -46,11 +47,11 @@ class SplitViewController: NSSplitViewController {
         // Analysis panel on the right (wider for visualizations)
         analysisViewController = AnalysisViewController()
         analysisViewController.isOutlinePanel = false
-        let analysisItem = NSSplitViewItem(sidebarWithViewController: analysisViewController)
+        let analysisItem = NSSplitViewItem(viewController: analysisViewController)
         analysisItem.canCollapse = true
-        analysisItem.minimumThickness = 350
-        analysisItem.maximumThickness = 600
-        analysisItem.holdingPriority = .init(250)
+        analysisItem.minimumThickness = 520
+        analysisItem.maximumThickness = 1100
+        analysisItem.holdingPriority = .init(200)
         analysisItem.isCollapsed = false
         addSplitViewItem(analysisItem)
 
@@ -65,6 +66,28 @@ class SplitViewController: NSSplitViewController {
         // Configure split view
         splitView.dividerStyle = .thin
         splitView.autosaveName = "QuillPilotSplitView"
+    }
+
+    override func viewDidLayout() {
+        super.viewDidLayout()
+
+        guard !didSetInitialSplitPositions else { return }
+        didSetInitialSplitPositions = true
+
+        // Aim for a wider analysis panel (30–40% of total), while keeping editor comfortable
+        let totalWidth = view.bounds.width
+        let outlineWidth: CGFloat = 280
+        let targetAnalysis = max(520, min(640, totalWidth * 0.34))
+        let remainingForEditor = totalWidth - outlineWidth - targetAnalysis
+        let editorWidth = max(700, remainingForEditor)
+
+        let firstDivider = outlineWidth
+        let secondDivider = outlineWidth + editorWidth
+
+        if splitView.subviews.count >= 3 {
+            splitView.setPosition(firstDivider, ofDividerAt: 0)
+            splitView.setPosition(secondDivider, ofDividerAt: 1)
+        }
     }
 
     // MARK: - Toolbar Actions

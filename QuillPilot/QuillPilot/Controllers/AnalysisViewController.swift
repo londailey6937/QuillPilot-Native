@@ -7,6 +7,12 @@
 //
 
 import Cocoa
+import SwiftUI
+
+// Flipped view so (0,0) is top-left; keeps content pinned at the top of the scroll area
+private final class AnalysisFlippedView: NSView {
+    override var isFlipped: Bool { true }
+}
 
 class AnalysisViewController: NSViewController {
 
@@ -17,9 +23,13 @@ class AnalysisViewController: NSViewController {
     private var scrollView: NSScrollView!
     private var documentView: NSView!
     private var contentStack: NSStackView!
+    private var headerLabel: NSTextField!
+    private var updateButton: NSButton!
+    private var infoLabel: NSTextField!
     private var resultsStack: NSStackView!
     private var currentTheme: AppTheme = ThemeManager.shared.currentTheme
     private var currentCategory: AnalysisCategory = .basic
+    private var plotPopoutWindow: NSWindow?
 
     // Character Library Window (Navigator panel only)
     private var characterLibraryWindow: CharacterLibraryWindowController?
@@ -48,6 +58,13 @@ class AnalysisViewController: NSViewController {
     var outlineViewController: OutlineViewController?
     var isOutlinePanel: Bool = false
     var analyzeCallback: (() -> Void)?
+
+    private func scrollToTop() {
+        guard let scrollView else { return }
+        let topPoint = NSPoint(x: 0, y: 0)
+        scrollView.contentView.scroll(to: topPoint)
+        scrollView.reflectScrolledClipView(scrollView.contentView)
+    }
 
     // Navigator panel categories (left side - has Theme, Story Outline, and Characters)
     enum NavigatorCategory: String, CaseIterable {
@@ -335,10 +352,38 @@ class AnalysisViewController: NSViewController {
 
         if !isOutlinePanel && category == .basic {
             // Restore basic analysis - trigger a re-analysis
+            headerLabel.stringValue = "Document Analysis"
+            updateButton.isHidden = false
+            infoLabel.stringValue = "Click Update to refresh all analysis."
+            scrollToTop()
             analyzeCallback?()
+        } else if category == .plot {
+            headerLabel.stringValue = "Plot Analysis"
+            updateButton.isHidden = true
+            infoLabel.stringValue = "Plot structure and tension insights"
+            scrollToTop()
+            if #available(macOS 13.0, *) {
+                displayPlotAnalysis()
+            } else {
+                let placeholder = makeLabel("📖 Plot Analysis requires macOS 13.0 or later", size: 14, bold: true)
+                placeholder.alignment = .center
+                placeholder.textColor = .secondaryLabelColor
+                resultsStack.addArrangedSubview(placeholder)
+            }
         } else if category == .visualization {
+            headerLabel.stringValue = "Graphs"
+            updateButton.isHidden = true
+            infoLabel.stringValue = "Plot and character visualizations"
+            scrollToTop()
             // Show visualizations
-            displayVisualizations()
+            if #available(macOS 13.0, *) {
+                displayVisualizations()
+            } else {
+                let placeholder = makeLabel("📊 Visualizations require macOS 13.0 or later", size: 14, bold: true)
+                placeholder.alignment = .center
+                placeholder.textColor = .secondaryLabelColor
+                resultsStack.addArrangedSubview(placeholder)
+            }
         } else {
             // Add placeholder for non-basic categories
             let placeholder = makeLabel("\(category.icon) \(category.rawValue) Analysis\n\nComing soon...", size: 16, bold: true)
@@ -382,7 +427,7 @@ class AnalysisViewController: NSViewController {
         scrollView.contentView.layer?.masksToBounds = false
         scrollView.contentView.layer?.backgroundColor = NSColor.clear.cgColor
 
-        documentView = NSView()
+        documentView = AnalysisFlippedView()
         documentView.translatesAutoresizingMaskIntoConstraints = false
         documentView.wantsLayer = true
         documentView.layer?.backgroundColor = NSColor.clear.cgColor
@@ -427,7 +472,7 @@ class AnalysisViewController: NSViewController {
         contentStack.orientation = .vertical
         contentStack.alignment = .leading
         contentStack.spacing = 16
-        contentStack.edgeInsets = NSEdgeInsets(top: 24, left: 32, bottom: 24, right: 8)
+        contentStack.edgeInsets = NSEdgeInsets(top: 24, left: 24, bottom: 24, right: 24)
         contentStack.wantsLayer = true
 
         // Set background and corner radius so the card shows its rounding
@@ -445,10 +490,10 @@ class AnalysisViewController: NSViewController {
         headerContainer.alignment = .centerY
 
         let headerTitle = isOutlinePanel ? "Navigator" : "Document Analysis"
-        let header = makeLabel(headerTitle, size: 18, bold: true)
-        headerContainer.addArrangedSubview(header)
+        headerLabel = makeLabel(headerTitle, size: 18, bold: true)
+        headerContainer.addArrangedSubview(headerLabel)
 
-        let updateButton = NSButton(title: "Update", target: self, action: #selector(updateButtonTapped))
+        updateButton = NSButton(title: "Update", target: self, action: #selector(updateButtonTapped))
         updateButton.bezelStyle = .rounded
         updateButton.controlSize = .small
         updateButton.translatesAutoresizingMaskIntoConstraints = false
@@ -457,11 +502,11 @@ class AnalysisViewController: NSViewController {
         contentStack.addArrangedSubview(headerContainer)
 
         // Info label
-        let info = makeLabel("Click Update to refresh all analysis.", size: 13, bold: false)
-        info.textColor = .secondaryLabelColor
-        info.lineBreakMode = .byWordWrapping
-        info.maximumNumberOfLines = 0
-        contentStack.addArrangedSubview(info)
+        infoLabel = makeLabel("Click Update to refresh all analysis.", size: 13, bold: false)
+        infoLabel.textColor = .secondaryLabelColor
+        infoLabel.lineBreakMode = .byWordWrapping
+        infoLabel.maximumNumberOfLines = 0
+        contentStack.addArrangedSubview(infoLabel)
 
         // Results container
         resultsStack = NSStackView()
@@ -471,12 +516,20 @@ class AnalysisViewController: NSViewController {
         resultsStack.spacing = 10
         contentStack.addArrangedSubview(resultsStack)
 
+        NSLayoutConstraint.activate([
+            resultsStack.leadingAnchor.constraint(equalTo: contentStack.leadingAnchor),
+            resultsStack.trailingAnchor.constraint(equalTo: contentStack.trailingAnchor)
+        ])
+
         // Initial placeholder
         let placeholder = makeLabel("Analysis will appear here as it runs.", size: 13, bold: false)
         placeholder.textColor = .secondaryLabelColor
         placeholder.lineBreakMode = .byWordWrapping
         placeholder.maximumNumberOfLines = 0
         resultsStack.addArrangedSubview(placeholder)
+
+        // Start scrolled to top for empty/initial states
+        scrollToTop()
 
         documentView.addSubview(contentStack)
         NSLayoutConstraint.activate([
@@ -497,7 +550,7 @@ class AnalysisViewController: NSViewController {
         storeAnalysisResults(results)
 
         // Scroll to top first
-        scrollView?.documentView?.scroll(NSPoint.zero)
+        scrollToTop()
 
 
         // Only display if we're on the basic category
@@ -900,11 +953,15 @@ class AnalysisViewController: NSViewController {
 
     func storeAnalysisResults(_ results: AnalysisResults) {
         latestAnalysisResults = results
+        NSLog("📊 Stored analysis results with plotAnalysis: \(results.plotAnalysis != nil)")
     }
 
     @available(macOS 13.0, *)
     private func displayVisualizations() {
+        NSLog("📊 displayVisualizations() called, latestAnalysisResults: \(latestAnalysisResults != nil)")
+
         guard let results = latestAnalysisResults else {
+            NSLog("📊 No results - showing placeholder")
             let placeholder = makeLabel("📊 No visualization data available\n\nRun an analysis first to see plot and character graphs", size: 14, bold: true)
             placeholder.alignment = .center
             placeholder.textColor = .secondaryLabelColor
@@ -913,16 +970,21 @@ class AnalysisViewController: NSViewController {
             return
         }
 
+        NSLog("📊 plotAnalysis exists: \(results.plotAnalysis != nil)")
+
         // Show plot visualization directly - no tabs/buttons
         if let plotAnalysis = results.plotAnalysis {
+            NSLog("📊 Adding plotVisualizationView to stack")
             resultsStack.addArrangedSubview(plotVisualizationView)
-            
+
             NSLayoutConstraint.activate([
                 plotVisualizationView.widthAnchor.constraint(equalTo: resultsStack.widthAnchor),
                 plotVisualizationView.heightAnchor.constraint(greaterThanOrEqualToConstant: 600)
             ])
-            
+
             plotVisualizationView.configure(with: plotAnalysis)
+        } else {
+            NSLog("📊 No plotAnalysis data")
         }
 
         // Add character visualizations below plot
@@ -934,20 +996,56 @@ class AnalysisViewController: NSViewController {
             NSLayoutConstraint.activate([
                 spacer.heightAnchor.constraint(equalToConstant: 30)
             ])
-            
+
             resultsStack.addArrangedSubview(characterArcVisualizationView)
-            
+
             NSLayoutConstraint.activate([
                 characterArcVisualizationView.widthAnchor.constraint(equalTo: resultsStack.widthAnchor),
                 characterArcVisualizationView.heightAnchor.constraint(greaterThanOrEqualToConstant: 600)
             ])
-            
+
             characterArcVisualizationView.configure(
                 arcs: results.characterArcs,
                 interactions: results.characterInteractions,
                 presence: results.characterPresence
             )
         }
+
+        // Ensure we stay scrolled to the top after injecting content
+        scrollToTop()
+    }
+
+    @available(macOS 13.0, *)
+    private func displayPlotAnalysis() {
+        NSLog("📖 displayPlotAnalysis() called")
+
+        guard let results = latestAnalysisResults else {
+            let placeholder = makeLabel("📖 Run analysis first to view plot insights", size: 14, bold: true)
+            placeholder.alignment = .center
+            placeholder.textColor = .secondaryLabelColor
+            placeholder.maximumNumberOfLines = 0
+            resultsStack.addArrangedSubview(placeholder)
+            return
+        }
+
+        guard let plotAnalysis = results.plotAnalysis else {
+            let placeholder = makeLabel("📖 No plot points detected yet", size: 14, bold: true)
+            placeholder.alignment = .center
+            placeholder.textColor = .secondaryLabelColor
+            placeholder.maximumNumberOfLines = 0
+            resultsStack.addArrangedSubview(placeholder)
+            return
+        }
+
+        resultsStack.addArrangedSubview(plotVisualizationView)
+
+        NSLayoutConstraint.activate([
+            plotVisualizationView.widthAnchor.constraint(equalTo: resultsStack.widthAnchor),
+            plotVisualizationView.heightAnchor.constraint(greaterThanOrEqualToConstant: 720)
+        ])
+
+        plotVisualizationView.configure(with: plotAnalysis)
+        scrollToTop()
     }
 }
 
@@ -962,6 +1060,49 @@ extension AnalysisViewController: PlotVisualizationDelegate {
             object: nil,
             userInfo: ["wordPosition": wordPosition]
         )
+    }
+
+    func openPlotPopout(_ analysis: PlotAnalysis) {
+        guard #available(macOS 13.0, *) else { return }
+
+        // Close existing popout if any
+        plotPopoutWindow?.close()
+
+        let contentRect = NSRect(x: 0, y: 0, width: 1100, height: 760)
+        let window = NSWindow(
+            contentRect: contentRect,
+            styleMask: [.titled, .closable, .resizable, .miniaturizable],
+            backing: .buffered,
+            defer: false
+        )
+        window.title = "Story Progress"
+
+        let hostingView = NSHostingView(rootView: PlotTensionChart(
+            plotAnalysis: analysis,
+            onPointTap: { [weak self] position in
+                self?.didTapPlotPoint(at: position)
+            },
+            onPopout: { [weak window] in
+                window?.makeKeyAndOrderFront(nil)
+            }
+        ))
+        hostingView.translatesAutoresizingMaskIntoConstraints = false
+
+        let container = NSView()
+        container.translatesAutoresizingMaskIntoConstraints = false
+        container.addSubview(hostingView)
+
+        NSLayoutConstraint.activate([
+            hostingView.topAnchor.constraint(equalTo: container.topAnchor, constant: 12),
+            hostingView.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 12),
+            hostingView.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -12),
+            hostingView.bottomAnchor.constraint(equalTo: container.bottomAnchor, constant: -12)
+        ])
+
+        window.contentView = container
+        window.center()
+        window.makeKeyAndOrderFront(nil)
+        plotPopoutWindow = window
     }
 }
 

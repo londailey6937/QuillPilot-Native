@@ -77,6 +77,69 @@ struct DecisionBeliefLoop {
     }
 }
 
+// MARK: - Belief / Value Shift Matrix
+
+/// Tracks what a character believes at different story points
+/// Ideal for theme-driven and literary fiction where evolution is logical, not just emotional
+struct BeliefShiftMatrix {
+    let characterName: String
+    var entries: [BeliefEntry] = []
+
+    /// A single belief snapshot at a specific story point
+    struct BeliefEntry: Identifiable {
+        let id = UUID()
+        let chapter: Int
+        var chapterPage: Int = 0
+        var coreBelief: String          // What does the character believe at this point?
+        var evidence: String            // What shows this belief in action?
+        var evidencePage: Int = 0
+        var counterpressure: String     // What challenges or tests this belief?
+        var counterpressurePage: Int = 0
+
+        init(chapter: Int, chapterPage: Int = 0, coreBelief: String = "", evidence: String = "", evidencePage: Int = 0, counterpressure: String = "", counterpressurePage: Int = 0) {
+            self.chapter = chapter
+            self.chapterPage = chapterPage
+            self.coreBelief = coreBelief
+            self.evidence = evidence
+            self.evidencePage = evidencePage
+            self.counterpressure = counterpressure
+            self.counterpressurePage = counterpressurePage
+        }
+    }
+
+    /// Analyze belief evolution quality
+    var evolutionQuality: EvolutionQuality {
+        guard entries.count >= 2 else { return .insufficient }
+
+        let uniqueBeliefs = Set(entries.map { $0.coreBelief.lowercased().trimmingCharacters(in: .whitespacesAndNewlines) })
+        let hasCounterpressures = entries.filter { !$0.counterpressure.isEmpty }.count
+
+        // If beliefs never change
+        if uniqueBeliefs.count == 1 {
+            return .unchanging
+        }
+
+        // If there's clear evolution with pressures
+        if uniqueBeliefs.count >= 2 && hasCounterpressures >= entries.count / 2 {
+            return .logical
+        }
+
+        // Some evolution
+        if uniqueBeliefs.count >= 2 {
+            return .developing
+        }
+
+        return .developing
+    }
+
+    enum EvolutionQuality: String {
+        case insufficient = "Insufficient Data"
+        case unchanging = "Unchanging - Beliefs static"
+        case developing = "Developing - Some belief shifts"
+        case logical = "Logical Evolution - Clear pressures and shifts"
+    }
+}
+
 // MARK: - Character Presence (kept for Document Analysis graph)
 
 struct CharacterPresence {

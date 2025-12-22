@@ -55,6 +55,9 @@ struct AnalysisResults {
     var decisionBeliefLoops: [DecisionBeliefLoop] = []
     var characterInteractions: [CharacterInteraction] = []
     var characterPresence: [CharacterPresence] = []
+
+    // Belief/Value Shift Matrices
+    var beliefShiftMatrices: [BeliefShiftMatrix] = []
 }
 
 class AnalysisEngine {
@@ -286,6 +289,9 @@ class AnalysisEngine {
             results.decisionBeliefLoops = loops
             results.characterInteractions = interactions
             results.characterPresence = presence
+
+            // Generate belief shift matrices for characters
+            results.beliefShiftMatrices = generateBeliefShiftMatrices(text: analysisText, characterNames: characterNames, outlineEntries: outlineEntries)
         }
 
         return results
@@ -782,6 +788,77 @@ class AnalysisEngine {
         let presence = analyzer.analyzePresenceByChapter(text: text, characterNames: characterNames, outlineEntries: outlineEntries)
 
         return (loops, interactions, presence)
+    }
+
+    func generateBeliefShiftMatrices(text: String, characterNames: [String], outlineEntries: [DecisionBeliefLoopAnalyzer.OutlineEntry]? = nil) -> [BeliefShiftMatrix] {
+        var matrices: [BeliefShiftMatrix] = []
+
+        // For now, generate sample data for demonstration
+        // In a future version, this would use NLP to detect belief statements in the narrative
+
+        for characterName in characterNames.prefix(3) { // Limit to top 3 characters
+            var entries: [BeliefShiftMatrix.BeliefEntry] = []
+
+            // Create sample entries for demonstration
+            if characterName.lowercased().contains("alex") || characterName.lowercased().contains("protagonist") {
+                entries = [
+                    BeliefShiftMatrix.BeliefEntry(
+                        chapter: 1,
+                        chapterPage: 12,
+                        coreBelief: "I survive alone.",
+                        evidence: "Refuses help from teammates, takes risky solo missions",
+                        evidencePage: 15,
+                        counterpressure: "Offered protection by mentor figure",
+                        counterpressurePage: 18
+                    ),
+                    BeliefShiftMatrix.BeliefEntry(
+                        chapter: 6,
+                        chapterPage: 87,
+                        coreBelief: "Help costs freedom.",
+                        evidence: "Accepts dangerous deal to maintain autonomy",
+                        evidencePage: 92,
+                        counterpressure: "Loses control in exchange for assistance",
+                        counterpressurePage: 95
+                    ),
+                    BeliefShiftMatrix.BeliefEntry(
+                        chapter: 12,
+                        chapterPage: 203,
+                        coreBelief: "Interdependence is strength.",
+                        evidence: "Makes voluntary sacrifice for team",
+                        evidencePage: 210,
+                        counterpressure: "Fear of betrayal resurfaces briefly",
+                        counterpressurePage: 215
+                    )
+                ]
+            } else {
+                // Generic entries for other characters
+                entries = [
+                    BeliefShiftMatrix.BeliefEntry(
+                        chapter: 1,
+                        chapterPage: 20,
+                        coreBelief: "The rules protect us.",
+                        evidence: "Follows protocol strictly",
+                        evidencePage: 25,
+                        counterpressure: "Protocol fails in critical moment",
+                        counterpressurePage: 30
+                    ),
+                    BeliefShiftMatrix.BeliefEntry(
+                        chapter: 8,
+                        chapterPage: 145,
+                        coreBelief: "Some rules must be broken for the greater good.",
+                        evidence: "Makes unauthorized decision that saves lives",
+                        evidencePage: 150,
+                        counterpressure: "Faces consequences and judgment",
+                        counterpressurePage: 155
+                    )
+                ]
+            }
+
+            let matrix = BeliefShiftMatrix(characterName: characterName, entries: entries)
+            matrices.append(matrix)
+        }
+
+        return matrices
     }
 
     private func splitIntoChapters(text: String) -> [String] {

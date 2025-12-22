@@ -1338,13 +1338,12 @@ class FormattingToolbar: NSView {
             let item = NSMenuItem(title: title, action: nil, keyEquivalent: "")
             item.isEnabled = false
 
-            // Create attributed title with background color
+            // Create attributed title with a cleaner style
             let attributes: [NSAttributedString.Key: Any] = [
-                .font: NSFont.boldSystemFont(ofSize: 11),
-                .foregroundColor: NSColor.white,
-                .backgroundColor: ThemeManager.shared.currentTheme.headerBackground
+                .font: NSFont.systemFont(ofSize: 11, weight: .semibold),
+                .foregroundColor: NSColor.secondaryLabelColor
             ]
-            item.attributedTitle = NSAttributedString(string: "  \(title)", attributes: attributes)
+            item.attributedTitle = NSAttributedString(string: "  \(title.uppercased())", attributes: attributes)
 
             stylesMenu.addItem(item)
         }

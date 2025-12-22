@@ -47,7 +47,10 @@ let package = Package(
                 "Views/StoryDirectionsWindow.swift",
                 "Views/DialogueTipsWindow.swift",
                 "Views/PlotVisualizationView.swift",
-                "Views/CharacterArcVisualizationView.swift"
+                "Views/CharacterArcVisualizationView.swift",
+                "Views/EmotionalTrajectoryView.swift",
+                "Views/CharacterInteractionsView.swift",
+                "Views/BeliefShiftMatrixView.swift"
             ]
         )
     ]

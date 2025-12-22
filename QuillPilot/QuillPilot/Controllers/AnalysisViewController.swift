@@ -42,6 +42,8 @@ class AnalysisViewController: NSViewController {
     private var emotionalJourneyPopoutWindow: NSWindow?
     private var interactionsPopoutWindow: NSWindow?
     private var presencePopoutWindow: NSWindow?
+    private var emotionalTrajectoryPopoutWindow: NSWindow?
+    private var beliefShiftMatrixPopoutWindow: NSWindow?
 
     // Character Library Window (Navigator panel only)
     private var characterLibraryWindow: CharacterLibraryWindowController?
@@ -340,6 +342,9 @@ class AnalysisViewController: NSViewController {
 
         if category == .theme {
             // Open Theme window
+            if themeWindow == nil {
+                themeWindow = ThemeWindowController()
+            }
             themeWindow?.showWindow(nil)
             themeWindow?.window?.makeKeyAndOrderFront(nil)
             return
@@ -1474,37 +1479,38 @@ extension AnalysisViewController: CharacterArcVisualizationDelegate {
         interactionsPopoutWindow = nil
 
         let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 900, height: 700),
+            contentRect: NSRect(x: 0, y: 0, width: 1000, height: 650),
             styleMask: [.titled, .closable, .resizable, .miniaturizable],
             backing: .buffered,
             defer: false
         )
-        window.title = "Character Interactions"
-        window.level = .normal
-        window.isMovableByWindowBackground = true
-        window.isExcludedFromWindowsMenu = false
+        window.title = "Character Interactions Network"
+        window.minSize = NSSize(width: 800, height: 500)
         window.isReleasedWhenClosed = false
-        window.hidesOnDeactivate = true
 
-        // Apply theme colors
-        let theme = ThemeManager.shared.currentTheme
-        window.backgroundColor = theme.pageBackground
+        // Create custom view
+        let interactionsView = CharacterInteractionsView(frame: window.contentView!.bounds)
+        interactionsView.autoresizingMask = [.width, .height]
 
-        let hostingView = NSHostingView(rootView: CharacterNetworkChart(interactions: interactions))
-        hostingView.translatesAutoresizingMaskIntoConstraints = false
+        // Convert CharacterInteraction to InteractionData
+        let interactionData = interactions.map { interaction in
+            CharacterInteractionsView.InteractionData(
+                character1: interaction.character1,
+                character2: interaction.character2,
+                coAppearances: interaction.coAppearances,
+                relationshipStrength: interaction.relationshipStrength,
+                sections: interaction.sections
+            )
+        }
 
-        let container = NSView()
-        container.translatesAutoresizingMaskIntoConstraints = false
+        interactionsView.setInteractions(interactionData)
+
+        // Create container
+        let container = NSView(frame: window.contentView!.bounds)
+        container.autoresizingMask = [.width, .height]
         container.wantsLayer = true
-        container.layer?.backgroundColor = theme.pageBackground.cgColor
-        container.addSubview(hostingView)
-
-        NSLayoutConstraint.activate([
-            hostingView.topAnchor.constraint(equalTo: container.topAnchor, constant: 12),
-            hostingView.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 12),
-            hostingView.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -12),
-            hostingView.bottomAnchor.constraint(equalTo: container.bottomAnchor, constant: -12)
-        ])
+        container.layer?.backgroundColor = currentTheme.pageAround.cgColor
+        container.addSubview(interactionsView)
 
         window.contentView = container
         window.center()
@@ -1518,6 +1524,61 @@ extension AnalysisViewController: CharacterArcVisualizationDelegate {
             queue: .main
         ) { [weak self] _ in
             self?.interactionsPopoutWindow = nil
+        }
+    }
+
+    func openBeliefShiftMatrixPopout(matrices: [BeliefShiftMatrix]) {
+        // Close existing window if open
+        beliefShiftMatrixPopoutWindow?.close()
+        beliefShiftMatrixPopoutWindow = nil
+
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 1200, height: 700),
+            styleMask: [.titled, .closable, .resizable, .miniaturizable],
+            backing: .buffered,
+            defer: false
+        )
+        window.title = "Belief / Value Shift Matrices"
+        window.minSize = NSSize(width: 1000, height: 600)
+        window.isReleasedWhenClosed = false
+
+        // Create SwiftUI view
+        if #available(macOS 13.0, *) {
+            let beliefMatrixView = BeliefShiftMatrixView(matrices: matrices)
+            let hostingView = NSHostingView(rootView: beliefMatrixView)
+            hostingView.autoresizingMask = [.width, .height]
+            hostingView.frame = window.contentView!.bounds
+
+            // Create container
+            let container = NSView(frame: window.contentView!.bounds)
+            container.autoresizingMask = [.width, .height]
+            container.wantsLayer = true
+            container.layer?.backgroundColor = currentTheme.pageAround.cgColor
+            container.addSubview(hostingView)
+
+            window.contentView = container
+        } else {
+            // Fallback for older macOS versions
+            let label = NSTextField(labelWithString: "Belief Shift Matrix requires macOS 13 or later")
+            label.font = NSFont.systemFont(ofSize: 14)
+            label.textColor = .secondaryLabelColor
+            label.alignment = .center
+            label.frame = window.contentView!.bounds
+            label.autoresizingMask = [.width, .height]
+            window.contentView?.addSubview(label)
+        }
+
+        window.center()
+        window.makeKeyAndOrderFront(nil)
+
+        // Store window reference and set up cleanup
+        beliefShiftMatrixPopoutWindow = window
+        NotificationCenter.default.addObserver(
+            forName: NSWindow.willCloseNotification,
+            object: window,
+            queue: .main
+        ) { [weak self] _ in
+            self?.beliefShiftMatrixPopoutWindow = nil
         }
     }
 
@@ -2129,9 +2190,17 @@ extension AnalysisViewController: CharacterArcVisualizationDelegate {
     private func showCharacterAnalysisMenuAfterAnalysis(_ sender: NSButton) {
         let menu = NSMenu()
 
+        let trajectoryItem = NSMenuItem(title: "📈 Emotional Trajectory", action: #selector(showEmotionalTrajectory), keyEquivalent: "")
+        trajectoryItem.target = self
+        menu.addItem(trajectoryItem)
+
         let loopItem = NSMenuItem(title: "📊 Decision-Belief Loops", action: #selector(showDecisionBeliefLoops), keyEquivalent: "")
         loopItem.target = self
         menu.addItem(loopItem)
+
+        let beliefMatrixItem = NSMenuItem(title: "📋 Belief Shift Matrix", action: #selector(showBeliefShiftMatrix), keyEquivalent: "")
+        beliefMatrixItem.target = self
+        menu.addItem(beliefMatrixItem)
 
         let interactionsItem = NSMenuItem(title: "🤝 Character Interactions", action: #selector(showInteractions), keyEquivalent: "")
         interactionsItem.target = self
@@ -2150,6 +2219,12 @@ extension AnalysisViewController: CharacterArcVisualizationDelegate {
         }
     }
 
+    @objc private func showBeliefShiftMatrix() {
+        if let results = latestAnalysisResults {
+            openBeliefShiftMatrixPopout(matrices: results.beliefShiftMatrices)
+        }
+    }
+
     @objc private func showInteractions() {
         if let results = latestAnalysisResults {
             openInteractionsPopout(interactions: results.characterInteractions)
@@ -2160,6 +2235,173 @@ extension AnalysisViewController: CharacterArcVisualizationDelegate {
         if let results = latestAnalysisResults {
             openPresencePopout(presence: results.characterPresence)
         }
+    }
+
+    @objc private func showEmotionalTrajectory() {
+        if let results = latestAnalysisResults {
+            openEmotionalTrajectoryPopout(results: results)
+        }
+    }
+
+    private func openEmotionalTrajectoryPopout(results: AnalysisResults) {
+        if emotionalTrajectoryPopoutWindow == nil {
+            let window = NSWindow(
+                contentRect: NSRect(x: 0, y: 0, width: 900, height: 600),
+                styleMask: [.titled, .closable, .resizable, .miniaturizable],
+                backing: .buffered,
+                defer: false
+            )
+            window.title = "Emotional Trajectory Curves"
+            window.minSize = NSSize(width: 700, height: 500)
+            window.isReleasedWhenClosed = false
+
+            emotionalTrajectoryPopoutWindow = window
+        }
+
+        guard let window = emotionalTrajectoryPopoutWindow else { return }
+
+        // Create content view
+        let containerView = NSView(frame: window.contentView!.bounds)
+        containerView.autoresizingMask = [.width, .height]
+        containerView.wantsLayer = true
+        containerView.layer?.backgroundColor = currentTheme.pageAround.cgColor
+
+        // Create toolbar for metric selection
+        let toolbar = NSView(frame: NSRect(x: 0, y: window.contentView!.bounds.height - 50, width: window.contentView!.bounds.width, height: 50))
+        toolbar.autoresizingMask = [.width, .minYMargin]
+        toolbar.wantsLayer = true
+        toolbar.layer?.backgroundColor = currentTheme.headerBackground.cgColor
+
+        let titleLabel = NSTextField(labelWithString: "Emotional Trajectory Curves")
+        titleLabel.font = NSFont.boldSystemFont(ofSize: 16)
+        titleLabel.textColor = currentTheme.textColor
+        titleLabel.frame = NSRect(x: 20, y: 15, width: 300, height: 24)
+        toolbar.addSubview(titleLabel)
+
+        // Metric selector
+        let metricLabel = NSTextField(labelWithString: "Metric:")
+        metricLabel.font = NSFont.systemFont(ofSize: 12)
+        metricLabel.textColor = currentTheme.textColor
+        metricLabel.frame = NSRect(x: 350, y: 18, width: 50, height: 20)
+        toolbar.addSubview(metricLabel)
+
+        let metricPopup = NSPopUpButton(frame: NSRect(x: 410, y: 13, width: 200, height: 26))
+        for metric in EmotionalTrajectoryView.EmotionalMetric.allCases {
+            metricPopup.addItem(withTitle: metric.rawValue)
+        }
+        metricPopup.target = self
+        metricPopup.action = #selector(metricChanged(_:))
+        toolbar.addSubview(metricPopup)
+
+        containerView.addSubview(toolbar)
+
+        // Create trajectory view
+        let trajectoryView = EmotionalTrajectoryView(frame: NSRect(x: 20, y: 20, width: window.contentView!.bounds.width - 40, height: window.contentView!.bounds.height - 90))
+        trajectoryView.autoresizingMask = [.width, .height]
+
+        // Generate sample trajectory data from analysis results
+        let trajectories = generateEmotionalTrajectories(from: results)
+        trajectoryView.setTrajectories(trajectories)
+
+        containerView.addSubview(trajectoryView)
+
+        window.contentView = containerView
+        window.makeKeyAndOrderFront(nil)
+    }
+
+    @objc private func metricChanged(_ sender: NSPopUpButton) {
+        guard let window = emotionalTrajectoryPopoutWindow,
+              let containerView = window.contentView,
+              let trajectoryView = containerView.subviews.first(where: { $0 is EmotionalTrajectoryView }) as? EmotionalTrajectoryView,
+              let selectedMetric = EmotionalTrajectoryView.EmotionalMetric.allCases[safe: sender.indexOfSelectedItem] else {
+            return
+        }
+
+        trajectoryView.setMetric(selectedMetric)
+    }
+
+    private func generateEmotionalTrajectories(from results: AnalysisResults) -> [EmotionalTrajectoryView.CharacterTrajectory] {
+        var trajectories: [EmotionalTrajectoryView.CharacterTrajectory] = []
+
+        // Get character names from presence data
+        let characterNames = results.characterPresence.prefix(3).map { $0.characterName } // Top 3 characters
+
+        let colors: [NSColor] = [.systemBlue, .systemRed, .systemGreen, .systemOrange, .systemPurple]
+
+        for (index, characterName) in characterNames.enumerated() {
+            // Generate emotional states based on character presence and arc
+            var states: [EmotionalTrajectoryView.EmotionalState] = []
+
+            // Create states at 10% intervals
+            for i in 0...10 {
+                let position = Double(i) / 10.0
+
+                // Generate emotional values with some variation
+                // This is simplified - in a real implementation, you'd analyze actual text
+                let baseConfidence = sin(position * .pi * 2) * 0.6
+                let baseHope = cos(position * .pi * 1.5) * 0.7 - 0.2
+                let baseControl = sin(position * .pi * 3) * 0.5 + 0.2
+                let baseAttachment = cos(position * .pi * 2.5) * 0.6
+
+                // Add character-specific variation
+                let charVariation = Double(index) * 0.3
+
+                let state = EmotionalTrajectoryView.EmotionalState(
+                    position: position,
+                    confidence: baseConfidence + charVariation * 0.1,
+                    hope: baseHope - charVariation * 0.2,
+                    control: baseControl + charVariation * 0.15,
+                    attachment: baseAttachment - charVariation * 0.1
+                )
+                states.append(state)
+            }
+
+            let trajectory = EmotionalTrajectoryView.CharacterTrajectory(
+                characterName: characterName,
+                color: colors[index % colors.count],
+                states: states,
+                isDashed: false
+            )
+            trajectories.append(trajectory)
+
+            // Optionally add a "subtext" version (dashed) for the first character
+            if index == 0 {
+                var subtextStates: [EmotionalTrajectoryView.EmotionalState] = []
+                for i in 0...10 {
+                    let position = Double(i) / 10.0
+                    let baseConfidence = sin(position * .pi * 2 + 0.5) * 0.6 - 0.3
+                    let baseHope = cos(position * .pi * 1.5 + 0.5) * 0.7 - 0.5
+                    let baseControl = sin(position * .pi * 3 + 0.5) * 0.5 - 0.1
+                    let baseAttachment = cos(position * .pi * 2.5 + 0.5) * 0.6 - 0.2
+
+                    let state = EmotionalTrajectoryView.EmotionalState(
+                        position: position,
+                        confidence: baseConfidence,
+                        hope: baseHope,
+                        control: baseControl,
+                        attachment: baseAttachment
+                    )
+                    subtextStates.append(state)
+                }
+
+                let subtextTrajectory = EmotionalTrajectoryView.CharacterTrajectory(
+                    characterName: characterName,
+                    color: colors[index % colors.count],
+                    states: subtextStates,
+                    isDashed: true
+                )
+                trajectories.append(subtextTrajectory)
+            }
+        }
+
+        return trajectories
+    }
+}
+
+// Helper extension for safe array access
+extension Array {
+    subscript(safe index: Index) -> Element? {
+        return indices.contains(index) ? self[index] : nil
     }
 }
 

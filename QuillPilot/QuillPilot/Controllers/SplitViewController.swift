@@ -118,22 +118,22 @@ class SplitViewController: NSSplitViewController {
     private var analysisWorkItem: DispatchWorkItem?
 
     private func performAnalysis() {
-        print("🔍 performAnalysis called")
+        NSLog("🔍 performAnalysis called in SplitViewController")
 
         // Show sidebar if collapsed
         if let analysisItem = splitViewItems.last, analysisItem.isCollapsed {
-            print("📂 Opening sidebar")
+            NSLog("📂 Opening sidebar")
             analysisItem.animator().isCollapsed = false
         }
 
         guard let text = editorViewController.getTextContent(), !text.isEmpty else {
-            print("❌ No text content")
+            NSLog("❌ No text content")
             // Display empty results to show message
             let emptyResults = analysisEngine.analyzeText("")
             analysisViewController.displayResults(emptyResults)
             return
         }
-        print("📝 Text length: \(text.count)")
+        NSLog("📝 Text length: \(text.count)")
 
         // Cancel any pending analysis
         analysisWorkItem?.cancel()
@@ -141,13 +141,39 @@ class SplitViewController: NSSplitViewController {
         // Run analysis on background thread to prevent UI freeze
         let workItem = DispatchWorkItem { [weak self] in
             guard let self = self else { return }
-            let results = self.analysisEngine.analyzeText(text)
-            print("✅ Analysis complete: wordCount=\(results.wordCount), sentenceCount=\(results.sentenceCount)")
+
+            // Get outline entries from editor
+            let outlineEntries = self.editorViewController.buildOutlineEntries()
+            NSLog("📋 SplitViewController: Got \(outlineEntries.count) outline entries from editor")
+            if !outlineEntries.isEmpty {
+                outlineEntries.prefix(3).forEach { entry in
+                    NSLog("  - '\(entry.title)' level=\(entry.level) range=\(entry.range)")
+                }
+            }
+
+            // Convert to DecisionBeliefLoopAnalyzer.OutlineEntry format
+            let analyzerOutlineEntries: [DecisionBeliefLoopAnalyzer.OutlineEntry]? = outlineEntries.isEmpty ? nil : outlineEntries.map { entry in
+                DecisionBeliefLoopAnalyzer.OutlineEntry(
+                    title: entry.title,
+                    level: entry.level,
+                    range: entry.range,
+                    page: entry.page
+                )
+            }
+
+            if let entries = analyzerOutlineEntries {
+                NSLog("📋 SplitViewController: Passing \(entries.count) entries to analysis engine")
+            } else {
+                NSLog("⚠️ SplitViewController: No entries to pass (nil)")
+            }
+
+            let results = self.analysisEngine.analyzeText(text, outlineEntries: analyzerOutlineEntries)
+            NSLog("✅ Analysis complete: wordCount=\(results.wordCount), sentenceCount=\(results.sentenceCount)")
 
             // Update UI on main thread
             DispatchQueue.main.async { [weak self] in
                 self?.analysisViewController.displayResults(results)
-                print("✅ displayResults called")
+                NSLog("✅ displayResults called")
             }
         }
         analysisWorkItem = workItem

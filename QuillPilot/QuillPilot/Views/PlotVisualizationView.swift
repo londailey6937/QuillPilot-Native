@@ -189,6 +189,19 @@ struct PlotTensionChart: View {
                 .chartYAxisLabel("Tension Level")
                 .frame(height: 300)
                 .padding()
+            } else {
+                VStack(spacing: 12) {
+                    Text("📊 No Plot Data Available")
+                        .font(.headline)
+                        .foregroundColor(.secondary)
+                    Text("Write more content to see your story's tension arc and plot structure analysis.")
+                        .font(.subheadline)
+                        .foregroundColor(.secondary)
+                        .multilineTextAlignment(.center)
+                }
+                .frame(height: 200)
+                .frame(maxWidth: .infinity)
+                .padding()
             }
 
             // Plot points list

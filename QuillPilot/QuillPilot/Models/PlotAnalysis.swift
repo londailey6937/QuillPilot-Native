@@ -131,8 +131,8 @@ class PlotPointDetector {
         var tensionPoints: [TensionPoint] = []
         let words = text.components(separatedBy: .whitespacesAndNewlines).filter { !$0.isEmpty }
 
-        // Sample tension every 500 words
-        let sampleInterval = 500
+        // Sample tension every 500 words (or at least every 100 words for shorter texts)
+        let sampleInterval = max(100, min(500, wordCount / 10))
         var currentWordCount = 0
         var windowWords: [String] = []
 

@@ -2334,8 +2334,12 @@ case "Book Subtitle":
 
     func buildOutlineEntries() -> [OutlineEntry] {
         guard let storage = textView.textStorage, let layoutManager = textView.layoutManager, let textContainer = textView.textContainer else {
+            NSLog("📋🔍 buildOutlineEntries: Missing required components")
             return []
         }
+
+        NSLog("📋🔍 buildOutlineEntries: Starting scan of \(storage.length) characters")
+        NSLog("📋🔍 styleAttributeKey: \(styleAttributeKey)")
 
         let levels: [String: Int] = [
             "Part Title": 0,
@@ -2347,26 +2351,39 @@ case "Book Subtitle":
         ]
 
         var results: [OutlineEntry] = []
+        var stylesFound = Set<String>()
+        var paragraphCount = 0
         let fullString = storage.string as NSString
         var location = 0
         while location < fullString.length {
             let paragraphRange = fullString.paragraphRange(for: NSRange(location: location, length: 0))
             guard paragraphRange.length > 0 else { break }
+            paragraphCount += 1
 
             let styleName = storage.attribute(styleAttributeKey, at: paragraphRange.location, effectiveRange: nil) as? String
-            if let styleName, let level = levels[styleName] {
-                let rawTitle = fullString.substring(with: paragraphRange).trimmingCharacters(in: .whitespacesAndNewlines)
-                if !rawTitle.isEmpty {
-                    let glyphRange = layoutManager.glyphRange(forCharacterRange: paragraphRange, actualCharacterRange: nil)
-                    let bounds = layoutManager.boundingRect(forGlyphRange: glyphRange, in: textContainer)
-                    let pageHeight = pageHeight * editorZoom
-                    let pageIndex = max(0, Int(floor(bounds.midY / pageHeight))) + 1
-                    results.append(OutlineEntry(title: rawTitle, level: level, range: paragraphRange, page: pageIndex))
+            if let styleName {
+                stylesFound.insert(styleName)
+                if let level = levels[styleName] {
+                    let rawTitle = fullString.substring(with: paragraphRange).trimmingCharacters(in: .whitespacesAndNewlines)
+                    if !rawTitle.isEmpty {
+                        let glyphRange = layoutManager.glyphRange(forCharacterRange: paragraphRange, actualCharacterRange: nil)
+                        let bounds = layoutManager.boundingRect(forGlyphRange: glyphRange, in: textContainer)
+                        let pageHeight = pageHeight * editorZoom
+                        let pageIndex = max(0, Int(floor(bounds.midY / pageHeight))) + 1
+                        results.append(OutlineEntry(title: rawTitle, level: level, range: paragraphRange, page: pageIndex))
+                        if results.count <= 3 {
+                            NSLog("📋✅ Found: '\(rawTitle)' style='\(styleName)' level=\(level)")
+                        }
+                    }
                 }
             }
 
             location = NSMaxRange(paragraphRange)
         }
+
+        NSLog("📋🔍 Scanned \(paragraphCount) paragraphs, found \(stylesFound.count) unique styles")
+        NSLog("📋🔍 Styles present: \(stylesFound.sorted())")
+        NSLog("📋🔍 Outline entries found: \(results.count)")
 
         return results
     }

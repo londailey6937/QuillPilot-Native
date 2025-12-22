@@ -191,7 +191,7 @@ class AnalysisEngine {
     // Maximum text length to analyze (500KB) - prevents system overload
     private let maxAnalysisLength = 500_000
 
-    func analyzeText(_ text: String) -> AnalysisResults {
+    func analyzeText(_ text: String, outlineEntries: [DecisionBeliefLoopAnalyzer.OutlineEntry]? = nil) -> AnalysisResults {
         var results = AnalysisResults()
 
         // Truncate extremely long text to prevent system overload
@@ -282,7 +282,7 @@ class AnalysisEngine {
         // Extract character names from text (capitalized words that appear frequently)
         let characterNames = extractCharacterNames(from: analysisText)
         if !characterNames.isEmpty {
-            let (loops, interactions, presence) = analyzeCharacterArcs(text: analysisText, characterNames: characterNames)
+            let (loops, interactions, presence) = analyzeCharacterArcs(text: analysisText, characterNames: characterNames, outlineEntries: outlineEntries)
             results.decisionBeliefLoops = loops
             results.characterInteractions = interactions
             results.characterPresence = presence
@@ -773,13 +773,13 @@ class AnalysisEngine {
         return Array(characters)
     }
 
-    func analyzeCharacterArcs(text: String, characterNames: [String]) -> ([DecisionBeliefLoop], [CharacterInteraction], [CharacterPresence]) {
+    func analyzeCharacterArcs(text: String, characterNames: [String], outlineEntries: [DecisionBeliefLoopAnalyzer.OutlineEntry]? = nil) -> ([DecisionBeliefLoop], [CharacterInteraction], [CharacterPresence]) {
         let analyzer = DecisionBeliefLoopAnalyzer()
 
         // Analyze text and populate Decision-Belief Loop with actual detected patterns
-        let loops = analyzer.analyzeLoops(text: text, characterNames: characterNames)
+        let loops = analyzer.analyzeLoops(text: text, characterNames: characterNames, outlineEntries: outlineEntries)
         let interactions = analyzer.analyzeInteractions(text: text, characterNames: characterNames)
-        let presence = analyzer.analyzePresenceByChapter(text: text, characterNames: characterNames)
+        let presence = analyzer.analyzePresenceByChapter(text: text, characterNames: characterNames, outlineEntries: outlineEntries)
 
         return (loops, interactions, presence)
     }

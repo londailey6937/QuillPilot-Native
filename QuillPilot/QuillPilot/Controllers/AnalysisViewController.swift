@@ -134,6 +134,14 @@ class AnalysisViewController: NSViewController {
         // Don't auto-switch to category on load - let it stay empty until user clicks
         // Only show content when user explicitly clicks a button
 
+        // Observe main window becoming key to close popups
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(mainWindowBecameKey),
+            name: NSWindow.didBecomeKeyNotification,
+            object: nil
+        )
+
         // Listen for theme changes
         NotificationCenter.default.addObserver(forName: .themeDidChange, object: nil, queue: .main) { [weak self] notification in
             if let theme = notification.object as? AppTheme {
@@ -285,14 +293,53 @@ class AnalysisViewController: NSViewController {
         }
     }
 
+    @objc private func mainWindowBecameKey(_ notification: Notification) {
+        guard let window = notification.object as? NSWindow,
+              window.windowController is MainWindowController else {
+            return
+        }
+
+        // Close all analysis popup windows when main window becomes key
+        plotPopoutWindow?.close()
+        plotPopoutWindow = nil
+
+        outlinePopoutWindow?.close()
+        outlinePopoutWindow = nil
+
+        analysisPopoutWindow?.close()
+        analysisPopoutWindow = nil
+
+        emotionalJourneyPopoutWindow?.close()
+        emotionalJourneyPopoutWindow = nil
+
+        interactionsPopoutWindow?.close()
+        interactionsPopoutWindow = nil
+
+        presencePopoutWindow?.close()
+        presencePopoutWindow = nil
+
+        // Also close Navigator popup windows
+        storyOutlineWindow?.close()
+        storyOutlineWindow = nil
+
+        characterLibraryWindow?.close()
+        characterLibraryWindow = nil
+
+        locationsWindow?.close()
+        locationsWindow = nil
+
+        storyDirectionsWindow?.close()
+        storyDirectionsWindow = nil
+
+        themeWindow?.close()
+        themeWindow = nil
+    }
+
     @objc private func navigatorButtonTapped(_ sender: NSButton) {
         let category = NavigatorCategory.allCases[sender.tag]
 
         if category == .theme {
             // Open Theme window
-            if themeWindow == nil {
-                themeWindow = ThemeWindowController()
-            }
             themeWindow?.showWindow(nil)
             themeWindow?.window?.makeKeyAndOrderFront(nil)
             return
@@ -1315,6 +1362,7 @@ extension AnalysisViewController: PlotVisualizationDelegate {
         window.isMovableByWindowBackground = true
         window.isExcludedFromWindowsMenu = false
         window.isReleasedWhenClosed = false
+        window.hidesOnDeactivate = true
 
         let hostingView = NSHostingView(rootView: PlotTensionChart(
             plotAnalysis: analysis,
@@ -1381,6 +1429,7 @@ extension AnalysisViewController: CharacterArcVisualizationDelegate {
         window.isMovableByWindowBackground = true
         window.isExcludedFromWindowsMenu = false
         window.isReleasedWhenClosed = false
+        window.hidesOnDeactivate = true
 
         // Apply theme colors
         let theme = ThemeManager.shared.currentTheme
@@ -1435,6 +1484,7 @@ extension AnalysisViewController: CharacterArcVisualizationDelegate {
         window.isMovableByWindowBackground = true
         window.isExcludedFromWindowsMenu = false
         window.isReleasedWhenClosed = false
+        window.hidesOnDeactivate = true
 
         // Apply theme colors
         let theme = ThemeManager.shared.currentTheme
@@ -1487,6 +1537,7 @@ extension AnalysisViewController: CharacterArcVisualizationDelegate {
         window.isMovableByWindowBackground = true
         window.isExcludedFromWindowsMenu = false
         window.isReleasedWhenClosed = false
+        window.hidesOnDeactivate = true
 
         // Apply theme colors
         let theme = ThemeManager.shared.currentTheme
@@ -1800,6 +1851,7 @@ extension AnalysisViewController: CharacterArcVisualizationDelegate {
         )
         window.title = "📊 Analysis"
         window.isReleasedWhenClosed = false
+        window.hidesOnDeactivate = true
 
         let scrollView = NSScrollView()
         scrollView.hasVerticalScroller = true
@@ -1889,6 +1941,7 @@ extension AnalysisViewController: CharacterArcVisualizationDelegate {
         )
         window.title = "📝 Document Outline"
         window.isReleasedWhenClosed = false
+        window.hidesOnDeactivate = true
 
         let scrollView = NSScrollView()
         scrollView.hasVerticalScroller = true
@@ -1977,6 +2030,7 @@ extension AnalysisViewController: CharacterArcVisualizationDelegate {
         )
         window.title = "📖 Plot Structure Analysis"
         window.isReleasedWhenClosed = false
+        window.hidesOnDeactivate = true
 
         let scrollView = NSScrollView()
         scrollView.hasVerticalScroller = true

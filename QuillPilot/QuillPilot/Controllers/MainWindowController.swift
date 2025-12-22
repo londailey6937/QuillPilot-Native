@@ -1117,6 +1117,10 @@ extension MainWindowController {
                         let setStart = CFAbsoluteTimeGetCurrent()
                         self.mainContentViewController.editorViewController.setAttributedContentDirect(restored)
                         NSLog("📄 Content set complete in \(CFAbsoluteTimeGetCurrent() - setStart)s")
+
+                        // Trigger analysis after document loads
+                        NSLog("📊 Triggering initial analysis after document import")
+                        self.mainContentViewController.performAnalysis()
                     }
                 } catch {
                     NSLog("📄 DOCX extraction failed: \(error)")
@@ -1946,7 +1950,7 @@ class ContentViewController: NSViewController {
 
     private var isAnalyzing = false
 
-    private func performAnalysis() {
+    func performAnalysis() {
         NSLog("🔍 performAnalysis called in ContentViewController")
 
         // Skip if already analyzing to prevent queue buildup
@@ -1960,26 +1964,62 @@ class ContentViewController: NSViewController {
             return
         }
 
+        // Also verify document storage has content (prevents analyzing during/before import)
+        guard editorViewController.textView.textStorage?.length ?? 0 > 0 else {
+            NSLog("⚠️ Document storage is empty, skipping analysis")
+            return
+        }
+
         isAnalyzing = true
+        NSLog("📊 MainWindowController: Starting background analysis thread")
+
+        // Build outline entries on MAIN THREAD before background work
+        // (textStorage must be accessed on main thread only)
+        let editorOutlines = editorViewController.buildOutlineEntries()
+        NSLog("📋 MainWindowController: Built \(editorOutlines.count) outline entries on main thread")
+        if !editorOutlines.isEmpty {
+            editorOutlines.prefix(3).forEach { entry in
+                NSLog("  - '\(entry.title)' level=\(entry.level) range=\(NSStringFromRange(entry.range))")
+            }
+        }
 
         // Run analysis on background thread to avoid blocking UI
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            NSLog("📊 MainWindowController: Inside background thread")
             let analysisEngine = AnalysisEngine()
-            var results = analysisEngine.analyzeText(text)
 
-            // Get character names from Character Library if available
+            // Convert outline entries for AnalysisEngine
+            let analysisOutlineEntries: [DecisionBeliefLoopAnalyzer.OutlineEntry]? = editorOutlines.isEmpty ? nil : editorOutlines.map {
+                DecisionBeliefLoopAnalyzer.OutlineEntry(title: $0.title, level: $0.level, range: $0.range, page: $0.page)
+            }
+
+            if let entries = analysisOutlineEntries {
+                NSLog("📋 MainWindowController: Passing \(entries.count) outline entries to analyzeText")
+            } else {
+                NSLog("⚠️ MainWindowController: No outline entries available for analyzeText")
+            }
+
+            var results = analysisEngine.analyzeText(text, outlineEntries: analysisOutlineEntries)
+
+            // Get character names from Character Library if available (override auto-detected characters)
             let characterLibraryPath = Bundle.main.resourcePath.flatMap { URL(fileURLWithPath: $0).appendingPathComponent("character_library.json").path }
+            NSLog("📚 Character library path: \(characterLibraryPath ?? "nil")")
             if let path = characterLibraryPath, FileManager.default.fileExists(atPath: path),
                let data = try? Data(contentsOf: URL(fileURLWithPath: path)),
                let json = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]] {
 
                 let characterNames = json.compactMap { $0["name"] as? String }
+                NSLog("📚 Found \(characterNames.count) characters in library")
 
                 if !characterNames.isEmpty {
+                    // Reuse already-converted outline entries instead of converting again
+                    NSLog("📋 MainWindowController: Using character library with \(analysisOutlineEntries?.count ?? 0) outline entries")
+
                     // Perform character arc analysis with Decision-Belief Loop Framework
                     let (loops, interactions, presence) = analysisEngine.analyzeCharacterArcs(
                         text: text,
-                        characterNames: characterNames
+                        characterNames: characterNames,
+                        outlineEntries: analysisOutlineEntries
                     )
                     results.decisionBeliefLoops = loops
                     results.characterInteractions = interactions
@@ -3352,7 +3392,7 @@ private enum DocxTextExtractor {
                     paragraphStyle.textBlock = textBlock
                 }
 
-            case "w:pStyle", "pStyle":
+            case "w:pstyle", "pstyle":
                 if let val = attributeDict["w:val"] ?? attributeDict["val"] {
                     // Map DOCX style IDs back to QuillPilot style names
                     // DOCX export removes spaces/special chars, so we need to reverse that
@@ -3374,7 +3414,9 @@ private enum DocxTextExtractor {
                     case "ChapterNumber": mappedName = "Chapter Number"
                     case "ChapterTitle": mappedName = "Chapter Title"
                     case "ChapterSubtitle": mappedName = "Chapter Subtitle"
-                    case "SceneBreak": mappedName = "Scene Break"
+                    case "SceneBreak":
+                        // Skip Scene Break - it's typically just formatting on empty paragraphs
+                        mappedName = ""
                     case "InternalThought": mappedName = "Internal Thought"
                     case "LetterDocument": mappedName = "Letter / Document"
                     case "BlockQuote": mappedName = "Block Quote"
@@ -3382,7 +3424,11 @@ private enum DocxTextExtractor {
                     case "Dialogue": mappedName = "Dialogue"
                     default: mappedName = val
                     }
-                    paragraphStyle.styleName = mappedName
+                    // Only set styleName and log if it's not empty (filters out Scene Break)
+                    if !mappedName.isEmpty {
+                        paragraphStyle.styleName = mappedName
+                        NSLog("📝 Read style from DOCX: \(val) -> \(mappedName)")
+                    }
                 }
 
             case "w:jc", "jc":
@@ -3721,6 +3767,10 @@ private enum DocxTextExtractor {
 
                 if let styleName = paragraphStyle.styleName {
                     paragraphBuffer.addAttribute(NSAttributedString.Key("QuillStyleName"), value: styleName, range: NSRange(location: 0, length: paragraphBuffer.length))
+                    NSLog("📝 Applied QuillStyleName attribute: \(styleName)")
+                } else {
+                    NSLog("⚠️ No styleName to apply, using default Body Text")
+                    paragraphBuffer.addAttribute(NSAttributedString.Key("QuillStyleName"), value: "Body Text", range: NSRange(location: 0, length: paragraphBuffer.length))
                 }
 
                 result.append(paragraphBuffer)

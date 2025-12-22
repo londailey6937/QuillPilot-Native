@@ -361,6 +361,14 @@ struct CharacterPresenceBarChart: View {
 struct DecisionBeliefLoopFullView: View {
     let loops: [DecisionBeliefLoop]
 
+    private var textColor: Color {
+        Color(ThemeManager.shared.currentTheme.textColor)
+    }
+
+    private var backgroundColor: Color {
+        Color(ThemeManager.shared.currentTheme.pageBackground)
+    }
+
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 24) {
@@ -369,34 +377,40 @@ struct DecisionBeliefLoopFullView: View {
                     Text("The Decision–Belief Loop Framework")
                         .font(.title)
                         .fontWeight(.bold)
+                        .foregroundColor(textColor)
 
                     Text("Characters evolve because decisions reshape beliefs, and beliefs reshape future decisions. Everything you track flows through that loop.")
                         .font(.body)
-                        .foregroundColor(.secondary)
+                        .foregroundColor(textColor.opacity(0.7))
 
                     Divider()
+                        .background(textColor.opacity(0.3))
 
                     Text("The Loop (per chapter or major scene)")
                         .font(.headline)
                         .fontWeight(.semibold)
+                        .foregroundColor(textColor)
 
                     VStack(alignment: .leading, spacing: 8) {
-                        LoopElementRow(number: "1", title: "Pressure", description: "What new force acts on the character here? (external event, emotional demand, moral dilemma)")
-                        LoopElementRow(number: "2", title: "Belief in Play", description: "Which core belief is being tested? (often unstated in the prose)")
-                        LoopElementRow(number: "3", title: "Decision", description: "What choice does the character make because of that belief?")
-                        LoopElementRow(number: "4", title: "Outcome", description: "What happens immediately because of the decision? (success, partial win, failure, avoidance)")
-                        LoopElementRow(number: "5", title: "Belief Shift", description: "How does the belief change after the outcome? (reinforced, weakened, reframed, contradicted)")
+                        LoopElementRow(number: "1", title: "Pressure", description: "What new force acts on the character here? (external event, emotional demand, moral dilemma)", textColor: textColor)
+                        LoopElementRow(number: "2", title: "Belief in Play", description: "Which core belief is being tested? (often unstated in the prose)", textColor: textColor)
+                        LoopElementRow(number: "3", title: "Decision", description: "What choice does the character make because of that belief?", textColor: textColor)
+                        LoopElementRow(number: "4", title: "Outcome", description: "What happens immediately because of the decision? (success, partial win, failure, avoidance)", textColor: textColor)
+                        LoopElementRow(number: "5", title: "Belief Shift", description: "How does the belief change after the outcome? (reinforced, weakened, reframed, contradicted)", textColor: textColor)
                     }
                     .padding(.leading)
 
                     Divider()
+                        .background(textColor.opacity(0.3))
 
                     Text("How Evolution Emerges")
                         .font(.headline)
                         .fontWeight(.semibold)
+                        .foregroundColor(textColor)
 
                     Text("Character growth becomes visible when:")
                         .font(.body)
+                        .foregroundColor(textColor)
 
                     VStack(alignment: .leading, spacing: 4) {
                         Text("• Decisions stop being automatic")
@@ -405,15 +419,16 @@ struct DecisionBeliefLoopFullView: View {
                         Text("• The same pressure produces different choices later")
                     }
                     .padding(.leading)
-                    .foregroundColor(.secondary)
+                    .foregroundColor(textColor.opacity(0.7))
 
                     Text("You don't measure intensity—you observe pattern change.")
                         .font(.body)
                         .fontWeight(.medium)
                         .italic()
+                        .foregroundColor(textColor)
                 }
                 .padding()
-                .background(Color.gray.opacity(0.1))
+                .background(textColor.opacity(0.05))
                 .cornerRadius(12)
 
                 // Character tracking tables
@@ -423,6 +438,7 @@ struct DecisionBeliefLoopFullView: View {
                             Text(loop.characterName)
                                 .font(.title2)
                                 .fontWeight(.bold)
+                                .foregroundColor(textColor)
                             Spacer()
                             Text(loop.arcQuality.rawValue)
                                 .font(.subheadline)
@@ -455,8 +471,9 @@ struct DecisionBeliefLoopFullView: View {
                                 .fontWeight(.semibold)
                         }
                         .font(.caption)
+                        .foregroundColor(textColor)
                         .padding(8)
-                        .background(Color.gray.opacity(0.2))
+                        .background(textColor.opacity(0.1))
                         .cornerRadius(4)
 
                         // Table rows
@@ -465,24 +482,65 @@ struct DecisionBeliefLoopFullView: View {
                                 Text("\(entry.chapter)")
                                     .frame(width: 40, alignment: .center)
                                     .font(.body)
-                                Text(entry.pressure.isEmpty ? "—" : entry.pressure)
-                                    .frame(maxWidth: .infinity, alignment: .leading)
-                                    .font(.caption)
-                                Text(entry.beliefInPlay.isEmpty ? "—" : entry.beliefInPlay)
-                                    .frame(maxWidth: .infinity, alignment: .leading)
-                                    .font(.caption)
-                                Text(entry.decision.isEmpty ? "—" : entry.decision)
-                                    .frame(maxWidth: .infinity, alignment: .leading)
-                                    .font(.caption)
-                                Text(entry.outcome.isEmpty ? "—" : entry.outcome)
-                                    .frame(maxWidth: .infinity, alignment: .leading)
-                                    .font(.caption)
-                                Text(entry.beliefShift.isEmpty ? "—" : entry.beliefShift)
-                                    .frame(maxWidth: .infinity, alignment: .leading)
-                                    .font(.caption)
+                                    .foregroundColor(textColor)
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(entry.pressure.isEmpty ? "—" : entry.pressure)
+                                        .font(.caption)
+                                        .foregroundColor(textColor)
+                                    if entry.pressurePage > 0 {
+                                        Text("p. \(entry.pressurePage)")
+                                            .font(.caption2)
+                                            .foregroundColor(textColor.opacity(0.6))
+                                    }
+                                }
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(entry.beliefInPlay.isEmpty ? "—" : entry.beliefInPlay)
+                                        .font(.caption)
+                                        .foregroundColor(textColor)
+                                    if entry.beliefPage > 0 {
+                                        Text("p. \(entry.beliefPage)")
+                                            .font(.caption2)
+                                            .foregroundColor(textColor.opacity(0.6))
+                                    }
+                                }
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(entry.decision.isEmpty ? "—" : entry.decision)
+                                        .font(.caption)
+                                        .foregroundColor(textColor)
+                                    if entry.decisionPage > 0 {
+                                        Text("p. \(entry.decisionPage)")
+                                            .font(.caption2)
+                                            .foregroundColor(textColor.opacity(0.6))
+                                    }
+                                }
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(entry.outcome.isEmpty ? "—" : entry.outcome)
+                                        .font(.caption)
+                                        .foregroundColor(textColor)
+                                    if entry.outcomePage > 0 {
+                                        Text("p. \(entry.outcomePage)")
+                                            .font(.caption2)
+                                            .foregroundColor(textColor.opacity(0.6))
+                                    }
+                                }
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(entry.beliefShift.isEmpty ? "—" : entry.beliefShift)
+                                        .font(.caption)
+                                        .foregroundColor(textColor)
+                                    if entry.beliefShiftPage > 0 {
+                                        Text("p. \(entry.beliefShiftPage)")
+                                            .font(.caption2)
+                                            .foregroundColor(textColor.opacity(0.6))
+                                    }
+                                }
+                                .frame(maxWidth: .infinity, alignment: .leading)
                             }
                             .padding(8)
-                            .background(Color.gray.opacity(0.05))
+                            .background(textColor.opacity(0.03))
                             .cornerRadius(4)
                         }
 
@@ -491,22 +549,23 @@ struct DecisionBeliefLoopFullView: View {
                             Text("💡 Tracking Tips:")
                                 .font(.caption)
                                 .fontWeight(.semibold)
+                                .foregroundColor(textColor)
                             Text("• If this table looks repetitive, your arc is flat.")
                                 .font(.caption)
-                                .foregroundColor(.secondary)
+                                .foregroundColor(textColor.opacity(0.7))
                             Text("• If the belief shifts feel unearned, the pressure is too weak.")
                                 .font(.caption)
-                                .foregroundColor(.secondary)
+                                .foregroundColor(textColor.opacity(0.7))
                             Text("• If a character's belief changes but their decisions don't, the change isn't real.")
                                 .font(.caption)
-                                .foregroundColor(.secondary)
+                                .foregroundColor(textColor.opacity(0.7))
                         }
                         .padding(8)
-                        .background(Color.blue.opacity(0.1))
+                        .background(Color.blue.opacity(0.15))
                         .cornerRadius(4)
                     }
                     .padding()
-                    .background(Color.gray.opacity(0.05))
+                    .background(textColor.opacity(0.03))
                     .cornerRadius(12)
                 }
 
@@ -515,19 +574,23 @@ struct DecisionBeliefLoopFullView: View {
                     Text("Rule of Thumb")
                         .font(.headline)
                         .fontWeight(.semibold)
+                        .foregroundColor(textColor)
 
                     Text("If a character's belief changes but their decisions don't, the change isn't real.")
                         .font(.body)
+                        .foregroundColor(textColor)
 
                     Text("If decisions change without belief change, it's plot convenience.")
                         .font(.body)
+                        .foregroundColor(textColor)
                 }
                 .padding()
-                .background(Color.orange.opacity(0.1))
+                .background(Color.orange.opacity(0.15))
                 .cornerRadius(12)
             }
             .padding()
         }
+        .background(backgroundColor)
     }
 
     private func arcQualityColor(_ quality: DecisionBeliefLoop.ArcQuality) -> Color {
@@ -545,18 +608,21 @@ struct LoopElementRow: View {
     let number: String
     let title: String
     let description: String
+    let textColor: Color
 
     var body: some View {
         HStack(alignment: .top, spacing: 8) {
             Text("\(number).")
                 .fontWeight(.semibold)
+                .foregroundColor(textColor)
                 .frame(width: 20, alignment: .leading)
             VStack(alignment: .leading, spacing: 2) {
                 Text(title)
                     .fontWeight(.semibold)
+                    .foregroundColor(textColor)
                 Text(description)
                     .font(.caption)
-                    .foregroundColor(.secondary)
+                    .foregroundColor(textColor.opacity(0.7))
             }
         }
     }

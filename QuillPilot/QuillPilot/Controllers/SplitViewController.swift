@@ -195,6 +195,12 @@ extension SplitViewController: EditorViewControllerDelegate {
         perform(#selector(performAnalysisDelayed), with: nil, afterDelay: 1.5)
     }
 
+    func applyTheme(_ theme: AppTheme) {
+        outlineViewController.applyTheme(theme)
+        analysisViewController.applyTheme(theme)
+        outlinePanelController.applyTheme(theme)
+    }
+
     func titleDidChange(_ title: String) {
         // Title changed in editor
     }

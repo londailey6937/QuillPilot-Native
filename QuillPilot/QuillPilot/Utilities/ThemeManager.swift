@@ -139,6 +139,11 @@ class ThemeManager {
         }
     }
 
+    /// Returns true if the current theme is a dark theme
+    var isDarkMode: Bool {
+        return currentTheme == .night
+    }
+
     private init() {
         if let savedTheme = UserDefaults.standard.string(forKey: themeKey),
            let theme = AppTheme(rawValue: savedTheme) {

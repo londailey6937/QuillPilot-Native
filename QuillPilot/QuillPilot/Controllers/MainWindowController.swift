@@ -1588,6 +1588,8 @@ class FormattingToolbar: NSView {
     }
 
     func applyTheme(_ theme: AppTheme) {
+        print("[DEBUG] FormattingToolbar.applyTheme called - Theme: \(theme), textColor: \(theme.textColor)")
+        print("[DEBUG] themedControls count: \(themedControls.count)")
         wantsLayer = true
         layer?.backgroundColor = theme.toolbarBackground.cgColor
         themedControls.forEach { control in
@@ -1600,8 +1602,10 @@ class FormattingToolbar: NSView {
                 ]
                 button.attributedTitle = NSAttributedString(string: button.title, attributes: attributes)
             } else if let popup = control as? NSPopUpButton {
+                print("[DEBUG] Applying theme to NSPopUpButton: \(popup.titleOfSelectedItem ?? "no title")")
                 popup.contentTintColor = theme.textColor
-                // Apply theme to all menu items
+
+                // Apply theme to all menu items first
                 for item in popup.itemArray {
                     if item.isEnabled {
                         // Regular menu items
@@ -1619,6 +1623,36 @@ class FormattingToolbar: NSView {
                         item.attributedTitle = NSAttributedString(string: item.title, attributes: attributes)
                     }
                 }
+
+                // Set the attributed title on the button itself for the displayed text
+                if let selectedTitle = popup.titleOfSelectedItem, !selectedTitle.isEmpty {
+                    let attrs: [NSAttributedString.Key: Any] = [
+                        .foregroundColor: theme.textColor,
+                        .font: popup.font ?? NSFont.systemFont(ofSize: 13)
+                    ]
+                    print("[DEBUG] Setting attributedTitle for popup: '\(selectedTitle)' with color: \(theme.textColor)")
+                    popup.attributedTitle = NSAttributedString(string: selectedTitle, attributes: attrs)
+                    popup.synchronizeTitleAndSelectedItem()
+                    print("[DEBUG] After sync - attributedTitle: \(popup.attributedTitle)")
+                } else {
+                    print("[DEBUG] Popup has no selected item or empty title")
+                    // Set text color for the popup button directly for placeholder text
+                    if let cell = popup.cell as? NSPopUpButtonCell {
+                        let cellTitle = cell.title ?? ""
+                        let currentTitle = !cellTitle.isEmpty ? cellTitle : (popup.itemTitle(at: popup.indexOfSelectedItem))
+                        cell.attributedTitle = NSAttributedString(
+                            string: currentTitle,
+                            attributes: [
+                                .foregroundColor: theme.textColor,
+                                .font: popup.font ?? NSFont.systemFont(ofSize: 13)
+                            ]
+                        )
+                        print("[DEBUG] Set cell attributedTitle to: '\(currentTitle)'")
+                    }
+                }
+
+                // Force the popup to redraw
+                popup.needsDisplay = true
             }
         }
     }
@@ -1633,9 +1667,21 @@ class FormattingToolbar: NSView {
 
     @objc private func styleChanged(_ sender: NSPopUpButton) {
         let selectedStyle = sender.titleOfSelectedItem ?? ""
+        print("[DEBUG] styleChanged called - selectedStyle: '\(selectedStyle)'")
         delegate?.formattingToolbar(self, didSelectStyle: selectedStyle)
         // Save the selected style to UserDefaults for persistence
         UserDefaults.standard.set(selectedStyle, forKey: "LastSelectedStyle")
+
+        // Update the displayed title with theme color
+        let theme = ThemeManager.shared.currentTheme
+        print("[DEBUG] styleChanged - Applying theme color: \(theme.textColor)")
+        let attrs: [NSAttributedString.Key: Any] = [
+            .foregroundColor: theme.textColor,
+            .font: sender.font ?? NSFont.systemFont(ofSize: 13)
+        ]
+        sender.attributedTitle = NSAttributedString(string: selectedStyle, attributes: attrs)
+        sender.synchronizeTitleAndSelectedItem()
+        print("[DEBUG] styleChanged - After update, attributedTitle: \(sender.attributedTitle), title: \(sender.title)")
     }
 
     @objc private func boldTapped() {
@@ -1713,12 +1759,33 @@ class FormattingToolbar: NSView {
 
     @objc private func fontFamilyChanged(_ sender: NSPopUpButton) {
         guard let family = sender.titleOfSelectedItem, !family.isEmpty else { return }
+        print("[DEBUG] fontFamilyChanged called - family: '\(family)'")
         delegate?.formattingToolbar(self, didChangeFontFamily: family)
+
+        // Update the displayed title with theme color
+        let theme = ThemeManager.shared.currentTheme
+        print("[DEBUG] fontFamilyChanged - Applying theme color: \(theme.textColor)")
+        let attrs: [NSAttributedString.Key: Any] = [
+            .foregroundColor: theme.textColor,
+            .font: sender.font ?? NSFont.systemFont(ofSize: 13)
+        ]
+        sender.attributedTitle = NSAttributedString(string: family, attributes: attrs)
+        sender.synchronizeTitleAndSelectedItem()
+        print("[DEBUG] fontFamilyChanged - After update, attributedTitle: \(sender.attributedTitle), title: \(sender.title)")
     }
 
     @objc private func fontSizeChanged(_ sender: NSPopUpButton) {
         guard let title = sender.titleOfSelectedItem, let size = Double(title) else { return }
         delegate?.formattingToolbar(self, didChangeFontSize: CGFloat(size))
+
+        // Update the displayed title with theme color
+        let theme = ThemeManager.shared.currentTheme
+        let attrs: [NSAttributedString.Key: Any] = [
+            .foregroundColor: theme.textColor,
+            .font: sender.font ?? NSFont.systemFont(ofSize: 13)
+        ]
+        sender.attributedTitle = NSAttributedString(string: title, attributes: attrs)
+        sender.synchronizeTitleAndSelectedItem()
     }
 
     @objc private func decreaseFontSizeTapped() {
@@ -2105,7 +2172,7 @@ class OutlineViewController: NSViewController {
     private var refreshButton: NSButton!
     private var outlineView: NSOutlineView!
 
-    private let levelColors: [NSColor] = [
+    private var levelColors: [NSColor] = [
         NSColor(calibratedRed: 0.18, green: 0.33, blue: 0.61, alpha: 1.0), // Part
         NSColor(calibratedRed: 0.09, green: 0.52, blue: 0.52, alpha: 1.0), // Chapter / H1
         NSColor(calibratedWhite: 0.2, alpha: 1.0),                         // H2
@@ -2206,6 +2273,26 @@ class OutlineViewController: NSViewController {
         view.layer?.backgroundColor = theme.outlineBackground.cgColor
         headerLabel.textColor = theme.textColor
         outlineView.backgroundColor = theme.outlineBackground
+
+        // Update levelColors based on theme
+        if theme == .day {
+            levelColors = [
+                NSColor(calibratedRed: 0.18, green: 0.33, blue: 0.61, alpha: 1.0), // Part
+                NSColor(calibratedRed: 0.09, green: 0.52, blue: 0.52, alpha: 1.0), // Chapter / H1
+                NSColor(calibratedWhite: 0.2, alpha: 1.0),                         // H2
+                NSColor(calibratedWhite: 0.35, alpha: 1.0)                         // H3+
+            ]
+        } else {
+            levelColors = [
+                NSColor(calibratedRed: 0.5, green: 0.7, blue: 1.0, alpha: 1.0),    // Part - lighter blue
+                NSColor(calibratedRed: 0.4, green: 0.85, blue: 0.85, alpha: 1.0),  // Chapter / H1 - lighter teal
+                NSColor(calibratedWhite: 0.8, alpha: 1.0),                         // H2
+                NSColor(calibratedWhite: 0.65, alpha: 1.0)                         // H3+
+            ]
+        }
+
+        // Reload data to apply new colors
+        outlineView.reloadData()
     }
 
     @objc private func refreshTapped() {

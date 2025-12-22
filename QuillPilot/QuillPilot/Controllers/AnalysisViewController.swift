@@ -14,6 +14,15 @@ private final class AnalysisFlippedView: NSView {
     override var isFlipped: Bool { true }
 }
 
+// Window delegate that closes the window when it loses key status (user clicks elsewhere)
+private class AutoCloseWindowDelegate: NSObject, NSWindowDelegate {
+    func windowDidResignKey(_ notification: Notification) {
+        if let window = notification.object as? NSWindow {
+            window.close()
+        }
+    }
+}
+
 class AnalysisViewController: NSViewController {
 
     private var menuSidebar: NSView!
@@ -45,6 +54,9 @@ class AnalysisViewController: NSViewController {
     private var emotionalTrajectoryPopoutWindow: NSWindow?
     private var beliefShiftMatrixPopoutWindow: NSWindow?
     private var decisionConsequenceChainPopoutWindow: NSWindow?
+
+    // Window delegate for auto-closing popouts
+    private let autoCloseDelegate = AutoCloseWindowDelegate()
 
     // Character Library Window (Navigator panel only)
     private var characterLibraryWindow: CharacterLibraryWindowController?
@@ -1370,15 +1382,22 @@ extension AnalysisViewController: PlotVisualizationDelegate {
         window.isReleasedWhenClosed = false
         window.hidesOnDeactivate = true
 
-        let hostingView = NSHostingView(rootView: PlotTensionChart(
-            plotAnalysis: analysis,
-            onPointTap: { [weak self] position in
-                self?.didTapPlotPoint(at: position)
-            },
-            onPopout: { [weak window] in
-                window?.makeKeyAndOrderFront(nil)
-            }
-        ))
+        // Set window appearance to match the current theme
+        let isDarkMode = ThemeManager.shared.isDarkMode
+        window.appearance = NSAppearance(named: isDarkMode ? .darkAqua : .aqua)
+
+        let hostingView = NSHostingView(
+            rootView: PlotTensionChart(
+                plotAnalysis: analysis,
+                onPointTap: { [weak self] position in
+                    self?.didTapPlotPoint(at: position)
+                },
+                onPopout: { [weak window] in
+                    window?.makeKeyAndOrderFront(nil)
+                }
+            )
+            .preferredColorScheme(isDarkMode ? .dark : .light)
+        )
         hostingView.translatesAutoresizingMaskIntoConstraints = false
 
         let container = NSView()
@@ -1437,13 +1456,20 @@ extension AnalysisViewController: CharacterArcVisualizationDelegate {
         window.isReleasedWhenClosed = false
         window.hidesOnDeactivate = true
 
-        // Apply theme colors
+        // Apply theme colors and appearance
         let theme = ThemeManager.shared.currentTheme
+        let isDarkMode = ThemeManager.shared.isDarkMode
+        print("[DEBUG] Decision-Belief Loop - Theme: \(theme), isDarkMode: \(isDarkMode)")
+        print("[DEBUG] Decision-Belief Loop - pageBackground: \(theme.pageBackground)")
         window.backgroundColor = theme.pageBackground
+        window.appearance = NSAppearance(named: isDarkMode ? .darkAqua : .aqua)
+        print("[DEBUG] Decision-Belief Loop - Window appearance set to: \(window.appearance?.name.rawValue ?? "nil")")
 
-        let hostingView = NSHostingView(rootView: DecisionBeliefLoopFullView(
-            loops: loops
-        ))
+        let hostingView = NSHostingView(
+            rootView: DecisionBeliefLoopFullView(loops: loops)
+                .preferredColorScheme(isDarkMode ? .dark : .light)
+        )
+        print("[DEBUG] Decision-Belief Loop - ColorScheme set to: \(isDarkMode ? "dark" : "light")")
         hostingView.translatesAutoresizingMaskIntoConstraints = false
 
         let container = NSView()
@@ -1543,10 +1569,15 @@ extension AnalysisViewController: CharacterArcVisualizationDelegate {
         window.title = "Belief / Value Shift Matrices"
         window.minSize = NSSize(width: 1000, height: 600)
         window.isReleasedWhenClosed = false
-        window.hidesOnDeactivate = true
+        window.delegate = autoCloseDelegate
+
+        // Set window appearance to match the current theme
+        let isDarkMode = ThemeManager.shared.isDarkMode
+        window.appearance = NSAppearance(named: isDarkMode ? .darkAqua : .aqua)
 
         // Create SwiftUI view
         let beliefMatrixView = BeliefShiftMatrixView(matrices: matrices)
+            .preferredColorScheme(isDarkMode ? .dark : .light)
         let hostingView = NSHostingView(rootView: beliefMatrixView)
         hostingView.autoresizingMask = [.width, .height]
         hostingView.frame = window.contentView!.bounds
@@ -1588,10 +1619,15 @@ extension AnalysisViewController: CharacterArcVisualizationDelegate {
         window.title = "Decision-Consequence Chains"
         window.minSize = NSSize(width: 1100, height: 650)
         window.isReleasedWhenClosed = false
-        window.hidesOnDeactivate = true
+        window.delegate = autoCloseDelegate
+
+        // Set window appearance to match the current theme
+        let isDarkMode = ThemeManager.shared.isDarkMode
+        window.appearance = NSAppearance(named: isDarkMode ? .darkAqua : .aqua)
 
         // Create SwiftUI view
         let chainView = DecisionConsequenceChainView(chains: chains)
+            .preferredColorScheme(isDarkMode ? .dark : .light)
         let hostingView = NSHostingView(rootView: chainView)
         hostingView.autoresizingMask = [.width, .height]
         hostingView.frame = window.contentView!.bounds
@@ -1637,11 +1673,20 @@ extension AnalysisViewController: CharacterArcVisualizationDelegate {
         window.isReleasedWhenClosed = false
         window.hidesOnDeactivate = true
 
-        // Apply theme colors
+        // Apply theme colors and appearance
         let theme = ThemeManager.shared.currentTheme
+        let isDarkMode = ThemeManager.shared.isDarkMode
+        print("[DEBUG] Character Presence - Theme: \(theme), isDarkMode: \(isDarkMode)")
+        print("[DEBUG] Character Presence - pageBackground: \(theme.pageBackground)")
         window.backgroundColor = theme.pageBackground
+        window.appearance = NSAppearance(named: isDarkMode ? .darkAqua : .aqua)
+        print("[DEBUG] Character Presence - Window appearance set to: \(window.appearance?.name.rawValue ?? "nil")")
 
-        let hostingView = NSHostingView(rootView: CharacterPresenceBarChart(presence: presence))
+        let hostingView = NSHostingView(
+            rootView: CharacterPresenceBarChart(presence: presence)
+                .preferredColorScheme(isDarkMode ? .dark : .light)
+        )
+        print("[DEBUG] Character Presence - ColorScheme set to: \(isDarkMode ? "dark" : "light")")
         hostingView.translatesAutoresizingMaskIntoConstraints = false
 
         let container = NSView()
@@ -2291,6 +2336,16 @@ extension AnalysisViewController: CharacterArcVisualizationDelegate {
     }
 
     private func openEmotionalTrajectoryPopout(results: AnalysisResults) {
+        print("[DEBUG] openEmotionalTrajectoryPopout called, window is \(emotionalTrajectoryPopoutWindow == nil ? "nil" : "exists"), visible: \(emotionalTrajectoryPopoutWindow?.isVisible ?? false)")
+
+        // If window exists and is visible, bring it to front and return
+        if let existingWindow = emotionalTrajectoryPopoutWindow, existingWindow.isVisible {
+            print("[DEBUG] Bringing existing trajectory window to front")
+            existingWindow.makeKeyAndOrderFront(nil)
+            return
+        }
+
+        print("[DEBUG] Creating trajectory window")
         if emotionalTrajectoryPopoutWindow == nil {
             let window = NSWindow(
                 contentRect: NSRect(x: 0, y: 0, width: 900, height: 600),
@@ -2301,7 +2356,7 @@ extension AnalysisViewController: CharacterArcVisualizationDelegate {
             window.title = "Emotional Trajectory Curves"
             window.minSize = NSSize(width: 700, height: 500)
             window.isReleasedWhenClosed = false
-            window.hidesOnDeactivate = true
+            window.delegate = autoCloseDelegate
 
             emotionalTrajectoryPopoutWindow = window
         }

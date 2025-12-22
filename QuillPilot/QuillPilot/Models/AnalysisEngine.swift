@@ -61,6 +61,9 @@ struct AnalysisResults {
 
     // Decision-Consequence Chains
     var decisionConsequenceChains: [DecisionConsequenceChain] = []
+
+    // Relationship Evolution Maps
+    var relationshipEvolutionData: RelationshipEvolutionData = RelationshipEvolutionData()
 }
 
 class AnalysisEngine {
@@ -298,6 +301,10 @@ class AnalysisEngine {
 
             // Generate decision-consequence chains
             results.decisionConsequenceChains = generateDecisionConsequenceChains(text: analysisText, characterNames: characterNames, outlineEntries: outlineEntries)
+
+            // Generate relationship evolution maps
+            let analyzer = DecisionBeliefLoopAnalyzer()
+            results.relationshipEvolutionData = analyzer.generateRelationshipEvolutionData(from: analysisText, characterNames: characterNames)
         }
 
         return results

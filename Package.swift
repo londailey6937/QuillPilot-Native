@@ -51,7 +51,8 @@ let package = Package(
                 "Views/EmotionalTrajectoryView.swift",
                 "Views/CharacterInteractionsView.swift",
                 "Views/BeliefShiftMatrixView.swift",
-                "Views/DecisionConsequenceChainView.swift"
+                "Views/DecisionConsequenceChainView.swift",
+                "Views/RelationshipEvolutionMapView.swift"
             ]
         )
     ]

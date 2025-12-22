@@ -54,6 +54,7 @@ class AnalysisViewController: NSViewController {
     private var emotionalTrajectoryPopoutWindow: NSWindow?
     private var beliefShiftMatrixPopoutWindow: NSWindow?
     private var decisionConsequenceChainPopoutWindow: NSWindow?
+    private var relationshipMapPopoutWindow: NSWindow?
 
     // Window delegate for auto-closing popouts
     private let autoCloseDelegate = AutoCloseWindowDelegate()
@@ -332,6 +333,9 @@ class AnalysisViewController: NSViewController {
 
         presencePopoutWindow?.close()
         presencePopoutWindow = nil
+
+        relationshipMapPopoutWindow?.close()
+        relationshipMapPopoutWindow = nil
 
         // Also close Navigator popup windows
         storyOutlineWindow?.close()
@@ -1593,6 +1597,91 @@ extension AnalysisViewController: CharacterArcVisualizationDelegate {
         }
     }
 
+    func openRelationshipEvolutionMapPopout(evolutionData: RelationshipEvolutionData) {
+        // Close existing window if open
+        relationshipMapPopoutWindow?.close()
+        relationshipMapPopoutWindow = nil
+
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 1100, height: 700),
+            styleMask: [.titled, .closable, .resizable, .miniaturizable],
+            backing: .buffered,
+            defer: false
+        )
+        window.title = "Relationship Evolution Maps"
+        window.minSize = NSSize(width: 900, height: 600)
+        window.isReleasedWhenClosed = false
+        window.hidesOnDeactivate = true
+
+        // Set window appearance to match the current theme
+        let isDarkMode = ThemeManager.shared.isDarkMode
+        window.appearance = NSAppearance(named: isDarkMode ? .darkAqua : .aqua)
+
+        // Create custom view
+        let mapView = RelationshipEvolutionMapView(frame: window.contentView!.bounds)
+        mapView.autoresizingMask = [.width, .height]
+
+        // Convert data to view format
+        let nodes = evolutionData.nodes.map { nodeData in
+            RelationshipEvolutionMapView.RelationshipNode(
+                character: nodeData.character,
+                emotionalInvestment: nodeData.emotionalInvestment,
+                position: NSPoint(x: nodeData.positionX, y: nodeData.positionY)
+            )
+        }
+
+        let edges = evolutionData.edges.map { edgeData in
+            let powerDirection: RelationshipEvolutionMapView.PowerDirection
+            switch edgeData.powerDirection {
+            case "fromToTo":
+                powerDirection = .fromToTo
+            case "toToFrom":
+                powerDirection = .toToFrom
+            default:
+                powerDirection = .balanced
+            }
+
+            let evolutionPoints = edgeData.evolution.map { point in
+                RelationshipEvolutionMapView.EvolutionPoint(
+                    chapter: point.chapter,
+                    trustLevel: point.trustLevel,
+                    description: point.description
+                )
+            }
+
+            return RelationshipEvolutionMapView.RelationshipEdge(
+                from: edgeData.from,
+                to: edgeData.to,
+                trustLevel: edgeData.trustLevel,
+                powerDirection: powerDirection,
+                evolution: evolutionPoints
+            )
+        }
+
+        mapView.setRelationships(nodes: nodes, edges: edges)
+
+        // Create container
+        let container = NSView(frame: window.contentView!.bounds)
+        container.autoresizingMask = [.width, .height]
+        container.wantsLayer = true
+        container.layer?.backgroundColor = currentTheme.pageAround.cgColor
+        container.addSubview(mapView)
+
+        window.contentView = container
+        window.center()
+        window.makeKeyAndOrderFront(nil)
+
+        // Store window reference and set up cleanup
+        relationshipMapPopoutWindow = window
+        NotificationCenter.default.addObserver(
+            forName: NSWindow.willCloseNotification,
+            object: window,
+            queue: .main
+        ) { [weak self] _ in
+            self?.relationshipMapPopoutWindow = nil
+        }
+    }
+
     func openBeliefShiftMatrixPopout(matrices: [BeliefShiftMatrix]) {
         // Close existing window if open
         beliefShiftMatrixPopoutWindow?.close()
@@ -2310,6 +2399,10 @@ extension AnalysisViewController: CharacterArcVisualizationDelegate {
     private func showCharacterAnalysisMenuAfterAnalysis(_ sender: NSButton) {
         let menu = NSMenu()
 
+        // Set menu appearance to match current theme
+        let isDarkMode = ThemeManager.shared.isDarkMode
+        menu.appearance = NSAppearance(named: isDarkMode ? .darkAqua : .aqua)
+
         let trajectoryItem = NSMenuItem(title: "📈 Emotional Trajectory", action: #selector(showEmotionalTrajectory), keyEquivalent: "")
         trajectoryItem.target = self
         menu.addItem(trajectoryItem)
@@ -2325,6 +2418,10 @@ extension AnalysisViewController: CharacterArcVisualizationDelegate {
         let chainItem = NSMenuItem(title: "⛓️ Decision-Consequence Chains", action: #selector(showDecisionConsequenceChains), keyEquivalent: "")
         chainItem.target = self
         menu.addItem(chainItem)
+
+        let relationshipMapItem = NSMenuItem(title: "🔗 Relationship Evolution Maps", action: #selector(showRelationshipEvolutionMaps), keyEquivalent: "")
+        relationshipMapItem.target = self
+        menu.addItem(relationshipMapItem)
 
         let interactionsItem = NSMenuItem(title: "🤝 Character Interactions", action: #selector(showInteractions), keyEquivalent: "")
         interactionsItem.target = self
@@ -2364,6 +2461,12 @@ extension AnalysisViewController: CharacterArcVisualizationDelegate {
     @objc private func showPresence() {
         if let results = latestAnalysisResults {
             openPresencePopout(presence: results.characterPresence)
+        }
+    }
+
+    @objc private func showRelationshipEvolutionMaps() {
+        if let results = latestAnalysisResults {
+            openRelationshipEvolutionMapPopout(evolutionData: results.relationshipEvolutionData)
         }
     }
 

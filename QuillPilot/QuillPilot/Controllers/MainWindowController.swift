@@ -204,6 +204,10 @@ class MainWindowController: NSWindowController {
         containerLayer.backgroundColor = theme.pageAround.cgColor
         containerLayer.setNeedsDisplay()
 
+        // Set the window's appearance to match the theme
+        let isDarkMode = ThemeManager.shared.isDarkMode
+        window?.appearance = NSAppearance(named: isDarkMode ? .darkAqua : .aqua)
+
         headerView.applyTheme(theme)
         toolbarView.applyTheme(theme)
         rulerView.applyTheme(theme)
@@ -1593,10 +1597,19 @@ class FormattingToolbar: NSView {
         wantsLayer = true
         layer?.backgroundColor = theme.toolbarBackground.cgColor
 
+        // Set the view's appearance to match the theme - this is critical for popup menus
+        let isDarkMode = ThemeManager.shared.isDarkMode
+        self.appearance = NSAppearance(named: isDarkMode ? .darkAqua : .aqua)
+
         // Apply theme to all controls
         themedControls.forEach { control in
+            // Set appearance on each control as well
+            control.appearance = NSAppearance(named: isDarkMode ? .darkAqua : .aqua)
+
             // Check for NSPopUpButton FIRST because it's a subclass of NSButton
             if let popup = control as? NSPopUpButton {
+                // Set appearance on the popup's menu too
+                popup.menu?.appearance = NSAppearance(named: isDarkMode ? .darkAqua : .aqua)
                 print("[DEBUG] Applying theme to NSPopUpButton: \(popup.titleOfSelectedItem ?? "no title")")
                 popup.contentTintColor = theme.textColor
 

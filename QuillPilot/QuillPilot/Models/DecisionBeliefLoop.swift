@@ -222,6 +222,34 @@ struct CharacterInteraction {
     var relationshipStrength: Double = 0.0  // 0-1
 }
 
+// MARK: - Relationship Evolution Map
+
+struct RelationshipEvolutionData {
+    var nodes: [RelationshipNodeData] = []
+    var edges: [RelationshipEdgeData] = []
+}
+
+struct RelationshipNodeData {
+    let character: String
+    let emotionalInvestment: Double // 0.0 to 1.0
+    let positionX: Double // 0.0 to 1.0
+    let positionY: Double // 0.0 to 1.0
+}
+
+struct RelationshipEdgeData {
+    let from: String
+    let to: String
+    let trustLevel: Double // -1.0 (conflict) to 1.0 (trust)
+    let powerDirection: String // "balanced", "fromToTo", "toToFrom"
+    var evolution: [RelationshipEvolutionPoint] = []
+}
+
+struct RelationshipEvolutionPoint {
+    let chapter: Int
+    let trustLevel: Double
+    let description: String
+}
+
 // MARK: - Decision-Belief Loop Analyzer
 
 class DecisionBeliefLoopAnalyzer {
@@ -920,5 +948,132 @@ class DecisionBeliefLoopAnalyzer {
         }
 
         return count
+    }
+
+    // MARK: - Relationship Evolution Map Generation
+
+    func generateRelationshipEvolutionData(from text: String, characterNames: [String]) -> RelationshipEvolutionData {
+        guard characterNames.count >= 2 else {
+            return RelationshipEvolutionData()
+        }
+
+        let chapters = splitIntoChapters(text: text)
+        var evolutionData = RelationshipEvolutionData()
+
+        // Generate nodes with positions and emotional investment
+        let gridSize = Int(ceil(sqrt(Double(characterNames.count))))
+        for (index, character) in characterNames.enumerated() {
+            let row = index / gridSize
+            let col = index % gridSize
+
+            // Position in grid (with some randomization for visual interest)
+            let baseX = (Double(col) + 0.5) / Double(gridSize)
+            let baseY = (Double(row) + 0.5) / Double(gridSize)
+
+            // Add slight randomization
+            let randomX = Double.random(in: -0.1...0.1) / Double(gridSize)
+            let randomY = Double.random(in: -0.1...0.1) / Double(gridSize)
+
+            let posX = max(0.1, min(0.9, baseX + randomX))
+            let posY = max(0.1, min(0.9, baseY + randomY))
+
+            // Calculate emotional investment based on presence in text
+            let totalMentions = countMentions(of: character, in: text)
+            let maxMentions = characterNames.map { countMentions(of: $0, in: text) }.max() ?? 1
+            let investment = Double(totalMentions) / Double(maxMentions)
+
+            evolutionData.nodes.append(RelationshipNodeData(
+                character: character,
+                emotionalInvestment: investment,
+                positionX: posX,
+                positionY: posY
+            ))
+        }
+
+        // Generate edges between characters
+        for i in 0..<characterNames.count {
+            for j in (i+1)..<characterNames.count {
+                let char1 = characterNames[i]
+                let char2 = characterNames[j]
+
+                // Analyze relationship evolution across chapters
+                var evolutionPoints: [RelationshipEvolutionPoint] = []
+                var overallTrust: Double = 0.0
+
+                for (chapterIndex, chapter) in chapters.enumerated() {
+                    let chapterNum = chapterIndex + 1
+                    let sentences = chapter.components(separatedBy: CharacterSet(charactersIn: ".!?")).filter { !$0.isEmpty }
+
+                    var trustScore: Double = 0.0
+                    var interactionCount = 0
+
+                    // Analyze sentences mentioning both characters
+                    for sentence in sentences {
+                        let lowerSentence = sentence.lowercased()
+                        if lowerSentence.contains(char1.lowercased()) && lowerSentence.contains(char2.lowercased()) {
+                            interactionCount += 1
+
+                            // Positive relationship indicators
+                            let positiveWords = ["help", "support", "agree", "together", "friend", "ally", "trust", "love", "care"]
+                            let negativeWords = ["fight", "argue", "hate", "enemy", "against", "betray", "distrust", "conflict", "oppose"]
+
+                            for word in positiveWords {
+                                if lowerSentence.contains(word) {
+                                    trustScore += 0.1
+                                }
+                            }
+
+                            for word in negativeWords {
+                                if lowerSentence.contains(word) {
+                                    trustScore -= 0.1
+                                }
+                            }
+                        }
+                    }
+
+                    if interactionCount > 0 {
+                        // Normalize trust score
+                        let normalizedTrust = max(-1.0, min(1.0, trustScore / Double(interactionCount)))
+                        overallTrust += normalizedTrust
+
+                        let description = normalizedTrust > 0 ? "Positive interaction" : normalizedTrust < 0 ? "Conflict" : "Neutral"
+
+                        evolutionPoints.append(RelationshipEvolutionPoint(
+                            chapter: chapterNum,
+                            trustLevel: normalizedTrust,
+                            description: description
+                        ))
+                    }
+                }
+
+                // Only add edge if characters interact
+                if !evolutionPoints.isEmpty {
+                    let avgTrust = overallTrust / Double(evolutionPoints.count)
+
+                    // Determine power direction (simplified heuristic)
+                    let char1Mentions = countMentions(of: char1, in: text)
+                    let char2Mentions = countMentions(of: char2, in: text)
+
+                    let powerDirection: String
+                    if abs(char1Mentions - char2Mentions) < 3 {
+                        powerDirection = "balanced"
+                    } else if char1Mentions > char2Mentions {
+                        powerDirection = "fromToTo"
+                    } else {
+                        powerDirection = "toToFrom"
+                    }
+
+                    evolutionData.edges.append(RelationshipEdgeData(
+                        from: char1,
+                        to: char2,
+                        trustLevel: avgTrust,
+                        powerDirection: powerDirection,
+                        evolution: evolutionPoints
+                    ))
+                }
+            }
+        }
+
+        return evolutionData
     }
 }

@@ -1333,15 +1333,16 @@ class FormattingToolbar: NSView {
         // Styles popup
         stylePopup = registerControl(NSPopUpButton(frame: .zero, pullsDown: false))
         let stylesMenu = NSMenu()
+        let currentTheme = ThemeManager.shared.currentTheme
 
         func addHeader(_ title: String) {
             let item = NSMenuItem(title: title, action: nil, keyEquivalent: "")
             item.isEnabled = false
 
-            // Create attributed title with a cleaner style
+            // Create attributed title with a cleaner style using theme colors
             let attributes: [NSAttributedString.Key: Any] = [
                 .font: NSFont.systemFont(ofSize: 11, weight: .semibold),
-                .foregroundColor: NSColor.secondaryLabelColor
+                .foregroundColor: currentTheme.textColor.withAlphaComponent(0.6)
             ]
             item.attributedTitle = NSAttributedString(string: "  \(title.uppercased())", attributes: attributes)
 
@@ -1602,11 +1603,21 @@ class FormattingToolbar: NSView {
                 popup.contentTintColor = theme.textColor
                 // Apply theme to all menu items
                 for item in popup.itemArray {
-                    let attributes: [NSAttributedString.Key: Any] = [
-                        .foregroundColor: theme.textColor,
-                        .font: popup.font ?? NSFont.systemFont(ofSize: 13)
-                    ]
-                    item.attributedTitle = NSAttributedString(string: item.title, attributes: attributes)
+                    if item.isEnabled {
+                        // Regular menu items
+                        let attributes: [NSAttributedString.Key: Any] = [
+                            .foregroundColor: theme.textColor,
+                            .font: popup.font ?? NSFont.systemFont(ofSize: 13)
+                        ]
+                        item.attributedTitle = NSAttributedString(string: item.title, attributes: attributes)
+                    } else {
+                        // Disabled header items
+                        let attributes: [NSAttributedString.Key: Any] = [
+                            .font: NSFont.systemFont(ofSize: 11, weight: .semibold),
+                            .foregroundColor: theme.textColor.withAlphaComponent(0.6)
+                        ]
+                        item.attributedTitle = NSAttributedString(string: item.title, attributes: attributes)
+                    }
                 }
             }
         }

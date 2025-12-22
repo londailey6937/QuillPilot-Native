@@ -1423,7 +1423,13 @@ class FormattingToolbar: NSView {
         ].forEach(addStyle)
 
         stylePopup.menu = stylesMenu
-        stylePopup.selectItem(withTitle: "Body Text")
+        // Restore last selected style from UserDefaults, default to "Body Text"
+        let lastStyle = UserDefaults.standard.string(forKey: "LastSelectedStyle") ?? "Body Text"
+        if stylePopup.itemTitles.contains(lastStyle) {
+            stylePopup.selectItem(withTitle: lastStyle)
+        } else {
+            stylePopup.selectItem(withTitle: "Body Text")
+        }
         stylePopup.translatesAutoresizingMaskIntoConstraints = false
         stylePopup.target = self
         stylePopup.action = #selector(styleChanged(_:))
@@ -1615,7 +1621,10 @@ class FormattingToolbar: NSView {
     }
 
     @objc private func styleChanged(_ sender: NSPopUpButton) {
-        delegate?.formattingToolbar(self, didSelectStyle: sender.titleOfSelectedItem ?? "")
+        let selectedStyle = sender.titleOfSelectedItem ?? ""
+        delegate?.formattingToolbar(self, didSelectStyle: selectedStyle)
+        // Save the selected style to UserDefaults for persistence
+        UserDefaults.standard.set(selectedStyle, forKey: "LastSelectedStyle")
     }
 
     @objc private func boldTapped() {

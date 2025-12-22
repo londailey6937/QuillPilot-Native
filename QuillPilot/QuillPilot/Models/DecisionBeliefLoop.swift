@@ -230,12 +230,12 @@ class DecisionBeliefLoopAnalyzer {
                     continue
                 }
 
-                // Extract elements from the chapter with page numbers
-                let (pressure, pressurePage) = extractPressure(from: chapter.text, character: characterName, allCharacters: characterNames, startPos: chapter.startPos, fullText: text)
-                let (belief, beliefPage) = extractBelief(from: chapter.text, character: characterName, allCharacters: characterNames, startPos: chapter.startPos, fullText: text)
-                let (decision, decisionPage) = extractDecision(from: chapter.text, character: characterName, allCharacters: characterNames, startPos: chapter.startPos, fullText: text)
-                let (outcome, outcomePage) = extractOutcome(from: chapter.text, character: characterName, allCharacters: characterNames, startPos: chapter.startPos, fullText: text)
-                let (shift, shiftPage) = extractBeliefShift(from: chapter.text, character: characterName, allCharacters: characterNames, startPos: chapter.startPos, fullText: text)
+                // Extract elements from the chapter in narrative order (pressure → belief → decision → outcome → shift)
+                let (pressure, pressurePage, pressurePos) = extractPressureWithPosition(from: chapter.text, character: characterName, allCharacters: characterNames, startPos: chapter.startPos, fullText: text)
+                let (belief, beliefPage, beliefPos) = extractBeliefWithPosition(from: chapter.text, character: characterName, allCharacters: characterNames, startPos: chapter.startPos, fullText: text, afterPosition: pressurePos)
+                let (decision, decisionPage, decisionPos) = extractDecisionWithPosition(from: chapter.text, character: characterName, allCharacters: characterNames, startPos: chapter.startPos, fullText: text, afterPosition: beliefPos)
+                let (outcome, outcomePage, outcomePos) = extractOutcomeWithPosition(from: chapter.text, character: characterName, allCharacters: characterNames, startPos: chapter.startPos, fullText: text, afterPosition: decisionPos)
+                let (shift, shiftPage, _) = extractBeliefShiftWithPosition(from: chapter.text, character: characterName, allCharacters: characterNames, startPos: chapter.startPos, fullText: text, afterPosition: outcomePos)
 
                 let entry = DecisionBeliefLoop.LoopEntry(
                     chapter: chapter.number,
@@ -268,6 +268,127 @@ class DecisionBeliefLoopAnalyzer {
         let page: Int?
     }
 
+    private func extractPressureWithPosition(from text: String, character: String, allCharacters: [String], startPos: Int, fullText: String) -> (String, Int, Int) {
+        let (sentences, positions) = getSentencesAbout(character: character, in: text, allCharacters: allCharacters, proximity: 2)
+
+        for (index, sentence) in sentences.enumerated() {
+            let lower = sentence.lowercased()
+            // Look for pressure indicators
+            for word in pressureWords {
+                if lower.contains(word) {
+                    let absolutePos = startPos + positions[index]
+                    let pageNum = calculatePageNumber(position: absolutePos, in: fullText)
+                    return (cleanExtract(sentence), pageNum, positions[index])
+                }
+            }
+
+            // Look for question marks (dilemma)
+            if sentence.contains("?") {
+                let absolutePos = startPos + positions[index]
+                let pageNum = calculatePageNumber(position: absolutePos, in: fullText)
+                return (cleanExtract(sentence), pageNum, positions[index])
+            }
+        }
+
+        return ("", 0, -1)
+    }
+
+    private func extractBeliefWithPosition(from text: String, character: String, allCharacters: [String], startPos: Int, fullText: String, afterPosition: Int) -> (String, Int, Int) {
+        let (sentences, positions) = getSentencesAbout(character: character, in: text, allCharacters: allCharacters, proximity: 2)
+
+        for (index, sentence) in sentences.enumerated() {
+            // Skip if this sentence appears before the previous element
+            if afterPosition >= 0 && positions[index] <= afterPosition {
+                continue
+            }
+
+            let lower = sentence.lowercased()
+            // Look for belief indicators
+            for word in beliefWords {
+                if lower.contains(word) {
+                    let absolutePos = startPos + positions[index]
+                    let pageNum = calculatePageNumber(position: absolutePos, in: fullText)
+                    return (cleanExtract(sentence), pageNum, positions[index])
+                }
+            }
+        }
+
+        return ("", 0, -1)
+    }
+
+    private func extractDecisionWithPosition(from text: String, character: String, allCharacters: [String], startPos: Int, fullText: String, afterPosition: Int) -> (String, Int, Int) {
+        let (sentences, positions) = getSentencesAbout(character: character, in: text, allCharacters: allCharacters, proximity: 2)
+
+        for (index, sentence) in sentences.enumerated() {
+            // Skip if this sentence appears before the previous element
+            if afterPosition >= 0 && positions[index] <= afterPosition {
+                continue
+            }
+
+            let lower = sentence.lowercased()
+            // Look for decision indicators
+            for word in decisionWords {
+                if lower.contains(word) {
+                    let absolutePos = startPos + positions[index]
+                    let pageNum = calculatePageNumber(position: absolutePos, in: fullText)
+                    return (cleanExtract(sentence), pageNum, positions[index])
+                }
+            }
+        }
+
+        return ("", 0, -1)
+    }
+
+    private func extractOutcomeWithPosition(from text: String, character: String, allCharacters: [String], startPos: Int, fullText: String, afterPosition: Int) -> (String, Int, Int) {
+        let (sentences, positions) = getSentencesAbout(character: character, in: text, allCharacters: allCharacters, proximity: 2)
+
+        for (index, sentence) in sentences.enumerated() {
+            // Skip if this sentence appears before the previous element
+            if afterPosition >= 0 && positions[index] <= afterPosition {
+                continue
+            }
+
+            let lower = sentence.lowercased()
+            // Look for outcome indicators
+            for word in outcomeWords {
+                if lower.contains(word) {
+                    let absolutePos = startPos + positions[index]
+                    let pageNum = calculatePageNumber(position: absolutePos, in: fullText)
+                    return (cleanExtract(sentence), pageNum, positions[index])
+                }
+            }
+        }
+
+        return ("", 0, -1)
+    }
+
+    private func extractBeliefShiftWithPosition(from text: String, character: String, allCharacters: [String], startPos: Int, fullText: String, afterPosition: Int) -> (String, Int, Int) {
+        let (sentences, positions) = getSentencesAbout(character: character, in: text, allCharacters: allCharacters, proximity: 3)
+
+        // Look for words indicating change
+        let changeWords = ["realized", "learned", "understood", "saw", "discovered",
+                          "changed", "shifted", "no longer", "now", "finally"]
+
+        for (index, sentence) in sentences.enumerated() {
+            // Skip if this sentence appears before the previous element
+            if afterPosition >= 0 && positions[index] <= afterPosition {
+                continue
+            }
+
+            let lower = sentence.lowercased()
+            for word in changeWords {
+                if lower.contains(word) {
+                    let absolutePos = startPos + positions[index]
+                    let pageNum = calculatePageNumber(position: absolutePos, in: fullText)
+                    return (cleanExtract(sentence), pageNum, positions[index])
+                }
+            }
+        }
+
+        return ("", 0, -1)
+    }
+
+    // Keep old functions for compatibility (deprecated)
     private func extractPressure(from text: String, character: String, allCharacters: [String], startPos: Int, fullText: String) -> (String, Int) {
         let (sentences, positions) = getSentencesAbout(character: character, in: text, allCharacters: allCharacters, proximity: 2)
 
@@ -373,17 +494,21 @@ class DecisionBeliefLoopAnalyzer {
 
         for (index, sentence) in allSentences.enumerated() {
             // Only include sentences that specifically mention this character
-            // or are within proximity and in same paragraph context
+            // AND don't strongly focus on another character
             if sentence.lowercased().contains(character.lowercased()) {
-                relevantSentences.append(sentence)
-                positions.append(currentPos)
+                // Skip if sentence strongly focuses on another character
+                // (another character appears before this character in the sentence)
+                if !isAboutOtherCharacter(sentence, targetCharacter: character, allCharacters: allCharacters) {
+                    relevantSentences.append(sentence)
+                    positions.append(currentPos)
 
-                // Include immediately adjacent sentences for context (but only if they don't mention other characters)
-                if index > 0 && !relevantSentences.contains(allSentences[index - 1]) {
-                    let prevSentence = allSentences[index - 1]
-                    if !containsOtherCharacter(prevSentence, excluding: character, allCharacters: allCharacters) {
-                        relevantSentences.insert(prevSentence, at: relevantSentences.count - 1)
-                        positions.insert(currentPos - prevSentence.count - 1, at: positions.count - 1)
+                    // Include immediately adjacent sentences for context (but only if they don't mention other characters)
+                    if index > 0 && !relevantSentences.contains(allSentences[index - 1]) {
+                        let prevSentence = allSentences[index - 1]
+                        if !containsOtherCharacter(prevSentence, excluding: character, allCharacters: allCharacters) {
+                            relevantSentences.insert(prevSentence, at: relevantSentences.count - 1)
+                            positions.insert(currentPos - prevSentence.count - 1, at: positions.count - 1)
+                        }
                     }
                 }
             }
@@ -391,6 +516,39 @@ class DecisionBeliefLoopAnalyzer {
         }
 
         return (relevantSentences, positions)
+    }
+
+    private func isAboutOtherCharacter(_ sentence: String, targetCharacter: String, allCharacters: [String]) -> Bool {
+        // Check if sentence is primarily about another character
+        // by seeing if another character appears as the subject (appears first or near the beginning)
+        let lowerSentence = sentence.lowercased()
+        let targetLower = targetCharacter.lowercased()
+
+        // Find the position of the target character in the sentence
+        guard let targetRange = lowerSentence.range(of: targetLower) else {
+            return false
+        }
+        let targetPosition = lowerSentence.distance(from: lowerSentence.startIndex, to: targetRange.lowerBound)
+
+        // Check if any other character appears significantly before the target character
+        for character in allCharacters {
+            let characterLower = character.lowercased()
+            if characterLower == targetLower {
+                continue
+            }
+
+            if let otherRange = lowerSentence.range(of: characterLower) {
+                let otherPosition = lowerSentence.distance(from: lowerSentence.startIndex, to: otherRange.lowerBound)
+
+                // If another character appears at least 10 characters before the target,
+                // it's likely the subject of the sentence
+                if otherPosition < targetPosition - 10 {
+                    return true
+                }
+            }
+        }
+
+        return false
     }
 
     private func containsOtherCharacter(_ text: String, excluding: String, allCharacters: [String]) -> Bool {

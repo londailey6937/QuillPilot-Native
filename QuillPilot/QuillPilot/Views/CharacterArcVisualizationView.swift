@@ -515,25 +515,96 @@ struct DecisionBeliefLoopFullView: View {
                             .cornerRadius(4)
                         }
 
-                        // Diagnostic hints
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text("💡 Tracking Tips:")
-                                .font(.caption)
+                        // Character Arc Timeline
+                        VStack(alignment: .leading, spacing: 12) {
+                            Text("Character Arc Timeline")
+                                .font(.headline)
                                 .fontWeight(.semibold)
                                 .foregroundColor(textColor)
-                            Text("• If this table looks repetitive, your arc is flat.")
+
+                            Text("Key inflection points across chapters")
                                 .font(.caption)
                                 .foregroundColor(textColor.opacity(0.7))
-                            Text("• If the belief shifts feel unearned, the pressure is too weak.")
-                                .font(.caption)
-                                .foregroundColor(textColor.opacity(0.7))
-                            Text("• If a character's belief changes but their decisions don't, the change isn't real.")
-                                .font(.caption)
-                                .foregroundColor(textColor.opacity(0.7))
+
+                            CharacterArcTimelineView(entries: loop.entries, textColor: textColor)
                         }
-                        .padding(8)
-                        .background(Color.blue.opacity(0.15))
-                        .cornerRadius(4)
+                        .padding()
+                        .background(textColor.opacity(0.05))
+                        .cornerRadius(8)
+
+                        // Diagnostic hints and color legend side by side
+                        HStack(alignment: .top, spacing: 12) {
+                            // Diagnostic hints
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text("💡 Tracking Tips:")
+                                    .font(.caption)
+                                    .fontWeight(.semibold)
+                                    .foregroundColor(textColor)
+                                Text("• If this table looks repetitive, your arc is flat.")
+                                    .font(.caption)
+                                    .foregroundColor(textColor.opacity(0.7))
+                                Text("• If the belief shifts feel unearned, the pressure is too weak.")
+                                    .font(.caption)
+                                    .foregroundColor(textColor.opacity(0.7))
+                                Text("• If a character's belief changes but their decisions don't, the change isn't real.")
+                                    .font(.caption)
+                                    .foregroundColor(textColor.opacity(0.7))
+                            }
+                            .padding(8)
+                            .background(Color.blue.opacity(0.15))
+                            .cornerRadius(4)
+
+                            // Color legend
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text("🎨 Color Legend:")
+                                    .font(.caption)
+                                    .fontWeight(.semibold)
+                                    .foregroundColor(textColor)
+                                HStack(spacing: 4) {
+                                    Circle()
+                                        .fill(Color.red)
+                                        .frame(width: 8, height: 8)
+                                    Text("Fear")
+                                        .font(.caption)
+                                        .foregroundColor(textColor.opacity(0.7))
+                                }
+                                HStack(spacing: 4) {
+                                    Circle()
+                                        .fill(Color.purple)
+                                        .frame(width: 8, height: 8)
+                                    Text("Agency")
+                                        .font(.caption)
+                                        .foregroundColor(textColor.opacity(0.7))
+                                }
+                                HStack(spacing: 4) {
+                                    Circle()
+                                        .fill(Color.blue)
+                                        .frame(width: 8, height: 8)
+                                    Text("Trust")
+                                        .font(.caption)
+                                        .foregroundColor(textColor.opacity(0.7))
+                                }
+                                HStack(spacing: 4) {
+                                    Circle()
+                                        .fill(Color.green)
+                                        .frame(width: 8, height: 8)
+                                    Text("Identity")
+                                        .font(.caption)
+                                        .foregroundColor(textColor.opacity(0.7))
+                                }
+                                HStack(spacing: 4) {
+                                    Circle()
+                                        .fill(Color.yellow)
+                                        .frame(width: 8, height: 8)
+                                    Text("Moral/Ethical")
+                                        .font(.caption)
+                                        .foregroundColor(textColor.opacity(0.7))
+                                }
+                            }
+                            .padding(8)
+                            .background(Color.purple.opacity(0.15))
+                            .cornerRadius(4)
+                        }
                     }
                     .padding()
                     .background(textColor.opacity(0.03))
@@ -571,6 +642,253 @@ struct DecisionBeliefLoopFullView: View {
         case .developing: return .blue
         case .evolving: return .green
         }
+    }
+}
+
+@available(macOS 13.0, *)
+struct CharacterArcTimelineView: View {
+    let entries: [DecisionBeliefLoop.LoopEntry]
+    let textColor: Color
+
+    private let loopElements = ["Pressure", "Belief in Play", "Decision", "Outcome", "Belief Shift"]
+
+    var body: some View {
+        GeometryReader { geometry in
+            let width = geometry.size.width - 60 // Reserve space for y-axis labels
+            let elementSpacing = width / CGFloat(loopElements.count)
+            let chapterSpacing: CGFloat = 50 // Fixed spacing between chapters
+
+            ZStack(alignment: .topLeading) {
+                // Y-axis (chapters)
+                VStack(alignment: .leading, spacing: 0) {
+                    // Header space
+                    Spacer()
+                        .frame(height: 30)
+
+                    ForEach(entries) { entry in
+                        HStack(spacing: 0) {
+                            // Chapter label on y-axis
+                            Text("Ch \(entry.chapter)")
+                                .font(.caption)
+                                .foregroundColor(textColor.opacity(0.7))
+                                .frame(width: 50, alignment: .trailing)
+                                .padding(.trailing, 10)
+                        }
+                        .frame(height: chapterSpacing)
+                    }
+                }
+
+                // X-axis labels and grid
+                VStack(alignment: .leading, spacing: 0) {
+                    // X-axis labels
+                    HStack(spacing: 0) {
+                        Spacer()
+                            .frame(width: 60) // Y-axis space
+
+                        ForEach(Array(loopElements.enumerated()), id: \.offset) { _, element in
+                            Text(element)
+                                .font(.caption2)
+                                .foregroundColor(textColor.opacity(0.7))
+                                .frame(width: elementSpacing, alignment: .center)
+                                .multilineTextAlignment(.center)
+                        }
+                    }
+                    .frame(height: 30)
+
+                    // Grid lines and nodes
+                    ZStack(alignment: .topLeading) {
+                        // Vertical grid lines for each loop element
+                        ForEach(0..<loopElements.count, id: \.self) { index in
+                            let xPos = 60 + CGFloat(index) * elementSpacing + elementSpacing / 2
+
+                            Rectangle()
+                                .fill(textColor.opacity(0.1))
+                                .frame(width: 1, height: CGFloat(entries.count) * chapterSpacing)
+                                .offset(x: xPos, y: 0)
+                        }
+
+                        // Horizontal grid lines for each chapter
+                        ForEach(Array(entries.enumerated()), id: \.offset) { chapterIndex, _ in
+                            let yPos = CGFloat(chapterIndex) * chapterSpacing + chapterSpacing / 2
+
+                            Rectangle()
+                                .fill(textColor.opacity(0.1))
+                                .frame(width: width, height: 1)
+                                .offset(x: 60, y: yPos)
+                        }
+
+                        // Inflection point nodes
+                        ForEach(Array(entries.enumerated()), id: \.offset) { chapterIndex, entry in
+                            let yPos = CGFloat(chapterIndex) * chapterSpacing + chapterSpacing / 2
+
+                            // Pressure node
+                            if !entry.pressure.isEmpty {
+                                createNode(
+                                    color: getElementColor(type: .pressure, entry: entry),
+                                    x: 60 + elementSpacing / 2,
+                                    y: yPos
+                                )
+                            }
+
+                            // Belief in Play node
+                            if !entry.beliefInPlay.isEmpty {
+                                createNode(
+                                    color: getElementColor(type: .belief, entry: entry),
+                                    x: 60 + elementSpacing * 1.5,
+                                    y: yPos
+                                )
+                            }
+
+                            // Decision node
+                            if !entry.decision.isEmpty {
+                                createNode(
+                                    color: getElementColor(type: .decision, entry: entry),
+                                    x: 60 + elementSpacing * 2.5,
+                                    y: yPos
+                                )
+                            }
+
+                            // Outcome node
+                            if !entry.outcome.isEmpty {
+                                createNode(
+                                    color: getElementColor(type: .outcome, entry: entry),
+                                    x: 60 + elementSpacing * 3.5,
+                                    y: yPos
+                                )
+                            }
+
+                            // Belief Shift node
+                            if !entry.beliefShift.isEmpty {
+                                createNode(
+                                    color: getElementColor(type: .beliefShift, entry: entry),
+                                    x: 60 + elementSpacing * 4.5,
+                                    y: yPos
+                                )
+                            }
+
+                            // Connection lines between chapters for each element
+                            if chapterIndex < entries.count - 1 {
+                                let nextYPos = CGFloat(chapterIndex + 1) * chapterSpacing + chapterSpacing / 2
+                                let nextEntry = entries[chapterIndex + 1]
+                                let isRegression = detectRegression(from: entry, to: nextEntry)
+
+                                // Draw vertical connection lines between chapters for each element
+                                ForEach(0..<loopElements.count, id: \.self) { elementIndex in
+                                    let hasCurrentNode = hasNodeForElement(entry: entry, elementIndex: elementIndex)
+                                    let hasNextNode = hasNodeForElement(entry: nextEntry, elementIndex: elementIndex)
+
+                                    if hasCurrentNode && hasNextNode {
+                                        let xPos = 60 + elementSpacing * (CGFloat(elementIndex) + 0.5)
+
+                                        Path { path in
+                                            path.move(to: CGPoint(x: xPos, y: yPos + 6))
+                                            path.addLine(to: CGPoint(x: xPos, y: nextYPos - 6))
+                                        }
+                                        .stroke(
+                                            textColor.opacity(0.3),
+                                            style: StrokeStyle(
+                                                lineWidth: 1.5,
+                                                dash: isRegression ? [4, 2] : []
+                                            )
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        .frame(height: CGFloat(entries.count) * 50 + 30)
+    }
+
+    private func createNode(color: Color, x: CGFloat, y: CGFloat) -> some View {
+        ZStack {
+            Circle()
+                .fill(color)
+                .frame(width: 12, height: 12)
+
+            Circle()
+                .stroke(textColor.opacity(0.3), lineWidth: 1)
+                .frame(width: 12, height: 12)
+        }
+        .offset(x: x - 6, y: y - 6)
+    }
+
+    private func hasNodeForElement(entry: DecisionBeliefLoop.LoopEntry, elementIndex: Int) -> Bool {
+        switch elementIndex {
+        case 0: return !entry.pressure.isEmpty
+        case 1: return !entry.beliefInPlay.isEmpty
+        case 2: return !entry.decision.isEmpty
+        case 3: return !entry.outcome.isEmpty
+        case 4: return !entry.beliefShift.isEmpty
+        default: return false
+        }
+    }
+
+    enum ElementType {
+        case pressure, belief, decision, outcome, beliefShift
+    }
+
+    private func getElementColor(type: ElementType, entry: DecisionBeliefLoop.LoopEntry) -> Color {
+        let text: String
+        switch type {
+        case .pressure:
+            text = entry.pressure.lowercased()
+        case .belief:
+            text = entry.beliefInPlay.lowercased()
+        case .decision:
+            text = entry.decision.lowercased()
+        case .outcome:
+            text = entry.outcome.lowercased()
+        case .beliefShift:
+            text = entry.beliefShift.lowercased()
+        }
+
+        // Fear-related (red)
+        if text.contains("fear") || text.contains("afraid") ||
+           text.contains("retreat") || text.contains("avoid") ||
+           text.contains("danger") || text.contains("threat") {
+            return .red
+        }
+
+        // Agency/empowerment (purple)
+        if text.contains("realize") || text.contains("understand") ||
+           text.contains("control") || text.contains("chose") ||
+           text.contains("decided") {
+            return .purple
+        }
+
+        // Trust-related (blue)
+        if text.contains("trust") || text.contains("believe") ||
+           text.contains("confide") || text.contains("open") {
+            return .blue
+        }
+
+        // Identity/self-concept (green)
+        if text.contains("identity") || text.contains("who") ||
+           text.contains("self") || text.contains("changed") {
+            return .green
+        }
+
+        // Default - moral/ethical (yellow)
+        return .yellow
+    }
+
+    private func detectRegression(from entry: DecisionBeliefLoop.LoopEntry, to nextEntry: DecisionBeliefLoop.LoopEntry) -> Bool {
+        // Detect regression by looking for negative shift patterns
+        let nextShift = nextEntry.beliefShift.lowercased()
+
+        let regressionWords = ["regress", "back to", "reverted", "lost", "forgot",
+                               "doubt", "questioned", "uncertain", "confused"]
+
+        for word in regressionWords {
+            if nextShift.contains(word) {
+                return true
+            }
+        }
+
+        return false
     }
 }
 

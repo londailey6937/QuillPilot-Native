@@ -20,6 +20,7 @@ struct BeliefShiftMatrixView: View {
                     Text("Belief / Value Shift Matrices")
                         .font(.title)
                         .fontWeight(.bold)
+                        .foregroundColor(.primary)
 
                     Text("Track how character beliefs evolve through counterpressure and experience")
                         .font(.subheadline)
@@ -68,6 +69,7 @@ struct BeliefShiftMatrixView: View {
                 Text(matrix.characterName)
                     .font(.title2)
                     .fontWeight(.semibold)
+                    .foregroundColor(.primary)
 
                 Spacer()
 
@@ -142,6 +144,7 @@ struct BeliefShiftMatrixView: View {
                             Text("Ch \(entry.chapter)")
                                 .font(.system(.body, design: .rounded))
                                 .fontWeight(.semibold)
+                                .foregroundColor(.primary)
                             if entry.chapterPage > 0 {
                                 Text("p.\(entry.chapterPage)")
                                     .font(.caption2)
@@ -203,7 +206,7 @@ struct BeliefShiftMatrixView: View {
         Text(text)
             .font(.caption)
             .fontWeight(.bold)
-            .foregroundColor(.secondary)
+            .foregroundColor(.primary.opacity(0.7))
             .frame(maxWidth: width == nil ? .infinity : width, alignment: .leading)
             .padding(.horizontal, 12)
             .padding(.vertical, 10)

@@ -1546,30 +1546,19 @@ extension AnalysisViewController: CharacterArcVisualizationDelegate {
         window.hidesOnDeactivate = true
 
         // Create SwiftUI view
-        if #available(macOS 13.0, *) {
-            let beliefMatrixView = BeliefShiftMatrixView(matrices: matrices)
-            let hostingView = NSHostingView(rootView: beliefMatrixView)
-            hostingView.autoresizingMask = [.width, .height]
-            hostingView.frame = window.contentView!.bounds
+        let beliefMatrixView = BeliefShiftMatrixView(matrices: matrices)
+        let hostingView = NSHostingView(rootView: beliefMatrixView)
+        hostingView.autoresizingMask = [.width, .height]
+        hostingView.frame = window.contentView!.bounds
 
-            // Create container
-            let container = NSView(frame: window.contentView!.bounds)
-            container.autoresizingMask = [.width, .height]
-            container.wantsLayer = true
-            container.layer?.backgroundColor = currentTheme.pageAround.cgColor
-            container.addSubview(hostingView)
+        // Create container
+        let container = NSView(frame: window.contentView!.bounds)
+        container.autoresizingMask = [.width, .height]
+        container.wantsLayer = true
+        container.layer?.backgroundColor = currentTheme.pageAround.cgColor
+        container.addSubview(hostingView)
 
-            window.contentView = container
-        } else {
-            // Fallback for older macOS versions
-            let label = NSTextField(labelWithString: "Belief Shift Matrix requires macOS 13 or later")
-            label.font = NSFont.systemFont(ofSize: 14)
-            label.textColor = .secondaryLabelColor
-            label.alignment = .center
-            label.frame = window.contentView!.bounds
-            label.autoresizingMask = [.width, .height]
-            window.contentView?.addSubview(label)
-        }
+        window.contentView = container
 
         window.center()
         window.makeKeyAndOrderFront(nil)
@@ -1602,30 +1591,19 @@ extension AnalysisViewController: CharacterArcVisualizationDelegate {
         window.hidesOnDeactivate = true
 
         // Create SwiftUI view
-        if #available(macOS 13.0, *) {
-            let chainView = DecisionConsequenceChainView(chains: chains)
-            let hostingView = NSHostingView(rootView: chainView)
-            hostingView.autoresizingMask = [.width, .height]
-            hostingView.frame = window.contentView!.bounds
+        let chainView = DecisionConsequenceChainView(chains: chains)
+        let hostingView = NSHostingView(rootView: chainView)
+        hostingView.autoresizingMask = [.width, .height]
+        hostingView.frame = window.contentView!.bounds
 
-            // Create container
-            let container = NSView(frame: window.contentView!.bounds)
-            container.autoresizingMask = [.width, .height]
-            container.wantsLayer = true
-            container.layer?.backgroundColor = currentTheme.pageAround.cgColor
-            container.addSubview(hostingView)
+        // Create container
+        let container = NSView(frame: window.contentView!.bounds)
+        container.autoresizingMask = [.width, .height]
+        container.wantsLayer = true
+        container.layer?.backgroundColor = currentTheme.pageAround.cgColor
+        container.addSubview(hostingView)
 
-            window.contentView = container
-        } else {
-            // Fallback for older macOS versions
-            let label = NSTextField(labelWithString: "Decision-Consequence Chains require macOS 13 or later")
-            label.font = NSFont.systemFont(ofSize: 14)
-            label.textColor = .secondaryLabelColor
-            label.alignment = .center
-            label.frame = window.contentView!.bounds
-            label.autoresizingMask = [.width, .height]
-            window.contentView?.addSubview(label)
-        }
+        window.contentView = container
 
         window.center()
         window.makeKeyAndOrderFront(nil)

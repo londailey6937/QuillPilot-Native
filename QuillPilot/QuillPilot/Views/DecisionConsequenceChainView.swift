@@ -20,6 +20,7 @@ struct DecisionConsequenceChainView: View {
                     Text("Decision-Consequence Chains")
                         .font(.title)
                         .fontWeight(.bold)
+                        .foregroundColor(.primary)
 
                     Text("Map choices, not traits – Ensure growth comes from action, not narration")
                         .font(.subheadline)
@@ -68,6 +69,7 @@ struct DecisionConsequenceChainView: View {
                 Text(chain.characterName)
                     .font(.title2)
                     .fontWeight(.semibold)
+                    .foregroundColor(.primary)
 
                 Spacer()
 
@@ -146,6 +148,7 @@ struct DecisionConsequenceChainView: View {
                                 Text("Ch \(entry.chapter)")
                                     .font(.system(.body, design: .rounded))
                                     .fontWeight(.semibold)
+                                    .foregroundColor(.primary)
                                 if entry.chapterPage > 0 {
                                     Text("p.\(entry.chapterPage)")
                                         .font(.caption2)
@@ -240,7 +243,7 @@ struct DecisionConsequenceChainView: View {
         Text(text)
             .font(.caption)
             .fontWeight(.bold)
-            .foregroundColor(.secondary)
+            .foregroundColor(.primary.opacity(0.7))
             .frame(maxWidth: width == nil ? .infinity : width, alignment: .leading)
             .padding(.horizontal, 12)
             .padding(.vertical, 10)

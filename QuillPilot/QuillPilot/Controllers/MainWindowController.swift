@@ -1600,12 +1600,13 @@ class FormattingToolbar: NSView {
                 button.attributedTitle = NSAttributedString(string: button.title, attributes: attributes)
             } else if let popup = control as? NSPopUpButton {
                 popup.contentTintColor = theme.textColor
-                if let selectedItem = popup.selectedItem {
+                // Apply theme to all menu items
+                for item in popup.itemArray {
                     let attributes: [NSAttributedString.Key: Any] = [
                         .foregroundColor: theme.textColor,
                         .font: popup.font ?? NSFont.systemFont(ofSize: 13)
                     ]
-                    selectedItem.attributedTitle = NSAttributedString(string: selectedItem.title, attributes: attributes)
+                    item.attributedTitle = NSAttributedString(string: item.title, attributes: attributes)
                 }
             }
         }

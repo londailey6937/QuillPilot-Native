@@ -1592,16 +1592,11 @@ class FormattingToolbar: NSView {
         print("[DEBUG] themedControls count: \(themedControls.count)")
         wantsLayer = true
         layer?.backgroundColor = theme.toolbarBackground.cgColor
+
+        // Apply theme to all controls
         themedControls.forEach { control in
-            if let button = control as? NSButton {
-                button.contentTintColor = theme.textColor
-                let currentFontSize = button.font?.pointSize ?? 14
-                let attributes: [NSAttributedString.Key: Any] = [
-                    .foregroundColor: theme.textColor,
-                    .font: button.font ?? NSFont.systemFont(ofSize: currentFontSize)
-                ]
-                button.attributedTitle = NSAttributedString(string: button.title, attributes: attributes)
-            } else if let popup = control as? NSPopUpButton {
+            // Check for NSPopUpButton FIRST because it's a subclass of NSButton
+            if let popup = control as? NSPopUpButton {
                 print("[DEBUG] Applying theme to NSPopUpButton: \(popup.titleOfSelectedItem ?? "no title")")
                 popup.contentTintColor = theme.textColor
 
@@ -1630,16 +1625,25 @@ class FormattingToolbar: NSView {
                         .foregroundColor: theme.textColor,
                         .font: popup.font ?? NSFont.systemFont(ofSize: 13)
                     ]
+                    let attributedString = NSAttributedString(string: selectedTitle, attributes: attrs)
                     print("[DEBUG] Setting attributedTitle for popup: '\(selectedTitle)' with color: \(theme.textColor)")
-                    popup.attributedTitle = NSAttributedString(string: selectedTitle, attributes: attrs)
-                    popup.synchronizeTitleAndSelectedItem()
-                    print("[DEBUG] After sync - attributedTitle: \(popup.attributedTitle)")
+
+                    // Set on cell first
+                    if let cell = popup.cell as? NSPopUpButtonCell {
+                        cell.attributedTitle = attributedString
+                        print("[DEBUG] Set cell.attributedTitle")
+                    }
+
+                    // Then set on popup - DO NOT call synchronizeTitleAndSelectedItem after this!
+                    popup.attributedTitle = attributedString
+                    print("[DEBUG] After setting - popup.attributedTitle: \(popup.attributedTitle.string)")
                 } else {
                     print("[DEBUG] Popup has no selected item or empty title")
                     // Set text color for the popup button directly for placeholder text
                     if let cell = popup.cell as? NSPopUpButtonCell {
-                        let cellTitle = cell.title ?? ""
-                        let currentTitle = !cellTitle.isEmpty ? cellTitle : (popup.itemTitle(at: popup.indexOfSelectedItem))
+                        let cellTitle = cell.title as String
+                        let itemTitle = popup.itemTitle(at: popup.indexOfSelectedItem)
+                        let currentTitle = !cellTitle.isEmpty ? cellTitle : itemTitle
                         cell.attributedTitle = NSAttributedString(
                             string: currentTitle,
                             attributes: [
@@ -1647,12 +1651,37 @@ class FormattingToolbar: NSView {
                                 .font: popup.font ?? NSFont.systemFont(ofSize: 13)
                             ]
                         )
-                        print("[DEBUG] Set cell attributedTitle to: '\(currentTitle)'")
+                        print("[DEBUG] Set cell attributedTitle to: '\(currentTitle)' with color: \(theme.textColor)")
                     }
                 }
 
                 // Force the popup to redraw
                 popup.needsDisplay = true
+            } else if let button = control as? NSButton {
+                button.contentTintColor = theme.textColor
+                let currentFontSize = button.font?.pointSize ?? 14
+                let attributes: [NSAttributedString.Key: Any] = [
+                    .foregroundColor: theme.textColor,
+                    .font: button.font ?? NSFont.systemFont(ofSize: currentFontSize)
+                ]
+                button.attributedTitle = NSAttributedString(string: button.title, attributes: attributes)
+            }
+        }
+
+        // Force an additional redraw pass for popups with a slight delay
+        // This helps on laptops with different GPU/display configurations
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { [weak self] in
+            self?.themedControls.compactMap { $0 as? NSPopUpButton }.forEach { popup in
+                if let cell = popup.cell as? NSPopUpButtonCell,
+                   let selectedTitle = popup.titleOfSelectedItem, !selectedTitle.isEmpty {
+                    let attrs: [NSAttributedString.Key: Any] = [
+                        .foregroundColor: theme.textColor,
+                        .font: popup.font ?? NSFont.systemFont(ofSize: 13)
+                    ]
+                    cell.attributedTitle = NSAttributedString(string: selectedTitle, attributes: attrs)
+                    popup.attributedTitle = NSAttributedString(string: selectedTitle, attributes: attrs)
+                    popup.setNeedsDisplay(popup.bounds)
+                }
             }
         }
     }
@@ -1792,6 +1821,7 @@ class FormattingToolbar: NSView {
         let currentIndex = sizePopup.indexOfSelectedItem
         guard currentIndex > 0 else { return }
         sizePopup.selectItem(at: currentIndex - 1)
+        reapplyPopupTheme(sizePopup)
         fontSizeChanged(sizePopup)
     }
 
@@ -1799,6 +1829,7 @@ class FormattingToolbar: NSView {
         let currentIndex = sizePopup.indexOfSelectedItem
         guard currentIndex >= 0, currentIndex + 1 < sizePopup.numberOfItems else { return }
         sizePopup.selectItem(at: currentIndex + 1)
+        reapplyPopupTheme(sizePopup)
         fontSizeChanged(sizePopup)
     }
 
@@ -1806,12 +1837,71 @@ class FormattingToolbar: NSView {
         guard let styleName = styleName else {
             // If no style found, select the first item (typically "Normal")
             stylePopup.selectItem(at: 0)
+            reapplyPopupTheme(stylePopup)
             return
         }
 
         // Try to find and select the matching style in the popup
         if let index = (0..<stylePopup.numberOfItems).first(where: { stylePopup.item(at: $0)?.title == styleName }) {
             stylePopup.selectItem(at: index)
+            reapplyPopupTheme(stylePopup)
+        }
+    }
+
+    /// Reapply theme styling to a popup button after selection changes
+    /// (NSPopUpButton resets its displayed title to plain text when selectItem is called)
+    private func reapplyPopupTheme(_ popup: NSPopUpButton) {
+        let theme = ThemeManager.shared.currentTheme
+
+        guard let cell = popup.cell as? NSPopUpButtonCell else { return }
+
+        // Get the title that should be displayed
+        let displayTitle: String
+        if let selectedTitle = popup.titleOfSelectedItem, !selectedTitle.isEmpty {
+            displayTitle = selectedTitle
+        } else {
+            displayTitle = cell.title as String
+        }
+
+        guard !displayTitle.isEmpty else { return }
+
+        let attrs: [NSAttributedString.Key: Any] = [
+            .foregroundColor: theme.textColor,
+            .font: popup.font ?? NSFont.systemFont(ofSize: 13)
+        ]
+
+        let attributedString = NSAttributedString(string: displayTitle, attributes: attrs)
+
+        // NUCLEAR OPTION: Set attributed title on cell first, BEFORE syncing
+        cell.attributedTitle = attributedString
+
+        // DO NOT call synchronizeTitleAndSelectedItem() - it resets attributedTitle!
+        // Instead, manually ensure the popup shows the attributed string
+        popup.attributedTitle = attributedString
+
+        // Try to access the internal title text field directly (undocumented but works)
+        if let contentView = popup.superview {
+            for subview in contentView.subviews where subview === popup {
+                popup.subviews.compactMap { $0 as? NSTextField }.forEach { textField in
+                    textField.attributedStringValue = attributedString
+                }
+            }
+        }
+
+        // Aggressive multi-level redraw
+        cell.controlView?.setNeedsDisplay(cell.controlView?.bounds ?? .zero)
+        popup.setNeedsDisplay(popup.bounds)
+        popup.window?.displayIfNeeded()  // Force immediate window update
+
+        // Multiple delayed redraws at different intervals for different hardware
+        for delay in [0.01, 0.05, 0.1] {
+            DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak popup, weak cell] in
+                if let popup = popup, let cell = cell {
+                    cell.attributedTitle = attributedString
+                    popup.attributedTitle = attributedString
+                    popup.setNeedsDisplay(popup.bounds)
+                }
+            }
         }
     }
 }
@@ -2293,6 +2383,20 @@ class OutlineViewController: NSViewController {
 
         // Reload data to apply new colors
         outlineView.reloadData()
+
+        // Force refresh of all visible cells to ensure colors update immediately
+        DispatchQueue.main.async { [weak self] in
+            guard let self = self else { return }
+            let visibleRows = self.outlineView.rows(in: self.outlineView.visibleRect)
+            for row in visibleRows.location..<(visibleRows.location + visibleRows.length) {
+                if let view = self.outlineView.view(atColumn: 0, row: row, makeIfNecessary: false) as? NSTableCellView,
+                   let titleField = view.textField,
+                   let node = self.outlineView.item(atRow: row) as? Node {
+                    let color = self.levelColors[min(node.level, self.levelColors.count - 1)]
+                    titleField.textColor = color
+                }
+            }
+        }
     }
 
     @objc private func refreshTapped() {
@@ -2357,10 +2461,13 @@ extension OutlineViewController: NSOutlineViewDataSource, NSOutlineViewDelegate 
         let titleField = cell.textField!
         let pageField = (cell.subviews.first { $0 is NSStackView } as? NSStackView)?.arrangedSubviews.last as? NSTextField
 
+        // Uncomment the next line to force all outline text to use the theme's text color:
+        // let color = theme.textColor
         let color = levelColors[min(node.level, levelColors.count - 1)]
         let fontSize: CGFloat = node.level == 0 ? 13 : (node.level == 1 ? 12 : 11)
         titleField.font = NSFont.systemFont(ofSize: fontSize, weight: node.level <= 1 ? .semibold : .regular)
         titleField.textColor = color
+        print("[DEBUG] OutlineView cell for '", node.title, "' at level ", node.level, " uses color: ", color)
         titleField.stringValue = node.title
 
         if let page = node.page {

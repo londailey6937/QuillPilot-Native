@@ -1143,6 +1143,7 @@ class AnalysisViewController: NSViewController {
         contentStack?.layer?.backgroundColor = panelBackground.cgColor
 
         applyThemeToAnalysisPopout()
+        applyThemeToAllPopouts()
 
         // Force redisplay
         view.needsDisplay = true
@@ -1150,6 +1151,43 @@ class AnalysisViewController: NSViewController {
 
         outlineViewController?.applyTheme(theme)
         updateSelectedButton()
+    }
+
+    /// Apply theme to all popout windows
+    private func applyThemeToAllPopouts() {
+        let windows: [NSWindow?] = [
+            emotionalTrajectoryPopoutWindow,
+            beliefShiftMatrixPopoutWindow,
+            decisionConsequenceChainPopoutWindow,
+            emotionalJourneyPopoutWindow,
+            interactionsPopoutWindow,
+            presencePopoutWindow,
+            plotPopoutWindow
+        ]
+
+        for window in windows {
+            guard let window = window else { continue }
+            applyThemeToPopout(window: window, container: window.contentView, stack: nil)
+
+            // Update text colors in the window
+            updateTextColorsInView(window.contentView)
+        }
+    }
+
+    /// Recursively update text colors in a view hierarchy
+    private func updateTextColorsInView(_ view: NSView?) {
+        guard let view = view else { return }
+
+        if let textField = view as? NSTextField {
+            // Don't change text fields that are editable (input fields)
+            if !textField.isEditable {
+                textField.textColor = currentTheme.textColor
+            }
+        }
+
+        for subview in view.subviews {
+            updateTextColorsInView(subview)
+        }
     }
 
     // MARK: - Visualization Methods

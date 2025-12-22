@@ -215,8 +215,12 @@ class MainWindowController: NSWindowController {
             searchPanel = SearchPanelController()
             searchPanel?.editorViewController = mainContentViewController.editorViewController
         }
+        // Update page info before showing
+        searchPanel?.updatePageInfoBeforeShow()
         searchPanel?.showWindow(nil)
         searchPanel?.window?.makeKeyAndOrderFront(nil)
+        // Ensure window becomes key to accept input immediately
+        searchPanel?.window?.makeFirstResponder(searchPanel?.window?.contentView)
     }
 
     // MARK: - Print
@@ -1974,7 +1978,7 @@ class ContentViewController: NSViewController {
         NSLog("📊 MainWindowController: Starting background analysis thread")
 
         // Build outline entries on MAIN THREAD before background work
-        // (textStorage must be accessed on main thread only)
+        // (textStorage and layoutManager must be accessed on main thread only)
         let editorOutlines = editorViewController.buildOutlineEntries()
         NSLog("📋 MainWindowController: Built \(editorOutlines.count) outline entries on main thread")
         if !editorOutlines.isEmpty {
@@ -1982,6 +1986,9 @@ class ContentViewController: NSViewController {
                 NSLog("  - '\(entry.title)' level=\(entry.level) range=\(NSStringFromRange(entry.range))")
             }
         }
+
+        // Page mapping no longer needed - page numbers removed from Decision-Belief Loop display
+        let pageMapping: [(location: Int, page: Int)] = []
 
         // Run analysis on background thread to avoid blocking UI
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
@@ -1999,7 +2006,7 @@ class ContentViewController: NSViewController {
                 NSLog("⚠️ MainWindowController: No outline entries available for analyzeText")
             }
 
-            var results = analysisEngine.analyzeText(text, outlineEntries: analysisOutlineEntries)
+            var results = analysisEngine.analyzeText(text, outlineEntries: analysisOutlineEntries, pageMapping: pageMapping)
 
             // Get character names from Character Library if available (override auto-detected characters)
             let characterLibraryPath = Bundle.main.resourcePath.flatMap { URL(fileURLWithPath: $0).appendingPathComponent("character_library.json").path }
@@ -2019,7 +2026,8 @@ class ContentViewController: NSViewController {
                     let (loops, interactions, presence) = analysisEngine.analyzeCharacterArcs(
                         text: text,
                         characterNames: characterNames,
-                        outlineEntries: analysisOutlineEntries
+                        outlineEntries: analysisOutlineEntries,
+                        pageMapping: pageMapping
                     )
                     results.decisionBeliefLoops = loops
                     results.characterInteractions = interactions
@@ -4154,11 +4162,16 @@ class SearchPanelController: NSWindowController {
     private var replaceAllButton: NSButton!
     private var statusLabel: NSTextField!
 
+    // Go to Page controls
+    private var pageNumberField: NSTextField!
+    private var goToPageButton: NSButton!
+    private var pageInfoLabel: NSTextField!
+
     weak var editorViewController: EditorViewController?
 
     convenience init() {
         let panel = NSPanel(
-            contentRect: NSRect(x: 0, y: 0, width: 520, height: 220),
+            contentRect: NSRect(x: 0, y: 0, width: 520, height: 280),
             styleMask: [.titled, .closable, .utilityWindow],
             backing: .buffered,
             defer: false
@@ -4182,52 +4195,85 @@ class SearchPanelController: NSWindowController {
 
         // Search field
         let searchLabel = NSTextField(labelWithString: "Find:")
-        searchLabel.frame = NSRect(x: 20, y: 170, width: 60, height: 20)
+        searchLabel.frame = NSRect(x: 20, y: 230, width: 60, height: 20)
         contentView.addSubview(searchLabel)
 
-        searchField = NSTextField(frame: NSRect(x: 90, y: 168, width: 410, height: 24))
+        searchField = NSTextField(frame: NSRect(x: 90, y: 228, width: 410, height: 24))
         searchField.placeholderString = "Enter search text"
         contentView.addSubview(searchField)
 
         // Replace field
         let replaceLabel = NSTextField(labelWithString: "Replace:")
-        replaceLabel.frame = NSRect(x: 20, y: 138, width: 60, height: 20)
+        replaceLabel.frame = NSRect(x: 20, y: 198, width: 60, height: 20)
         contentView.addSubview(replaceLabel)
 
-        replaceField = NSTextField(frame: NSRect(x: 90, y: 136, width: 410, height: 24))
+        replaceField = NSTextField(frame: NSRect(x: 90, y: 196, width: 410, height: 24))
         replaceField.placeholderString = "Enter replacement text"
         contentView.addSubview(replaceField)
 
         // Options
         caseSensitiveCheckbox = NSButton(checkboxWithTitle: "Case sensitive", target: nil, action: nil)
-        caseSensitiveCheckbox.frame = NSRect(x: 90, y: 108, width: 140, height: 20)
+        caseSensitiveCheckbox.frame = NSRect(x: 90, y: 168, width: 140, height: 20)
         contentView.addSubview(caseSensitiveCheckbox)
 
         wholeWordsCheckbox = NSButton(checkboxWithTitle: "Whole words only", target: nil, action: nil)
-        wholeWordsCheckbox.frame = NSRect(x: 90, y: 84, width: 140, height: 20)
+        wholeWordsCheckbox.frame = NSRect(x: 90, y: 144, width: 140, height: 20)
         contentView.addSubview(wholeWordsCheckbox)
 
         // Buttons
         findPreviousButton = NSButton(title: "◀︎ Previous", target: self, action: #selector(findPrevious))
-        findPreviousButton.frame = NSRect(x: 20, y: 50, width: 105, height: 28)
+        findPreviousButton.frame = NSRect(x: 20, y: 110, width: 105, height: 28)
         findPreviousButton.bezelStyle = .rounded
         contentView.addSubview(findPreviousButton)
 
         findNextButton = NSButton(title: "Next ▶︎", target: self, action: #selector(findNext))
-        findNextButton.frame = NSRect(x: 135, y: 50, width: 105, height: 28)
+        findNextButton.frame = NSRect(x: 135, y: 110, width: 105, height: 28)
         findNextButton.bezelStyle = .rounded
         findNextButton.keyEquivalent = "\r"
         contentView.addSubview(findNextButton)
 
         replaceButton = NSButton(title: "Replace", target: self, action: #selector(replace))
-        replaceButton.frame = NSRect(x: 250, y: 50, width: 120, height: 28)
+        replaceButton.frame = NSRect(x: 250, y: 110, width: 120, height: 28)
         replaceButton.bezelStyle = .rounded
         contentView.addSubview(replaceButton)
 
         replaceAllButton = NSButton(title: "Replace All", target: self, action: #selector(replaceAll))
-        replaceAllButton.frame = NSRect(x: 380, y: 50, width: 120, height: 28)
+        replaceAllButton.frame = NSRect(x: 380, y: 110, width: 120, height: 28)
         replaceAllButton.bezelStyle = .rounded
         contentView.addSubview(replaceAllButton)
+
+        // Separator line
+        let separator = NSBox()
+        separator.boxType = .separator
+        separator.frame = NSRect(x: 20, y: 92, width: 480, height: 1)
+        contentView.addSubview(separator)
+
+        // Go to Page section
+        let pageLabel = NSTextField(labelWithString: "Go to Page:")
+        pageLabel.frame = NSRect(x: 20, y: 60, width: 80, height: 20)
+        contentView.addSubview(pageLabel)
+
+        pageNumberField = NSTextField(frame: NSRect(x: 110, y: 58, width: 80, height: 24))
+        pageNumberField.placeholderString = "Page #"
+        pageNumberField.target = self
+        pageNumberField.action = #selector(goToPage)
+        contentView.addSubview(pageNumberField)
+
+        goToPageButton = NSButton(title: "Go", target: self, action: #selector(goToPage))
+        goToPageButton.frame = NSRect(x: 200, y: 58, width: 60, height: 28)
+        goToPageButton.bezelStyle = .rounded
+        contentView.addSubview(goToPageButton)
+
+        pageInfoLabel = NSTextField(labelWithString: "")
+        pageInfoLabel.frame = NSRect(x: 270, y: 60, width: 230, height: 20)
+        pageInfoLabel.alignment = .left
+        pageInfoLabel.isEditable = false
+        pageInfoLabel.isBordered = false
+        pageInfoLabel.backgroundColor = .clear
+        contentView.addSubview(pageInfoLabel)
+
+        // Update page info when panel is shown
+        updatePageInfo()
 
         // Status label
         statusLabel = NSTextField(labelWithString: "")
@@ -4333,6 +4379,51 @@ class SearchPanelController: NSWindowController {
         )
 
         statusLabel.stringValue = count > 0 ? "Replaced \(count) occurrence\(count == 1 ? "" : "s")" : "No matches found"
+    }
+
+    @objc private func goToPage() {
+        guard let editor = editorViewController else { return }
+
+        let pageNumberString = pageNumberField.stringValue.trimmingCharacters(in: .whitespaces)
+        guard !pageNumberString.isEmpty else {
+            statusLabel.stringValue = "Enter a page number"
+            return
+        }
+
+        guard let pageNumber = Int(pageNumberString) else {
+            statusLabel.stringValue = "Invalid page number"
+            return
+        }
+
+        let success = editor.goToPage(pageNumber)
+        if success {
+            statusLabel.stringValue = "Navigated to page \(pageNumber)"
+            updatePageInfo()
+        } else {
+            let pageInfo = editor.getCurrentPageInfo()
+            statusLabel.stringValue = "Page \(pageNumber) is out of range (1-\(pageInfo.total))"
+        }
+    }
+
+    private func updatePageInfo() {
+        guard let editor = editorViewController else {
+            pageInfoLabel.stringValue = ""
+            return
+        }
+
+        let pageInfo = editor.getCurrentPageInfo()
+        pageInfoLabel.stringValue = "Current: \(pageInfo.current) of \(pageInfo.total)"
+    }
+
+    func updatePageInfoBeforeShow() {
+        updatePageInfo()
+    }
+
+    override func showWindow(_ sender: Any?) {
+        super.showWindow(sender)
+        updatePageInfo()
+        // Make the search field first responder to accept input immediately
+        window?.makeFirstResponder(searchField)
     }
 }
 

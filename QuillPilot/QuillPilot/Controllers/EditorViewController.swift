@@ -1101,6 +1101,78 @@ class EditorViewController: NSViewController {
         textView.scrollToBeginningOfDocument(nil)
     }
 
+    /// Navigate to a specific page number
+    /// - Parameter pageNumber: The page to navigate to (1-indexed)
+    /// - Returns: True if navigation was successful, false if page number is out of range
+    func goToPage(_ pageNumber: Int) -> Bool {
+        guard let pageContainerView = pageContainer as? PageContainerView else { return false }
+
+        let totalPages = pageContainerView.numPages
+        guard pageNumber >= 1 && pageNumber <= totalPages else { return false }
+
+        let scaledPageHeight = pageHeight * editorZoom
+        let pageGap: CGFloat = 20
+
+        // Calculate Y position for the target page (0-indexed internally)
+        let pageIndex = pageNumber - 1
+        let targetY = CGFloat(pageIndex) * (scaledPageHeight + pageGap)
+
+        // Scroll to the target page
+        let targetPoint = NSPoint(x: 0, y: targetY)
+        scrollView.contentView.scroll(to: targetPoint)
+        scrollView.reflectScrolledClipView(scrollView.contentView)
+
+        return true
+    }
+
+    /// Get the current page number and total pages
+    /// - Returns: A tuple containing (currentPage, totalPages)
+    func getCurrentPageInfo() -> (current: Int, total: Int) {
+        guard let pageContainerView = pageContainer as? PageContainerView else { return (1, 1) }
+
+        let totalPages = pageContainerView.numPages
+        let scaledPageHeight = pageHeight * editorZoom
+        let pageGap: CGFloat = 20
+
+        // Get current scroll position
+        let visibleRect = scrollView.documentVisibleRect
+        let currentY = visibleRect.origin.y
+
+        // Calculate which page is at the top of the visible area
+        let currentPageIndex = max(0, Int(currentY / (scaledPageHeight + pageGap)))
+        let currentPage = min(currentPageIndex + 1, totalPages)
+
+        return (currentPage, totalPages)
+    }
+
+    /// Calculate the page number for a specific character position in the document
+    /// - Parameter characterPosition: The character index in the text
+    /// - Returns: The page number (1-indexed)
+    func getPageNumber(forCharacterPosition characterPosition: Int) -> Int {
+        guard let layoutManager = textView.layoutManager,
+              let textContainer = textView.textContainer,
+              let storage = textView.textStorage else {
+            return 1
+        }
+
+        // Ensure position is within bounds
+        let safePosition = max(0, min(characterPosition, storage.length - 1))
+        guard safePosition >= 0 else { return 1 }
+
+        // Get the glyph index for this character
+        let glyphIndex = layoutManager.glyphIndexForCharacter(at: safePosition)
+
+        // Get the bounding rect for this glyph
+        let glyphRange = NSRange(location: glyphIndex, length: 1)
+        let bounds = layoutManager.boundingRect(forGlyphRange: glyphRange, in: textContainer)
+
+        // Calculate page based on Y position
+        let scaledPageHeight = pageHeight * editorZoom
+        let pageIndex = max(0, Int(floor(bounds.midY / scaledPageHeight)))
+
+        return pageIndex + 1
+    }
+
     func indent() {
         adjustIndent(by: standardIndentStep)
     }
@@ -2386,6 +2458,53 @@ case "Book Subtitle":
         NSLog("📋🔍 Outline entries found: \(results.count)")
 
         return results
+    }
+
+    /// Build a comprehensive character-position-to-page mapping for accurate page lookups
+    func buildPageMapping() -> [(location: Int, page: Int)] {
+        guard let storage = textView.textStorage,
+              let layoutManager = textView.layoutManager,
+              let textContainer = textView.textContainer else {
+            NSLog("📄 buildPageMapping: Missing text storage/layout manager")
+            return []
+        }
+
+        var mapping: [(location: Int, page: Int)] = []
+        let totalLength = storage.length
+
+        guard totalLength > 0 else {
+            NSLog("📄 buildPageMapping: Empty document")
+            return []
+        }
+
+        // Force layout to complete before we try to get page numbers
+        NSLog("📄 buildPageMapping: Forcing layout for \(totalLength) characters...")
+        layoutManager.ensureLayout(for: textContainer)
+        NSLog("📄 buildPageMapping: Layout complete, starting sampling...")
+
+        // Sample every 500 characters for better accuracy (reduced from 1000)
+        let sampleInterval = 500
+        var location = 0
+
+        while location < totalLength {
+            let pageNum = getPageNumber(forCharacterPosition: location)
+            mapping.append((location: location, page: pageNum))
+
+            location = min(location + sampleInterval, totalLength - 1)
+        }
+
+        // Always add the last position
+        if mapping.last?.location != totalLength - 1 {
+            let lastPageNum = getPageNumber(forCharacterPosition: totalLength - 1)
+            mapping.append((location: totalLength - 1, page: lastPageNum))
+        }
+
+        NSLog("📄 buildPageMapping: Created \(mapping.count) page mapping entries for \(totalLength) characters")
+        if !mapping.isEmpty {
+            NSLog("📄 First entry: location=\(mapping.first!.location) page=\(mapping.first!.page)")
+            NSLog("📄 Last entry: location=\(mapping.last!.location) page=\(mapping.last!.page)")
+        }
+        return mapping
     }
 
     private func manuscriptBaseParagraphStyle() -> NSParagraphStyle {

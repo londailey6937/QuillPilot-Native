@@ -483,61 +483,32 @@ struct DecisionBeliefLoopFullView: View {
                                     .frame(width: 40, alignment: .center)
                                     .font(.body)
                                     .foregroundColor(textColor)
-                                VStack(alignment: .leading, spacing: 2) {
-                                    Text(entry.pressure.isEmpty ? "—" : entry.pressure)
-                                        .font(.caption)
-                                        .foregroundColor(textColor)
-                                    if entry.pressurePage > 0 {
-                                        Text("p. \(entry.pressurePage)")
-                                            .font(.caption2)
-                                            .foregroundColor(textColor.opacity(0.6))
-                                    }
-                                }
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                                VStack(alignment: .leading, spacing: 2) {
-                                    Text(entry.beliefInPlay.isEmpty ? "—" : entry.beliefInPlay)
-                                        .font(.caption)
-                                        .foregroundColor(textColor)
-                                    if entry.beliefPage > 0 {
-                                        Text("p. \(entry.beliefPage)")
-                                            .font(.caption2)
-                                            .foregroundColor(textColor.opacity(0.6))
-                                    }
-                                }
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                                VStack(alignment: .leading, spacing: 2) {
-                                    Text(entry.decision.isEmpty ? "—" : entry.decision)
-                                        .font(.caption)
-                                        .foregroundColor(textColor)
-                                    if entry.decisionPage > 0 {
-                                        Text("p. \(entry.decisionPage)")
-                                            .font(.caption2)
-                                            .foregroundColor(textColor.opacity(0.6))
-                                    }
-                                }
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                                VStack(alignment: .leading, spacing: 2) {
-                                    Text(entry.outcome.isEmpty ? "—" : entry.outcome)
-                                        .font(.caption)
-                                        .foregroundColor(textColor)
-                                    if entry.outcomePage > 0 {
-                                        Text("p. \(entry.outcomePage)")
-                                            .font(.caption2)
-                                            .foregroundColor(textColor.opacity(0.6))
-                                    }
-                                }
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                                VStack(alignment: .leading, spacing: 2) {
-                                    Text(entry.beliefShift.isEmpty ? "—" : entry.beliefShift)
-                                        .font(.caption)
-                                        .foregroundColor(textColor)
-                                    if entry.beliefShiftPage > 0 {
-                                        Text("p. \(entry.beliefShiftPage)")
-                                            .font(.caption2)
-                                            .foregroundColor(textColor.opacity(0.6))
-                                    }
-                                }
-                                .frame(maxWidth: .infinity, alignment: .leading)
+                                    .textSelection(.enabled)
+                                Text(entry.pressure.isEmpty ? "—" : entry.pressure)
+                                    .font(.caption)
+                                    .foregroundColor(textColor)
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                                    .textSelection(.enabled)
+                                Text(entry.beliefInPlay.isEmpty ? "—" : entry.beliefInPlay)
+                                    .font(.caption)
+                                    .foregroundColor(textColor)
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                                    .textSelection(.enabled)
+                                Text(entry.decision.isEmpty ? "—" : entry.decision)
+                                    .font(.caption)
+                                    .foregroundColor(textColor)
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                                    .textSelection(.enabled)
+                                Text(entry.outcome.isEmpty ? "—" : entry.outcome)
+                                    .font(.caption)
+                                    .foregroundColor(textColor)
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                                    .textSelection(.enabled)
+                                Text(entry.beliefShift.isEmpty ? "—" : entry.beliefShift)
+                                    .font(.caption)
+                                    .foregroundColor(textColor)
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                                    .textSelection(.enabled)
                             }
                             .padding(8)
                             .background(textColor.opacity(0.03))

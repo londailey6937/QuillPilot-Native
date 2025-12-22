@@ -191,7 +191,7 @@ class AnalysisEngine {
     // Maximum text length to analyze (500KB) - prevents system overload
     private let maxAnalysisLength = 500_000
 
-    func analyzeText(_ text: String, outlineEntries: [DecisionBeliefLoopAnalyzer.OutlineEntry]? = nil) -> AnalysisResults {
+    func analyzeText(_ text: String, outlineEntries: [DecisionBeliefLoopAnalyzer.OutlineEntry]? = nil, pageMapping: [(location: Int, page: Int)]? = nil) -> AnalysisResults {
         var results = AnalysisResults()
 
         // Truncate extremely long text to prevent system overload
@@ -773,11 +773,11 @@ class AnalysisEngine {
         return Array(characters)
     }
 
-    func analyzeCharacterArcs(text: String, characterNames: [String], outlineEntries: [DecisionBeliefLoopAnalyzer.OutlineEntry]? = nil) -> ([DecisionBeliefLoop], [CharacterInteraction], [CharacterPresence]) {
+    func analyzeCharacterArcs(text: String, characterNames: [String], outlineEntries: [DecisionBeliefLoopAnalyzer.OutlineEntry]? = nil, pageMapping: [(location: Int, page: Int)]? = nil) -> ([DecisionBeliefLoop], [CharacterInteraction], [CharacterPresence]) {
         let analyzer = DecisionBeliefLoopAnalyzer()
 
         // Analyze text and populate Decision-Belief Loop with actual detected patterns
-        let loops = analyzer.analyzeLoops(text: text, characterNames: characterNames, outlineEntries: outlineEntries)
+        let loops = analyzer.analyzeLoops(text: text, characterNames: characterNames, outlineEntries: outlineEntries, pageMapping: pageMapping)
         let interactions = analyzer.analyzeInteractions(text: text, characterNames: characterNames)
         let presence = analyzer.analyzePresenceByChapter(text: text, characterNames: characterNames, outlineEntries: outlineEntries)
 

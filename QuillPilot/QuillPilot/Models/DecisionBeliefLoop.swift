@@ -98,6 +98,12 @@ struct CharacterInteraction {
 
 class DecisionBeliefLoopAnalyzer {
 
+    // Store outline entries for accurate page number calculation
+    private var outlineEntries: [OutlineEntry]?
+
+    // Store page mapping for accurate character-position-to-page lookups
+    private var pageMapping: [(location: Int, page: Int)]?
+
     // Pressure indicators (conflict, dilemma, force)
     private let pressureWords = [
         "must", "need", "forced", "threatened", "danger", "risk", "challenge", "problem",
@@ -151,7 +157,16 @@ class DecisionBeliefLoopAnalyzer {
     ///   - text: Full document text
     ///   - characterNames: List of character names to analyze
     ///   - outlineEntries: Optional outline entries from document (Chapter Number, Chapter Title, Heading 1-3). If nil, falls back to regex detection.
-    func analyzeLoops(text: String, characterNames: [String], outlineEntries: [OutlineEntry]? = nil) -> [DecisionBeliefLoop] {
+    ///   - pageMapping: Optional character-position-to-page mapping for accurate page lookups
+    func analyzeLoops(text: String, characterNames: [String], outlineEntries: [OutlineEntry]? = nil, pageMapping: [(location: Int, page: Int)]? = nil) -> [DecisionBeliefLoop] {
+        // Store outline entries and page mapping for page calculation
+        self.outlineEntries = outlineEntries
+        self.pageMapping = pageMapping
+
+        if let mapping = pageMapping {
+            NSLog("📄 Decision-Belief Loop: Using page mapping with \(mapping.count) entries")
+        }
+
         let chapters: [(text: String, number: Int, startPos: Int)]
 
         // Use outline entries if available, otherwise fall back to regex detection
@@ -393,7 +408,47 @@ class DecisionBeliefLoopAnalyzer {
     }
 
     private func calculatePageNumber(position: Int, in text: String) -> Int {
-        // Calculate page based on word count (industry standard: ~250 words per page)
+        // Use page mapping for accurate page numbers if available
+        if let mapping = pageMapping, !mapping.isEmpty {
+            // Find the two mapping entries that bracket this position
+            var precedingEntry: (location: Int, page: Int)?
+            var followingEntry: (location: Int, page: Int)?
+
+            for entry in mapping {
+                if entry.location <= position {
+                    precedingEntry = entry
+                } else if followingEntry == nil {
+                    followingEntry = entry
+                    break
+                }
+            }
+
+            // If we have both entries, interpolate
+            if let preceding = precedingEntry, let following = followingEntry {
+                let charsBetween = following.location - preceding.location
+                let charsFromPreceding = position - preceding.location
+
+                if charsBetween > 0 {
+                    let ratio = Double(charsFromPreceding) / Double(charsBetween)
+                    let pagesBetween = following.page - preceding.page
+                    let interpolatedPage = preceding.page + Int(round(ratio * Double(pagesBetween)))
+                    return max(preceding.page, min(following.page, interpolatedPage))
+                }
+                return preceding.page
+            }
+
+            // Use preceding entry if that's all we have
+            if let preceding = precedingEntry {
+                return preceding.page
+            }
+
+            // Use following entry if that's all we have
+            if let following = followingEntry {
+                return following.page
+            }
+        }
+
+        // Fall back to word count estimation if no page mapping available
         let textUpToPosition = String(text.prefix(position))
         let wordCount = textUpToPosition.components(separatedBy: .whitespacesAndNewlines).filter { !$0.isEmpty }.count
         return max(1, (wordCount / 250) + 1)

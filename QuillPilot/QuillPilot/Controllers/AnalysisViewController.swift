@@ -44,6 +44,7 @@ class AnalysisViewController: NSViewController {
     private var presencePopoutWindow: NSWindow?
     private var emotionalTrajectoryPopoutWindow: NSWindow?
     private var beliefShiftMatrixPopoutWindow: NSWindow?
+    private var decisionConsequenceChainPopoutWindow: NSWindow?
 
     // Character Library Window (Navigator panel only)
     private var characterLibraryWindow: CharacterLibraryWindowController?
@@ -1487,6 +1488,7 @@ extension AnalysisViewController: CharacterArcVisualizationDelegate {
         window.title = "Character Interactions Network"
         window.minSize = NSSize(width: 800, height: 500)
         window.isReleasedWhenClosed = false
+        window.hidesOnDeactivate = true
 
         // Create custom view
         let interactionsView = CharacterInteractionsView(frame: window.contentView!.bounds)
@@ -1541,6 +1543,7 @@ extension AnalysisViewController: CharacterArcVisualizationDelegate {
         window.title = "Belief / Value Shift Matrices"
         window.minSize = NSSize(width: 1000, height: 600)
         window.isReleasedWhenClosed = false
+        window.hidesOnDeactivate = true
 
         // Create SwiftUI view
         if #available(macOS 13.0, *) {
@@ -1579,6 +1582,62 @@ extension AnalysisViewController: CharacterArcVisualizationDelegate {
             queue: .main
         ) { [weak self] _ in
             self?.beliefShiftMatrixPopoutWindow = nil
+        }
+    }
+
+    func openDecisionConsequenceChainsPopout(chains: [DecisionConsequenceChain]) {
+        // Close existing window if open
+        decisionConsequenceChainPopoutWindow?.close()
+        decisionConsequenceChainPopoutWindow = nil
+
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 1300, height: 750),
+            styleMask: [.titled, .closable, .resizable, .miniaturizable],
+            backing: .buffered,
+            defer: false
+        )
+        window.title = "Decision-Consequence Chains"
+        window.minSize = NSSize(width: 1100, height: 650)
+        window.isReleasedWhenClosed = false
+        window.hidesOnDeactivate = true
+
+        // Create SwiftUI view
+        if #available(macOS 13.0, *) {
+            let chainView = DecisionConsequenceChainView(chains: chains)
+            let hostingView = NSHostingView(rootView: chainView)
+            hostingView.autoresizingMask = [.width, .height]
+            hostingView.frame = window.contentView!.bounds
+
+            // Create container
+            let container = NSView(frame: window.contentView!.bounds)
+            container.autoresizingMask = [.width, .height]
+            container.wantsLayer = true
+            container.layer?.backgroundColor = currentTheme.pageAround.cgColor
+            container.addSubview(hostingView)
+
+            window.contentView = container
+        } else {
+            // Fallback for older macOS versions
+            let label = NSTextField(labelWithString: "Decision-Consequence Chains require macOS 13 or later")
+            label.font = NSFont.systemFont(ofSize: 14)
+            label.textColor = .secondaryLabelColor
+            label.alignment = .center
+            label.frame = window.contentView!.bounds
+            label.autoresizingMask = [.width, .height]
+            window.contentView?.addSubview(label)
+        }
+
+        window.center()
+        window.makeKeyAndOrderFront(nil)
+
+        // Store window reference and set up cleanup
+        decisionConsequenceChainPopoutWindow = window
+        NotificationCenter.default.addObserver(
+            forName: NSWindow.willCloseNotification,
+            object: window,
+            queue: .main
+        ) { [weak self] _ in
+            self?.decisionConsequenceChainPopoutWindow = nil
         }
     }
 
@@ -2202,6 +2261,10 @@ extension AnalysisViewController: CharacterArcVisualizationDelegate {
         beliefMatrixItem.target = self
         menu.addItem(beliefMatrixItem)
 
+        let chainItem = NSMenuItem(title: "⛓️ Decision-Consequence Chains", action: #selector(showDecisionConsequenceChains), keyEquivalent: "")
+        chainItem.target = self
+        menu.addItem(chainItem)
+
         let interactionsItem = NSMenuItem(title: "🤝 Character Interactions", action: #selector(showInteractions), keyEquivalent: "")
         interactionsItem.target = self
         menu.addItem(interactionsItem)
@@ -2222,6 +2285,12 @@ extension AnalysisViewController: CharacterArcVisualizationDelegate {
     @objc private func showBeliefShiftMatrix() {
         if let results = latestAnalysisResults {
             openBeliefShiftMatrixPopout(matrices: results.beliefShiftMatrices)
+        }
+    }
+
+    @objc private func showDecisionConsequenceChains() {
+        if let results = latestAnalysisResults {
+            openDecisionConsequenceChainsPopout(chains: results.decisionConsequenceChains)
         }
     }
 
@@ -2254,6 +2323,7 @@ extension AnalysisViewController: CharacterArcVisualizationDelegate {
             window.title = "Emotional Trajectory Curves"
             window.minSize = NSSize(width: 700, height: 500)
             window.isReleasedWhenClosed = false
+            window.hidesOnDeactivate = true
 
             emotionalTrajectoryPopoutWindow = window
         }

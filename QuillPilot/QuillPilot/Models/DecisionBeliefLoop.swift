@@ -140,6 +140,71 @@ struct BeliefShiftMatrix {
     }
 }
 
+// MARK: - Decision-Consequence Chains
+
+/// Decision-Consequence Chains map choices, not traits.
+/// Ensures growth comes from action, not narration.
+/// Perfect for diagnosing passive protagonists.
+
+struct DecisionConsequenceChain {
+    let characterName: String
+    var entries: [ChainEntry]
+
+    struct ChainEntry: Identifiable {
+        let id = UUID()
+        let chapter: Int
+        let chapterPage: Int
+        let decision: String           // What choice does the character make?
+        let decisionPage: Int
+        let immediateOutcome: String   // What happens right after?
+        let immediateOutcomePage: Int
+        let longTermEffect: String     // How does this shape the character going forward?
+        let longTermEffectPage: Int
+
+        init(chapter: Int, chapterPage: Int = 0, decision: String = "", decisionPage: Int = 0,
+             immediateOutcome: String = "", immediateOutcomePage: Int = 0,
+             longTermEffect: String = "", longTermEffectPage: Int = 0) {
+            self.chapter = chapter
+            self.chapterPage = chapterPage
+            self.decision = decision
+            self.decisionPage = decisionPage
+            self.immediateOutcome = immediateOutcome
+            self.immediateOutcomePage = immediateOutcomePage
+            self.longTermEffect = longTermEffect
+            self.longTermEffectPage = longTermEffectPage
+        }
+    }
+
+    /// Assess if the character is actively driving the story or passive
+    var agencyScore: AgencyAssessment {
+        guard entries.count >= 2 else { return .insufficient }
+
+        let decisionsWithOutcomes = entries.filter { !$0.decision.isEmpty && !$0.immediateOutcome.isEmpty }.count
+        let decisionsWithLongTermEffects = entries.filter { !$0.longTermEffect.isEmpty }.count
+
+        let outcomeRatio = Double(decisionsWithOutcomes) / Double(entries.count)
+        let effectRatio = Double(decisionsWithLongTermEffects) / Double(entries.count)
+
+        if outcomeRatio >= 0.75 && effectRatio >= 0.5 {
+            return .activeProtagonist
+        } else if outcomeRatio >= 0.5 && effectRatio >= 0.3 {
+            return .developing
+        } else if outcomeRatio >= 0.25 {
+            return .reactive
+        } else {
+            return .passive
+        }
+    }
+
+    enum AgencyAssessment: String {
+        case insufficient = "Insufficient Data"
+        case passive = "Passive - Character reacts, doesn't act"
+        case reactive = "Reactive - Some agency, needs strengthening"
+        case developing = "Developing - Good balance of action"
+        case activeProtagonist = "Active Protagonist - Drives the story"
+    }
+}
+
 // MARK: - Character Presence (kept for Document Analysis graph)
 
 struct CharacterPresence {

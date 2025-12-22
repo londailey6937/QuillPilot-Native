@@ -58,6 +58,9 @@ struct AnalysisResults {
 
     // Belief/Value Shift Matrices
     var beliefShiftMatrices: [BeliefShiftMatrix] = []
+
+    // Decision-Consequence Chains
+    var decisionConsequenceChains: [DecisionConsequenceChain] = []
 }
 
 class AnalysisEngine {
@@ -292,6 +295,9 @@ class AnalysisEngine {
 
             // Generate belief shift matrices for characters
             results.beliefShiftMatrices = generateBeliefShiftMatrices(text: analysisText, characterNames: characterNames, outlineEntries: outlineEntries)
+
+            // Generate decision-consequence chains
+            results.decisionConsequenceChains = generateDecisionConsequenceChains(text: analysisText, characterNames: characterNames, outlineEntries: outlineEntries)
         }
 
         return results
@@ -859,6 +865,92 @@ class AnalysisEngine {
         }
 
         return matrices
+    }
+
+    func generateDecisionConsequenceChains(text: String, characterNames: [String], outlineEntries: [DecisionBeliefLoopAnalyzer.OutlineEntry]? = nil) -> [DecisionConsequenceChain] {
+        var chains: [DecisionConsequenceChain] = []
+
+        // For now, generate sample data for demonstration
+        // In a future version, this would use NLP to detect decision points and consequences
+
+        for characterName in characterNames.prefix(3) { // Limit to top 3 characters
+            var entries: [DecisionConsequenceChain.ChainEntry] = []
+
+            // Create sample entries for demonstration
+            if characterName.lowercased().contains("alex") || characterName.lowercased().contains("protagonist") {
+                entries = [
+                    DecisionConsequenceChain.ChainEntry(
+                        chapter: 1,
+                        chapterPage: 15,
+                        decision: "Refuses help from mentor, chooses solo mission",
+                        decisionPage: 15,
+                        immediateOutcome: "Nearly fails first objective alone",
+                        immediateOutcomePage: 22,
+                        longTermEffect: "Develops mistrust of authority figures",
+                        longTermEffectPage: 30
+                    ),
+                    DecisionConsequenceChain.ChainEntry(
+                        chapter: 4,
+                        chapterPage: 68,
+                        decision: "Accepts dangerous alliance to gain intel",
+                        decisionPage: 68,
+                        immediateOutcome: "Gets valuable information but makes enemy",
+                        immediateOutcomePage: 75,
+                        longTermEffect: "Creates secondary antagonist for Act 2",
+                        longTermEffectPage: 95
+                    ),
+                    DecisionConsequenceChain.ChainEntry(
+                        chapter: 8,
+                        chapterPage: 142,
+                        decision: "Reveals secret to save teammate",
+                        decisionPage: 142,
+                        immediateOutcome: "Team member survives but learns truth",
+                        immediateOutcomePage: 148,
+                        longTermEffect: "Relationship dynamic permanently shifts, builds trust",
+                        longTermEffectPage: 165
+                    ),
+                    DecisionConsequenceChain.ChainEntry(
+                        chapter: 12,
+                        chapterPage: 205,
+                        decision: "Sacrifices personal goal for greater good",
+                        decisionPage: 205,
+                        immediateOutcome: "Mission succeeds, personal loss sustained",
+                        immediateOutcomePage: 212,
+                        longTermEffect: "Character growth complete, embraces new identity",
+                        longTermEffectPage: 220
+                    )
+                ]
+            } else {
+                // Generic entries for other characters
+                entries = [
+                    DecisionConsequenceChain.ChainEntry(
+                        chapter: 2,
+                        chapterPage: 35,
+                        decision: "Chooses loyalty over personal safety",
+                        decisionPage: 35,
+                        immediateOutcome: "Gains trust but faces danger",
+                        immediateOutcomePage: 40,
+                        longTermEffect: "Becomes key ally in conflict",
+                        longTermEffectPage: 55
+                    ),
+                    DecisionConsequenceChain.ChainEntry(
+                        chapter: 7,
+                        chapterPage: 125,
+                        decision: "Breaks protocol to help protagonist",
+                        decisionPage: 125,
+                        immediateOutcome: "Faces disciplinary action",
+                        immediateOutcomePage: 130,
+                        longTermEffect: "Solidifies commitment to cause",
+                        longTermEffectPage: 145
+                    )
+                ]
+            }
+
+            let chain = DecisionConsequenceChain(characterName: characterName, entries: entries)
+            chains.append(chain)
+        }
+
+        return chains
     }
 
     private func splitIntoChapters(text: String) -> [String] {

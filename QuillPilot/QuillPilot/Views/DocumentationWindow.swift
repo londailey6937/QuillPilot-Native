@@ -397,6 +397,36 @@ Perfect for:
 """, color: bodyColor))
         content.append(makeNewline())
 
+        content.append(makeHeading("⛓️ Decision-Consequence Chains", color: headingColor))
+        content.append(makeBody("""
+Maps choices, not traits. Ensures growth comes from action, not narration.
+
+Access: Analyze Document → Characters tab → ⛓️ Decision-Consequence Chains
+
+Structure:
+• Chapter → Decision → Immediate Outcome → Long-term Effect
+
+Shows visual flow arrows connecting each decision to its consequences.
+
+Agency Assessment Badge:
+• Active Protagonist - Character drives the story
+• Developing - Good balance of action and consequence
+• Reactive - Some agency, needs strengthening
+• Passive - Character reacts, doesn't act (warning)
+• Insufficient Data - Not enough entries to assess
+
+Use when:
+• You want to ensure growth comes from action, not narration
+• You're diagnosing passive protagonists
+• Planning causal evolution maps
+• Tracking how character is shaped by agency
+• Identifying where character needs more active choices
+
+Perfect for ensuring your protagonist is making decisions that matter
+and those decisions have real, lasting consequences on their journey.
+""", color: bodyColor))
+        content.append(makeNewline())
+
         content.append(makeHeading("🤝 Character Interactions", color: headingColor))
         content.append(makeBody("""
 Analyzes relationships and scenes between characters.

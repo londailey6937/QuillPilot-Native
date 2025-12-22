@@ -50,7 +50,8 @@ let package = Package(
                 "Views/CharacterArcVisualizationView.swift",
                 "Views/EmotionalTrajectoryView.swift",
                 "Views/CharacterInteractionsView.swift",
-                "Views/BeliefShiftMatrixView.swift"
+                "Views/BeliefShiftMatrixView.swift",
+                "Views/DecisionConsequenceChainView.swift"
             ]
         )
     ]

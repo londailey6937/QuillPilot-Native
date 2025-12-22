@@ -45,7 +45,7 @@ class CharacterInteractionsView: NSView {
         dirtyRect.fill()
 
         let padding: CGFloat = 60
-        let topPadding: CGFloat = 80
+        let topPadding: CGFloat = 100
         let bottomPadding: CGFloat = 40
         let chartWidth = bounds.width - (padding * 2)
         let chartHeight = bounds.height - topPadding - bottomPadding
@@ -171,7 +171,7 @@ class CharacterInteractionsView: NSView {
             // Draw relationship strength indicator (small circle)
             let strengthSize: CGFloat = 8 + (CGFloat(interaction.relationshipStrength) * 8)
             let strengthX = x + (barWidth - strengthSize) / 2
-            let strengthY = y - 35  // Increased padding from -20 to -35
+            let strengthY = y - 50  // Increased padding from -35 to -50
             let strengthRect = NSRect(x: strengthX, y: strengthY, width: strengthSize, height: strengthSize)
             let strengthPath = NSBezierPath(ovalIn: strengthRect)
 

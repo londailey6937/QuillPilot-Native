@@ -325,41 +325,48 @@ struct CharacterPresenceBarChart: View {
                 .frame(maxWidth: .infinity, alignment: .center)
                 .padding()
         } else {
-            GeometryReader { geometry in
-                ScrollView(.horizontal, showsIndicators: true) {
-                    Chart(dataPoints) { point in
-                        BarMark(
-                            x: .value("Chapter", "Ch \(point.chapter)"),
-                            y: .value("Mentions", point.mentions)
-                        )
-                        .foregroundStyle(by: .value("Character", point.character))
-                        .annotation(position: .top, alignment: .center) {
-                            if point.mentions > 0 {
-                                Text("\(point.mentions)")
-                                    .font(.caption2)
-                                    .foregroundColor(textColor.opacity(0.6))
+            VStack(spacing: 0) {
+                GeometryReader { geometry in
+                    ScrollView(.horizontal, showsIndicators: true) {
+                        Chart(dataPoints) { point in
+                            BarMark(
+                                x: .value("Chapter", "Ch \(point.chapter)"),
+                                y: .value("Mentions", point.mentions)
+                            )
+                            .foregroundStyle(by: .value("Character", point.character))
+                            .annotation(position: .top, alignment: .center) {
+                                if point.mentions > 0 {
+                                    Text("\(point.mentions)")
+                                        .font(.caption2)
+                                        .foregroundColor(textColor.opacity(0.6))
+                                }
                             }
                         }
-                    }
-                    .chartXAxisLabel("Chapter", alignment: .center)
-                    .chartYAxisLabel("Mentions")
-                    .chartXAxis {
-                        AxisMarks(values: chapters.map { "Ch \($0)" }) { _ in
-                            AxisValueLabel()
-                                .foregroundStyle(textColor)
+                        .chartXAxisLabel("Chapter", alignment: .center)
+                        .chartYAxisLabel("Mentions")
+                        .chartXAxis {
+                            AxisMarks(values: chapters.map { "Ch \($0)" }) { _ in
+                                AxisValueLabel()
+                                    .foregroundStyle(textColor)
+                            }
                         }
-                    }
-                    .chartYAxis {
-                        AxisMarks(position: .leading) { _ in
-                            AxisGridLine()
-                            AxisValueLabel()
-                                .foregroundStyle(textColor)
+                        .chartYAxis {
+                            AxisMarks(position: .leading) { _ in
+                                AxisGridLine(stroke: StrokeStyle(lineWidth: 0.5))
+                                    .foregroundStyle(textColor.opacity(0.2))
+                                AxisValueLabel()
+                                    .foregroundStyle(textColor)
+                            }
                         }
+                        .chartPlotStyle { plotArea in
+                            plotArea
+                                .background(backgroundColor.opacity(0.5))
+                        }
+                        .frame(width: max(CGFloat(chapters.count) * 90, geometry.size.width), height: 280)
                     }
-                    .frame(width: max(CGFloat(chapters.count) * 90, geometry.size.width), height: 280)
                 }
+                .frame(height: 320)
             }
-            .frame(height: 320)
             .background(backgroundColor)
         }
     }

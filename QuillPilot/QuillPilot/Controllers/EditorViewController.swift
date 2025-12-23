@@ -656,8 +656,9 @@ class EditorViewController: NSViewController {
 
         // Calculate max width based on text container width (accounts for margins and zoom)
         let textContainerWidth = textView.textContainer?.size.width ?? ((pageWidth - standardMargin * 2) * editorZoom)
-        var maxWidth = textContainerWidth
-        let maxHeight = (pageHeight - headerHeight - footerHeight - (standardMargin * 2)) * editorZoom // keep inside a single page
+        // Default to 50% of text width to prevent images from blowing out text
+        var maxWidth = textContainerWidth * 0.5
+        let maxHeight = (pageHeight - headerHeight - footerHeight - (standardMargin * 2)) * editorZoom * 0.6 // keep well inside a single page
 
         // Check if cursor is in a table cell - if so, use much smaller max width to avoid breaking the cell
         let cursorLocation = textView.selectedRange().location
@@ -669,8 +670,8 @@ class EditorViewController: NSViewController {
                 // In a table cell - limit to a small size to avoid breaking the cell
                 let table = block.table
                 let cellWidth = textContainerWidth / CGFloat(table.numberOfColumns)
-                // Use 60% of cell width minus padding to ensure it fits comfortably
-                maxWidth = cellWidth * 0.6
+                // Use 40% of cell width minus padding to ensure it fits comfortably
+                maxWidth = cellWidth * 0.4
             }
         }
 
@@ -812,8 +813,9 @@ class EditorViewController: NSViewController {
         lastImageRange = attachmentRange
 
         let maxWidth = textView.textContainer?.size.width ?? ((pageWidth - standardMargin * 2) * editorZoom)
-        let currentWidth = (textView.textStorage?.attribute(.attachment, at: attachmentRange.location, effectiveRange: nil) as? NSTextAttachment)?.bounds.width ?? maxWidth
-        let currentScale = max(0.1, min(1.5, currentWidth / maxWidth))
+        let currentWidth = (textView.textStorage?.attribute(.attachment, at: attachmentRange.location, effectiveRange: nil) as? NSTextAttachment)?.bounds.width ?? (maxWidth * 0.5)
+        // Scale is relative to max width: 0.5 = 50% of text width, 1.0 = 100% of text width
+        let currentScale = max(0.1, min(1.0, currentWidth / maxWidth))
 
         // Always create fresh popover to ensure proper sizing
         let popover = NSPopover()
@@ -841,7 +843,8 @@ class EditorViewController: NSViewController {
 
         let moveRow = NSStackView(views: [
             makeButton("↑", action: #selector(moveImageUp)),
-            makeButton("↓", action: #selector(moveImageDown))
+            makeButton("↓", action: #selector(moveImageDown)),
+            makeButton("Caption", action: #selector(addOrEditCaption))
         ])
         moveRow.orientation = .horizontal
         moveRow.spacing = 3
@@ -859,7 +862,7 @@ class EditorViewController: NSViewController {
         scaleLabel.font = NSFont.systemFont(ofSize: 10)
         imageScaleLabel = scaleLabel
 
-        let slider = NSSlider(value: currentScale, minValue: 0.25, maxValue: 1.5, target: self, action: #selector(resizeSliderChanged(_:)))
+        let slider = NSSlider(value: currentScale, minValue: 0.1, maxValue: 1.0, target: self, action: #selector(resizeSliderChanged(_:)))
         slider.isContinuous = true
 
         let resizeRow = NSStackView(views: [scaleLabel, slider])
@@ -943,6 +946,29 @@ class EditorViewController: NSViewController {
         storage.endEditing()
         storage.fixAttributes(in: paragraphRange)
         textView.layoutManager?.invalidateLayout(forCharacterRange: paragraphRange, actualCharacterRange: nil)
+
+        // Also update caption alignment if there is one
+        let afterImage = NSMaxRange(paragraphRange)
+        if afterImage < storage.length {
+            let nextParagraphRange = (storage.string as NSString).paragraphRange(for: NSRange(location: afterImage, length: 0))
+            var hasCaptionAttr = false
+            storage.enumerateAttribute(Self.captionAttributeKey, in: nextParagraphRange, options: []) { value, _, _ in
+                if value != nil {
+                    hasCaptionAttr = true
+                }
+            }
+            if hasCaptionAttr {
+                // Update caption alignment to match image
+                let captionBase = (storage.attribute(.paragraphStyle, at: nextParagraphRange.location, effectiveRange: nil) as? NSParagraphStyle) ?? NSParagraphStyle.default
+                let captionMutable = captionBase.mutableCopy() as! NSMutableParagraphStyle
+                captionMutable.alignment = alignment
+                storage.beginEditing()
+                storage.addAttribute(.paragraphStyle, value: captionMutable.copy() as! NSParagraphStyle, range: nextParagraphRange)
+                storage.endEditing()
+                textView.layoutManager?.invalidateLayout(forCharacterRange: nextParagraphRange, actualCharacterRange: nil)
+            }
+        }
+
         textView.didChangeText()
 
         // Close and reopen popover to reposition it correctly
@@ -962,14 +988,31 @@ class EditorViewController: NSViewController {
         let fullString = storage.string as NSString
         let currentPara = fullString.paragraphRange(for: range)
 
-        let currentText = storage.attributedSubstring(from: currentPara)
+        // Check if there's a caption that should move with the image
+        var imageAndCaptionRange = currentPara
+        let afterImage = NSMaxRange(currentPara)
+        if afterImage < storage.length {
+            let nextPara = fullString.paragraphRange(for: NSRange(location: afterImage, length: 0))
+            var hasCaptionAttr = false
+            storage.enumerateAttribute(Self.captionAttributeKey, in: nextPara, options: []) { value, _, _ in
+                if value != nil {
+                    hasCaptionAttr = true
+                }
+            }
+            if hasCaptionAttr {
+                // Include caption in the move
+                imageAndCaptionRange = NSRange(location: currentPara.location, length: NSMaxRange(nextPara) - currentPara.location)
+            }
+        }
+
+        let currentText = storage.attributedSubstring(from: imageAndCaptionRange)
 
         if direction < 0 {
-            if currentPara.location == 0 { return }
-            let prevPara = fullString.paragraphRange(for: NSRange(location: max(0, currentPara.location - 1), length: 0))
-            if prevPara.location == currentPara.location { return }
+            if imageAndCaptionRange.location == 0 { return }
+            let prevPara = fullString.paragraphRange(for: NSRange(location: max(0, imageAndCaptionRange.location - 1), length: 0))
+            if prevPara.location == imageAndCaptionRange.location { return }
             let prevText = storage.attributedSubstring(from: prevPara)
-            let combinedRange = NSRange(location: prevPara.location, length: NSMaxRange(currentPara) - prevPara.location)
+            let combinedRange = NSRange(location: prevPara.location, length: NSMaxRange(imageAndCaptionRange) - prevPara.location)
             let swapped = NSMutableAttributedString()
             swapped.append(currentText)
             swapped.append(prevText)
@@ -980,12 +1023,12 @@ class EditorViewController: NSViewController {
             storage.endEditing()
             textView.setSelectedRange(NSRange(location: prevPara.location, length: currentText.length))
         } else {
-            let nextStart = NSMaxRange(currentPara)
+            let nextStart = NSMaxRange(imageAndCaptionRange)
             if nextStart >= storage.length { return }
             let nextPara = fullString.paragraphRange(for: NSRange(location: nextStart, length: 0))
-            if nextPara.location == currentPara.location { return }
+            if nextPara.location == imageAndCaptionRange.location { return }
             let nextText = storage.attributedSubstring(from: nextPara)
-            let combinedRange = NSRange(location: currentPara.location, length: NSMaxRange(nextPara) - currentPara.location)
+            let combinedRange = NSRange(location: imageAndCaptionRange.location, length: NSMaxRange(nextPara) - imageAndCaptionRange.location)
             let swapped = NSMutableAttributedString()
             swapped.append(nextText)
             swapped.append(currentText)
@@ -1007,12 +1050,13 @@ class EditorViewController: NSViewController {
         guard let attachment = storage.attribute(.attachment, at: range.location, effectiveRange: nil) as? NSTextAttachment else { return }
 
         let maxWidth = textView.textContainer?.size.width ?? ((pageWidth - standardMargin * 2) * editorZoom)
-        let maxHeight = (pageHeight - headerHeight - footerHeight - (standardMargin * 2)) * editorZoom
+        let maxHeight = (pageHeight - headerHeight - footerHeight - (standardMargin * 2)) * editorZoom * 0.8 // Leave margin for safety
         let naturalSize = attachment.bounds.size.width > 0 && attachment.bounds.size.height > 0
             ? attachment.bounds.size
-            : (attachment.image?.size ?? NSSize(width: maxWidth, height: maxWidth))
+            : (attachment.image?.size ?? NSSize(width: maxWidth * 0.5, height: maxWidth * 0.5))
 
-        let clampedScale = max(0.25, min(1.5, scale))
+        // Cap at 100% of text width to prevent blowout
+        let clampedScale = max(0.1, min(1.0, scale))
         let aspect = (naturalSize.width > 0) ? (naturalSize.height / naturalSize.width) : 1
 
         // Width constrained by slider and container
@@ -1025,6 +1069,13 @@ class EditorViewController: NSViewController {
         let targetHeight = targetWidth * aspect
 
         attachment.bounds = NSRect(origin: .zero, size: NSSize(width: targetWidth, height: targetHeight))
+
+        // Update the stored size in the fileWrapper filename for persistence
+        if let wrapper = attachment.fileWrapper, let oldName = wrapper.preferredFilename {
+            let ext = (oldName as NSString).pathExtension
+            wrapper.preferredFilename = encodeImageFilename(size: NSSize(width: targetWidth, height: targetHeight), ext: ext)
+        }
+
         textView.textStorage?.edited(.editedAttributes, range: range, changeInLength: 0)
         textView.didChangeText()
         updateScaleLabel(clampedScale)
@@ -1035,9 +1086,30 @@ class EditorViewController: NSViewController {
     }
 
     @objc private func deleteImage() {
-        guard textView.textStorage != nil else { return }
+        guard let storage = textView.textStorage else { return }
         guard let range = lastImageRange ?? imageAttachmentRange(at: textView.selectedRange().location) else { return }
-        replaceCharacters(in: range, with: NSAttributedString(string: ""), undoPlaceholder: "")
+
+        // Check if there's a caption to delete along with the image
+        let fullString = storage.string as NSString
+        let imagePara = fullString.paragraphRange(for: range)
+        var deleteRange = imagePara
+
+        let afterImage = NSMaxRange(imagePara)
+        if afterImage < storage.length {
+            let nextPara = fullString.paragraphRange(for: NSRange(location: afterImage, length: 0))
+            var hasCaptionAttr = false
+            storage.enumerateAttribute(Self.captionAttributeKey, in: nextPara, options: []) { value, _, _ in
+                if value != nil {
+                    hasCaptionAttr = true
+                }
+            }
+            if hasCaptionAttr {
+                // Include caption in deletion
+                deleteRange = NSRange(location: imagePara.location, length: NSMaxRange(nextPara) - imagePara.location)
+            }
+        }
+
+        replaceCharacters(in: deleteRange, with: NSAttributedString(string: ""), undoPlaceholder: "")
         imageControlsPopover?.performClose(nil)
         imageControlsPopover = nil
     }
@@ -1091,6 +1163,130 @@ class EditorViewController: NSViewController {
         textView.scrollRangeToVisible(NSRange(location: attachmentPos, length: 1))
         lastImageRange = NSRange(location: attachmentPos, length: 1)
         showImageControlsIfNeeded()
+    }
+
+    // MARK: - Image Captions
+
+    /// Custom attribute key to mark caption text as belonging to an image
+    private static let captionAttributeKey = NSAttributedString.Key("QuillPilotImageCaption")
+
+    @objc private func addOrEditCaption() {
+        guard let storage = textView.textStorage else { return }
+        guard let range = lastImageRange ?? imageAttachmentRange(at: textView.selectedRange().location) else { return }
+
+        // Close the popover
+        imageControlsPopover?.performClose(nil)
+        imageControlsPopover = nil
+
+        // Find the paragraph containing the image
+        let paragraphRange = (storage.string as NSString).paragraphRange(for: range)
+
+        // Check if there's already a caption on the next line
+        let afterImage = NSMaxRange(paragraphRange)
+        var existingCaption = ""
+        var captionRange: NSRange?
+
+        if afterImage < storage.length {
+            let nextParagraphRange = (storage.string as NSString).paragraphRange(for: NSRange(location: afterImage, length: 0))
+            // Check if the next paragraph has our caption attribute
+            var hasCaptionAttr = false
+            storage.enumerateAttribute(Self.captionAttributeKey, in: nextParagraphRange, options: []) { value, _, _ in
+                if value != nil {
+                    hasCaptionAttr = true
+                }
+            }
+            if hasCaptionAttr {
+                let captionText = (storage.string as NSString).substring(with: nextParagraphRange)
+                existingCaption = captionText.trimmingCharacters(in: .whitespacesAndNewlines)
+                captionRange = nextParagraphRange
+            }
+        }
+
+        // Show caption input dialog
+        let alert = NSAlert()
+        alert.messageText = existingCaption.isEmpty ? "Add Caption" : "Edit Caption"
+        alert.informativeText = "Enter a caption for this image:"
+        alert.addButton(withTitle: "OK")
+        alert.addButton(withTitle: "Cancel")
+        if !existingCaption.isEmpty {
+            alert.addButton(withTitle: "Remove Caption")
+        }
+
+        let inputField = NSTextField(frame: NSRect(x: 0, y: 0, width: 300, height: 24))
+        inputField.stringValue = existingCaption
+        inputField.placeholderString = "Figure 1: Description of image"
+        alert.accessoryView = inputField
+        alert.window.initialFirstResponder = inputField
+
+        let response = alert.runModal()
+
+        if response == .alertFirstButtonReturn {
+            // OK - add or update caption
+            let captionText = inputField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !captionText.isEmpty {
+                setCaptionForImage(at: range, caption: captionText, existingCaptionRange: captionRange)
+            } else if let existingRange = captionRange {
+                // Empty caption, remove it
+                removeCaptionAtRange(existingRange)
+            }
+        } else if response == .alertThirdButtonReturn, let existingRange = captionRange {
+            // Remove caption
+            removeCaptionAtRange(existingRange)
+        }
+
+        // Reshow image controls
+        lastImageRange = range
+        showImageControlsIfNeeded()
+    }
+
+    private func setCaptionForImage(at imageRange: NSRange, caption: String, existingCaptionRange: NSRange?) {
+        guard let storage = textView.textStorage else { return }
+
+        // Get the image's paragraph style for alignment
+        let imageParagraphRange = (storage.string as NSString).paragraphRange(for: imageRange)
+        let imageParaStyle = storage.attribute(.paragraphStyle, at: imageRange.location, effectiveRange: nil) as? NSParagraphStyle ?? NSParagraphStyle.default
+
+        // Create caption paragraph style with same alignment as image
+        let captionPara = NSMutableParagraphStyle()
+        captionPara.alignment = imageParaStyle.alignment
+        captionPara.paragraphSpacing = 6
+        captionPara.paragraphSpacingBefore = 2
+
+        // Create caption attributed string with italic font
+        let baseFont = NSFont.systemFont(ofSize: 11)
+        let italicFont = NSFontManager.shared.convert(baseFont, toHaveTrait: .italicFontMask)
+
+        let captionString = NSMutableAttributedString(string: caption + "\n", attributes: [
+            .font: italicFont,
+            .foregroundColor: NSColor.secondaryLabelColor,
+            .paragraphStyle: captionPara,
+            Self.captionAttributeKey: true
+        ])
+
+        if let existingRange = existingCaptionRange {
+            // Replace existing caption
+            guard textView.shouldChangeText(in: existingRange, replacementString: captionString.string) else { return }
+            storage.beginEditing()
+            storage.replaceCharacters(in: existingRange, with: captionString)
+            storage.endEditing()
+            textView.didChangeText()
+        } else {
+            // Insert new caption after image paragraph
+            let insertionPoint = NSMaxRange(imageParagraphRange)
+            guard textView.shouldChangeText(in: NSRange(location: insertionPoint, length: 0), replacementString: captionString.string) else { return }
+            storage.beginEditing()
+            storage.insert(captionString, at: insertionPoint)
+            storage.endEditing()
+            textView.didChangeText()
+        }
+    }
+
+    private func removeCaptionAtRange(_ range: NSRange) {
+        guard textView.shouldChangeText(in: range, replacementString: "") else { return }
+        textView.textStorage?.beginEditing()
+        textView.textStorage?.deleteCharacters(in: range)
+        textView.textStorage?.endEditing()
+        textView.didChangeText()
     }
 
     func scrollToTop() {

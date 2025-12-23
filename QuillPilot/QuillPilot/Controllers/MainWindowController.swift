@@ -1177,8 +1177,8 @@ class HeaderView: NSView {
     private func setupUI() {
         wantsLayer = true
 
-        // Animated logo (left)
-        logoView = AnimatedLogoView()
+        // Animated logo (left) - use the full animated logo view
+        logoView = AnimatedLogoView(size: 40, animate: true)
         logoView.translatesAutoresizingMaskIntoConstraints = false
         addSubview(logoView)
 
@@ -1207,11 +1207,11 @@ class HeaderView: NSView {
         addSubview(loginButton)
 
         NSLayoutConstraint.activate([
-            // Logo at left
+            // Logo at left - fills height with 4pt padding
             logoView.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 16),
-            logoView.centerYAnchor.constraint(equalTo: centerYAnchor),
-            logoView.widthAnchor.constraint(equalToConstant: 40),
-            logoView.heightAnchor.constraint(equalToConstant: 40),
+            logoView.topAnchor.constraint(equalTo: topAnchor, constant: 4),
+            logoView.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -4),
+            logoView.widthAnchor.constraint(equalTo: logoView.heightAnchor),
 
             // Title next to logo
             titleLabel.leadingAnchor.constraint(equalTo: logoView.trailingAnchor, constant: 12),
@@ -1267,41 +1267,6 @@ class HeaderView: NSView {
         specsPanel.getTitle()
     }
 }
-
-// MARK: - Animated Logo View
-class AnimatedLogoView: NSView {
-
-    override init(frame frameRect: NSRect) {
-        super.init(frame: frameRect)
-        wantsLayer = true
-    }
-
-    required init?(coder: NSCoder) {
-        fatalError("init(coder:) has not been implemented")
-    }
-
-    override func draw(_ dirtyRect: NSRect) {
-        super.draw(dirtyRect)
-
-        // Draw simple quill feather icon
-        guard let context = NSGraphicsContext.current?.cgContext else { return }
-
-        context.setFillColor(ThemeManager.shared.currentTheme.headerBackground.cgColor)
-
-        // Quill shape (simplified)
-        let path = NSBezierPath()
-        path.move(to: NSPoint(x: bounds.width * 0.5, y: bounds.height * 0.1))
-        path.line(to: NSPoint(x: bounds.width * 0.7, y: bounds.height * 0.9))
-        path.line(to: NSPoint(x: bounds.width * 0.5, y: bounds.height * 0.8))
-        path.line(to: NSPoint(x: bounds.width * 0.3, y: bounds.height * 0.9))
-        path.close()
-
-        ThemeManager.shared.currentTheme.headerBackground.setFill()
-        path.fill()
-    }
-}
-
-// MARK: - Specs Panel (Word Count, Page Count)
 
 // MARK: - Formatting Toolbar
 class FormattingToolbar: NSView {

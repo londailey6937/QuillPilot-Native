@@ -63,9 +63,9 @@ enum AppTheme: String {
     var headerBackground: NSColor {
         switch self {
         case .day:
-            return NSColor(hex: "#684F3C") ?? .darkGray
+            return NSColor(hex: "#8B7355") ?? .darkGray  // Warm brown that contrasts with logo
         case .night:
-            return NSColor(hex: "#2A2A2A") ?? .darkGray
+            return NSColor(hex: "#2D2D2D") ?? .darkGray
         }
     }
 

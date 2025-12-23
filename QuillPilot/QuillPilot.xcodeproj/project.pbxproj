@@ -8,11 +8,13 @@
 
 /* Begin PBXBuildFile section */
 		95D4E7952EED15A300D9FD96 /* Info.plist in Resources */ = {isa = PBXBuildFile; fileRef = 95D4E7942EED15A300D9FD96 /* Info.plist */; };
+		95F6A1012FF0000000000001 /* AnimatedLogoView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 95F6A1002FF0000000000001 /* AnimatedLogoView.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
 		95D4E7942EED15A300D9FD96 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		95F565052EED0D890079E9C2 /* QuillPilot.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = QuillPilot.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		95F6A1002FF0000000000001 /* AnimatedLogoView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Views/AnimatedLogoView.swift"; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -20,6 +22,9 @@
 			isa = PBXFileSystemSynchronizedRootGroup;
 			path = QuillPilot;
 			sourceTree = "<group>";
+			children = (
+				95F6A1002FF0000000000001 /* AnimatedLogoView.swift */,
+			);
 		};
 /* End PBXFileSystemSynchronizedRootGroup section */
 
@@ -126,6 +131,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				95F6A1012FF0000000000001 /* AnimatedLogoView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

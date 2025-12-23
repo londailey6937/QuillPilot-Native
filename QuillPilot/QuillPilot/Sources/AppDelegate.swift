@@ -4,6 +4,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var mainWindowController: MainWindowController?
     private var documentationWindow: DocumentationWindowController?
     private var dialogueTipsWindow: DialogueTipsWindowController?
+    private var aboutWindow: NSWindow?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         setupMenuBar()
@@ -222,7 +223,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let appMenu = NSMenu()
         appMenuItem.submenu = appMenu
 
-        appMenu.addItem(NSMenuItem(title: "About QuillPilot", action: #selector(NSApplication.orderFrontStandardAboutPanel(_:)), keyEquivalent: ""))
+        appMenu.addItem(NSMenuItem(title: "About QuillPilot", action: #selector(showAboutWindow(_:)), keyEquivalent: ""))
         appMenu.addItem(.separator())
         appMenu.addItem(NSMenuItem(title: "Hide QuillPilot", action: #selector(NSApplication.hide(_:)), keyEquivalent: "h"))
         appMenu.addItem(.separator())
@@ -327,6 +328,81 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         dialogueTipsWindow?.showWindow(nil)
         dialogueTipsWindow?.window?.makeKeyAndOrderFront(nil)
+    }
+
+    @objc private func showAboutWindow(_ sender: Any?) {
+        if aboutWindow == nil {
+            aboutWindow = createAboutWindow()
+        }
+        aboutWindow?.center()
+        aboutWindow?.makeKeyAndOrderFront(nil)
+    }
+
+    private func createAboutWindow() -> NSWindow {
+        let windowSize = NSSize(width: 340, height: 380)
+        let window = NSWindow(
+            contentRect: NSRect(origin: .zero, size: windowSize),
+            styleMask: [.titled, .closable],
+            backing: .buffered,
+            defer: false
+        )
+        window.title = "About QuillPilot"
+        window.isReleasedWhenClosed = false
+
+        let contentView = NSView(frame: NSRect(origin: .zero, size: windowSize))
+        contentView.wantsLayer = true
+
+        let theme = ThemeManager.shared.currentTheme
+        contentView.layer?.backgroundColor = theme.pageAround.cgColor
+
+        // Animated Logo
+        let logoSize: CGFloat = 140
+        let logoView = AnimatedLogoView(size: logoSize, animate: true)
+        logoView.frame = NSRect(
+            x: (windowSize.width - logoSize) / 2,
+            y: windowSize.height - logoSize - 30,
+            width: logoSize,
+            height: logoSize
+        )
+        contentView.addSubview(logoView)
+
+        // App name
+        let nameLabel = NSTextField(labelWithString: "QuillPilot")
+        nameLabel.font = NSFont.systemFont(ofSize: 24, weight: .semibold)
+        nameLabel.textColor = theme.textColor
+        nameLabel.alignment = .center
+        nameLabel.frame = NSRect(x: 0, y: windowSize.height - logoSize - 70, width: windowSize.width, height: 30)
+        contentView.addSubview(nameLabel)
+
+        // Version
+        let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0"
+        let build = Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "1"
+        let versionLabel = NSTextField(labelWithString: "Version \(version) (\(build))")
+        versionLabel.font = NSFont.systemFont(ofSize: 12)
+        versionLabel.textColor = NSColor.secondaryLabelColor
+        versionLabel.alignment = .center
+        versionLabel.frame = NSRect(x: 0, y: windowSize.height - logoSize - 95, width: windowSize.width, height: 20)
+        contentView.addSubview(versionLabel)
+
+        // Description
+        let descriptionLabel = NSTextField(wrappingLabelWithString: "A powerful writing application for macOS with AI-assisted analysis, character tracking, and beautiful typography.")
+        descriptionLabel.font = NSFont.systemFont(ofSize: 11)
+        descriptionLabel.textColor = theme.textColor.withAlphaComponent(0.8)
+        descriptionLabel.alignment = .center
+        descriptionLabel.frame = NSRect(x: 30, y: windowSize.height - logoSize - 160, width: windowSize.width - 60, height: 50)
+        contentView.addSubview(descriptionLabel)
+
+        // Copyright
+        let year = Calendar.current.component(.year, from: Date())
+        let copyrightLabel = NSTextField(labelWithString: "© \(year) QuillPilot. All rights reserved.")
+        copyrightLabel.font = NSFont.systemFont(ofSize: 10)
+        copyrightLabel.textColor = NSColor.tertiaryLabelColor
+        copyrightLabel.alignment = .center
+        copyrightLabel.frame = NSRect(x: 0, y: 20, width: windowSize.width, height: 16)
+        contentView.addSubview(copyrightLabel)
+
+        window.contentView = contentView
+        return window
     }
 
     @MainActor

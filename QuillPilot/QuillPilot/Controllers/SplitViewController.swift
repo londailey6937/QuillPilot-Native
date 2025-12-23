@@ -56,15 +56,12 @@ class SplitViewController: NSSplitViewController {
         addSplitViewItem(analysisItem)
 
         // Set callback AFTER adding to split view to ensure view is loaded
-        NSLog("🔧 Setting analyzeCallback on analysisViewController: \(Unmanaged.passUnretained(analysisViewController).toOpaque())")
         analysisViewController.analyzeCallback = { [weak self] in
-            NSLog("🔗 Callback triggered from button")
             self?.performAnalysis()
         }
         analysisViewController.getOutlineEntriesCallback = { [weak self] in
             return self?.editorViewController.buildOutlineEntries() ?? []
         }
-        NSLog("✅ analyzeCallback set successfully, is nil? \(analysisViewController.analyzeCallback == nil)")
 
         // Configure split view
         splitView.dividerStyle = .thin
@@ -118,22 +115,17 @@ class SplitViewController: NSSplitViewController {
     private var analysisWorkItem: DispatchWorkItem?
 
     private func performAnalysis() {
-        NSLog("🔍 performAnalysis called in SplitViewController")
-
         // Show sidebar if collapsed
         if let analysisItem = splitViewItems.last, analysisItem.isCollapsed {
-            NSLog("📂 Opening sidebar")
             analysisItem.animator().isCollapsed = false
         }
 
         guard let text = editorViewController.getTextContent(), !text.isEmpty else {
-            NSLog("❌ No text content")
             // Display empty results to show message
             let emptyResults = analysisEngine.analyzeText("")
             analysisViewController.displayResults(emptyResults)
             return
         }
-        NSLog("📝 Text length: \(text.count)")
 
         // Cancel any pending analysis
         analysisWorkItem?.cancel()
@@ -144,12 +136,6 @@ class SplitViewController: NSSplitViewController {
 
             // Get outline entries from editor
             let outlineEntries = self.editorViewController.buildOutlineEntries()
-            NSLog("📋 SplitViewController: Got \(outlineEntries.count) outline entries from editor")
-            if !outlineEntries.isEmpty {
-                outlineEntries.prefix(3).forEach { entry in
-                    NSLog("  - '\(entry.title)' level=\(entry.level) range=\(entry.range)")
-                }
-            }
 
             // Convert to DecisionBeliefLoopAnalyzer.OutlineEntry format
             let analyzerOutlineEntries: [DecisionBeliefLoopAnalyzer.OutlineEntry]? = outlineEntries.isEmpty ? nil : outlineEntries.map { entry in
@@ -161,19 +147,11 @@ class SplitViewController: NSSplitViewController {
                 )
             }
 
-            if let entries = analyzerOutlineEntries {
-                NSLog("📋 SplitViewController: Passing \(entries.count) entries to analysis engine")
-            } else {
-                NSLog("⚠️ SplitViewController: No entries to pass (nil)")
-            }
-
             let results = self.analysisEngine.analyzeText(text, outlineEntries: analyzerOutlineEntries)
-            NSLog("✅ Analysis complete: wordCount=\(results.wordCount), sentenceCount=\(results.sentenceCount)")
 
             // Update UI on main thread
             DispatchQueue.main.async { [weak self] in
                 self?.analysisViewController.displayResults(results)
-                NSLog("✅ displayResults called")
             }
         }
         analysisWorkItem = workItem
@@ -184,13 +162,10 @@ class SplitViewController: NSSplitViewController {
 // MARK: - EditorViewControllerDelegate
 extension SplitViewController: EditorViewControllerDelegate {
     func textDidChange() {
-        NSLog("📝 textDidChange called in SplitViewController")
         // Auto-analyze after a short delay, but only if sidebar is visible
         guard let analysisItem = splitViewItems.last, !analysisItem.isCollapsed else {
-            NSLog("⏸️ Auto-analysis skipped: sidebar collapsed")
             return
         }
-        NSLog("⏱️ Scheduling auto-analysis in 1.5s")
         NSObject.cancelPreviousPerformRequests(withTarget: self, selector: #selector(performAnalysisDelayed), object: nil)
         perform(#selector(performAnalysisDelayed), with: nil, afterDelay: 1.5)
     }

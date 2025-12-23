@@ -156,8 +156,6 @@ class HeaderFooterSettingsWindow: NSWindowController {
     }
 
     @objc private func applySettings() {
-        print("DEBUG: applySettings called")
-        print("DEBUG: showHeaders=\(showHeadersCheckbox.state == .on), showFooters=\(showFootersCheckbox.state == .on)")
         onApply?(
             showHeadersCheckbox.state == .on,
             showFootersCheckbox.state == .on,
@@ -165,12 +163,10 @@ class HeaderFooterSettingsWindow: NSWindowController {
             headerTextField.stringValue,
             footerTextField.stringValue
         )
-        print("DEBUG: Closing window")
         window?.close()
     }
 
     @objc private func cancel() {
-        print("DEBUG: cancel called")
         onCancel?()
         window?.close()
     }

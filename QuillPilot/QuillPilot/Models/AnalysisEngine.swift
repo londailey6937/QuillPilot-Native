@@ -213,7 +213,6 @@ class AnalysisEngine {
         let analysisText: String
         if text.count > maxAnalysisLength {
             analysisText = String(text.prefix(maxAnalysisLength))
-            print("⚠️ Text truncated for analysis: \(text.count) -> \(maxAnalysisLength) chars")
         } else {
             analysisText = text
         }

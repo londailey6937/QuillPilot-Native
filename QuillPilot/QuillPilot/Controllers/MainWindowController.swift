@@ -230,11 +230,6 @@ class MainWindowController: NSWindowController {
     // MARK: - Print
     @MainActor
     @objc func printDocument(_ sender: Any?) {
-        NSLog("=== MainWindowController.printDocument called ===")
-        NSLog("STACK TRACE:")
-        Thread.callStackSymbols.forEach { NSLog("  \($0)") }
-        NSLog("Sender: \(String(describing: sender))")
-
         guard let editorVC = mainContentViewController?.editorViewController else {
             presentErrorAlert(message: "Print Failed", details: "Editor not available")
             return
@@ -1592,8 +1587,6 @@ class FormattingToolbar: NSView {
     }
 
     func applyTheme(_ theme: AppTheme) {
-        print("[DEBUG] FormattingToolbar.applyTheme called - Theme: \(theme), textColor: \(theme.textColor)")
-        print("[DEBUG] themedControls count: \(themedControls.count)")
         wantsLayer = true
         layer?.backgroundColor = theme.toolbarBackground.cgColor
 
@@ -1610,7 +1603,6 @@ class FormattingToolbar: NSView {
             if let popup = control as? NSPopUpButton {
                 // Set appearance on the popup's menu too
                 popup.menu?.appearance = NSAppearance(named: isDarkMode ? .darkAqua : .aqua)
-                print("[DEBUG] Applying theme to NSPopUpButton: \(popup.titleOfSelectedItem ?? "no title")")
                 popup.contentTintColor = theme.textColor
 
                 // Apply theme to all menu items first
@@ -1639,19 +1631,15 @@ class FormattingToolbar: NSView {
                         .font: popup.font ?? NSFont.systemFont(ofSize: 13)
                     ]
                     let attributedString = NSAttributedString(string: selectedTitle, attributes: attrs)
-                    print("[DEBUG] Setting attributedTitle for popup: '\(selectedTitle)' with color: \(theme.textColor)")
 
                     // Set on cell first
                     if let cell = popup.cell as? NSPopUpButtonCell {
                         cell.attributedTitle = attributedString
-                        print("[DEBUG] Set cell.attributedTitle")
                     }
 
                     // Then set on popup - DO NOT call synchronizeTitleAndSelectedItem after this!
                     popup.attributedTitle = attributedString
-                    print("[DEBUG] After setting - popup.attributedTitle: \(popup.attributedTitle.string)")
                 } else {
-                    print("[DEBUG] Popup has no selected item or empty title")
                     // Set text color for the popup button directly for placeholder text
                     if let cell = popup.cell as? NSPopUpButtonCell {
                         let cellTitle = cell.title as String
@@ -1664,7 +1652,6 @@ class FormattingToolbar: NSView {
                                 .font: popup.font ?? NSFont.systemFont(ofSize: 13)
                             ]
                         )
-                        print("[DEBUG] Set cell attributedTitle to: '\(currentTitle)' with color: \(theme.textColor)")
                     }
                 }
 
@@ -1716,14 +1703,12 @@ class FormattingToolbar: NSView {
 
         // Update the displayed title with theme color
         let theme = ThemeManager.shared.currentTheme
-        print("[DEBUG] styleChanged - Applying theme color: \(theme.textColor)")
         let attrs: [NSAttributedString.Key: Any] = [
             .foregroundColor: theme.textColor,
             .font: sender.font ?? NSFont.systemFont(ofSize: 13)
         ]
         sender.attributedTitle = NSAttributedString(string: selectedStyle, attributes: attrs)
         sender.synchronizeTitleAndSelectedItem()
-        print("[DEBUG] styleChanged - After update, attributedTitle: \(sender.attributedTitle), title: \(sender.title)")
     }
 
     @objc private func boldTapped() {
@@ -1801,19 +1786,16 @@ class FormattingToolbar: NSView {
 
     @objc private func fontFamilyChanged(_ sender: NSPopUpButton) {
         guard let family = sender.titleOfSelectedItem, !family.isEmpty else { return }
-        print("[DEBUG] fontFamilyChanged called - family: '\(family)'")
         delegate?.formattingToolbar(self, didChangeFontFamily: family)
 
         // Update the displayed title with theme color
         let theme = ThemeManager.shared.currentTheme
-        print("[DEBUG] fontFamilyChanged - Applying theme color: \(theme.textColor)")
         let attrs: [NSAttributedString.Key: Any] = [
             .foregroundColor: theme.textColor,
             .font: sender.font ?? NSFont.systemFont(ofSize: 13)
         ]
         sender.attributedTitle = NSAttributedString(string: family, attributes: attrs)
         sender.synchronizeTitleAndSelectedItem()
-        print("[DEBUG] fontFamilyChanged - After update, attributedTitle: \(sender.attributedTitle), title: \(sender.title)")
     }
 
     @objc private func fontSizeChanged(_ sender: NSPopUpButton) {
@@ -2480,7 +2462,6 @@ extension OutlineViewController: NSOutlineViewDataSource, NSOutlineViewDelegate 
         let fontSize: CGFloat = node.level == 0 ? 13 : (node.level == 1 ? 12 : 11)
         titleField.font = NSFont.systemFont(ofSize: fontSize, weight: node.level <= 1 ? .semibold : .regular)
         titleField.textColor = color
-        print("[DEBUG] OutlineView cell for '", node.title, "' at level ", node.level, " uses color: ", color)
         titleField.stringValue = node.title
 
         if let page = node.page {

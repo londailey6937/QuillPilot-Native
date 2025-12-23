@@ -176,8 +176,6 @@ class FailurePatternChartView: NSView {
     }
 
     private func drawChartBackground(in rect: NSRect, textColor: NSColor) {
-        let gridColor = textColor.withAlphaComponent(0.1)
-
         // Horizontal line at center
         let centerY = rect.minY + (rect.height / 2)
         let path = NSBezierPath()
@@ -226,7 +224,7 @@ class FailurePatternChartView: NSView {
         }
 
         // Draw failure nodes
-        for (index, failure) in sortedFailures.enumerated() {
+        for (_, failure) in sortedFailures.enumerated() {
             let x = rect.minX + (CGFloat(failure.chapter - minChapter) / CGFloat(chapterRange)) * rect.width
             let y = rect.minY + (CGFloat(failure.growthScore) * rect.height)
 

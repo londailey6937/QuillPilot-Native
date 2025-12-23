@@ -146,7 +146,7 @@ class CharacterLibrary {
             let data = try JSONEncoder().encode(characters)
             try data.write(to: libraryURL)
         } catch {
-            NSLog("❌ Failed to save character library: \(error)")
+            // Error saving, silent failure
         }
     }
 

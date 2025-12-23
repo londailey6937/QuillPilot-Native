@@ -189,9 +189,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     @objc private func openDocument(_ sender: Any?) {
-        NSLog("=== AppDelegate.openDocument called ===")
         Task { @MainActor [weak self] in
-            NSLog("AppDelegate.openDocument dispatching to mainWindowController")
             self?.mainWindowController?.performOpenDocument(sender)
         }
     }

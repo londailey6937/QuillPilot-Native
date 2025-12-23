@@ -445,13 +445,8 @@ class AnalysisViewController: NSViewController {
     }
 
     @objc private func updateButtonTapped() {
-        NSLog("🔄 Update button tapped in analysis panel")
-        NSLog("🔄 analyzeCallback is nil? \(analyzeCallback == nil)")
         if let callback = analyzeCallback {
-            NSLog("🔄 Calling analyzeCallback now")
             callback()
-        } else {
-            NSLog("❌ analyzeCallback is nil - cannot trigger analysis")
         }
     }
 
@@ -651,7 +646,6 @@ class AnalysisViewController: NSViewController {
     }
 
     func displayResults(_ results: AnalysisResults) {
-        NSLog("📊 Displaying results: \(results.wordCount) words")
 
         // Store results for visualization
         storeAnalysisResults(results)
@@ -1204,15 +1198,11 @@ class AnalysisViewController: NSViewController {
 
     func storeAnalysisResults(_ results: AnalysisResults) {
         latestAnalysisResults = results
-        NSLog("📊 Stored analysis results with plotAnalysis: \(results.plotAnalysis != nil)")
     }
 
     @available(macOS 13.0, *)
     private func displayVisualizations() {
-        NSLog("📊 displayVisualizations() called, latestAnalysisResults: \(latestAnalysisResults != nil)")
-
         guard let results = latestAnalysisResults else {
-            NSLog("📊 No results - showing placeholder")
             let placeholder = makeLabel("📊 No visualization data available\n\nRun an analysis first to see plot and character graphs", size: 14, bold: true)
             placeholder.alignment = .center
             placeholder.textColor = .secondaryLabelColor
@@ -1221,11 +1211,8 @@ class AnalysisViewController: NSViewController {
             return
         }
 
-        NSLog("📊 plotAnalysis exists: \(results.plotAnalysis != nil)")
-
         // Show plot visualization
         if let plotAnalysis = results.plotAnalysis {
-            NSLog("📊 Adding plotVisualizationView to stack")
 
             // Remove from previous parent if needed
             plotVisualizationView.removeFromSuperview()
@@ -1237,8 +1224,6 @@ class AnalysisViewController: NSViewController {
             ])
 
             plotVisualizationView.configure(with: plotAnalysis)
-        } else {
-            NSLog("📊 No plotAnalysis data")
         }
 
         // Add character visualizations below plot
@@ -1273,7 +1258,6 @@ class AnalysisViewController: NSViewController {
 
     @available(macOS 13.0, *)
     private func displayPlotAnalysis() {
-        NSLog("📖 displayPlotAnalysis() called")
 
         guard let results = latestAnalysisResults else {
             let placeholder = makeLabel("📖 Run analysis first to view plot insights", size: 14, bold: true)
@@ -1308,7 +1292,6 @@ class AnalysisViewController: NSViewController {
 
     @available(macOS 13.0, *)
     private func displayCharacterAnalysis() {
-        NSLog("👥 displayCharacterAnalysis() called")
 
         guard let results = latestAnalysisResults else {
             let placeholder = makeLabel("👥 Run analysis first to view character insights", size: 14, bold: true)
@@ -1346,7 +1329,6 @@ class AnalysisViewController: NSViewController {
     }
 
     private func displayReadabilityAnalysis() {
-        NSLog("👁️ displayReadabilityAnalysis() called")
 
         let placeholder = makeLabel("👁️ Readability Analysis\n\nAnalyze sentence complexity, vocabulary diversity, and reading level.\n\nComing soon...", size: 14, bold: false)
         placeholder.alignment = .center
@@ -1356,7 +1338,6 @@ class AnalysisViewController: NSViewController {
     }
 
     private func displayPacingAnalysis() {
-        NSLog("⚡ displayPacingAnalysis() called")
 
         let placeholder = makeLabel("⚡ Pacing Analysis\n\nTrack scene lengths, chapter distribution, and narrative rhythm.\n\nComing soon...", size: 14, bold: false)
         placeholder.alignment = .center
@@ -1366,7 +1347,6 @@ class AnalysisViewController: NSViewController {
     }
 
     private func displayDialogueAnalysis() {
-        NSLog("💬 displayDialogueAnalysis() called")
 
         let placeholder = makeLabel("💬 Dialogue Analysis\n\nAnalyze speech patterns, conversation balance, and dialogue tags.\n\nComing soon...", size: 14, bold: false)
         placeholder.alignment = .center
@@ -1376,7 +1356,6 @@ class AnalysisViewController: NSViewController {
     }
 
     private func displayThemeAnalysis() {
-        NSLog("🎭 displayThemeAnalysis() called")
 
         let placeholder = makeLabel("🎭 Theme Analysis\n\nDetect recurring motifs, symbols, and thematic elements.\n\nComing soon...", size: 14, bold: false)
         placeholder.alignment = .center
@@ -1386,7 +1365,6 @@ class AnalysisViewController: NSViewController {
     }
 
     private func displayWorldbuildingAnalysis() {
-        NSLog("🌍 displayWorldbuildingAnalysis() called")
 
         let placeholder = makeLabel("🌍 Worldbuilding Analysis\n\nTrack locations, time references, and world consistency.\n\nComing soon...", size: 14, bold: false)
         placeholder.alignment = .center
@@ -1509,17 +1487,13 @@ extension AnalysisViewController {
         // Apply theme colors and appearance
         let theme = ThemeManager.shared.currentTheme
         let isDarkMode = ThemeManager.shared.isDarkMode
-        print("[DEBUG] Decision-Belief Loop - Theme: \(theme), isDarkMode: \(isDarkMode)")
-        print("[DEBUG] Decision-Belief Loop - pageBackground: \(theme.pageBackground)")
         window.backgroundColor = theme.pageBackground
         window.appearance = NSAppearance(named: isDarkMode ? .darkAqua : .aqua)
-        print("[DEBUG] Decision-Belief Loop - Window appearance set to: \(window.appearance?.name.rawValue ?? "nil")")
 
         let hostingView = NSHostingView(
             rootView: DecisionBeliefLoopFullView(loops: loops)
                 .preferredColorScheme(isDarkMode ? .dark : .light)
         )
-        print("[DEBUG] Decision-Belief Loop - ColorScheme set to: \(isDarkMode ? "dark" : "light")")
         hostingView.translatesAutoresizingMaskIntoConstraints = false
 
         let container = NSView()
@@ -2389,17 +2363,13 @@ extension AnalysisViewController {
         // Apply theme colors and appearance
         let theme = ThemeManager.shared.currentTheme
         let isDarkMode = ThemeManager.shared.isDarkMode
-        print("[DEBUG] Character Presence - Theme: \(theme), isDarkMode: \(isDarkMode)")
-        print("[DEBUG] Character Presence - pageBackground: \(theme.pageBackground)")
         window.backgroundColor = theme.pageBackground
         window.appearance = NSAppearance(named: isDarkMode ? .darkAqua : .aqua)
-        print("[DEBUG] Character Presence - Window appearance set to: \(window.appearance?.name.rawValue ?? "nil")")
 
         let hostingView = NSHostingView(
             rootView: CharacterPresenceBarChart(presence: presence)
                 .preferredColorScheme(isDarkMode ? .dark : .light)
         )
-        print("[DEBUG] Character Presence - ColorScheme set to: \(isDarkMode ? "dark" : "light")")
         hostingView.translatesAutoresizingMaskIntoConstraints = false
 
         let container = NSView()
@@ -3115,16 +3085,11 @@ extension AnalysisViewController {
     }
 
     private func openEmotionalTrajectoryPopout(results: AnalysisResults) {
-        print("[DEBUG] openEmotionalTrajectoryPopout called, window is \(emotionalTrajectoryPopoutWindow == nil ? "nil" : "exists"), visible: \(emotionalTrajectoryPopoutWindow?.isVisible ?? false)")
-
         // If window exists and is visible, bring it to front and return
         if let existingWindow = emotionalTrajectoryPopoutWindow, existingWindow.isVisible {
-            print("[DEBUG] Bringing existing trajectory window to front")
             existingWindow.makeKeyAndOrderFront(nil)
             return
         }
-
-        print("[DEBUG] Creating trajectory window")
         if emotionalTrajectoryPopoutWindow == nil {
             let window = NSWindow(
                 contentRect: NSRect(x: 0, y: 0, width: 900, height: 600),

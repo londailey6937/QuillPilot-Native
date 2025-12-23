@@ -45,6 +45,7 @@ let package = Package(
                 "Views/StoryOutlineWindow.swift",
                 "Views/LocationsWindow.swift",
                 "Views/StoryDirectionsWindow.swift",
+                "Views/AutoStoryWindow.swift",
                 "Views/DialogueTipsWindow.swift",
                 "Views/PlotVisualizationView.swift",
                 "Views/CharacterArcVisualizationView.swift",

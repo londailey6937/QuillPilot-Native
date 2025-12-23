@@ -47,6 +47,9 @@ class AnalysisViewController: NSViewController {
     private weak var analysisPopoutStack: NSStackView?
     private weak var analysisPopoutContainer: NSView?
 
+    // Passive voice disclosure tracking
+    private var passiveDisclosureViews: [NSButton: NSScrollView] = [:]
+
     // Character analysis popouts
     private var emotionalJourneyPopoutWindow: NSWindow?
     private var interactionsPopoutWindow: NSWindow?
@@ -69,6 +72,7 @@ class AnalysisViewController: NSViewController {
     private var storyOutlineWindow: StoryOutlineWindowController?
     private var locationsWindow: LocationsWindowController?
     private var storyDirectionsWindow: StoryDirectionsWindowController?
+    private var autoStoryWindow: AutoStoryWindowController?
 
     // Visualization views (macOS 13+)
     @available(macOS 13.0, *)
@@ -106,6 +110,7 @@ class AnalysisViewController: NSViewController {
         case locations = "Locations"
         case storyDirections = "Story Directions"
         case characters = "Characters"
+        case autoStory = "Auto Story"
 
         var icon: String {
             switch self {
@@ -115,6 +120,7 @@ class AnalysisViewController: NSViewController {
             case .locations: return "📍"
             case .storyDirections: return "🔀"
             case .characters: return "👥"
+            case .autoStory: return "✨"
             }
         }
     }
@@ -411,6 +417,16 @@ class AnalysisViewController: NSViewController {
             return
         }
 
+        if category == .autoStory {
+            // Open Auto Story window
+            if autoStoryWindow == nil {
+                autoStoryWindow = AutoStoryWindowController()
+            }
+            autoStoryWindow?.showWindow(nil)
+            autoStoryWindow?.window?.makeKeyAndOrderFront(nil)
+            return
+        }
+
         // For outline, toggle it
         if isOutlineVisible {
             // Already showing - hide it immediately
@@ -447,6 +463,19 @@ class AnalysisViewController: NSViewController {
     @objc private func updateButtonTapped() {
         if let callback = analyzeCallback {
             callback()
+        }
+    }
+
+    @objc private func togglePassiveVoiceDisclosure(_ sender: NSButton) {
+        guard let scrollView = passiveDisclosureViews[sender] else { return }
+
+        let isHidden = !scrollView.isHidden
+        scrollView.isHidden = isHidden
+
+        if isHidden {
+            sender.title = "▶ Show All (\(passiveDisclosureViews.count > 0 ? "\(latestAnalysisResults?.passiveVoicePhrases.count ?? 0)" : "0"))"
+        } else {
+            sender.title = "▼ Hide"
         }
     }
 
@@ -2377,21 +2406,23 @@ extension AnalysisViewController {
 
     private func refreshAnalysisPopoutContent() {
         guard let stack = analysisPopoutStack else { return }
+        let theme = ThemeManager.shared.currentTheme
 
-        // Clear current content
+        // Clear current content and disclosure mappings
         stack.arrangedSubviews.forEach { view in
             stack.removeArrangedSubview(view)
             view.removeFromSuperview()
         }
+        passiveDisclosureViews.removeAll()
 
         let header = NSTextField(labelWithString: "Document Analysis")
         header.font = NSFont.boldSystemFont(ofSize: 18)
-        header.textColor = NSColor(red: 0.2, green: 0.2, blue: 0.2, alpha: 1.0)
+        header.textColor = theme.popoutTextColor
         stack.addArrangedSubview(header)
 
         guard let results = latestAnalysisResults, results.wordCount > 0 else {
             let placeholder = NSTextField(labelWithString: "No content to analyze.\n\nWrite some text and click Update.")
-            placeholder.textColor = NSColor(red: 0.4, green: 0.4, blue: 0.4, alpha: 1.0)
+            placeholder.textColor = theme.popoutSecondaryColor
             placeholder.maximumNumberOfLines = 0
             stack.addArrangedSubview(placeholder)
             return
@@ -2400,14 +2431,14 @@ extension AnalysisViewController {
         // Helper functions for building UI elements in the popout
         func addHeader(_ text: String) {
             let label = makeLabel(text, size: 14, bold: true)
-            label.textColor = NSColor(red: 0.2, green: 0.2, blue: 0.2, alpha: 1.0)
+            label.textColor = theme.popoutTextColor
             label.alignment = .center
             stack.addArrangedSubview(label)
         }
 
         func addStat(_ name: String, _ value: String) {
             let label = makeLabel("\(name): \(value)", size: 12, bold: false)
-            label.textColor = NSColor(red: 0.3, green: 0.3, blue: 0.3, alpha: 1.0)
+            label.textColor = theme.popoutSecondaryColor
             stack.addArrangedSubview(label)
         }
 
@@ -2427,7 +2458,7 @@ extension AnalysisViewController {
 
         func addDetail(_ text: String) {
             let label = makeLabel(text, size: 11, bold: false)
-            label.textColor = NSColor(red: 0.45, green: 0.45, blue: 0.45, alpha: 1.0)
+            label.textColor = theme.popoutSecondaryColor
             label.lineBreakMode = .byWordWrapping
             label.maximumNumberOfLines = 0
             stack.addArrangedSubview(label)
@@ -2461,9 +2492,66 @@ extension AnalysisViewController {
         addHeader("🔍 Passive Voice")
         if results.passiveVoiceCount > 0 {
             addWarning("Found \(results.passiveVoiceCount) instance(s)")
-            for phrase in results.passiveVoicePhrases.prefix(3) {
-                addDetail("• \"\(phrase)\"")
+
+            // Create disclosure button to show/hide all instances
+            let disclosureButton = NSButton(title: "▶ Show All (\(results.passiveVoicePhrases.count))", target: nil, action: nil)
+            disclosureButton.bezelStyle = .inline
+            disclosureButton.isBordered = false
+            disclosureButton.font = NSFont.systemFont(ofSize: 12)
+            disclosureButton.contentTintColor = theme.popoutSecondaryColor
+
+            // Create a stack of labels for each passive voice phrase (simpler and more reliable)
+            let phrasesStack = NSStackView()
+            phrasesStack.orientation = .vertical
+            phrasesStack.alignment = .leading
+            phrasesStack.spacing = 4
+            phrasesStack.translatesAutoresizingMaskIntoConstraints = false
+
+            for (index, phrase) in results.passiveVoicePhrases.enumerated() {
+                let label = NSTextField(labelWithString: "\(index + 1). \"\(phrase)\"")
+                label.font = NSFont.systemFont(ofSize: 11)
+                label.textColor = NSColor.white
+                label.backgroundColor = .clear
+                label.isSelectable = true
+                label.lineBreakMode = .byWordWrapping
+                label.maximumNumberOfLines = 0
+                label.preferredMaxLayoutWidth = 360
+                phrasesStack.addArrangedSubview(label)
             }
+
+            let passiveScrollView = NSScrollView()
+            passiveScrollView.documentView = phrasesStack
+            passiveScrollView.hasVerticalScroller = true
+            passiveScrollView.autohidesScrollers = false
+            passiveScrollView.borderType = .lineBorder
+            passiveScrollView.drawsBackground = true
+            passiveScrollView.backgroundColor = NSColor(calibratedWhite: 0.2, alpha: 1.0)
+            passiveScrollView.translatesAutoresizingMaskIntoConstraints = false
+            passiveScrollView.isHidden = true
+
+            // Container for the expandable section
+            let passiveContainer = NSStackView()
+            passiveContainer.orientation = .vertical
+            passiveContainer.alignment = .leading
+            passiveContainer.spacing = 8
+
+            passiveContainer.addArrangedSubview(disclosureButton)
+            passiveContainer.addArrangedSubview(passiveScrollView)
+
+            NSLayoutConstraint.activate([
+                passiveScrollView.widthAnchor.constraint(equalToConstant: 380),
+                passiveScrollView.heightAnchor.constraint(equalToConstant: min(CGFloat(results.passiveVoicePhrases.count * 20 + 16), 200)),
+                phrasesStack.leadingAnchor.constraint(equalTo: passiveScrollView.contentView.leadingAnchor, constant: 8),
+                phrasesStack.trailingAnchor.constraint(equalTo: passiveScrollView.contentView.trailingAnchor, constant: -8),
+                phrasesStack.topAnchor.constraint(equalTo: passiveScrollView.contentView.topAnchor, constant: 8)
+            ])
+
+            // Toggle action for disclosure button
+            disclosureButton.target = self
+            passiveDisclosureViews[disclosureButton] = passiveScrollView
+            disclosureButton.action = #selector(togglePassiveVoiceDisclosure(_:))
+
+            stack.addArrangedSubview(passiveContainer)
         } else {
             addSuccess("✓ None detected")
         }
@@ -2821,8 +2909,9 @@ extension AnalysisViewController {
     }
 
     private func createPlotPopoutWindow() -> NSWindow {
+        let theme = ThemeManager.shared.currentTheme
         let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 1000, height: 700),
+            contentRect: NSRect(x: 0, y: 0, width: 1000, height: 900),
             styleMask: [.titled, .closable, .resizable, .miniaturizable],
             backing: .buffered,
             defer: false
@@ -2830,6 +2919,7 @@ extension AnalysisViewController {
         window.title = "📖 Plot Structure Analysis"
         window.isReleasedWhenClosed = false
         window.hidesOnDeactivate = true
+        window.backgroundColor = theme.popoutBackground
 
         let scrollView = NSScrollView()
         scrollView.hasVerticalScroller = true
@@ -2851,6 +2941,7 @@ extension AnalysisViewController {
 
         let header = NSTextField(labelWithString: "Plot Structure Analysis")
         header.font = NSFont.boldSystemFont(ofSize: 18)
+        header.textColor = theme.popoutTextColor
         stack.addArrangedSubview(header)
 
         // Add plot visualization if available
@@ -2862,11 +2953,11 @@ extension AnalysisViewController {
 
             NSLayoutConstraint.activate([
                 plotView.widthAnchor.constraint(equalTo: stack.widthAnchor),
-                plotView.heightAnchor.constraint(greaterThanOrEqualToConstant: 600)
+                plotView.heightAnchor.constraint(greaterThanOrEqualToConstant: 800)
             ])
         } else {
             let info = NSTextField(labelWithString: "Plot structure visualization will appear here\n\nRun an analysis to see plot tension and pacing")
-            info.textColor = .secondaryLabelColor
+            info.textColor = theme.popoutSecondaryColor
             info.maximumNumberOfLines = 0
             stack.addArrangedSubview(info)
         }

@@ -68,6 +68,14 @@ struct PlotTensionChart: View {
     let onPointTap: (Int) -> Void
     let onPopout: () -> Void
 
+    // Theme-aware colors
+    private var primaryTextColor: Color {
+        Color(nsColor: NSColor(calibratedWhite: 0.9, alpha: 1.0))
+    }
+    private var secondaryTextColor: Color {
+        Color(nsColor: NSColor(calibratedWhite: 0.7, alpha: 1.0))
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             // Header with popout
@@ -76,10 +84,11 @@ struct PlotTensionChart: View {
                     Text("Story Tension Arc")
                         .font(.headline)
                         .fontWeight(.semibold)
+                        .foregroundColor(primaryTextColor)
 
                     Text("Tap plot points to jump to location in editor")
                         .font(.caption)
-                        .foregroundColor(.secondary)
+                        .foregroundColor(secondaryTextColor)
                 }
             }
             .padding(.horizontal)
@@ -91,6 +100,7 @@ struct PlotTensionChart: View {
                     Text("Story Structure Score:")
                         .font(.subheadline)
                         .fontWeight(.semibold)
+                        .foregroundColor(primaryTextColor)
                     Text("\(plotAnalysis.structureScore)%")
                         .font(.subheadline)
                         .foregroundColor(scoreColor(plotAnalysis.structureScore))
@@ -109,7 +119,7 @@ struct PlotTensionChart: View {
                     ForEach(plotAnalysis.missingPoints, id: \.self) { pointType in
                         Text("• \(pointType.rawValue)")
                             .font(.caption)
-                            .foregroundColor(.secondary)
+                            .foregroundColor(secondaryTextColor)
                     }
                 }
                 .padding(.horizontal)
@@ -155,7 +165,7 @@ struct PlotTensionChart: View {
                                     .font(.caption)
                                 Text(plotPoint.type.rawValue)
                                     .font(.system(size: 9))
-                                    .foregroundColor(.secondary)
+                                    .foregroundColor(secondaryTextColor)
                                     .lineLimit(2)
                                     .multilineTextAlignment(.center)
                             }
@@ -171,6 +181,7 @@ struct PlotTensionChart: View {
                         AxisValueLabel {
                             if let doubleValue = value.as(Double.self) {
                                 Text("\(Int(doubleValue * 100))%")
+                                    .foregroundColor(secondaryTextColor)
                             }
                         }
                     }
@@ -181,22 +192,23 @@ struct PlotTensionChart: View {
                         AxisValueLabel {
                             if let doubleValue = value.as(Double.self) {
                                 Text("\(Int(doubleValue * 100))%")
+                                    .foregroundColor(secondaryTextColor)
                             }
                         }
                     }
                 }
-                .chartXAxisLabel("Story Progress")
-                .chartYAxisLabel("Tension Level")
+                .chartXAxisLabel("Story Progress", alignment: .center)
+                .chartYAxisLabel("Tension Level", position: .leading)
                 .frame(height: 300)
                 .padding()
             } else {
                 VStack(spacing: 12) {
                     Text("📊 No Plot Data Available")
                         .font(.headline)
-                        .foregroundColor(.secondary)
+                        .foregroundColor(secondaryTextColor)
                     Text("Write more content to see your story's tension arc and plot structure analysis.")
                         .font(.subheadline)
-                        .foregroundColor(.secondary)
+                        .foregroundColor(secondaryTextColor)
                         .multilineTextAlignment(.center)
                 }
                 .frame(height: 200)
@@ -209,6 +221,7 @@ struct PlotTensionChart: View {
                 VStack(alignment: .leading, spacing: 8) {
                     Text("Story Beats")
                         .font(.headline)
+                        .foregroundColor(primaryTextColor)
                         .padding(.horizontal)
 
                     ScrollView {
@@ -241,6 +254,14 @@ struct PlotPointRow: View {
     let plotPoint: PlotPoint
     let onTap: () -> Void
 
+    // Theme-aware colors
+    private var primaryTextColor: Color {
+        Color(nsColor: NSColor(calibratedWhite: 0.9, alpha: 1.0))
+    }
+    private var secondaryTextColor: Color {
+        Color(nsColor: NSColor(calibratedWhite: 0.65, alpha: 1.0))
+    }
+
     var body: some View {
         Button(action: onTap) {
             HStack(spacing: 12) {
@@ -251,10 +272,11 @@ struct PlotPointRow: View {
                     Text(plotPoint.type.rawValue)
                         .font(.subheadline)
                         .fontWeight(.semibold)
+                        .foregroundColor(primaryTextColor)
 
                     Text("At \(Int(plotPoint.percentagePosition * 100))% • Tension: \(Int(plotPoint.tensionLevel * 100))%")
                         .font(.caption)
-                        .foregroundColor(.secondary)
+                        .foregroundColor(secondaryTextColor)
 
                     if let improvement = plotPoint.suggestedImprovement {
                         Text(improvement)
@@ -270,7 +292,7 @@ struct PlotPointRow: View {
             }
             .padding(.vertical, 8)
             .padding(.horizontal, 12)
-            .background(Color.gray.opacity(0.1))
+            .background(Color(nsColor: NSColor(calibratedWhite: 0.25, alpha: 1.0)))
             .cornerRadius(8)
         }
         .buttonStyle(.plain)

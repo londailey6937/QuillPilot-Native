@@ -125,6 +125,34 @@ enum AppTheme: String {
             return NSColor(hex: "#888888") ?? .lightGray
         }
     }
+
+    // Analysis popup colors
+    var popoutTextColor: NSColor {
+        switch self {
+        case .day:
+            return NSColor(calibratedWhite: 0.15, alpha: 1.0)
+        case .night:
+            return NSColor(calibratedWhite: 0.9, alpha: 1.0)
+        }
+    }
+
+    var popoutSecondaryColor: NSColor {
+        switch self {
+        case .day:
+            return NSColor(calibratedWhite: 0.35, alpha: 1.0)
+        case .night:
+            return NSColor(calibratedWhite: 0.7, alpha: 1.0)
+        }
+    }
+
+    var popoutBackground: NSColor {
+        switch self {
+        case .day:
+            return NSColor(hex: "#FFFDF9") ?? .white
+        case .night:
+            return NSColor(hex: "#1F1F1F") ?? .black
+        }
+    }
 }
 
 class ThemeManager {

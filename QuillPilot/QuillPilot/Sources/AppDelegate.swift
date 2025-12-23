@@ -22,131 +22,125 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    /// Creates the QuillPilot app icon programmatically
+    /// Creates the QuillPilot app icon programmatically using feather.png
     private func createAppIcon() -> NSImage {
         let size = NSSize(width: 512, height: 512)
         let image = NSImage(size: size)
 
         image.lockFocus()
 
-        // Background - warm cream color
+        // Background - warm cream color with smaller corner radius to match dock icons
         let bgColor = NSColor(red: 0.97, green: 0.90, blue: 0.82, alpha: 1.0)
         bgColor.setFill()
-        NSBezierPath(roundedRect: NSRect(origin: .zero, size: size), xRadius: 80, yRadius: 80).fill()
+        // 64pt radius at 512px = 12.5% of size, matches macOS dock icon styling
+        NSBezierPath(roundedRect: NSRect(origin: .zero, size: size), xRadius: 64, yRadius: 64).fill()
 
-        // Orange accent color
-        let accentColor = NSColor(red: 0.94, green: 0.52, blue: 0.20, alpha: 1.0)
-
-        // Dark color for details
-        let darkColor = NSColor(red: 0.17, green: 0.24, blue: 0.31, alpha: 1.0)
-
-        // Draw outer hexagon frame
-        let hexPath = NSBezierPath()
-        let cx: CGFloat = 256, cy: CGFloat = 256
-        let outerRadius: CGFloat = 180
-        for i in 0..<6 {
-            let angle = CGFloat(i) * .pi / 3 - .pi / 2
-            let x = cx + outerRadius * cos(angle)
-            let y = cy + outerRadius * sin(angle)
-            if i == 0 {
-                hexPath.move(to: NSPoint(x: x, y: y))
-            } else {
-                hexPath.line(to: NSPoint(x: x, y: y))
-            }
+        // Try to load and draw feather.png
+        let featherImage: NSImage?
+        if let bundleImage = NSImage(named: "FeatherLogo") {
+            featherImage = bundleImage
+        } else if let bundleImage = Bundle.main.image(forResource: "feather") {
+            featherImage = bundleImage
+        } else {
+            let path = "/Users/londailey/QuillPilot/QuillPilot/QuillPilot/Assets.xcassets/FeatherLogo.imageset/feather.png"
+            featherImage = NSImage(contentsOfFile: path)
         }
-        hexPath.close()
-        accentColor.withAlphaComponent(0.8).setStroke()
-        hexPath.lineWidth = 6
-        hexPath.stroke()
 
-        // Draw inner hexagon
-        let innerHex = NSBezierPath()
-        let innerRadius: CGFloat = 120
-        for i in 0..<6 {
-            let angle = CGFloat(i) * .pi / 3 - .pi / 2
-            let x = cx + innerRadius * cos(angle)
-            let y = cy + innerRadius * sin(angle)
-            if i == 0 {
-                innerHex.move(to: NSPoint(x: x, y: y))
-            } else {
-                innerHex.line(to: NSPoint(x: x, y: y))
-            }
-        }
-        innerHex.close()
-        darkColor.withAlphaComponent(0.6).setStroke()
-        innerHex.lineWidth = 4
-        innerHex.stroke()
+        if let feather = featherImage {
+            // Make black transparent
+            let processedFeather = makeBlackTransparentForIcon(in: feather)
+            // Draw feather large to fill dock icon with minimal padding
+            let featherSize: CGFloat = 380
+            let featherRect = NSRect(
+                x: (size.width - featherSize) / 2,
+                y: (size.height - featherSize) / 2,
+                width: featherSize,
+                height: featherSize
+            )
+            processedFeather.draw(in: featherRect, from: .zero, operation: .sourceOver, fraction: 1.0)
+        } else {
+            // Fallback: draw simple quill shape
+            let accentColor = NSColor(red: 0.94, green: 0.52, blue: 0.20, alpha: 1.0)
+            let darkColor = NSColor(red: 0.17, green: 0.24, blue: 0.31, alpha: 1.0)
 
-        // Draw stylized quill/pen
-        let quillPath = NSBezierPath()
-        quillPath.move(to: NSPoint(x: 200, y: 320))
-        quillPath.curve(to: NSPoint(x: 320, y: 180),
-                       controlPoint1: NSPoint(x: 220, y: 280),
-                       controlPoint2: NSPoint(x: 280, y: 220))
-        quillPath.line(to: NSPoint(x: 330, y: 170))
-        quillPath.curve(to: NSPoint(x: 190, y: 330),
-                       controlPoint1: NSPoint(x: 290, y: 230),
-                       controlPoint2: NSPoint(x: 230, y: 290))
-        quillPath.close()
-        accentColor.setFill()
-        quillPath.fill()
-
-        // Quill tip
-        let tipPath = NSBezierPath()
-        tipPath.move(to: NSPoint(x: 320, y: 180))
-        tipPath.line(to: NSPoint(x: 350, y: 145))
-        tipPath.line(to: NSPoint(x: 330, y: 170))
-        tipPath.close()
-        darkColor.setFill()
-        tipPath.fill()
-
-        // Neural network dots
-        let dotPositions: [(CGFloat, CGFloat)] = [
-            (256, 320), (200, 280), (312, 280),
-            (180, 220), (256, 240), (332, 220),
-            (200, 180), (312, 180)
-        ]
-
-        for (x, y) in dotPositions {
-            let dotRect = NSRect(x: x - 8, y: y - 8, width: 16, height: 16)
-            let dot = NSBezierPath(ovalIn: dotRect)
+            let quillPath = NSBezierPath()
+            quillPath.move(to: NSPoint(x: 200, y: 320))
+            quillPath.curve(to: NSPoint(x: 320, y: 180),
+                           controlPoint1: NSPoint(x: 220, y: 280),
+                           controlPoint2: NSPoint(x: 280, y: 220))
+            quillPath.line(to: NSPoint(x: 330, y: 170))
+            quillPath.curve(to: NSPoint(x: 190, y: 330),
+                           controlPoint1: NSPoint(x: 290, y: 230),
+                           controlPoint2: NSPoint(x: 230, y: 290))
+            quillPath.close()
             accentColor.setFill()
-            dot.fill()
+            quillPath.fill()
+
+            let tipPath = NSBezierPath()
+            tipPath.move(to: NSPoint(x: 320, y: 180))
+            tipPath.line(to: NSPoint(x: 350, y: 145))
+            tipPath.line(to: NSPoint(x: 330, y: 170))
+            tipPath.close()
+            darkColor.setFill()
+            tipPath.fill()
         }
-
-        // Connection lines between dots
-        darkColor.withAlphaComponent(0.4).setStroke()
-        let linePath = NSBezierPath()
-        linePath.lineWidth = 2
-
-        // Horizontal connections
-        linePath.move(to: NSPoint(x: 200, y: 280))
-        linePath.line(to: NSPoint(x: 312, y: 280))
-
-        linePath.move(to: NSPoint(x: 180, y: 220))
-        linePath.line(to: NSPoint(x: 332, y: 220))
-
-        linePath.move(to: NSPoint(x: 200, y: 180))
-        linePath.line(to: NSPoint(x: 312, y: 180))
-
-        // Diagonal connections
-        linePath.move(to: NSPoint(x: 200, y: 280))
-        linePath.line(to: NSPoint(x: 256, y: 240))
-
-        linePath.move(to: NSPoint(x: 312, y: 280))
-        linePath.line(to: NSPoint(x: 256, y: 240))
-
-        linePath.move(to: NSPoint(x: 256, y: 240))
-        linePath.line(to: NSPoint(x: 180, y: 220))
-
-        linePath.move(to: NSPoint(x: 256, y: 240))
-        linePath.line(to: NSPoint(x: 332, y: 220))
-
-        linePath.stroke()
 
         image.unlockFocus()
 
         return image
+    }
+
+    private func makeBlackTransparentForIcon(in image: NSImage) -> NSImage {
+        guard let cgImage = image.cgImage(forProposedRect: nil, context: nil, hints: nil) else {
+            return image
+        }
+
+        let width = cgImage.width
+        let height = cgImage.height
+        let colorSpace = CGColorSpaceCreateDeviceRGB()
+        let bytesPerPixel = 4
+        let bytesPerRow = bytesPerPixel * width
+        let bitsPerComponent = 8
+
+        guard let context = CGContext(
+            data: nil,
+            width: width,
+            height: height,
+            bitsPerComponent: bitsPerComponent,
+            bytesPerRow: bytesPerRow,
+            space: colorSpace,
+            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+        ) else {
+            return image
+        }
+
+        context.draw(cgImage, in: CGRect(x: 0, y: 0, width: width, height: height))
+
+        guard let pixelBuffer = context.data else {
+            return image
+        }
+
+        let pixels = pixelBuffer.bindMemory(to: UInt8.self, capacity: width * height * bytesPerPixel)
+
+        for y in 0..<height {
+            for x in 0..<width {
+                let offset = (y * width + x) * bytesPerPixel
+                let r = pixels[offset]
+                let g = pixels[offset + 1]
+                let b = pixels[offset + 2]
+
+                let threshold: UInt8 = 50
+                if r < threshold && g < threshold && b < threshold {
+                    pixels[offset + 3] = 0
+                }
+            }
+        }
+
+        guard let processedCGImage = context.makeImage() else {
+            return image
+        }
+
+        return NSImage(cgImage: processedCGImage, size: NSSize(width: width, height: height))
     }
 
     func applicationDidBecomeActive(_ notification: Notification) {

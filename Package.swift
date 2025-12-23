@@ -56,7 +56,9 @@ let package = Package(
                 "Views/InternalExternalAlignmentView.swift",
                 "Views/LanguageDriftAnalysisView.swift",
                 "Views/ThematicResonanceMapView.swift",
-                "Views/FailurePatternChartView.swift"
+                "Views/FailurePatternChartView.swift",
+                "Views/DecisionBeliefLoopView.swift",
+                "Views/CharacterPresenceView.swift"
             ]
         )
     ]

@@ -1490,29 +1490,12 @@ extension AnalysisViewController {
         window.backgroundColor = theme.pageBackground
         window.appearance = NSAppearance(named: isDarkMode ? .darkAqua : .aqua)
 
-        let hostingView = NSHostingView(
-            rootView: DecisionBeliefLoopFullView(
-                loops: loops,
-                textColor: Color(theme.textColor),
-                backgroundColor: Color(theme.pageBackground)
-            )
-        )
-        hostingView.translatesAutoresizingMaskIntoConstraints = false
+        // Use AppKit view for proper theme support
+        let decisionBeliefView = DecisionBeliefLoopView(frame: window.contentView!.bounds)
+        decisionBeliefView.autoresizingMask = [.width, .height]
+        decisionBeliefView.setLoops(loops)
 
-        let container = NSView()
-        container.translatesAutoresizingMaskIntoConstraints = false
-        container.wantsLayer = true
-        container.layer?.backgroundColor = theme.pageBackground.cgColor
-        container.addSubview(hostingView)
-
-        NSLayoutConstraint.activate([
-            hostingView.topAnchor.constraint(equalTo: container.topAnchor, constant: 12),
-            hostingView.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 12),
-            hostingView.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -12),
-            hostingView.bottomAnchor.constraint(equalTo: container.bottomAnchor, constant: -12)
-        ])
-
-        window.contentView = container
+        window.contentView = decisionBeliefView
         window.center()
         window.makeKeyAndOrderFront(nil)
 
@@ -2369,29 +2352,12 @@ extension AnalysisViewController {
         window.backgroundColor = theme.pageBackground
         window.appearance = NSAppearance(named: isDarkMode ? .darkAqua : .aqua)
 
-        let hostingView = NSHostingView(
-            rootView: CharacterPresenceBarChart(
-                presence: presence,
-                textColor: Color(theme.textColor),
-                backgroundColor: Color(theme.pageBackground)
-            )
-        )
-        hostingView.translatesAutoresizingMaskIntoConstraints = false
+        // Use AppKit view for proper theme support
+        let presenceView = CharacterPresenceView(frame: window.contentView!.bounds)
+        presenceView.autoresizingMask = [.width, .height]
+        presenceView.setPresence(presence)
 
-        let container = NSView()
-        container.translatesAutoresizingMaskIntoConstraints = false
-        container.wantsLayer = true
-        container.layer?.backgroundColor = theme.pageBackground.cgColor
-        container.addSubview(hostingView)
-
-        NSLayoutConstraint.activate([
-            hostingView.topAnchor.constraint(equalTo: container.topAnchor, constant: 12),
-            hostingView.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 12),
-            hostingView.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -12),
-            hostingView.bottomAnchor.constraint(equalTo: container.bottomAnchor, constant: -12)
-        ])
-
-        window.contentView = container
+        window.contentView = presenceView
         window.center()
         window.makeKeyAndOrderFront(nil)
 
@@ -2405,6 +2371,7 @@ extension AnalysisViewController {
             self?.presencePopoutWindow = nil
         }
     }
+
 
     // MARK: - Analysis Popout Windows
 
@@ -3017,7 +2984,7 @@ extension AnalysisViewController {
             openDecisionBeliefPopout(loops: results.decisionBeliefLoops)
         } else {
             analyzeCallback?()
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) { [weak self] in
+            DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) { [weak self] in
                 if let results = self?.latestAnalysisResults {
                     self?.openDecisionBeliefPopout(loops: results.decisionBeliefLoops)
                 }
@@ -3030,7 +2997,7 @@ extension AnalysisViewController {
             openBeliefShiftMatrixPopout(matrices: results.beliefShiftMatrices)
         } else {
             analyzeCallback?()
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) { [weak self] in
+            DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) { [weak self] in
                 if let results = self?.latestAnalysisResults {
                     self?.openBeliefShiftMatrixPopout(matrices: results.beliefShiftMatrices)
                 }
@@ -3043,7 +3010,7 @@ extension AnalysisViewController {
             openDecisionConsequenceChainsPopout(chains: results.decisionConsequenceChains)
         } else {
             analyzeCallback?()
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) { [weak self] in
+            DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) { [weak self] in
                 if let results = self?.latestAnalysisResults {
                     self?.openDecisionConsequenceChainsPopout(chains: results.decisionConsequenceChains)
                 }
@@ -3056,7 +3023,7 @@ extension AnalysisViewController {
             openInteractionsPopout(interactions: results.characterInteractions)
         } else {
             analyzeCallback?()
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) { [weak self] in
+            DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) { [weak self] in
                 if let results = self?.latestAnalysisResults {
                     self?.openInteractionsPopout(interactions: results.characterInteractions)
                 }
@@ -3069,7 +3036,7 @@ extension AnalysisViewController {
             openPresencePopout(presence: results.characterPresence)
         } else {
             analyzeCallback?()
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) { [weak self] in
+            DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) { [weak self] in
                 if let results = self?.latestAnalysisResults {
                     self?.openPresencePopout(presence: results.characterPresence)
                 }
@@ -3082,7 +3049,7 @@ extension AnalysisViewController {
             openRelationshipEvolutionMapPopout(evolutionData: results.relationshipEvolutionData)
         } else {
             analyzeCallback?()
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) { [weak self] in
+            DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) { [weak self] in
                 if let results = self?.latestAnalysisResults {
                     self?.openRelationshipEvolutionMapPopout(evolutionData: results.relationshipEvolutionData)
                 }
@@ -3095,7 +3062,7 @@ extension AnalysisViewController {
             openInternalExternalAlignmentPopout(alignmentData: results.internalExternalAlignment)
         } else {
             analyzeCallback?()
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) { [weak self] in
+            DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) { [weak self] in
                 if let results = self?.latestAnalysisResults {
                     self?.openInternalExternalAlignmentPopout(alignmentData: results.internalExternalAlignment)
                 }
@@ -3108,7 +3075,7 @@ extension AnalysisViewController {
             openLanguageDriftPopout(driftData: results.languageDriftData)
         } else {
             analyzeCallback?()
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) { [weak self] in
+            DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) { [weak self] in
                 if let results = self?.latestAnalysisResults {
                     self?.openLanguageDriftPopout(driftData: results.languageDriftData)
                 }
@@ -3129,7 +3096,7 @@ extension AnalysisViewController {
             openEmotionalTrajectoryPopout(results: results)
         } else {
             analyzeCallback?()
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) { [weak self] in
+            DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) { [weak self] in
                 if let results = self?.latestAnalysisResults {
                     self?.openEmotionalTrajectoryPopout(results: results)
                 }

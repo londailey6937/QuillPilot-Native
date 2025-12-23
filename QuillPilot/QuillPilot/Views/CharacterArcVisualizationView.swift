@@ -364,6 +364,7 @@ struct CharacterPresenceBarChart: View {
                         }
                         .frame(width: max(CGFloat(chapters.count) * 90, geometry.size.width), height: 280)
                     }
+                    .scrollContentBackground(.hidden)
                 }
                 .frame(height: 320)
             }
@@ -643,6 +644,7 @@ struct DecisionBeliefLoopFullView: View {
             }
             .padding()
         }
+        .scrollContentBackground(.hidden)
         .background(backgroundColor)
     }
 

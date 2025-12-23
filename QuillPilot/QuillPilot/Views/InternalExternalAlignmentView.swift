@@ -69,7 +69,7 @@ class InternalExternalAlignmentView: NSView {
 
         let padding: CGFloat = 60
         let topPadding: CGFloat = 50
-        let bottomPadding: CGFloat = 100
+        let bottomPadding: CGFloat = 150
         let chartWidth = bounds.width - (padding * 2)
         let chartHeight = bounds.height - topPadding - bottomPadding
         let chartRect = NSRect(x: padding, y: bottomPadding, width: chartWidth, height: chartHeight)

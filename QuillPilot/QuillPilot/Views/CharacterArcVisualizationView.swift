@@ -291,6 +291,7 @@ struct CharacterPresenceDataPoint: Identifiable {
 @available(macOS 13.0, *)
 struct CharacterPresenceBarChart: View {
     let presence: [CharacterPresence]
+    @Environment(\.colorScheme) var colorScheme
 
     private var dataPoints: [CharacterPresenceDataPoint] {
         let points = presence.flatMap { entry in
@@ -360,13 +361,14 @@ struct CharacterPresenceBarChart: View {
 @available(macOS 13.0, *)
 struct DecisionBeliefLoopFullView: View {
     let loops: [DecisionBeliefLoop]
+    @Environment(\.colorScheme) var colorScheme
 
     private var textColor: Color {
-        Color(ThemeManager.shared.currentTheme.textColor)
+        colorScheme == .dark ? Color.white : Color.black
     }
 
     private var backgroundColor: Color {
-        Color(ThemeManager.shared.currentTheme.pageBackground)
+        colorScheme == .dark ? Color(red: 0.11, green: 0.11, blue: 0.12) : Color.white
     }
 
     var body: some View {

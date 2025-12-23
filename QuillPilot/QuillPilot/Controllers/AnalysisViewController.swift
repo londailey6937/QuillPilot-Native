@@ -1670,13 +1670,13 @@ extension AnalysisViewController {
         alignmentChartPopoutWindow = nil
 
         let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 1000, height: 650),
+            contentRect: NSRect(x: 0, y: 0, width: 1000, height: 800),
             styleMask: [.titled, .closable, .resizable, .miniaturizable],
             backing: .buffered,
             defer: false
         )
         window.title = "Internal vs External Alignment Charts"
-        window.minSize = NSSize(width: 800, height: 500)
+        window.minSize = NSSize(width: 800, height: 700)
         window.isReleasedWhenClosed = false
         window.delegate = autoCloseDelegate
 

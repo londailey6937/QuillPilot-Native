@@ -3015,36 +3015,78 @@ extension AnalysisViewController {
     @objc private func showDecisionBeliefLoops() {
         if let results = latestAnalysisResults {
             openDecisionBeliefPopout(loops: results.decisionBeliefLoops)
+        } else {
+            analyzeCallback?()
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) { [weak self] in
+                if let results = self?.latestAnalysisResults {
+                    self?.openDecisionBeliefPopout(loops: results.decisionBeliefLoops)
+                }
+            }
         }
     }
 
     @objc private func showBeliefShiftMatrix() {
         if let results = latestAnalysisResults {
             openBeliefShiftMatrixPopout(matrices: results.beliefShiftMatrices)
+        } else {
+            analyzeCallback?()
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) { [weak self] in
+                if let results = self?.latestAnalysisResults {
+                    self?.openBeliefShiftMatrixPopout(matrices: results.beliefShiftMatrices)
+                }
+            }
         }
     }
 
     @objc private func showDecisionConsequenceChains() {
         if let results = latestAnalysisResults {
             openDecisionConsequenceChainsPopout(chains: results.decisionConsequenceChains)
+        } else {
+            analyzeCallback?()
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) { [weak self] in
+                if let results = self?.latestAnalysisResults {
+                    self?.openDecisionConsequenceChainsPopout(chains: results.decisionConsequenceChains)
+                }
+            }
         }
     }
 
     @objc private func showInteractions() {
         if let results = latestAnalysisResults {
             openInteractionsPopout(interactions: results.characterInteractions)
+        } else {
+            analyzeCallback?()
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) { [weak self] in
+                if let results = self?.latestAnalysisResults {
+                    self?.openInteractionsPopout(interactions: results.characterInteractions)
+                }
+            }
         }
     }
 
     @objc private func showPresence() {
         if let results = latestAnalysisResults {
             openPresencePopout(presence: results.characterPresence)
+        } else {
+            analyzeCallback?()
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) { [weak self] in
+                if let results = self?.latestAnalysisResults {
+                    self?.openPresencePopout(presence: results.characterPresence)
+                }
+            }
         }
     }
 
     @objc private func showRelationshipEvolutionMaps() {
         if let results = latestAnalysisResults {
             openRelationshipEvolutionMapPopout(evolutionData: results.relationshipEvolutionData)
+        } else {
+            analyzeCallback?()
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) { [weak self] in
+                if let results = self?.latestAnalysisResults {
+                    self?.openRelationshipEvolutionMapPopout(evolutionData: results.relationshipEvolutionData)
+                }
+            }
         }
     }
 
@@ -3052,7 +3094,6 @@ extension AnalysisViewController {
         if let results = latestAnalysisResults {
             openInternalExternalAlignmentPopout(alignmentData: results.internalExternalAlignment)
         } else {
-            // Trigger analysis first
             analyzeCallback?()
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) { [weak self] in
                 if let results = self?.latestAnalysisResults {
@@ -3066,7 +3107,6 @@ extension AnalysisViewController {
         if let results = latestAnalysisResults {
             openLanguageDriftPopout(driftData: results.languageDriftData)
         } else {
-            // Trigger analysis first
             analyzeCallback?()
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) { [weak self] in
                 if let results = self?.latestAnalysisResults {
@@ -3087,6 +3127,13 @@ extension AnalysisViewController {
     @objc private func showEmotionalTrajectory() {
         if let results = latestAnalysisResults {
             openEmotionalTrajectoryPopout(results: results)
+        } else {
+            analyzeCallback?()
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) { [weak self] in
+                if let results = self?.latestAnalysisResults {
+                    self?.openEmotionalTrajectoryPopout(results: results)
+                }
+            }
         }
     }
 

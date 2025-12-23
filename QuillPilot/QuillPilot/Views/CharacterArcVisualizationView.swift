@@ -291,7 +291,8 @@ struct CharacterPresenceDataPoint: Identifiable {
 @available(macOS 13.0, *)
 struct CharacterPresenceBarChart: View {
     let presence: [CharacterPresence]
-    @Environment(\.colorScheme) var colorScheme
+    var textColor: Color = Color(ThemeManager.shared.currentTheme.textColor)
+    var backgroundColor: Color = Color(ThemeManager.shared.currentTheme.pageBackground)
 
     private var dataPoints: [CharacterPresenceDataPoint] {
         let points = presence.flatMap { entry in
@@ -336,22 +337,30 @@ struct CharacterPresenceBarChart: View {
                             if point.mentions > 0 {
                                 Text("\(point.mentions)")
                                     .font(.caption2)
-                                    .foregroundColor(.secondary)
+                                    .foregroundColor(textColor.opacity(0.6))
                             }
                         }
                     }
-                    .chartXAxisLabel("Chapter")
+                    .chartXAxisLabel("Chapter", alignment: .center)
                     .chartYAxisLabel("Mentions")
                     .chartXAxis {
-                        AxisMarks(values: chapters.map { "Ch \($0)" })
+                        AxisMarks(values: chapters.map { "Ch \($0)" }) { _ in
+                            AxisValueLabel()
+                                .foregroundStyle(textColor)
+                        }
                     }
                     .chartYAxis {
-                        AxisMarks(position: .leading)
+                        AxisMarks(position: .leading) { _ in
+                            AxisGridLine()
+                            AxisValueLabel()
+                                .foregroundStyle(textColor)
+                        }
                     }
                     .frame(width: max(CGFloat(chapters.count) * 90, geometry.size.width), height: 280)
                 }
             }
             .frame(height: 320)
+            .background(backgroundColor)
         }
     }
 }
@@ -361,15 +370,8 @@ struct CharacterPresenceBarChart: View {
 @available(macOS 13.0, *)
 struct DecisionBeliefLoopFullView: View {
     let loops: [DecisionBeliefLoop]
-    @Environment(\.colorScheme) var colorScheme
-
-    private var textColor: Color {
-        colorScheme == .dark ? Color.white : Color.black
-    }
-
-    private var backgroundColor: Color {
-        colorScheme == .dark ? Color(red: 0.11, green: 0.11, blue: 0.12) : Color.white
-    }
+    var textColor: Color = Color(ThemeManager.shared.currentTheme.textColor)
+    var backgroundColor: Color = Color(ThemeManager.shared.currentTheme.pageBackground)
 
     var body: some View {
         ScrollView {

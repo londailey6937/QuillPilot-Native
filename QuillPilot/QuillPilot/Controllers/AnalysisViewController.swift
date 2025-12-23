@@ -1491,8 +1491,11 @@ extension AnalysisViewController {
         window.appearance = NSAppearance(named: isDarkMode ? .darkAqua : .aqua)
 
         let hostingView = NSHostingView(
-            rootView: DecisionBeliefLoopFullView(loops: loops)
-                .preferredColorScheme(isDarkMode ? .dark : .light)
+            rootView: DecisionBeliefLoopFullView(
+                loops: loops,
+                textColor: Color(theme.textColor),
+                backgroundColor: Color(theme.pageBackground)
+            )
         )
         hostingView.translatesAutoresizingMaskIntoConstraints = false
 
@@ -2367,8 +2370,11 @@ extension AnalysisViewController {
         window.appearance = NSAppearance(named: isDarkMode ? .darkAqua : .aqua)
 
         let hostingView = NSHostingView(
-            rootView: CharacterPresenceBarChart(presence: presence)
-                .preferredColorScheme(isDarkMode ? .dark : .light)
+            rootView: CharacterPresenceBarChart(
+                presence: presence,
+                textColor: Color(theme.textColor),
+                backgroundColor: Color(theme.pageBackground)
+            )
         )
         hostingView.translatesAutoresizingMaskIntoConstraints = false
 

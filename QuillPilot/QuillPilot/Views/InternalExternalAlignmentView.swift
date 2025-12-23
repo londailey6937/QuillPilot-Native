@@ -394,8 +394,9 @@ class InternalExternalAlignmentView: NSView {
     }
 
     private func drawUseCases(textColor: NSColor) {
-        let useCaseX: CGFloat = 20
-        let useCaseY: CGFloat = 70
+        // Position below the legend on the right side
+        let useCaseX: CGFloat = bounds.width - 200
+        let useCaseY: CGFloat = bounds.height - 220
 
         let titleAttr: [NSAttributedString.Key: Any] = [
             .font: NSFont.boldSystemFont(ofSize: 9),

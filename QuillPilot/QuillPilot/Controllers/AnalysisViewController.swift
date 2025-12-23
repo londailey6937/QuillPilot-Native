@@ -58,6 +58,7 @@ class AnalysisViewController: NSViewController {
     private var alignmentChartPopoutWindow: NSWindow?
     private var languageDriftPopoutWindow: NSWindow?
     private var thematicResonanceMapPopoutWindow: NSWindow?
+    private var failurePatternChartPopoutWindow: NSWindow?
 
     // Window delegate for auto-closing popouts
     private let autoCloseDelegate = AutoCloseWindowDelegate()
@@ -1913,6 +1914,224 @@ extension AnalysisViewController {
         }
     }
 
+    func openFailurePatternChartsPopout() {
+        // Close existing window if open
+        failurePatternChartPopoutWindow?.close()
+        failurePatternChartPopoutWindow = nil
+
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 1000, height: 650),
+            styleMask: [.titled, .closable, .resizable, .miniaturizable],
+            backing: .buffered,
+            defer: false
+        )
+        window.title = "Failure Pattern Charts"
+        window.minSize = NSSize(width: 800, height: 500)
+        window.isReleasedWhenClosed = false
+        window.delegate = autoCloseDelegate
+
+        // Set window appearance to match the current theme
+        let isDarkMode = ThemeManager.shared.isDarkMode
+        window.appearance = NSAppearance(named: isDarkMode ? .darkAqua : .aqua)
+
+        // Create custom view
+        let chartView = FailurePatternChartView(frame: window.contentView!.bounds)
+        chartView.autoresizingMask = [.width, .height]
+
+        // Generate failure pattern data based on characters
+        let patterns = generateFailurePatterns()
+        chartView.setFailureData(patterns)
+
+        // Create container
+        let container = NSView(frame: window.contentView!.bounds)
+        container.autoresizingMask = [.width, .height]
+        container.wantsLayer = true
+        container.layer?.backgroundColor = currentTheme.pageAround.cgColor
+        container.addSubview(chartView)
+
+        window.contentView = container
+        window.center()
+        window.makeKeyAndOrderFront(nil)
+
+        // Store window reference and set up cleanup
+        failurePatternChartPopoutWindow = window
+        NotificationCenter.default.addObserver(
+            forName: NSWindow.willCloseNotification,
+            object: window,
+            queue: .main
+        ) { [weak self] _ in
+            self?.failurePatternChartPopoutWindow = nil
+        }
+    }
+
+    private func generateFailurePatterns() -> [FailurePatternChartView.CharacterFailurePattern] {
+        // Colors for different characters
+        let colors: [NSColor] = [.systemPurple, .systemTeal, .systemOrange, .systemPink, .systemIndigo, .systemGreen]
+
+        var patterns: [FailurePatternChartView.CharacterFailurePattern] = []
+
+        // Use character library if available
+        let library = CharacterLibrary.shared
+        if !library.characters.isEmpty {
+            for (index, character) in library.characters.prefix(6).enumerated() {
+                let failures = generateFailuresForCharacter(characterName: character.displayName, index: index)
+                let progression = determineFailureProgression(failures: failures)
+
+                let pattern = FailurePatternChartView.CharacterFailurePattern(
+                    characterName: character.displayName,
+                    color: colors[index % colors.count],
+                    failures: failures,
+                    progression: progression
+                )
+                patterns.append(pattern)
+            }
+        } else {
+            // Default sample data if no characters
+            let defaultCharacters = ["Alex", "Allison", "Raymond", "Kessler"]
+            for (index, name) in defaultCharacters.enumerated() {
+                let failures = generateFailuresForCharacter(characterName: name, index: index)
+                let progression = determineFailureProgression(failures: failures)
+
+                let pattern = FailurePatternChartView.CharacterFailurePattern(
+                    characterName: name,
+                    color: colors[index % colors.count],
+                    failures: failures,
+                    progression: progression
+                )
+                patterns.append(pattern)
+            }
+        }
+
+        return patterns
+    }
+
+    private func generateFailuresForCharacter(characterName: String, index: Int) -> [FailurePatternChartView.Failure] {
+        var failures: [FailurePatternChartView.Failure] = []
+
+        // Generate failures for chapters 2, 5, 8, 11, 14
+        let chapters = [2, 5, 8, 11, 14]
+
+        for (chapterIndex, chapter) in chapters.enumerated() {
+            let progress = Double(chapterIndex) / Double(chapters.count - 1)
+
+            // Different patterns for different characters
+            let failureType: FailurePatternChartView.FailureType
+            let growthScore: Double
+            let description: String
+            let consequence: String
+
+            switch index {
+            case 0: // Protagonist - evolves from naive to principled
+                if chapterIndex == 0 {
+                    failureType = .naive
+                    growthScore = 0.2
+                    description = "Trusts wrong person, reveals operation"
+                    consequence = "Team compromised, trust broken"
+                } else if chapterIndex == 1 {
+                    failureType = .reactive
+                    growthScore = 0.3
+                    description = "Acts without thinking, blows cover"
+                    consequence = "Mission delayed, partner injured"
+                } else if chapterIndex == 2 {
+                    failureType = .misinformed
+                    growthScore = 0.45
+                    description = "Acts on false intel"
+                    consequence = "Wrong target confronted"
+                } else if chapterIndex == 3 {
+                    failureType = .strategic
+                    growthScore = 0.7
+                    description = "Calculated risk that doesn't pay off"
+                    consequence = "Asset lost but learns from it"
+                } else {
+                    failureType = .principled
+                    growthScore = 0.85
+                    description = "Refuses unethical order"
+                    consequence = "Career at risk but integrity intact"
+                }
+
+            case 1: // Ally - starts reactive, becomes strategic
+                if chapterIndex < 2 {
+                    failureType = .reactive
+                    growthScore = 0.25 + (progress * 0.15)
+                    description = "Impulsive decision"
+                    consequence = "Minor setback"
+                } else if chapterIndex == 2 {
+                    failureType = .misinformed
+                    growthScore = 0.5
+                    description = "Misread situation"
+                    consequence = "Relationship strain"
+                } else {
+                    failureType = .strategic
+                    growthScore = 0.65 + (progress * 0.15)
+                    description = "Tactical gamble"
+                    consequence = "Short-term loss, long-term gain"
+                }
+
+            case 2: // Antagonist - strategic failures that escalate
+                if chapterIndex < 2 {
+                    failureType = .strategic
+                    growthScore = 0.4
+                    description = "Underestimates opposition"
+                    consequence = "Plan partially foiled"
+                } else {
+                    failureType = .costlyChosen
+                    growthScore = 0.5 + (progress * 0.2)
+                    description = "Sacrifices ally for goal"
+                    consequence = "More isolated but closer to objective"
+                }
+
+            case 3: // Mentor - costly failures throughout
+                if chapterIndex == 0 {
+                    failureType = .naive
+                    growthScore = 0.3
+                    description = "Old mistake haunts them"
+                    consequence = "Past comes back"
+                } else {
+                    failureType = .costlyChosen
+                    growthScore = 0.6 + (progress * 0.25)
+                    description = "Protects protagonist at personal cost"
+                    consequence = "Reputation/health damaged"
+                }
+
+            default:
+                failureType = .reactive
+                growthScore = 0.3 + (progress * 0.4)
+                description = "Generic failure"
+                consequence = "Generic consequence"
+            }
+
+            let failure = FailurePatternChartView.Failure(
+                chapter: chapter,
+                type: failureType,
+                description: description,
+                consequence: consequence,
+                growthScore: growthScore
+            )
+            failures.append(failure)
+        }
+
+        return failures
+    }
+
+    private func determineFailureProgression(failures: [FailurePatternChartView.Failure]) -> FailurePatternChartView.FailureProgression {
+        guard failures.count >= 2 else { return .stagnant }
+
+        let firstGrowth = failures.first!.growthScore
+        let lastGrowth = failures.last!.growthScore
+        let improvement = lastGrowth - firstGrowth
+
+        // Check if failures are getting "better" (higher growth score)
+        if improvement < 0.1 {
+            return .stagnant
+        } else if improvement < 0.3 {
+            return .emerging
+        } else if improvement < 0.5 {
+            return .transforming
+        } else {
+            return .evolved
+        }
+    }
+
     private func getStoryThemeText() -> String {
         // Always load from persistent storage - ensures consistency across sessions
         return ThemeWindowController.getCurrentTheme()
@@ -2802,6 +3021,10 @@ extension AnalysisViewController {
         thematicResonanceItem.target = self
         menu.addItem(thematicResonanceItem)
 
+        let failurePatternItem = NSMenuItem(title: "📉 Failure Pattern Charts", action: #selector(showFailurePatternCharts), keyEquivalent: "")
+        failurePatternItem.target = self
+        menu.addItem(failurePatternItem)
+
         let interactionsItem = NSMenuItem(title: "🤝 Character Interactions", action: #selector(showInteractions), keyEquivalent: "")
         interactionsItem.target = self
         menu.addItem(interactionsItem)
@@ -2879,6 +3102,10 @@ extension AnalysisViewController {
 
     @objc private func showThematicResonanceMap() {
         openThematicResonanceMapPopout()
+    }
+
+    @objc private func showFailurePatternCharts() {
+        openFailurePatternChartsPopout()
     }
 
     @objc private func showEmotionalTrajectory() {

@@ -55,6 +55,8 @@ class AnalysisViewController: NSViewController {
     private var beliefShiftMatrixPopoutWindow: NSWindow?
     private var decisionConsequenceChainPopoutWindow: NSWindow?
     private var relationshipMapPopoutWindow: NSWindow?
+    private var alignmentChartPopoutWindow: NSWindow?
+    private var languageDriftPopoutWindow: NSWindow?
 
     // Window delegate for auto-closing popouts
     private let autoCloseDelegate = AutoCloseWindowDelegate()
@@ -1611,7 +1613,7 @@ extension AnalysisViewController: CharacterArcVisualizationDelegate {
         window.title = "Relationship Evolution Maps"
         window.minSize = NSSize(width: 900, height: 600)
         window.isReleasedWhenClosed = false
-        window.hidesOnDeactivate = true
+        window.delegate = autoCloseDelegate
 
         // Set window appearance to match the current theme
         let isDarkMode = ThemeManager.shared.isDarkMode
@@ -1679,6 +1681,165 @@ extension AnalysisViewController: CharacterArcVisualizationDelegate {
             queue: .main
         ) { [weak self] _ in
             self?.relationshipMapPopoutWindow = nil
+        }
+    }
+
+    func openInternalExternalAlignmentPopout(alignmentData: InternalExternalAlignmentData) {
+        // Close existing window if open
+        alignmentChartPopoutWindow?.close()
+        alignmentChartPopoutWindow = nil
+
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 1000, height: 650),
+            styleMask: [.titled, .closable, .resizable, .miniaturizable],
+            backing: .buffered,
+            defer: false
+        )
+        window.title = "Internal vs External Alignment Charts"
+        window.minSize = NSSize(width: 800, height: 500)
+        window.isReleasedWhenClosed = false
+        window.delegate = autoCloseDelegate
+
+        // Set window appearance to match the current theme
+        let isDarkMode = ThemeManager.shared.isDarkMode
+        window.appearance = NSAppearance(named: isDarkMode ? .darkAqua : .aqua)
+
+        // Create custom view
+        let alignmentView = InternalExternalAlignmentView(frame: window.contentView!.bounds)
+        alignmentView.autoresizingMask = [.width, .height]
+
+        // Convert data to view format
+        let characterAlignments = alignmentData.characterAlignments.map { charData in
+            let dataPoints = charData.dataPoints.map { point in
+                InternalExternalAlignmentView.AlignmentDataPoint(
+                    chapter: point.chapter,
+                    innerTruth: point.innerTruth,
+                    outerBehavior: point.outerBehavior,
+                    innerLabel: point.innerLabel,
+                    outerLabel: point.outerLabel
+                )
+            }
+
+            let gapTrend: InternalExternalAlignmentView.GapTrend
+            switch charData.gapTrend {
+            case "widening":
+                gapTrend = .widening
+            case "stabilizing":
+                gapTrend = .stabilizing
+            case "closing":
+                gapTrend = .closing
+            case "collapsing":
+                gapTrend = .collapsing
+            default:
+                gapTrend = .fluctuating
+            }
+
+            return InternalExternalAlignmentView.CharacterAlignment(
+                characterName: charData.characterName,
+                dataPoints: dataPoints,
+                gapTrend: gapTrend
+            )
+        }
+
+        alignmentView.setAlignments(characterAlignments)
+
+        // Create container
+        let container = NSView(frame: window.contentView!.bounds)
+        container.autoresizingMask = [.width, .height]
+        container.wantsLayer = true
+        container.layer?.backgroundColor = currentTheme.pageAround.cgColor
+        container.addSubview(alignmentView)
+
+        window.contentView = container
+        window.center()
+        window.makeKeyAndOrderFront(nil)
+
+        // Store window reference and set up cleanup
+        alignmentChartPopoutWindow = window
+        NotificationCenter.default.addObserver(
+            forName: NSWindow.willCloseNotification,
+            object: window,
+            queue: .main
+        ) { [weak self] _ in
+            self?.alignmentChartPopoutWindow = nil
+        }
+    }
+
+    func openLanguageDriftPopout(driftData: LanguageDriftData) {
+        // Close existing window if open
+        languageDriftPopoutWindow?.close()
+        languageDriftPopoutWindow = nil
+
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 1000, height: 650),
+            styleMask: [.titled, .closable, .resizable, .miniaturizable],
+            backing: .buffered,
+            defer: false
+        )
+        window.title = "Language Drift Analysis"
+        window.minSize = NSSize(width: 800, height: 500)
+        window.isReleasedWhenClosed = false
+        window.delegate = autoCloseDelegate
+
+        // Set window appearance to match the current theme
+        let isDarkMode = ThemeManager.shared.isDarkMode
+        window.appearance = NSAppearance(named: isDarkMode ? .darkAqua : .aqua)
+
+        // Create custom view
+        let driftView = LanguageDriftAnalysisView(frame: window.contentView!.bounds)
+        driftView.autoresizingMask = [.width, .height]
+
+        // Convert data to view format
+        let characterDrifts = driftData.characterDrifts.map { charData in
+            let metrics = charData.metrics.map { m in
+                LanguageDriftAnalysisView.LanguageMetrics(
+                    chapter: m.chapter,
+                    pronounI: m.pronounI,
+                    pronounWe: m.pronounWe,
+                    modalMust: m.modalMust,
+                    modalChoice: m.modalChoice,
+                    emotionalDensity: m.emotionalDensity,
+                    avgSentenceLength: m.avgSentenceLength,
+                    certaintyScore: m.certaintyScore
+                )
+            }
+
+            let summary = LanguageDriftAnalysisView.DriftSummary(
+                pronounShift: charData.driftSummary.pronounShift,
+                modalShift: charData.driftSummary.modalShift,
+                emotionalTrend: charData.driftSummary.emotionalTrend,
+                sentenceTrend: charData.driftSummary.sentenceTrend,
+                certaintyTrend: charData.driftSummary.certaintyTrend
+            )
+
+            return LanguageDriftAnalysisView.CharacterLanguageDrift(
+                characterName: charData.characterName,
+                metrics: metrics,
+                driftSummary: summary
+            )
+        }
+
+        driftView.setDriftData(characterDrifts)
+
+        // Create container
+        let container = NSView(frame: window.contentView!.bounds)
+        container.autoresizingMask = [.width, .height]
+        container.wantsLayer = true
+        container.layer?.backgroundColor = currentTheme.pageAround.cgColor
+        container.addSubview(driftView)
+
+        window.contentView = container
+        window.center()
+        window.makeKeyAndOrderFront(nil)
+
+        // Store window reference and set up cleanup
+        languageDriftPopoutWindow = window
+        NotificationCenter.default.addObserver(
+            forName: NSWindow.willCloseNotification,
+            object: window,
+            queue: .main
+        ) { [weak self] _ in
+            self?.languageDriftPopoutWindow = nil
         }
     }
 
@@ -2423,6 +2584,14 @@ extension AnalysisViewController: CharacterArcVisualizationDelegate {
         relationshipMapItem.target = self
         menu.addItem(relationshipMapItem)
 
+        let alignmentItem = NSMenuItem(title: "🎭 Internal vs External Alignment", action: #selector(showInternalExternalAlignment), keyEquivalent: "")
+        alignmentItem.target = self
+        menu.addItem(alignmentItem)
+
+        let languageDriftItem = NSMenuItem(title: "📝 Language Drift Analysis", action: #selector(showLanguageDriftAnalysis), keyEquivalent: "")
+        languageDriftItem.target = self
+        menu.addItem(languageDriftItem)
+
         let interactionsItem = NSMenuItem(title: "🤝 Character Interactions", action: #selector(showInteractions), keyEquivalent: "")
         interactionsItem.target = self
         menu.addItem(interactionsItem)
@@ -2467,6 +2636,34 @@ extension AnalysisViewController: CharacterArcVisualizationDelegate {
     @objc private func showRelationshipEvolutionMaps() {
         if let results = latestAnalysisResults {
             openRelationshipEvolutionMapPopout(evolutionData: results.relationshipEvolutionData)
+        }
+    }
+
+    @objc private func showInternalExternalAlignment() {
+        if let results = latestAnalysisResults {
+            openInternalExternalAlignmentPopout(alignmentData: results.internalExternalAlignment)
+        } else {
+            // Trigger analysis first
+            analyzeCallback?()
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) { [weak self] in
+                if let results = self?.latestAnalysisResults {
+                    self?.openInternalExternalAlignmentPopout(alignmentData: results.internalExternalAlignment)
+                }
+            }
+        }
+    }
+
+    @objc private func showLanguageDriftAnalysis() {
+        if let results = latestAnalysisResults {
+            openLanguageDriftPopout(driftData: results.languageDriftData)
+        } else {
+            // Trigger analysis first
+            analyzeCallback?()
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) { [weak self] in
+                if let results = self?.latestAnalysisResults {
+                    self?.openLanguageDriftPopout(driftData: results.languageDriftData)
+                }
+            }
         }
     }
 

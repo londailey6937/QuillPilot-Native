@@ -250,6 +250,61 @@ struct RelationshipEvolutionPoint {
     let description: String
 }
 
+// MARK: - Internal vs External Alignment
+
+/// Track the gap between who characters are inside and how they act
+/// Two parallel tracks: Inner truth, Outer behavior
+struct InternalExternalAlignmentData {
+    var characterAlignments: [CharacterAlignmentData] = []
+}
+
+struct CharacterAlignmentData {
+    let characterName: String
+    var dataPoints: [AlignmentDataPoint] = []
+    var gapTrend: String = "fluctuating" // "widening", "stabilizing", "closing", "collapsing", "fluctuating"
+}
+
+struct AlignmentDataPoint {
+    let chapter: Int
+    let innerTruth: Double      // 0.0 to 1.0 - inner emotional/belief state
+    let outerBehavior: Double   // 0.0 to 1.0 - external presentation
+    let innerLabel: String      // Description of inner state
+    let outerLabel: String      // Description of outer behavior
+}
+
+// MARK: - Language Drift Analysis
+
+/// Track how character's language changes over the story
+/// Reveals unconscious growth patterns
+struct LanguageDriftData {
+    var characterDrifts: [CharacterLanguageDrift] = []
+}
+
+struct CharacterLanguageDrift {
+    let characterName: String
+    var metrics: [LanguageMetricsData] = []
+    var driftSummary: DriftSummaryData = DriftSummaryData()
+}
+
+struct LanguageMetricsData {
+    let chapter: Int
+    let pronounI: Double          // "I" usage (0-1 normalized)
+    let pronounWe: Double         // "we" usage (0-1 normalized)
+    let modalMust: Double         // obligation modals: must, have to, need to
+    let modalChoice: Double       // choice modals: choose, can, could, want to
+    let emotionalDensity: Double  // emotional words per sentence
+    let avgSentenceLength: Double // average words per sentence (normalized 0-1)
+    let certaintyScore: Double    // certainty indicators (0-1)
+}
+
+struct DriftSummaryData {
+    var pronounShift: String = "Stable"      // "I → We", "We → I", "Stable"
+    var modalShift: String = "Stable"        // "Obligation → Choice", etc.
+    var emotionalTrend: String = "Stable"    // "Increasing", "Decreasing", "Stable"
+    var sentenceTrend: String = "Stable"     // "Longer", "Shorter", "Stable"
+    var certaintyTrend: String = "Stable"    // "More Certain", "Less Certain", "Stable"
+}
+
 // MARK: - Decision-Belief Loop Analyzer
 
 class DecisionBeliefLoopAnalyzer {
@@ -1075,5 +1130,353 @@ class DecisionBeliefLoopAnalyzer {
         }
 
         return evolutionData
+    }
+
+    // MARK: - Internal vs External Alignment Generation
+
+    /// Generate internal vs external alignment data for characters
+    /// Tracks the gap between inner truth and outer behavior
+    func generateInternalExternalAlignment(from text: String, characterNames: [String]) -> InternalExternalAlignmentData {
+        guard !characterNames.isEmpty else {
+            return InternalExternalAlignmentData()
+        }
+
+        var alignmentData = InternalExternalAlignmentData()
+
+        // Split text into chapters
+        let chapters = splitIntoChapters(text: text)
+        guard !chapters.isEmpty else { return alignmentData }
+
+        // Inner state indicators (what characters feel/think)
+        let innerStateWords: [String: Double] = [
+            // Negative inner states
+            "felt": 0.0, "thought": 0.0, "wondered": 0.0, "feared": -0.3,
+            "doubted": -0.2, "worried": -0.3, "dreaded": -0.4, "wished": 0.0,
+            "hoped": 0.3, "believed": 0.0, "knew": 0.2, "sensed": 0.0,
+            "realized": 0.1, "understood": 0.2, "secretly": -0.2, "inside": 0.0,
+            "heart": 0.0, "soul": 0.0, "truly": 0.0, "really": 0.0,
+            "actually": 0.0, "honestly": 0.0, "genuinely": 0.2,
+            // Emotional words
+            "afraid": -0.4, "anxious": -0.3, "nervous": -0.2, "uncertain": -0.2,
+            "conflicted": -0.2, "torn": -0.3, "confused": -0.2, "lonely": -0.4,
+            "guilty": -0.4, "ashamed": -0.4, "regretted": -0.3, "mourned": -0.3,
+            "happy": 0.4, "content": 0.3, "peaceful": 0.4, "confident": 0.3,
+            "proud": 0.3, "relieved": 0.3, "grateful": 0.4, "loved": 0.5
+        ]
+
+        // Outer behavior indicators (what characters do/say)
+        let outerBehaviorWords: [String: Double] = [
+            // Actions that may mask inner state
+            "smiled": 0.3, "laughed": 0.4, "nodded": 0.2, "agreed": 0.2,
+            "said": 0.0, "spoke": 0.0, "replied": 0.0, "answered": 0.0,
+            "pretended": -0.3, "acted": 0.0, "appeared": 0.0, "seemed": 0.0,
+            "showed": 0.0, "displayed": 0.0, "maintained": 0.0, "kept": 0.0,
+            "hid": -0.3, "concealed": -0.3, "masked": -0.3, "suppressed": -0.3,
+            "composed": 0.2, "calm": 0.2, "steady": 0.2, "controlled": 0.1,
+            "professional": 0.2, "polite": 0.2, "cheerful": 0.3, "friendly": 0.3,
+            "cold": -0.2, "distant": -0.2, "formal": 0.0, "stiff": -0.1,
+            "frowned": -0.2, "scowled": -0.3, "glared": -0.3, "shouted": -0.3,
+            "cried": -0.3, "sobbed": -0.4, "screamed": -0.4, "yelled": -0.3
+        ]
+
+        for characterName in characterNames.prefix(6) { // Limit to 6 characters
+            var characterAlignment = CharacterAlignmentData(characterName: characterName)
+            var gapValues: [Double] = []
+
+            for (chapterIndex, chapter) in chapters.enumerated() {
+                // Find sentences containing the character
+                let sentences = chapter.components(separatedBy: CharacterSet(charactersIn: ".!?"))
+                var innerScores: [Double] = []
+                var outerScores: [Double] = []
+                var innerDescription = ""
+                var outerDescription = ""
+
+                for sentence in sentences {
+                    let lowerSentence = sentence.lowercased()
+                    guard lowerSentence.contains(characterName.lowercased()) else { continue }
+
+                    // Check for inner state words
+                    for (word, baseScore) in innerStateWords {
+                        if lowerSentence.contains(word) {
+                            // Adjust score based on context
+                            var score = 0.5 + baseScore
+                            if lowerSentence.contains("not ") || lowerSentence.contains("n't ") {
+                                score = 1.0 - score // Negate
+                            }
+                            innerScores.append(score)
+
+                            // Capture description
+                            if innerDescription.isEmpty && baseScore != 0 {
+                                innerDescription = word.capitalized
+                            }
+                        }
+                    }
+
+                    // Check for outer behavior words
+                    for (word, baseScore) in outerBehaviorWords {
+                        if lowerSentence.contains(word) {
+                            var score = 0.5 + baseScore
+                            if lowerSentence.contains("not ") || lowerSentence.contains("n't ") {
+                                score = 1.0 - score
+                            }
+                            outerScores.append(score)
+
+                            if outerDescription.isEmpty && baseScore != 0 {
+                                outerDescription = word.capitalized
+                            }
+                        }
+                    }
+                }
+
+                // Calculate average inner and outer scores for this chapter
+                let avgInner = innerScores.isEmpty ? 0.5 : innerScores.reduce(0, +) / Double(innerScores.count)
+                let avgOuter = outerScores.isEmpty ? 0.5 : outerScores.reduce(0, +) / Double(outerScores.count)
+
+                // Only add data point if we have meaningful data
+                if !innerScores.isEmpty || !outerScores.isEmpty {
+                    let dataPoint = AlignmentDataPoint(
+                        chapter: chapterIndex + 1,
+                        innerTruth: min(1.0, max(0.0, avgInner)),
+                        outerBehavior: min(1.0, max(0.0, avgOuter)),
+                        innerLabel: innerDescription.isEmpty ? "Neutral" : innerDescription,
+                        outerLabel: outerDescription.isEmpty ? "Neutral" : outerDescription
+                    )
+                    characterAlignment.dataPoints.append(dataPoint)
+                    gapValues.append(abs(avgInner - avgOuter))
+                }
+            }
+
+            // Determine gap trend
+            if gapValues.count >= 2 {
+                let firstHalf = Array(gapValues.prefix(gapValues.count / 2))
+                let secondHalf = Array(gapValues.suffix(gapValues.count / 2))
+
+                let avgFirstHalf = firstHalf.reduce(0, +) / Double(firstHalf.count)
+                let avgSecondHalf = secondHalf.reduce(0, +) / Double(secondHalf.count)
+
+                let change = avgSecondHalf - avgFirstHalf
+
+                // Check if closing toward authenticity or collapse
+                let lastPoints = characterAlignment.dataPoints.suffix(2)
+                let isCollapse = lastPoints.allSatisfy { $0.innerTruth < 0.3 && $0.outerBehavior < 0.3 }
+
+                if change > 0.1 {
+                    characterAlignment.gapTrend = "widening"
+                } else if change < -0.1 {
+                    characterAlignment.gapTrend = isCollapse ? "collapsing" : "closing"
+                } else if abs(change) <= 0.1 && gapValues.max()! - gapValues.min()! < 0.2 {
+                    characterAlignment.gapTrend = "stabilizing"
+                } else {
+                    characterAlignment.gapTrend = "fluctuating"
+                }
+            }
+
+            if !characterAlignment.dataPoints.isEmpty {
+                alignmentData.characterAlignments.append(characterAlignment)
+            }
+        }
+
+        return alignmentData
+    }
+
+    // MARK: - Language Drift Analysis Generation
+
+    /// Generate language drift analysis for characters
+    /// Tracks pronouns, modal verbs, emotional vocabulary, sentence length, certainty
+    func generateLanguageDriftAnalysis(from text: String, characterNames: [String]) -> LanguageDriftData {
+        guard !characterNames.isEmpty else {
+            return LanguageDriftData()
+        }
+
+        var driftData = LanguageDriftData()
+
+        // Split text into chapters
+        let chapters = splitIntoChapters(text: text)
+        guard !chapters.isEmpty else { return driftData }
+
+        // Pronoun patterns
+        let iPronounPattern = "\\b(I|I'm|I've|I'll|I'd|my|mine|myself)\\b"
+        let wePronounPattern = "\\b(we|we're|we've|we'll|we'd|our|ours|ourselves|us)\\b"
+
+        // Modal verb patterns
+        let mustModals = ["must", "have to", "need to", "should", "ought to", "required"]
+        let choiceModals = ["choose", "can", "could", "want to", "decide", "prefer", "wish", "hope"]
+
+        // Emotional vocabulary
+        let emotionalWords = Set([
+            "love", "hate", "fear", "joy", "anger", "sad", "happy", "worried", "excited",
+            "terrified", "delighted", "furious", "anxious", "hopeful", "desperate", "elated",
+            "miserable", "thrilled", "devastated", "ecstatic", "heartbroken", "relieved",
+            "frustrated", "grateful", "bitter", "proud", "ashamed", "guilty", "jealous",
+            "lonely", "content", "nervous", "confident", "insecure", "passionate", "indifferent"
+        ])
+
+        // Certainty indicators
+        let certainWords = ["know", "certain", "sure", "definitely", "absolutely", "clearly", "obviously", "undoubtedly", "always", "never", "must be", "will"]
+        let uncertainWords = ["maybe", "perhaps", "might", "possibly", "probably", "seems", "appears", "think", "believe", "guess", "wonder", "could be", "not sure"]
+
+        for characterName in characterNames.prefix(6) {
+            var characterDrift = CharacterLanguageDrift(characterName: characterName)
+            var allMetrics: [LanguageMetricsData] = []
+
+            for (chapterIndex, chapter) in chapters.enumerated() {
+                // Find dialogue and narration related to this character
+                let sentences = chapter.components(separatedBy: CharacterSet(charactersIn: ".!?"))
+                var characterSentences: [String] = []
+
+                for sentence in sentences {
+                    let lowerSentence = sentence.lowercased()
+                    if lowerSentence.contains(characterName.lowercased()) {
+                        characterSentences.append(sentence)
+                    }
+                }
+
+                guard !characterSentences.isEmpty else { continue }
+
+                let combinedText = characterSentences.joined(separator: " ")
+                let lowerText = combinedText.lowercased()
+                let wordCount = combinedText.components(separatedBy: .whitespacesAndNewlines).filter { !$0.isEmpty }.count
+
+                // Count pronouns
+                let iCount = countMatches(pattern: iPronounPattern, in: combinedText)
+                let weCount = countMatches(pattern: wePronounPattern, in: combinedText)
+                let totalPronouns = max(iCount + weCount, 1)
+
+                // Count modal verbs
+                var mustCount = 0
+                var choiceCount = 0
+                for modal in mustModals {
+                    mustCount += lowerText.components(separatedBy: modal).count - 1
+                }
+                for modal in choiceModals {
+                    choiceCount += lowerText.components(separatedBy: modal).count - 1
+                }
+                let totalModals = max(mustCount + choiceCount, 1)
+
+                // Count emotional words
+                var emotionalCount = 0
+                let words = lowerText.components(separatedBy: .whitespacesAndNewlines)
+                for word in words {
+                    let cleanWord = word.trimmingCharacters(in: .punctuationCharacters)
+                    if emotionalWords.contains(cleanWord) {
+                        emotionalCount += 1
+                    }
+                }
+
+                // Count certainty
+                var certainCount = 0
+                var uncertainCount = 0
+                for word in certainWords {
+                    certainCount += lowerText.components(separatedBy: word).count - 1
+                }
+                for word in uncertainWords {
+                    uncertainCount += lowerText.components(separatedBy: word).count - 1
+                }
+                let totalCertainty = max(certainCount + uncertainCount, 1)
+
+                // Calculate average sentence length
+                let avgSentenceLength = Double(wordCount) / Double(max(characterSentences.count, 1))
+                let normalizedSentenceLength = min(1.0, avgSentenceLength / 30.0) // Normalize to 30 words max
+
+                let metrics = LanguageMetricsData(
+                    chapter: chapterIndex + 1,
+                    pronounI: Double(iCount) / Double(totalPronouns),
+                    pronounWe: Double(weCount) / Double(totalPronouns),
+                    modalMust: Double(mustCount) / Double(totalModals),
+                    modalChoice: Double(choiceCount) / Double(totalModals),
+                    emotionalDensity: min(1.0, Double(emotionalCount) / Double(max(characterSentences.count, 1)) / 2.0),
+                    avgSentenceLength: normalizedSentenceLength,
+                    certaintyScore: Double(certainCount) / Double(totalCertainty)
+                )
+
+                allMetrics.append(metrics)
+            }
+
+            characterDrift.metrics = allMetrics
+
+            // Calculate drift summary
+            if allMetrics.count >= 2 {
+                let firstHalf = Array(allMetrics.prefix(allMetrics.count / 2))
+                let secondHalf = Array(allMetrics.suffix(allMetrics.count / 2))
+
+                // Pronoun shift
+                let avgIFirst = firstHalf.map { $0.pronounI }.reduce(0, +) / Double(firstHalf.count)
+                let avgISecond = secondHalf.map { $0.pronounI }.reduce(0, +) / Double(secondHalf.count)
+                let avgWeFirst = firstHalf.map { $0.pronounWe }.reduce(0, +) / Double(firstHalf.count)
+                let avgWeSecond = secondHalf.map { $0.pronounWe }.reduce(0, +) / Double(secondHalf.count)
+
+                if avgIFirst > avgWeFirst && avgWeSecond > avgISecond {
+                    characterDrift.driftSummary.pronounShift = "I → We"
+                } else if avgWeFirst > avgIFirst && avgISecond > avgWeSecond {
+                    characterDrift.driftSummary.pronounShift = "We → I"
+                } else {
+                    characterDrift.driftSummary.pronounShift = "Stable"
+                }
+
+                // Modal shift
+                let avgMustFirst = firstHalf.map { $0.modalMust }.reduce(0, +) / Double(firstHalf.count)
+                let avgMustSecond = secondHalf.map { $0.modalMust }.reduce(0, +) / Double(secondHalf.count)
+                let avgChoiceFirst = firstHalf.map { $0.modalChoice }.reduce(0, +) / Double(firstHalf.count)
+                let avgChoiceSecond = secondHalf.map { $0.modalChoice }.reduce(0, +) / Double(secondHalf.count)
+
+                if avgMustFirst > avgChoiceFirst && avgChoiceSecond > avgMustSecond {
+                    characterDrift.driftSummary.modalShift = "Must → Choose"
+                } else if avgChoiceFirst > avgMustFirst && avgMustSecond > avgChoiceSecond {
+                    characterDrift.driftSummary.modalShift = "Choose → Must"
+                } else {
+                    characterDrift.driftSummary.modalShift = "Stable"
+                }
+
+                // Emotional trend
+                let avgEmotionalFirst = firstHalf.map { $0.emotionalDensity }.reduce(0, +) / Double(firstHalf.count)
+                let avgEmotionalSecond = secondHalf.map { $0.emotionalDensity }.reduce(0, +) / Double(secondHalf.count)
+
+                if avgEmotionalSecond - avgEmotionalFirst > 0.1 {
+                    characterDrift.driftSummary.emotionalTrend = "Increasing"
+                } else if avgEmotionalFirst - avgEmotionalSecond > 0.1 {
+                    characterDrift.driftSummary.emotionalTrend = "Decreasing"
+                } else {
+                    characterDrift.driftSummary.emotionalTrend = "Stable"
+                }
+
+                // Sentence length trend
+                let avgSentenceFirst = firstHalf.map { $0.avgSentenceLength }.reduce(0, +) / Double(firstHalf.count)
+                let avgSentenceSecond = secondHalf.map { $0.avgSentenceLength }.reduce(0, +) / Double(secondHalf.count)
+
+                if avgSentenceSecond - avgSentenceFirst > 0.1 {
+                    characterDrift.driftSummary.sentenceTrend = "Longer"
+                } else if avgSentenceFirst - avgSentenceSecond > 0.1 {
+                    characterDrift.driftSummary.sentenceTrend = "Shorter"
+                } else {
+                    characterDrift.driftSummary.sentenceTrend = "Stable"
+                }
+
+                // Certainty trend
+                let avgCertaintyFirst = firstHalf.map { $0.certaintyScore }.reduce(0, +) / Double(firstHalf.count)
+                let avgCertaintySecond = secondHalf.map { $0.certaintyScore }.reduce(0, +) / Double(secondHalf.count)
+
+                if avgCertaintySecond - avgCertaintyFirst > 0.1 {
+                    characterDrift.driftSummary.certaintyTrend = "More Certain"
+                } else if avgCertaintyFirst - avgCertaintySecond > 0.1 {
+                    characterDrift.driftSummary.certaintyTrend = "Less Certain"
+                } else {
+                    characterDrift.driftSummary.certaintyTrend = "Stable"
+                }
+            }
+
+            if !characterDrift.metrics.isEmpty {
+                driftData.characterDrifts.append(characterDrift)
+            }
+        }
+
+        return driftData
+    }
+
+    private func countMatches(pattern: String, in text: String) -> Int {
+        guard let regex = try? NSRegularExpression(pattern: pattern, options: .caseInsensitive) else {
+            return 0
+        }
+        let range = NSRange(text.startIndex..., in: text)
+        return regex.numberOfMatches(in: text, options: [], range: range)
     }
 }

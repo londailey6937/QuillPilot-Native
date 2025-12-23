@@ -466,6 +466,139 @@ Use cases:
 • Ensure consistent character presence
 • Track subplot threads
 """, color: bodyColor))
+        content.append(makeNewline())
+
+        content.append(makeHeading("🔗 Relationship Evolution Maps", color: headingColor))
+        content.append(makeBody("""
+Network diagram visualizing character relationships and their evolution.
+
+Access: Analyze Document → Characters tab → 🔗 Relationship Evolution Maps
+
+Visual Elements:
+• Nodes = Characters (size = emotional investment %)
+• Lines = Relationships (thickness = trust/conflict strength)
+• Green lines = Trust relationships
+• Red/Orange lines = Conflict relationships
+• Gray lines = Neutral relationships
+• Arrows = Power direction between characters
+
+How to Read:
+• Larger nodes = Characters with more emotional investment
+• Thicker lines = Stronger relationships (positive or negative)
+• Arrow direction shows who holds more power/influence
+• Hover percentages show exact investment values
+
+Interactive Features:
+• Drag nodes to rearrange the layout
+• Nodes snap to reasonable positions
+• Edges follow as you move nodes
+
+Great for:
+• Mentor/rival dynamics - See power imbalances
+• Romance arcs - Track trust building or breaking
+• Ensemble casts - Balance relationship networks
+• Finding isolated characters
+• Identifying missing relationship development
+""", color: bodyColor))
+        content.append(makeNewline())
+
+        content.append(makeHeading("🎭 Internal vs External Alignment", color: headingColor))
+        content.append(makeBody("""
+Track the gap between who characters are inside and how they act.
+
+Access: Analyze Document → Characters tab → 🎭 Internal vs External Alignment
+
+Two Parallel Tracks:
+• Purple line = Inner Truth (what they feel/believe)
+• Teal line = Outer Behavior (what they show/do)
+
+Gap Interpretation:
+• Wide gap = Denial, repression, or masking
+• Narrow gap = Authenticity or integration
+• Gap closing = Character becoming more authentic OR collapsing
+
+Fill Color Meanings:
+• Red fill = Gap widening (Denial/Repression)
+• Yellow fill = Gap stabilizing (Coping)
+• Green fill = Gap closing (Integration)
+• Orange fill = Gap closing (Collapse - negative outcome)
+• Gray fill = Gap fluctuating
+
+Gap Trend Badge:
+• Widening (Denial/Repression) - Character increasingly masking
+• Stabilizing (Coping) - Character maintaining a consistent mask
+• Closing (Integration) - Character becoming more authentic
+• Closing (Collapse) - Character's facade breaking down negatively
+• Fluctuating - Inconsistent pattern
+
+Especially useful for:
+• Unreliable narrators - Track their inner vs presented self
+• Restrained prose - Visualize what's unsaid
+• Characters who "say the right thing" while feeling opposite
+• Psychological complexity and subtext
+• Identifying moments of breakthrough or breakdown
+
+Character Selection:
+• Click character names at bottom to switch between characters
+• Compare different characters' alignment patterns
+""", color: bodyColor))
+        content.append(makeNewline())
+
+        content.append(makeHeading("📝 Language Drift Analysis", color: headingColor))
+        content.append(makeBody("""
+Track how character's language changes — reveals unconscious growth.
+
+Access: Analyze Document → Characters tab → 📝 Language Drift Analysis
+
+Five Metrics Tracked:
+
+1. Pronouns (I vs We)
+   • Purple line = "I/my/mine" usage
+   • Teal line = "we/our/us" usage
+   • I → We shift = Community growth, connection
+   • We → I shift = Isolation, independence
+
+2. Modal Verbs (Must vs Choose)
+   • Red line = Obligation modals (must, have to, need to, should)
+   • Green line = Choice modals (choose, can, could, want to)
+   • Must → Choose = Growing agency and autonomy
+   • Choose → Must = Increasing external pressure
+
+3. Emotional Vocabulary
+   • Single pink line showing emotional word density
+   • Increasing = Character opening up emotionally
+   • Decreasing = Character becoming guarded
+
+4. Sentence Length
+   • Single indigo line (normalized 0-100%)
+   • Longer sentences = More complex, deliberate thought
+   • Shorter sentences = Urgency, certainty, or stress
+
+5. Certainty Level
+   • Single orange line
+   • Higher = More "know/certain/always/definitely"
+   • Lower = More "maybe/perhaps/might/wonder"
+   • Rising certainty = Growing confidence
+   • Falling certainty = Increasing doubt
+
+Drift Summary Badges:
+• I → We / We → I - Pronoun shift detected
+• Must → Choose / Choose → Must - Modal shift detected
+• More Certain / Less Certain - Certainty trend
+• Increasing / Decreasing / Stable - Emotional trend
+• Longer / Shorter / Stable - Sentence trend
+
+This analysis is computational and often reveals:
+• Growth patterns you didn't consciously plan
+• Voice consistency issues across chapters
+• Psychological shifts in character mindset
+• Authentic emotional arc development
+
+Interactive Features:
+• Click metric tabs to switch between views
+• Click character names to switch characters
+• Badges highlight significant shifts
+""", color: bodyColor))
 
         textView.textStorage?.setAttributedString(content)
     }

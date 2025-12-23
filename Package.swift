@@ -52,7 +52,9 @@ let package = Package(
                 "Views/CharacterInteractionsView.swift",
                 "Views/BeliefShiftMatrixView.swift",
                 "Views/DecisionConsequenceChainView.swift",
-                "Views/RelationshipEvolutionMapView.swift"
+                "Views/RelationshipEvolutionMapView.swift",
+                "Views/InternalExternalAlignmentView.swift",
+                "Views/LanguageDriftAnalysisView.swift"
             ]
         )
     ]

@@ -64,6 +64,12 @@ struct AnalysisResults {
 
     // Relationship Evolution Maps
     var relationshipEvolutionData: RelationshipEvolutionData = RelationshipEvolutionData()
+
+    // Internal vs External Alignment Charts
+    var internalExternalAlignment: InternalExternalAlignmentData = InternalExternalAlignmentData()
+
+    // Language Drift Analysis
+    var languageDriftData: LanguageDriftData = LanguageDriftData()
 }
 
 class AnalysisEngine {
@@ -305,6 +311,12 @@ class AnalysisEngine {
             // Generate relationship evolution maps
             let analyzer = DecisionBeliefLoopAnalyzer()
             results.relationshipEvolutionData = analyzer.generateRelationshipEvolutionData(from: analysisText, characterNames: characterNames)
+
+            // Generate internal vs external alignment charts
+            results.internalExternalAlignment = analyzer.generateInternalExternalAlignment(from: analysisText, characterNames: characterNames)
+
+            // Generate language drift analysis
+            results.languageDriftData = analyzer.generateLanguageDriftAnalysis(from: analysisText, characterNames: characterNames)
         }
 
         return results

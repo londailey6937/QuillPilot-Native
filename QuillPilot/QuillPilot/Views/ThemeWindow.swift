@@ -8,9 +8,15 @@
 
 import Cocoa
 
-class ThemeWindowController: NSWindowController {
+extension Notification.Name {
+    static let storyThemeDidChange = Notification.Name("storyThemeDidChange")
+}
+
+class ThemeWindowController: NSWindowController, NSTextViewDelegate {
 
     private var scrollView: NSScrollView!
+    private var textView: NSTextView?
+    private var saveTimer: Timer?
 
     convenience init() {
         let window = NSWindow(
@@ -58,6 +64,8 @@ class ThemeWindowController: NSWindowController {
         textView.autoresizingMask = [.width]
         textView.isRichText = true
         textView.allowsUndo = true
+        textView.delegate = self
+        self.textView = textView
 
         scrollView.documentView = textView
         contentView.addSubview(scrollView)
@@ -88,19 +96,66 @@ class ThemeWindowController: NSWindowController {
         content.append(makeNewline())
         content.append(makeNewline())
 
-        // Theme content extracted from PureTheme document
-        content.append(makeBody("""
-The theme of the story centers on the tension between personal integrity and the morally ambiguous world of political and covert operations. It delves into how individuals—whether they are politicians like Senator Kessler, operatives like Alex, or investigators like Allison—navigate a complex landscape fraught with ethical dilemmas and hidden agendas.
-
-Amidst high-stakes political games and clandestine activities, the characters are forced to confront their own values, loyalties, and limits. In doing so, the story raises questions about the sacrifices one must make for the greater good, the ethical compromises that may or may not be justifiable, and the blurry line between right and wrong in a world where every decision has far-reaching consequences.
-
-Furthermore, it will attempt to tie into fundamental questions about governance, the balance of power, and the erosion of democratic values. This added layer should give the story a compelling depth and contemporary relevance, making it not just a tale of individual characters but a reflection on the state of the society they inhabit.
-""", color: bodyColor))
+        // Load saved theme or use default
+        let savedTheme = Self.loadSavedTheme()
+        content.append(makeBody(savedTheme, color: bodyColor))
 
         textView.textStorage?.setAttributedString(content)
 
         // Size to fit
         textView.sizeToFit()
+    }
+
+    // MARK: - NSTextViewDelegate
+
+    func textDidChange(_ notification: Notification) {
+        // Debounce saves - save 1 second after typing stops
+        saveTimer?.invalidate()
+        saveTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: false) { [weak self] _ in
+            self?.saveTheme()
+        }
+    }
+
+    // MARK: - Persistence
+
+    private func saveTheme() {
+        guard let textView = textView,
+              let text = textView.textStorage?.string else { return }
+
+        // Extract just the theme content, not the title
+        let lines = text.components(separatedBy: .newlines)
+        let contentLines = lines.filter { !$0.isEmpty && !$0.contains("Story Theme") }
+        let themeContent = contentLines.joined(separator: "\n")
+
+        Self.saveThemeContent(themeContent)
+
+        // Notify that theme changed
+        NotificationCenter.default.post(name: .storyThemeDidChange, object: nil)
+    }
+
+    static func saveThemeContent(_ content: String) {
+        let defaults = UserDefaults.standard
+        defaults.set(content, forKey: "StoryThemeContent")
+    }
+
+    static func loadSavedTheme() -> String {
+        let defaults = UserDefaults.standard
+        if let saved = defaults.string(forKey: "StoryThemeContent"), !saved.isEmpty {
+            return saved
+        }
+
+        // Default theme
+        return """
+The theme of the story centers on the tension between personal integrity and the morally ambiguous world of political and covert operations. It delves into how individuals—whether they are politicians like Senator Kessler, operatives like Alex, or investigators like Allison—navigate a complex landscape fraught with ethical dilemmas and hidden agendas.
+
+Amidst high-stakes political games and clandestine activities, the characters are forced to confront their own values, loyalties, and limits. In doing so, the story raises questions about the sacrifices one must make for the greater good, the ethical compromises that may or may not be justifiable, and the blurry line between right and wrong in a world where every decision has far-reaching consequences.
+
+Furthermore, it will attempt to tie into fundamental questions about governance, the balance of power, and the erosion of democratic values. This added layer should give the story a compelling depth and contemporary relevance, making it not just a tale of individual characters but a reflection on the state of the society they inhabit.
+"""
+    }
+
+    static func getCurrentTheme() -> String {
+        return loadSavedTheme()
     }
 
     // MARK: - Helper Methods

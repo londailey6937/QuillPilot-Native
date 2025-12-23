@@ -54,7 +54,8 @@ let package = Package(
                 "Views/DecisionConsequenceChainView.swift",
                 "Views/RelationshipEvolutionMapView.swift",
                 "Views/InternalExternalAlignmentView.swift",
-                "Views/LanguageDriftAnalysisView.swift"
+                "Views/LanguageDriftAnalysisView.swift",
+                "Views/ThematicResonanceMapView.swift"
             ]
         )
     ]

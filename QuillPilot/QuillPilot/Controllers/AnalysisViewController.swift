@@ -57,6 +57,7 @@ class AnalysisViewController: NSViewController {
     private var relationshipMapPopoutWindow: NSWindow?
     private var alignmentChartPopoutWindow: NSWindow?
     private var languageDriftPopoutWindow: NSWindow?
+    private var thematicResonanceMapPopoutWindow: NSWindow?
 
     // Window delegate for auto-closing popouts
     private let autoCloseDelegate = AutoCloseWindowDelegate()
@@ -1481,7 +1482,11 @@ extension AnalysisViewController: CharacterArcVisualizationDelegate {
             userInfo: ["wordPosition": wordPosition]
         )
     }
+}
 
+// MARK: - Character Analysis Popout Functions
+
+extension AnalysisViewController {
     func openDecisionBeliefPopout(loops: [DecisionBeliefLoop]) {
         // Close existing window if open
         emotionalJourneyPopoutWindow?.close()
@@ -1840,6 +1845,207 @@ extension AnalysisViewController: CharacterArcVisualizationDelegate {
             queue: .main
         ) { [weak self] _ in
             self?.languageDriftPopoutWindow = nil
+        }
+    }
+
+    func openThematicResonanceMapPopout() {
+        // Close existing window if open
+        thematicResonanceMapPopoutWindow?.close()
+        thematicResonanceMapPopoutWindow = nil
+
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 1000, height: 650),
+            styleMask: [.titled, .closable, .resizable, .miniaturizable],
+            backing: .buffered,
+            defer: false
+        )
+        window.title = "Thematic Resonance Map"
+        window.minSize = NSSize(width: 800, height: 500)
+        window.isReleasedWhenClosed = false
+        window.delegate = autoCloseDelegate
+
+        // Set window appearance to match the current theme
+        let isDarkMode = ThemeManager.shared.isDarkMode
+        window.appearance = NSAppearance(named: isDarkMode ? .darkAqua : .aqua)
+
+        // Get story theme from theme window
+        let storyTheme = getStoryThemeText()
+
+        // Create custom view
+        let resonanceView = ThematicResonanceMapView(frame: window.contentView!.bounds)
+        resonanceView.autoresizingMask = [.width, .height]
+
+        // Generate sample thematic data based on characters
+        let journeys = generateThematicJourneys()
+        resonanceView.setThematicData(journeys, theme: storyTheme)
+
+        // Create container
+        let container = NSView(frame: window.contentView!.bounds)
+        container.autoresizingMask = [.width, .height]
+        container.wantsLayer = true
+        container.layer?.backgroundColor = currentTheme.pageAround.cgColor
+        container.addSubview(resonanceView)
+
+        window.contentView = container
+        window.center()
+        window.makeKeyAndOrderFront(nil)
+
+        // Store window reference and set up cleanup
+        thematicResonanceMapPopoutWindow = window
+        NotificationCenter.default.addObserver(
+            forName: NSWindow.willCloseNotification,
+            object: window,
+            queue: .main
+        ) { [weak self] _ in
+            self?.thematicResonanceMapPopoutWindow = nil
+        }
+
+        // Listen for theme changes to update the view
+        NotificationCenter.default.addObserver(
+            forName: .storyThemeDidChange,
+            object: nil,
+            queue: .main
+        ) { [weak self, weak resonanceView] _ in
+            guard let self = self, let resonanceView = resonanceView else { return }
+            let updatedTheme = self.getStoryThemeText()
+            let updatedJourneys = self.generateThematicJourneys()
+            resonanceView.setThematicData(updatedJourneys, theme: updatedTheme)
+        }
+    }
+
+    private func getStoryThemeText() -> String {
+        // Always load from persistent storage - ensures consistency across sessions
+        return ThemeWindowController.getCurrentTheme()
+    }
+
+    private func generateThematicJourneys() -> [ThematicResonanceMapView.CharacterThematicJourney] {
+        // Colors for different characters
+        let colors: [NSColor] = [.systemPurple, .systemTeal, .systemOrange, .systemPink, .systemIndigo, .systemGreen]
+
+        var journeys: [ThematicResonanceMapView.CharacterThematicJourney] = []
+
+        // Use character library if available
+        let library = CharacterLibrary.shared
+        if !library.characters.isEmpty {
+            for (index, character) in library.characters.prefix(6).enumerated() {
+                let stances = generateStancesForCharacter(characterName: character.displayName, index: index)
+                let trajectory = determineTrajectory(stances: stances)
+
+                let journey = ThematicResonanceMapView.CharacterThematicJourney(
+                    characterName: character.displayName,
+                    color: colors[index % colors.count],
+                    stances: stances,
+                    overallTrajectory: trajectory
+                )
+                journeys.append(journey)
+            }
+        } else {
+            // Default sample data if no characters
+            let defaultCharacters = ["Alex", "Allison", "Raymond", "Kessler"]
+            for (index, name) in defaultCharacters.enumerated() {
+                let stances = generateStancesForCharacter(characterName: name, index: index)
+                let trajectory = determineTrajectory(stances: stances)
+
+                let journey = ThematicResonanceMapView.CharacterThematicJourney(
+                    characterName: name,
+                    color: colors[index % colors.count],
+                    stances: stances,
+                    overallTrajectory: trajectory
+                )
+                journeys.append(journey)
+            }
+        }
+
+        return journeys
+    }
+
+    private func generateStancesForCharacter(characterName: String, index: Int) -> [ThematicResonanceMapView.ThematicStance] {
+        var stances: [ThematicResonanceMapView.ThematicStance] = []
+
+        // Generate data for chapters 2, 4, 6, 8, 10, 12, 14
+        let chapters = [2, 4, 6, 8, 10, 12, 14]
+
+        for (chapterIndex, chapter) in chapters.enumerated() {
+            let progress = Double(chapterIndex) / Double(chapters.count - 1)
+
+            // Different patterns for different characters
+            let alignment: Double
+            let awareness: Double
+            let influence: Double
+            let cost: Double
+
+            switch index {
+            case 0: // Protagonist - starts opposed, gradually embraces theme
+                alignment = -0.8 + (progress * 1.5) // -0.8 to 0.7
+                awareness = 0.2 + (progress * 0.7)  // Growing awareness
+                influence = 0.4 + (progress * 0.5)  // Growing influence
+                cost = 0.3 + (progress * 0.6)       // Increasing cost
+
+            case 1: // Ally - embodies theme, helps protagonist see it
+                alignment = 0.6 + (progress * 0.3)  // High, increasing
+                awareness = 0.8 - (progress * 0.1)  // High, slight drop
+                influence = 0.7 + (progress * 0.2)  // Strong influence
+                cost = 0.5 + (progress * 0.3)       // Moderate cost
+
+            case 2: // Antagonist - opposes theme throughout
+                alignment = -0.9 + (progress * 0.2) // Stays negative
+                awareness = 0.9                      // Fully aware
+                influence = 0.8 - (progress * 0.3)  // Losing influence
+                cost = 0.2                           // Low personal cost
+
+            case 3: // Mentor - embodies theme but at high cost
+                alignment = 0.8
+                awareness = 0.95
+                influence = 0.6 - (progress * 0.3)  // Diminishing influence
+                cost = 0.8 + (progress * 0.15)      // Very high cost
+
+            default: // Other characters
+                alignment = sin(progress * .pi) * 0.6
+                awareness = progress * 0.8
+                influence = 0.5 + (sin(progress * .pi) * 0.3)
+                cost = progress * 0.6
+            }
+
+            let stance = ThematicResonanceMapView.ThematicStance(
+                chapter: chapter,
+                alignment: alignment,
+                awareness: awareness,
+                influence: influence,
+                cost: cost
+            )
+            stances.append(stance)
+        }
+
+        return stances
+    }
+
+    private func determineTrajectory(stances: [ThematicResonanceMapView.ThematicStance]) -> ThematicResonanceMapView.ThematicTrajectory {
+        guard stances.count >= 2 else { return .conflicted }
+
+        let firstAlignment = stances.first!.alignment
+        let lastAlignment = stances.last!.alignment
+        let change = lastAlignment - firstAlignment
+
+        let lastAwareness = stances.last!.awareness
+
+        if abs(change) < 0.2 {
+            if lastAlignment > 0.7 {
+                return .embodying
+            } else if lastAlignment < -0.5 {
+                return .resisting
+            } else {
+                return .conflicted
+            }
+        } else if change > 0.5 {
+            if lastAwareness > 0.7 {
+                return .transforming
+            } else {
+                return .awakening
+            }
+        } else if change > 0.2 {
+            return .embracing
+        } else {
+            return .resisting
         }
     }
 
@@ -2592,6 +2798,10 @@ extension AnalysisViewController: CharacterArcVisualizationDelegate {
         languageDriftItem.target = self
         menu.addItem(languageDriftItem)
 
+        let thematicResonanceItem = NSMenuItem(title: "🎯 Thematic Resonance Map", action: #selector(showThematicResonanceMap), keyEquivalent: "")
+        thematicResonanceItem.target = self
+        menu.addItem(thematicResonanceItem)
+
         let interactionsItem = NSMenuItem(title: "🤝 Character Interactions", action: #selector(showInteractions), keyEquivalent: "")
         interactionsItem.target = self
         menu.addItem(interactionsItem)
@@ -2665,6 +2875,10 @@ extension AnalysisViewController: CharacterArcVisualizationDelegate {
                 }
             }
         }
+    }
+
+    @objc private func showThematicResonanceMap() {
+        openThematicResonanceMapPopout()
     }
 
     @objc private func showEmotionalTrajectory() {
@@ -2753,11 +2967,16 @@ extension AnalysisViewController: CharacterArcVisualizationDelegate {
     @objc private func metricChanged(_ sender: NSPopUpButton) {
         guard let window = emotionalTrajectoryPopoutWindow,
               let containerView = window.contentView,
-              let trajectoryView = containerView.subviews.first(where: { $0 is EmotionalTrajectoryView }) as? EmotionalTrajectoryView,
-              let selectedMetric = EmotionalTrajectoryView.EmotionalMetric.allCases[safe: sender.indexOfSelectedItem] else {
+              let trajectoryView = containerView.subviews.first(where: { $0 is EmotionalTrajectoryView }) as? EmotionalTrajectoryView else {
             return
         }
 
+        let metrics = EmotionalTrajectoryView.EmotionalMetric.allCases
+        guard sender.indexOfSelectedItem >= 0 && sender.indexOfSelectedItem < metrics.count else {
+            return
+        }
+
+        let selectedMetric = metrics[sender.indexOfSelectedItem]
         trajectoryView.setMetric(selectedMetric)
     }
 

@@ -69,6 +69,7 @@ class AnalysisViewController: NSViewController {
     // Character Library Window (Navigator panel only)
     private var characterLibraryWindow: CharacterLibraryWindowController?
     private var themeWindow: ThemeWindowController?
+    private var sceneListWindow: SceneListWindowController?
     private var storyOutlineWindow: StoryOutlineWindowController?
     private var locationsWindow: LocationsWindowController?
     private var storyDirectionsWindow: StoryDirectionsWindowController?
@@ -106,6 +107,7 @@ class AnalysisViewController: NSViewController {
     enum NavigatorCategory: String, CaseIterable {
         case basic = "Outline"
         case theme = "Theme"
+        case scenes = "Scenes"
         case storyOutline = "Story Outline"
         case locations = "Locations"
         case storyDirections = "Story Directions"
@@ -116,6 +118,7 @@ class AnalysisViewController: NSViewController {
             switch self {
             case .basic: return "📝"
             case .theme: return "🎭"
+            case .scenes: return "🎬"
             case .storyOutline: return "📚"
             case .locations: return "📍"
             case .storyDirections: return "🔀"
@@ -374,6 +377,16 @@ class AnalysisViewController: NSViewController {
             }
             themeWindow?.showWindow(nil)
             themeWindow?.window?.makeKeyAndOrderFront(nil)
+            return
+        }
+
+        if category == .scenes {
+            // Open Scenes window
+            if sceneListWindow == nil {
+                sceneListWindow = SceneListWindowController()
+            }
+            sceneListWindow?.showWindow(nil)
+            sceneListWindow?.window?.makeKeyAndOrderFront(nil)
             return
         }
 

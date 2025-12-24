@@ -47,6 +47,7 @@ class DocumentationWindowController: NSWindowController {
         createTab(title: "📊 Analysis Tools", identifier: "analysis")
         createTab(title: "👥 Character Features", identifier: "characters")
         createTab(title: "📖 Plot & Structure", identifier: "plot")
+        createTab(title: "🎬 Scenes", identifier: "scenes")
         createTab(title: "⌨️ Shortcuts", identifier: "shortcuts")
 
         contentView.addSubview(tabView)
@@ -94,6 +95,7 @@ class DocumentationWindowController: NSWindowController {
         loadAnalysisTab()
         loadCharactersTab()
         loadPlotTab()
+        loadScenesTab()
         loadShortcutsTab()
     }
 
@@ -697,11 +699,330 @@ Story Directions (🧭 in Navigator):
         textView.textStorage?.setAttributedString(content)
     }
 
-    // MARK: - Tab 5: Keyboard Shortcuts
+    // MARK: - Tab 5: Scenes
 
-    private func loadShortcutsTab() {
+    private func loadScenesTab() {
         guard textViews.count > 4 else { return }
         let textView = textViews[4]
+        let theme = ThemeManager.shared.currentTheme
+        let titleColor = theme.textColor
+        let headingColor = theme.textColor
+        let bodyColor = theme.textColor
+
+        let content = NSMutableAttributedString()
+
+        content.append(makeTitle("Scene Management", color: titleColor))
+        content.append(makeBody("""
+Scenes provide a semantic spine for your story—organizational metadata that helps you track, analyze, and navigate your manuscript without touching the text itself.
+
+Access: Click 🎬 Scenes in the Navigator panel (right sidebar)
+
+IMPORTANT: Scenes are created manually, NOT extracted from your document. You create each scene by clicking the + button and filling in the details. This gives you complete control over how you organize your story structure.
+""", color: bodyColor))
+        content.append(makeNewline())
+
+        content.append(makeHeading("🚀 Quick Start: Creating Your First Scene", color: headingColor))
+        content.append(makeBody("""
+1. Click 🎬 Scenes in the Navigator panel (right sidebar)
+2. In the Scene List window, click the + button
+3. A new scene appears titled "New Scene"
+4. Double-click the scene (or select it and click ℹ︎)
+5. The Scene Inspector opens—fill in the details:
+   • Give it a meaningful title
+   • Choose the scene's intent (Setup, Conflict, etc.)
+   • Add POV character, location, characters present
+   • Fill in Goal, Conflict, and Outcome
+   • Add any notes for yourself
+6. Click Save
+7. The scene is now in your list!
+
+Scenes are saved automatically and persist between sessions.
+""", color: bodyColor))
+        content.append(makeNewline())
+
+        content.append(makeHeading("🎬 What Are Scenes?", color: headingColor))
+        content.append(makeBody("""
+Scenes in QuillPilot are metadata containers—they track information ABOUT your story without storing or modifying your actual text. Think of them as index cards for your manuscript.
+
+Each scene can track:
+• Title - A memorable name for the scene
+• Intent - The scene's narrative purpose
+• Status - Draft, Revised, Polished, Final, or Needs Work
+• POV Character - Who's telling this scene
+• Location - Where the scene takes place
+• Time - When the scene occurs
+• Characters - Who appears in this scene
+• Goal - What the POV character wants
+• Conflict - What opposes the goal
+• Outcome - Success, failure, or complication
+• Summary - Brief description of events
+• Notes - Your working notes and reminders
+
+IMPORTANT: Scenes are 100% optional. They're designed for writers who want organizational tools without forcing structure on anyone during drafting.
+""", color: bodyColor))
+        content.append(makeNewline())
+
+        content.append(makeHeading("📋 Scene List Window", color: headingColor))
+        content.append(makeBody("""
+The Scene List shows all your scenes in order with key information at a glance.
+
+To Open:
+1. Click 🎬 Scenes in the Navigator panel
+2. The Scene List window appears
+
+Scene List Features:
+• Each row shows status icon, title, intent, and order number
+• Double-click any scene to open the Inspector
+• Drag and drop scenes to reorder them
+• Use + button to add new scenes
+• Use − button to delete selected scene
+• Use ℹ︎ button to open Inspector for selected scene
+
+The footer shows your scene count (e.g., "5 scenes")
+""", color: bodyColor))
+        content.append(makeNewline())
+
+        content.append(makeHeading("🔍 Filtering Scenes", color: headingColor))
+        content.append(makeBody("""
+Use the filter bar at the top of the Scene List to find specific scenes quickly.
+
+Two Filter Dropdowns:
+
+1. Status Filter
+   • All States - Show everything
+   • ✏️ Draft - First-pass scenes
+   • 📝 Revised - Scenes you've edited
+   • ✨ Polished - Nearly finished scenes
+   • ✅ Final - Locked and complete
+   • ⚠️ Needs Work - Flagged for attention
+
+2. Intent Filter
+   • All Intents - Show everything
+   • Setup, Conflict, Resolution
+   • Transition, Climax, Denouement
+   • Exposition, Rising Action, Falling Action
+
+Filter Behavior:
+• When filtering, the count shows "3/10 scenes" format
+• Drag-drop reordering is disabled during filtering
+• Order numbers show original position, not filtered position
+• Clear filters by selecting "All States" and "All Intents"
+
+Filtering Use Cases:
+• Find all scenes that need work
+• Review only climax/resolution scenes
+• Check POV balance across scenes
+• Focus on specific story phases
+""", color: bodyColor))
+        content.append(makeNewline())
+
+        content.append(makeHeading("📝 Scene Inspector", color: headingColor))
+        content.append(makeBody("""
+The Inspector is where you edit all scene metadata in detail.
+
+To Open:
+• Double-click a scene in the list
+• Or select a scene and click the ℹ︎ button
+
+Inspector Sections:
+
+Basic Information:
+• Title - Give your scene a memorable name
+• Intent - Choose from dropdown (Setup, Conflict, etc.)
+• Status - Track revision progress
+• POV - Point of view character
+• Location - Where the scene happens
+• Time - Time of day or period
+• Characters - Comma-separated list of who appears
+
+Dramatic Elements:
+These fields help you track the core dramatic structure:
+
+• Goal - What does the POV character want in this scene?
+  Example: "Find the hidden letter before midnight"
+
+• Conflict - What opposes the goal?
+  Example: "The house is guarded and the letter is locked away"
+
+• Outcome - How does it resolve?
+  Examples: "Yes, but..." / "No, and..." / "Complication"
+
+These three fields (Goal/Conflict/Outcome) are the heart of scene-level dramatic structure. Every scene should ideally have all three.
+
+Notes Section:
+• Freeform text area for any scene notes
+• Working thoughts, research, reminders
+• Not visible anywhere but the Inspector
+
+Save/Cancel:
+• Click Save to apply changes
+• Click Cancel or press Escape to discard
+• Press Enter/Return to save quickly
+""", color: bodyColor))
+        content.append(makeNewline())
+
+        content.append(makeHeading("🎯 Scene Intent Types", color: headingColor))
+        content.append(makeBody("""
+Intent describes the narrative PURPOSE of a scene. Choose the one that best fits:
+
+• Setup - Establishes characters, setting, or stakes
+  Use for: Opening scenes, introducing new elements
+
+• Exposition - Delivers necessary background information
+  Use for: World-building, backstory revelations
+
+• Rising Action - Builds tension toward a peak
+  Use for: Middle-act complications, escalating stakes
+
+• Conflict - Direct confrontation or opposition
+  Use for: Arguments, battles, obstacles faced
+
+• Climax - Peak tension, point of no return
+  Use for: The big scene, maximum stakes
+
+• Falling Action - Immediate aftermath of climax
+  Use for: Processing what happened, regrouping
+
+• Resolution - Wrapping up story threads
+  Use for: Conclusions, new equilibrium
+
+• Transition - Moving between story elements
+  Use for: Time jumps, location changes, breathers
+
+• Denouement - Final wrap-up after resolution
+  Use for: Epilogue-style scenes, final character moments
+
+Tip: Most scenes have one PRIMARY intent, even if they serve multiple purposes. Pick the dominant one.
+""", color: bodyColor))
+        content.append(makeNewline())
+
+        content.append(makeHeading("📊 Revision States", color: headingColor))
+        content.append(makeBody("""
+Track where each scene is in your revision process:
+
+✏️ Draft
+• First pass, getting ideas down
+• Don't worry about polish
+• Focus on story logic
+
+📝 Revised
+• Second or later pass
+• Major changes made
+• Story logic improved
+
+✨ Polished
+• Line-editing complete
+• Prose refined
+• Nearly publication-ready
+
+✅ Final
+• Locked and complete
+• Don't touch unless necessary
+• Ready for submission/publication
+
+⚠️ Needs Work
+• Flagged for attention
+• Something's wrong
+• Return to this scene
+
+Workflow Tip:
+1. All scenes start as Draft
+2. After story revisions → Revised
+3. After line editing → Polished
+4. After final review → Final
+5. Use Needs Work as a flag, not a stage
+""", color: bodyColor))
+        content.append(makeNewline())
+
+        content.append(makeHeading("🔄 Reordering Scenes", color: headingColor))
+        content.append(makeBody("""
+Scenes can be reordered by drag and drop:
+
+1. Click and hold on a scene row
+2. Drag up or down to new position
+3. A gap appears showing where scene will drop
+4. Release to complete the move
+
+Reordering Notes:
+• Scene order numbers update automatically
+• Drag-drop is disabled when filters are active
+• Order represents your intended story sequence
+• Reordering doesn't affect your actual document
+
+This is useful for:
+• Planning restructuring before editing
+• Experimenting with scene order
+• Tracking parallel timelines
+• Maintaining scene sequence independently of document
+""", color: bodyColor))
+        content.append(makeNewline())
+
+        content.append(makeHeading("💡 Best Practices", color: headingColor))
+        content.append(makeBody("""
+Scenes work best when used intentionally:
+
+✅ Do:
+• Add scenes as you outline or after first draft
+• Use Goal/Conflict/Outcome consistently
+• Update status as you revise
+• Use Notes for self-reminders
+• Filter to focus your revision sessions
+• Trust the metadata—it won't touch your text
+
+❌ Don't:
+• Feel obligated to fill every field
+• Use scenes if you don't find them helpful
+• Expect scenes to auto-detect from your document
+• Over-engineer—keep it useful, not bureaucratic
+
+Scenes as Scaffolding:
+Think of scenes as construction scaffolding—they help you build and maintain your story structure, but they're not part of the final product. Use them when helpful, ignore them when not.
+
+When Scenes Help Most:
+• Complex plots with many threads
+• Multiple POV characters
+• Long revision processes
+• Outlining before or after drafting
+• Tracking what needs work
+• Planning structural changes
+""", color: bodyColor))
+        content.append(makeNewline())
+
+        content.append(makeHeading("❓ FAQ", color: headingColor))
+        content.append(makeBody("""
+Q: How do I create scenes from my existing manuscript?
+A: Scenes are NOT created from your document text. You create them manually by clicking + in the Scene List. Think of scenes as your planning layer—YOU decide what each scene is and fill in the metadata. This separation is intentional: your manuscript text is sacred and never touched by the scene system.
+
+Q: Can I copy text from my editor into a scene?
+A: Scenes don't store text—only metadata ABOUT the scene (title, POV, goal, conflict, etc.). If you want to track what happens in a scene, use the Summary field to write a brief description. The actual prose stays in your editor where it belongs.
+
+Q: Do scenes connect to my actual document text?
+A: No. Scenes are metadata only—they never read or modify your manuscript text. They're organizational tools that exist alongside your document.
+
+Q: Will my document break if I delete scenes?
+A: No. Scenes are completely independent. Delete all of them and your manuscript is unaffected.
+
+Q: Do scenes save with my document?
+A: Scenes are saved in a separate JSON file. They persist between sessions.
+
+Q: What's the difference between scenes and the outline?
+A: The Outline (📖) is auto-generated from your document's heading styles. Scenes (🎬) are manually created metadata. They serve different purposes.
+
+Q: Should I use scenes during drafting?
+A: That's up to you. Some writers outline with scenes first, others add them after drafting. Scenes are designed to be optional at every stage.
+
+Q: How many scenes should I have?
+A: As many as your story needs. A 80,000-word novel might have 40-80 scenes, but there's no rule. Use what's useful.
+""", color: bodyColor))
+
+        textView.textStorage?.setAttributedString(content)
+    }
+
+    // MARK: - Tab 6: Keyboard Shortcuts
+
+    private func loadShortcutsTab() {
+        guard textViews.count > 5 else { return }
+        let textView = textViews[5]
         let theme = ThemeManager.shared.currentTheme
         let titleColor = theme.textColor
         let headingColor = theme.textColor

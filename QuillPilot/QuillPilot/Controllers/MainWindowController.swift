@@ -1367,6 +1367,10 @@ class FormattingToolbar: NSView {
         stylesMenu.addItem(.separator())
         addHeader("Screenplay")
         [
+            "Screenplay — Title",
+            "Screenplay — Author",
+            "Screenplay — Contact",
+            "Screenplay — Draft",
             "Screenplay — Slugline",
             "Screenplay — Action",
             "Screenplay — Character",

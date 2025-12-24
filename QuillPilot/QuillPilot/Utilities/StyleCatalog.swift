@@ -196,6 +196,12 @@ final class StyleCatalog {
     private static func screenplayStyles() -> [String: StyleDefinition] {
         let font = "Courier New"
         var styles: [String: StyleDefinition] = [:]
+        // Title page styles
+        styles["Screenplay — Title"] = baseDefinition(font: font, size: 18, bold: true, alignment: .center, lineHeight: 1.0, before: 144, after: 12, headIndent: 0, firstLine: 0, tailIndent: 0)
+        styles["Screenplay — Author"] = baseDefinition(font: font, size: 12, alignment: .center, lineHeight: 1.0, before: 72, after: 0, headIndent: 0, firstLine: 0, tailIndent: 0)
+        styles["Screenplay — Contact"] = baseDefinition(font: font, size: 12, alignment: .left, lineHeight: 1.0, before: 0, after: 0, headIndent: 0, firstLine: 0, tailIndent: -288)
+        styles["Screenplay — Draft"] = baseDefinition(font: font, size: 12, alignment: .right, lineHeight: 1.0, before: 0, after: 0, headIndent: 0, firstLine: 0, tailIndent: 0)
+        // Script body styles
         styles["Screenplay — Slugline"] = baseDefinition(font: font, size: 12, alignment: .left, lineHeight: 1.0, before: 12, after: 0, headIndent: 0, firstLine: 0, tailIndent: 0)
         styles["Screenplay — Action"] = baseDefinition(font: font, size: 12, alignment: .left, lineHeight: 1.0, before: 0, after: 0, headIndent: 0, firstLine: 0, tailIndent: 0)
         styles["Screenplay — Character"] = baseDefinition(font: font, size: 12, alignment: .left, lineHeight: 1.0, before: 12, after: 0, headIndent: 158, firstLine: 158, tailIndent: -72)

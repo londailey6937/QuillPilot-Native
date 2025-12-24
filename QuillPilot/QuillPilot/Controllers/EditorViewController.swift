@@ -2357,6 +2357,50 @@ case "Book Subtitle":
             }
 
         // MARK: Screenplay
+        case "Screenplay — Title":
+            applyScreenplayPageDefaultsIfNeeded()
+            applyScreenplayParagraphStyle { style in
+                style.alignment = .center
+                style.firstLineHeadIndent = 0
+                style.headIndent = 0
+                style.tailIndent = 0
+                style.paragraphSpacingBefore = 144  // Extra space above title
+                style.paragraphSpacing = 12
+            }
+            applyScreenplayTitleFont()
+        case "Screenplay — Author":
+            applyScreenplayPageDefaultsIfNeeded()
+            applyScreenplayParagraphStyle { style in
+                style.alignment = .center
+                style.firstLineHeadIndent = 0
+                style.headIndent = 0
+                style.tailIndent = 0
+                style.paragraphSpacingBefore = 72
+                style.paragraphSpacing = 0
+            }
+            applyScreenplayFont()
+        case "Screenplay — Contact":
+            applyScreenplayPageDefaultsIfNeeded()
+            applyScreenplayParagraphStyle { style in
+                style.alignment = .left
+                style.firstLineHeadIndent = 0
+                style.headIndent = 0
+                style.tailIndent = -288  // Left aligned, narrow column
+                style.paragraphSpacingBefore = 0
+                style.paragraphSpacing = 0
+            }
+            applyScreenplayFont()
+        case "Screenplay — Draft":
+            applyScreenplayPageDefaultsIfNeeded()
+            applyScreenplayParagraphStyle { style in
+                style.alignment = .right
+                style.firstLineHeadIndent = 0
+                style.headIndent = 0
+                style.tailIndent = 0
+                style.paragraphSpacingBefore = 0
+                style.paragraphSpacing = 0
+            }
+            applyScreenplayFont()
         case "Screenplay — Slugline":
             applyScreenplayPageDefaultsIfNeeded()
             applyScreenplayParagraphStyle { style in
@@ -2748,6 +2792,17 @@ case "Book Subtitle":
     private func applyScreenplayFont() {
         applyFontChange { current in
             NSFont(name: "Courier New", size: 12) ?? current
+        }
+    }
+
+    private func applyScreenplayTitleFont() {
+        applyFontChange { current in
+            // Title page uses larger, bold Courier
+            let baseFont = NSFont(name: "Courier New", size: 18) ?? current
+            if let boldFont = NSFont(name: "Courier New Bold", size: 18) {
+                return boldFont
+            }
+            return baseFont
         }
     }
 

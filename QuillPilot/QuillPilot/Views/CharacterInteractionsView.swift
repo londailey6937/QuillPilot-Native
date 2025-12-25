@@ -46,7 +46,7 @@ class CharacterInteractionsView: NSView {
 
         let padding: CGFloat = 60
         let topPadding: CGFloat = 100
-        let bottomPadding: CGFloat = 40
+        let bottomPadding: CGFloat = 120  // Increased for character names
         let chartWidth = bounds.width - (padding * 2)
         let chartHeight = bounds.height - topPadding - bottomPadding
 
@@ -85,8 +85,8 @@ class CharacterInteractionsView: NSView {
         // Draw horizontal grid lines and labels
         let gridLineCount = 5
         for i in 0...gridLineCount {
-            let y = padding + (chartHeight * CGFloat(i) / CGFloat(gridLineCount))
-            let value = maxValue - (maxValue * i / gridLineCount)
+            let y = bottomPadding + (chartHeight * CGFloat(i) / CGFloat(gridLineCount))
+            let value = maxValue * i / gridLineCount  // Low values at bottom, high at top
 
             // Draw grid line
             gridColor.setStroke()
@@ -128,8 +128,8 @@ class CharacterInteractionsView: NSView {
 
         for (index, interaction) in interactions.enumerated() {
             let x = padding + barSpacing + (CGFloat(index) * (barWidth + barSpacing))
-            let barHeight = (chartHeight - 10) * CGFloat(interaction.coAppearances) / CGFloat(maxValue)
-            let y = padding
+            let barHeight = chartHeight * CGFloat(interaction.coAppearances) / CGFloat(maxValue)
+            let y = bottomPadding  // Bars start from bottom
 
             // Draw bar with gradient
             let barRect = NSRect(x: x, y: y, width: barWidth, height: barHeight)
@@ -168,10 +168,10 @@ class CharacterInteractionsView: NSView {
             )
             valueStr.draw(in: valueRect, withAttributes: valueAttributes)
 
-            // Draw relationship strength indicator (small circle)
+            // Draw relationship strength indicator (small circle below x-axis near names)
             let strengthSize: CGFloat = 8 + (CGFloat(interaction.relationshipStrength) * 8)
             let strengthX = x + (barWidth - strengthSize) / 2
-            let strengthY = y - 50  // Increased padding from -35 to -50
+            let strengthY = bottomPadding - 35  // Position below x-axis, above character names
             let strengthRect = NSRect(x: strengthX, y: strengthY, width: strengthSize, height: strengthSize)
             let strengthPath = NSBezierPath(ovalIn: strengthRect)
 
@@ -200,7 +200,7 @@ class CharacterInteractionsView: NSView {
             let labelHeight: CGFloat = 45
             let labelRect = NSRect(
                 x: x - 10,
-                y: padding - labelHeight - 5,
+                y: bottomPadding - labelHeight - 50,  // Position below strength circles
                 width: barWidth + 20,
                 height: labelHeight
             )

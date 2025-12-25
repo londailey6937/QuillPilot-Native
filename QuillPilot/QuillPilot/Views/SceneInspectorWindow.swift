@@ -10,8 +10,8 @@ final class SceneInspectorWindowController: NSWindowController {
     private var notesView: NSTextView!
     private var intentPopup: NSPopUpButton!
     private var statePopup: NSPopUpButton!
-    private var povField: NSTextField!
-    private var locationField: NSTextField!
+    private var povComboBox: NSComboBox!
+    private var locationComboBox: NSComboBox!
     private var timeField: NSTextField!
     private var charactersField: NSTextField!
     private var goalField: NSTextField!
@@ -20,6 +20,9 @@ final class SceneInspectorWindowController: NSWindowController {
 
     private var currentScene: Scene?
     private var onSave: ((Scene) -> Void)?
+
+    // Store labels for theme updates
+    private var allLabels: [NSTextField] = []
 
     init() {
         let window = NSWindow(
@@ -35,6 +38,12 @@ final class SceneInspectorWindowController: NSWindowController {
         super.init(window: window)
 
         setupUI()
+        applyCurrentTheme()
+
+        // Listen for theme changes
+        NotificationCenter.default.addObserver(forName: .themeDidChange, object: nil, queue: .main) { [weak self] _ in
+            self?.applyCurrentTheme()
+        }
     }
 
     required init?(coder: NSCoder) {
@@ -45,13 +54,11 @@ final class SceneInspectorWindowController: NSWindowController {
         self.currentScene = scene
         self.onSave = onSave
 
-        window?.title = "Scene: \(scene.title)"
-
         titleField.stringValue = scene.title
         summaryField.stringValue = scene.summary
         notesView.string = scene.notes
-        povField.stringValue = scene.pointOfView
-        locationField.stringValue = scene.location
+        povComboBox.stringValue = scene.pointOfView
+        locationComboBox.stringValue = scene.location
         timeField.stringValue = scene.timeOfDay
         charactersField.stringValue = scene.characters.joined(separator: ", ")
         goalField.stringValue = scene.goal
@@ -106,20 +113,29 @@ final class SceneInspectorWindowController: NSWindowController {
         contentView.addSubview(statePopup)
         y -= rowHeight + spacing
 
-        // POV
+        // POV - Connected to Character Library
         addLabel("POV:", at: NSPoint(x: 10, y: y), in: contentView)
-        povField = NSTextField(frame: NSRect(x: fieldX, y: y, width: fieldWidth, height: 24))
-        povField.autoresizingMask = [.width]
-        povField.placeholderString = "Point of view character"
-        contentView.addSubview(povField)
+        povComboBox = NSComboBox(frame: NSRect(x: fieldX, y: y, width: fieldWidth, height: 26))
+        povComboBox.autoresizingMask = [.width]
+        povComboBox.placeholderString = "Point of view character"
+        povComboBox.completes = true
+        // Populate with characters from Character Library
+        let characterNames = CharacterLibrary.shared.characters.map { $0.fullName }
+        povComboBox.addItems(withObjectValues: characterNames)
+        contentView.addSubview(povComboBox)
         y -= rowHeight + spacing
 
-        // Location
+        // Location - Editable dropdown with previously used locations
         addLabel("Location:", at: NSPoint(x: 10, y: y), in: contentView)
-        locationField = NSTextField(frame: NSRect(x: fieldX, y: y, width: fieldWidth, height: 24))
-        locationField.autoresizingMask = [.width]
-        locationField.placeholderString = "Where the scene takes place"
-        contentView.addSubview(locationField)
+        locationComboBox = NSComboBox(frame: NSRect(x: fieldX, y: y, width: fieldWidth, height: 26))
+        locationComboBox.autoresizingMask = [.width]
+        locationComboBox.placeholderString = "Where the scene takes place"
+        locationComboBox.completes = true
+        // Populate with previously used locations from UserDefaults
+        if let savedLocations = UserDefaults.standard.stringArray(forKey: "QuillPilot.Scene.Locations") {
+            locationComboBox.addItems(withObjectValues: savedLocations)
+        }
+        contentView.addSubview(locationComboBox)
         y -= rowHeight + spacing
 
         // Time
@@ -233,7 +249,37 @@ final class SceneInspectorWindowController: NSWindowController {
         label.alignment = .right
         label.font = NSFont.systemFont(ofSize: 12, weight: .medium)
         label.textColor = NSColor.secondaryLabelColor
+        allLabels.append(label)
         view.addSubview(label)
+    }
+
+    private func applyCurrentTheme() {
+        let theme = ThemeManager.shared.currentTheme
+        guard let contentView = window?.contentView else { return }
+
+        // Window background
+        contentView.wantsLayer = true
+        contentView.layer?.backgroundColor = theme.pageBackground.cgColor
+
+        // Text fields
+        let fieldColor = theme.textColor
+        titleField?.textColor = fieldColor
+        summaryField?.textColor = fieldColor
+        timeField?.textColor = fieldColor
+        charactersField?.textColor = fieldColor
+        goalField?.textColor = fieldColor
+        conflictField?.textColor = fieldColor
+        outcomeField?.textColor = fieldColor
+        povComboBox?.textColor = fieldColor
+        locationComboBox?.textColor = fieldColor
+
+        // Notes text view
+        notesView?.textColor = fieldColor
+        notesView?.backgroundColor = theme.pageBackground
+
+        // Labels
+        let labelColor = theme.textColor.withAlphaComponent(0.7)
+        allLabels.forEach { $0.textColor = labelColor }
     }
 
     @objc private func saveScene() {
@@ -242,12 +288,21 @@ final class SceneInspectorWindowController: NSWindowController {
         scene.title = titleField.stringValue
         scene.summary = summaryField.stringValue
         scene.notes = notesView.string
-        scene.pointOfView = povField.stringValue
-        scene.location = locationField.stringValue
+        scene.pointOfView = povComboBox.stringValue
+        scene.location = locationComboBox.stringValue
         scene.timeOfDay = timeField.stringValue
         scene.characters = charactersField.stringValue
             .split(separator: ",")
             .map { $0.trimmingCharacters(in: .whitespaces) }
+
+        // Save location to history if not empty and not already saved
+        if !scene.location.isEmpty {
+            var savedLocations = UserDefaults.standard.stringArray(forKey: "QuillPilot.Scene.Locations") ?? []
+            if !savedLocations.contains(scene.location) {
+                savedLocations.append(scene.location)
+                UserDefaults.standard.set(savedLocations, forKey: "QuillPilot.Scene.Locations")
+            }
+        }
 
         // Dramatic elements
         scene.goal = goalField.stringValue

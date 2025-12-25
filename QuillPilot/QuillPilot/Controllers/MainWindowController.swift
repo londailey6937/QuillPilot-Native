@@ -56,6 +56,10 @@ class MainWindowController: NSWindowController {
     private var styleEditorWindow: StyleEditorWindowController?
     private var searchPanel: SearchPanelController?
 
+    // View controllers (referenced in multiple methods)
+    private var outlinePanelController: AnalysisViewController!
+    private var analysisViewController: AnalysisViewController!
+
     // Document tracking for auto-save
     private var currentDocumentURL: URL?
     private var currentDocumentFormat: ExportFormat = .docx
@@ -182,6 +186,11 @@ class MainWindowController: NSWindowController {
                 let theme = notification.object as? AppTheme
             else { return }
             self.applyTheme(theme)
+        }
+
+        // Initialize scene list with no document (clears any persisted scenes)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { [weak self] in
+            self?.mainContentViewController?.documentDidChange(url: nil)
         }
 
         // Listen for search panel requests
@@ -1087,6 +1096,9 @@ extension MainWindowController {
             mainContentViewController.editorViewController.headerText = ""
             mainContentViewController.editorViewController.footerText = ""
 
+            // Notify Navigator that document changed
+            mainContentViewController.documentDidChange(url: url)
+
             // Show placeholder text immediately so user sees the app is working
             mainContentViewController.editorViewController.textView?.string = "Loading document..."
 
@@ -1990,6 +2002,11 @@ class ContentViewController: NSViewController {
         analysisViewController?.applyTheme(theme)
         view.wantsLayer = true
         view.layer?.backgroundColor = theme.pageAround.cgColor
+    }
+
+    /// Notify both sidebars that the document has changed
+    func documentDidChange(url: URL?) {
+        outlinePanelController?.documentDidChange(url: url)
     }
 
     func setRuler(_ ruler: EnhancedRulerView) {
@@ -3126,6 +3143,8 @@ private enum DocxBuilder {
         let color = (attributes[.foregroundColor] as? NSColor) ?? .black
         let background = (attributes[.backgroundColor] as? NSColor)?.usingColorSpace(.sRGB)
 
+        NSLog("📝 Export run: fontName='\(font.fontName)', displayName='\(font.displayName ?? "nil")', size=\(font.pointSize)")
+
         var rPr: [String] = []
         let escapedFont = xmlEscape(font.fontName)
         rPr.append("<w:rFonts w:ascii=\"\(escapedFont)\" w:hAnsi=\"\(escapedFont)\" w:cs=\"\(escapedFont)\"/>")
@@ -3656,7 +3675,9 @@ private enum DocxTextExtractor {
                 currentText = ""
 
             case "w:rfonts", "rfonts":
-                runAttributes.fontName = attributeDict["w:ascii"] ?? attributeDict["w:hansi"] ?? attributeDict["w:cs"] ?? attributeDict["ascii"]
+                let fontName = attributeDict["w:ascii"] ?? attributeDict["w:hAnsi"] ?? attributeDict["w:cs"] ?? attributeDict["ascii"]
+                NSLog("📝 Parsing rfonts: attrs=\(attributeDict), extracted fontName='\(fontName ?? "nil")'")
+                runAttributes.fontName = fontName
 
             case "w:sz", "sz":
                 if let sizeStr = attributeDict["w:val"] ?? attributeDict["val"], let halfPoints = Double(sizeStr) {
@@ -3782,7 +3803,11 @@ private enum DocxTextExtractor {
             var attrs: [NSAttributedString.Key: Any] = [:]
             let size = runAttributes.fontSize ?? 12
             let fontName = runAttributes.fontName ?? "Times New Roman"
+            NSLog("📝 Import run: fontName='\(fontName)', fontSize=\(size), bold=\(runAttributes.isBold), italic=\(runAttributes.isItalic)")
             var font = NSFont(name: fontName, size: size) ?? NSFont.systemFont(ofSize: size)
+            if font.fontName != fontName {
+                NSLog("⚠️ Font name mismatch: requested '\(fontName)' but got '\(font.fontName)'")
+            }
             if runAttributes.isBold {
                 font = NSFontManager.shared.convert(font, toHaveTrait: .boldFontMask)
             }
@@ -3950,12 +3975,60 @@ private enum DocxTextExtractor {
                 let paragraph = paragraphStyle.makeParagraphStyle()
                 paragraphBuffer.addAttribute(.paragraphStyle, value: paragraph, range: NSRange(location: 0, length: paragraphBuffer.length))
 
-                if let styleName = paragraphStyle.styleName {
-                    paragraphBuffer.addAttribute(NSAttributedString.Key("QuillStyleName"), value: styleName, range: NSRange(location: 0, length: paragraphBuffer.length))
-                    NSLog("📝 Applied QuillStyleName attribute: \(styleName)")
+                // Determine style name - default to Body Text if none specified
+                let styleName = paragraphStyle.styleName ?? "Body Text"
+
+                // Apply QuillStyleName attribute
+                paragraphBuffer.addAttribute(NSAttributedString.Key("QuillStyleName"), value: styleName, range: NSRange(location: 0, length: paragraphBuffer.length))
+                NSLog("📝 Applied QuillStyleName attribute: \(styleName)")
+
+                // Apply style definition from StyleCatalog to ensure formatting is preserved
+                if let styleDefinition = StyleCatalog.shared.style(named: styleName) {
+                    NSLog("📝 Applying style definition from catalog for: \(styleName)")
+
+                    // Apply font attributes from style definition
+                    let font = makeFont(from: styleDefinition)
+                    let textColor = NSColor(hex: styleDefinition.textColorHex) ?? .black
+
+                    // Update all runs in the paragraph buffer with style attributes
+                    paragraphBuffer.enumerateAttributes(in: NSRange(location: 0, length: paragraphBuffer.length), options: []) { attrs, range, _ in
+                        var newAttrs = attrs
+
+                        // Only override font if not explicitly set (e.g., by bold/italic in run)
+                        if let existingFont = attrs[.font] as? NSFont {
+                            // Preserve bold/italic traits from the run
+                            let traits = existingFont.fontDescriptor.symbolicTraits
+                            var updatedFont = font
+                            if traits.contains(.bold) {
+                                updatedFont = NSFontManager.shared.convert(updatedFont, toHaveTrait: .boldFontMask)
+                            }
+                            if traits.contains(.italic) {
+                                updatedFont = NSFontManager.shared.convert(updatedFont, toHaveTrait: .italicFontMask)
+                            }
+                            newAttrs[.font] = updatedFont
+                        } else {
+                            newAttrs[.font] = font
+                        }
+
+                        // Apply text color from style if not explicitly set in run
+                        if attrs[.foregroundColor] == nil {
+                            newAttrs[.foregroundColor] = textColor
+                        }
+
+                        // Apply background color if specified
+                        if let bgHex = styleDefinition.backgroundColorHex,
+                           let bgColor = NSColor(hex: bgHex) {
+                            newAttrs[.backgroundColor] = bgColor
+                        }
+
+                        paragraphBuffer.setAttributes(newAttrs, range: range)
+                    }
+
+                    // Update paragraph style with style definition properties
+                    let updatedParagraphStyle = makeParagraphStyle(from: styleDefinition)
+                    paragraphBuffer.addAttribute(.paragraphStyle, value: updatedParagraphStyle, range: NSRange(location: 0, length: paragraphBuffer.length))
                 } else {
-                    NSLog("⚠️ No styleName to apply, using default Body Text")
-                    paragraphBuffer.addAttribute(NSAttributedString.Key("QuillStyleName"), value: "Body Text", range: NSRange(location: 0, length: paragraphBuffer.length))
+                    NSLog("⚠️ Style '\(styleName)' not found in StyleCatalog")
                 }
 
                 result.append(paragraphBuffer)
@@ -3967,6 +4040,43 @@ private enum DocxTextExtractor {
 
             paragraphBuffer = NSMutableAttributedString()
             hasActiveParagraph = false
+        }
+
+        private func makeFont(from definition: StyleDefinition) -> NSFont {
+            let size = definition.fontSize
+            var font = NSFont(name: definition.fontName, size: size) ?? NSFont.systemFont(ofSize: size)
+
+            if definition.isBold {
+                font = NSFontManager.shared.convert(font, toHaveTrait: .boldFontMask)
+            }
+            if definition.isItalic {
+                font = NSFontManager.shared.convert(font, toHaveTrait: .italicFontMask)
+            }
+
+            return font
+        }
+
+        private func makeParagraphStyle(from definition: StyleDefinition) -> NSParagraphStyle {
+            let style = NSMutableParagraphStyle()
+
+            // Alignment
+            if let alignment = NSTextAlignment(rawValue: definition.alignmentRawValue) {
+                style.alignment = alignment
+            }
+
+            // Line height
+            style.lineHeightMultiple = definition.lineHeightMultiple
+
+            // Spacing
+            style.paragraphSpacingBefore = definition.spacingBefore
+            style.paragraphSpacing = definition.spacingAfter
+
+            // Indents
+            style.headIndent = definition.headIndent
+            style.firstLineHeadIndent = definition.headIndent + definition.firstLineIndent
+            style.tailIndent = definition.tailIndent
+
+            return style.copy() as! NSParagraphStyle
         }
 
         private func output() -> NSAttributedString {

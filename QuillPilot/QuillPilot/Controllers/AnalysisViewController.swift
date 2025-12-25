@@ -75,6 +75,9 @@ class AnalysisViewController: NSViewController {
     private var storyDirectionsWindow: StoryDirectionsWindowController?
     private var autoStoryWindow: AutoStoryWindowController?
 
+    // Track current document for scene persistence
+    private var currentDocumentURL: URL?
+
     // Visualization views (macOS 13+)
     @available(macOS 13.0, *)
     private lazy var plotVisualizationView: PlotVisualizationView = {
@@ -96,6 +99,27 @@ class AnalysisViewController: NSViewController {
     var isOutlinePanel: Bool = false
     var analyzeCallback: (() -> Void)?
     var getOutlineEntriesCallback: (() -> [EditorViewController.OutlineEntry])?
+
+    /// Called when a new document is loaded or created
+    func documentDidChange(url: URL?) {
+        // Store current document URL for when scene window is created
+        currentDocumentURL = url
+        // Load scenes for this document if window exists
+        sceneListWindow?.loadScenes(for: url)
+        // Clear analysis results to force refresh on next analysis
+        latestAnalysisResults = nil
+        // Close any open character analysis popouts
+        presencePopoutWindow?.close()
+        presencePopoutWindow = nil
+        interactionsPopoutWindow?.close()
+        interactionsPopoutWindow = nil
+        emotionalTrajectoryPopoutWindow?.close()
+        emotionalTrajectoryPopoutWindow = nil
+        decisionConsequenceChainPopoutWindow?.close()
+        decisionConsequenceChainPopoutWindow = nil
+        beliefShiftMatrixPopoutWindow?.close()
+        beliefShiftMatrixPopoutWindow = nil
+    }
 
     private func scrollToTop() {
         guard let scrollView = scrollView else { return }
@@ -384,6 +408,8 @@ class AnalysisViewController: NSViewController {
             // Open Scenes window
             if sceneListWindow == nil {
                 sceneListWindow = SceneListWindowController()
+                // Load scenes for current document when window is first created
+                sceneListWindow?.loadScenes(for: currentDocumentURL)
             }
             sceneListWindow?.showWindow(nil)
             sceneListWindow?.window?.makeKeyAndOrderFront(nil)
@@ -1541,6 +1567,9 @@ extension AnalysisViewController {
         window.center()
         window.makeKeyAndOrderFront(nil)
 
+        // Scroll to top
+        decisionBeliefView.scrollToTop()
+
         // Store window reference and set up cleanup
         emotionalJourneyPopoutWindow = window
         NotificationCenter.default.addObserver(
@@ -2010,11 +2039,37 @@ extension AnalysisViewController {
     private func generateFailuresForCharacter(characterName: String, index: Int) -> [FailurePatternChartView.Failure] {
         var failures: [FailurePatternChartView.Failure] = []
 
-        // Generate failures for chapters 2, 5, 8, 11, 14
-        let chapters = [2, 5, 8, 11, 14]
+        // Get actual chapter numbers from outline
+        let outlineEntries = getOutlineEntriesCallback?()
+        let actualChapters: [Int]
+        if let entries = outlineEntries, !entries.isEmpty {
+            // Look for level 1 entries (chapters)
+            let chapterEntries = entries.filter { $0.level == 1 }
+            if !chapterEntries.isEmpty {
+                actualChapters = Array(1...chapterEntries.count)
+            } else {
+                // If no level 1, try level 0 (parts) or level 2 (headings)
+                let level0Entries = entries.filter { $0.level == 0 }
+                let level2Entries = entries.filter { $0.level == 2 }
+                if !level0Entries.isEmpty {
+                    actualChapters = Array(1...level0Entries.count)
+                } else if !level2Entries.isEmpty {
+                    actualChapters = Array(1...min(level2Entries.count, 10))
+                } else {
+                    // Fallback: estimate from document length
+                    actualChapters = Array(1...6)
+                }
+            }
+        } else {
+            // No outline available - use reasonable default
+            actualChapters = Array(1...6)
+        }
+
+        // Use actual chapters from outline (no arbitrary limit)
+        let chapters = actualChapters
 
         for (chapterIndex, chapter) in chapters.enumerated() {
-            let progress = Double(chapterIndex) / Double(chapters.count - 1)
+            let progress = chapters.count > 1 ? Double(chapterIndex) / Double(chapters.count - 1) : 0.0
 
             // Different patterns for different characters
             let failureType: FailurePatternChartView.FailureType
@@ -2183,11 +2238,45 @@ extension AnalysisViewController {
     private func generateStancesForCharacter(characterName: String, index: Int) -> [ThematicResonanceMapView.ThematicStance] {
         var stances: [ThematicResonanceMapView.ThematicStance] = []
 
-        // Generate data for chapters 2, 4, 6, 8, 10, 12, 14
-        let chapters = [2, 4, 6, 8, 10, 12, 14]
+        // Get actual chapter numbers from outline
+        let outlineEntries = getOutlineEntriesCallback?()
+        let actualChapters: [Int]
+        if let entries = outlineEntries, !entries.isEmpty {
+            // Look for level 1 entries (chapters)
+            let chapterEntries = entries.filter { $0.level == 1 }
+            if !chapterEntries.isEmpty {
+                actualChapters = Array(1...chapterEntries.count)
+            } else {
+                // If no level 1, try level 0 (parts) or level 2 (headings)
+                let level0Entries = entries.filter { $0.level == 0 }
+                let level2Entries = entries.filter { $0.level == 2 }
+                if !level0Entries.isEmpty {
+                    actualChapters = Array(1...level0Entries.count)
+                } else if !level2Entries.isEmpty {
+                    actualChapters = Array(1...min(level2Entries.count, 10))
+                } else {
+                    // Fallback: estimate from document length
+                    actualChapters = Array(1...6)
+                }
+            }
+        } else {
+            // No outline available - use reasonable default
+            actualChapters = Array(1...6)
+        }
+
+        // Select evenly spaced chapters for thematic stance (max 7 points)
+        let chapters: [Int]
+        if actualChapters.count <= 7 {
+            chapters = actualChapters
+        } else {
+            let step = Double(actualChapters.count - 1) / 6.0
+            chapters = (0..<7).map { i in
+                actualChapters[min(Int(Double(i) * step), actualChapters.count - 1)]
+            }
+        }
 
         for (chapterIndex, chapter) in chapters.enumerated() {
-            let progress = Double(chapterIndex) / Double(chapters.count - 1)
+            let progress = chapters.count > 1 ? Double(chapterIndex) / Double(chapters.count - 1) : 0.0
 
             // Different patterns for different characters
             let alignment: Double
@@ -3188,7 +3277,12 @@ extension AnalysisViewController {
     }
 
     @objc private func showThematicResonanceMap() {
-        openThematicResonanceMapPopout()
+        // Generate data asynchronously to avoid blocking UI
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            DispatchQueue.main.async {
+                self?.openThematicResonanceMapPopout()
+            }
+        }
     }
 
     @objc private func showFailurePatternCharts() {
@@ -3299,10 +3393,13 @@ extension AnalysisViewController {
     private func generateEmotionalTrajectories(from results: AnalysisResults) -> [EmotionalTrajectoryView.CharacterTrajectory] {
         var trajectories: [EmotionalTrajectoryView.CharacterTrajectory] = []
 
-        // Get character names from presence data
-        let characterNames = results.characterPresence.prefix(3).map { $0.characterName } // Top 3 characters
+        // Get character names from Character Library (all characters)
+        let library = CharacterLibrary.shared
+        let characterNames = library.characters.isEmpty ?
+            results.characterPresence.prefix(3).map { $0.characterName } : // Fall back to presence data if no library
+            library.characters.map { $0.displayName } // Use all characters from library
 
-        let colors: [NSColor] = [.systemBlue, .systemRed, .systemGreen, .systemOrange, .systemPurple]
+        let colors: [NSColor] = [.systemBlue, .systemRed, .systemGreen, .systemOrange, .systemPurple, .systemTeal, .systemIndigo, .systemPink]
 
         for (index, characterName) in characterNames.enumerated() {
             // Generate emotional states based on character presence and arc

@@ -45,6 +45,12 @@ class DecisionBeliefLoopView: NSView {
         updateContent()
     }
 
+    func scrollToTop() {
+        // Scroll the content view to the top
+        scrollView.contentView.scroll(to: NSPoint(x: 0, y: contentView.bounds.maxY - scrollView.contentView.bounds.height))
+        scrollView.reflectScrolledClipView(scrollView.contentView)
+    }
+
     private func updateContent() {
         // Remove old subviews
         contentView.subviews.forEach { $0.removeFromSuperview() }

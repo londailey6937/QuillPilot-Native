@@ -312,10 +312,10 @@ class AnalysisEngine {
             results.relationshipEvolutionData = analyzer.generateRelationshipEvolutionData(from: analysisText, characterNames: characterNames)
 
             // Generate internal vs external alignment charts
-            results.internalExternalAlignment = analyzer.generateInternalExternalAlignment(from: analysisText, characterNames: characterNames)
+            results.internalExternalAlignment = analyzer.generateInternalExternalAlignment(from: analysisText, characterNames: characterNames, outlineEntries: outlineEntries)
 
             // Generate language drift analysis
-            results.languageDriftData = analyzer.generateLanguageDriftAnalysis(from: analysisText, characterNames: characterNames)
+            results.languageDriftData = analyzer.generateLanguageDriftAnalysis(from: analysisText, characterNames: characterNames, outlineEntries: outlineEntries)
         }
 
         return results
@@ -817,69 +817,127 @@ class AnalysisEngine {
     func generateBeliefShiftMatrices(text: String, characterNames: [String], outlineEntries: [DecisionBeliefLoopAnalyzer.OutlineEntry]? = nil) -> [BeliefShiftMatrix] {
         var matrices: [BeliefShiftMatrix] = []
 
-        // For now, generate sample data for demonstration
+        // Get actual chapters from outline or fall back to regex detection
+        let chapters: [(number: Int, text: String)]
+        if let entries = outlineEntries, !entries.isEmpty {
+            // Look for level 1 entries (chapters) first
+            let chapterEntries = entries.filter { $0.level == 1 }
+            let effectiveEntries: [DecisionBeliefLoopAnalyzer.OutlineEntry]
+            if !chapterEntries.isEmpty {
+                effectiveEntries = chapterEntries
+            } else {
+                // Fallback: try level 0 (parts) or level 2 (headings)
+                let level0Entries = entries.filter { $0.level == 0 }
+                let level2Entries = entries.filter { $0.level == 2 }
+                if !level0Entries.isEmpty {
+                    effectiveEntries = level0Entries
+                } else if !level2Entries.isEmpty {
+                    effectiveEntries = Array(level2Entries.prefix(10))
+                } else {
+                    effectiveEntries = []
+                }
+            }
+            if !effectiveEntries.isEmpty {
+                let fullText = text as NSString
+                chapters = effectiveEntries.enumerated().map { index, entry in
+                    let startLocation = entry.range.location
+                    let endLocation: Int
+                    if index < effectiveEntries.count - 1 {
+                        endLocation = effectiveEntries[index + 1].range.location
+                    } else {
+                        endLocation = fullText.length
+                    }
+                    let chapterRange = NSRange(location: startLocation, length: endLocation - startLocation)
+                    return (number: index + 1, text: fullText.substring(with: chapterRange))
+                }
+            } else {
+                // No outline structure found - use regex detection
+                let chapterTexts = splitIntoChapters(text: text)
+                chapters = chapterTexts.enumerated().map { (number: $0 + 1, text: $1) }
+            }
+        } else {
+            let chapterTexts = splitIntoChapters(text: text)
+            chapters = chapterTexts.enumerated().map { (number: $0 + 1, text: $1) }
+        }
+
+        // For now, generate sample data but use actual chapter numbers from document
         // In a future version, this would use NLP to detect belief statements in the narrative
 
         for characterName in characterNames.prefix(3) { // Limit to top 3 characters
             var entries: [BeliefShiftMatrix.BeliefEntry] = []
 
-            // Create sample entries for demonstration
+            // Use actual chapter numbers from the document
+            let chapterNumbers = chapters.map { $0.number }
+            let sampleChapters = chapterNumbers.count >= 3 ?
+                [chapterNumbers[0], chapterNumbers[min(chapterNumbers.count / 2, chapterNumbers.count - 1)], chapterNumbers[chapterNumbers.count - 1]] :
+                chapterNumbers
+
+            // Create sample entries for demonstration using actual chapter numbers
             if characterName.lowercased().contains("alex") || characterName.lowercased().contains("protagonist") {
-                entries = [
-                    BeliefShiftMatrix.BeliefEntry(
-                        chapter: 1,
-                        chapterPage: 12,
-                        coreBelief: "I survive alone.",
-                        evidence: "Refuses help from teammates, takes risky solo missions",
-                        evidencePage: 15,
-                        counterpressure: "Offered protection by mentor figure",
-                        counterpressurePage: 18
-                    ),
-                    BeliefShiftMatrix.BeliefEntry(
-                        chapter: 6,
-                        chapterPage: 87,
-                        coreBelief: "Help costs freedom.",
-                        evidence: "Accepts dangerous deal to maintain autonomy",
-                        evidencePage: 92,
-                        counterpressure: "Loses control in exchange for assistance",
-                        counterpressurePage: 95
-                    ),
-                    BeliefShiftMatrix.BeliefEntry(
-                        chapter: 12,
-                        chapterPage: 203,
-                        coreBelief: "Interdependence is strength.",
-                        evidence: "Makes voluntary sacrifice for team",
-                        evidencePage: 210,
-                        counterpressure: "Fear of betrayal resurfaces briefly",
-                        counterpressurePage: 215
-                    )
-                ]
+                for (index, chapterNum) in sampleChapters.enumerated() {
+                    if index == 0 {
+                        entries.append(BeliefShiftMatrix.BeliefEntry(
+                            chapter: chapterNum,
+                            chapterPage: 12,
+                            coreBelief: "I survive alone.",
+                            evidence: "Refuses help from teammates, takes risky solo missions",
+                            evidencePage: 15,
+                            counterpressure: "Offered protection by mentor figure",
+                            counterpressurePage: 18
+                        ))
+                    } else if index == 1 {
+                        entries.append(BeliefShiftMatrix.BeliefEntry(
+                            chapter: chapterNum,
+                            chapterPage: 87,
+                            coreBelief: "Help costs freedom.",
+                            evidence: "Accepts dangerous deal to maintain autonomy",
+                            evidencePage: 92,
+                            counterpressure: "Loses control in exchange for assistance",
+                            counterpressurePage: 95
+                        ))
+                    } else {
+                        entries.append(BeliefShiftMatrix.BeliefEntry(
+                            chapter: chapterNum,
+                            chapterPage: 203,
+                            coreBelief: "Interdependence is strength.",
+                            evidence: "Makes voluntary sacrifice for team",
+                            evidencePage: 210,
+                            counterpressure: "Fear of betrayal resurfaces briefly",
+                            counterpressurePage: 215
+                        ))
+                    }
+                }
             } else {
-                // Generic entries for other characters
-                entries = [
-                    BeliefShiftMatrix.BeliefEntry(
-                        chapter: 1,
-                        chapterPage: 20,
-                        coreBelief: "The rules protect us.",
-                        evidence: "Follows protocol strictly",
-                        evidencePage: 25,
-                        counterpressure: "Protocol fails in critical moment",
-                        counterpressurePage: 30
-                    ),
-                    BeliefShiftMatrix.BeliefEntry(
-                        chapter: 8,
-                        chapterPage: 145,
-                        coreBelief: "Some rules must be broken for the greater good.",
-                        evidence: "Makes unauthorized decision that saves lives",
-                        evidencePage: 150,
-                        counterpressure: "Faces consequences and judgment",
-                        counterpressurePage: 155
-                    )
-                ]
+                // Generic entries for other characters using actual chapter numbers
+                for (index, chapterNum) in sampleChapters.prefix(2).enumerated() {
+                    if index == 0 {
+                        entries.append(BeliefShiftMatrix.BeliefEntry(
+                            chapter: chapterNum,
+                            chapterPage: 20,
+                            coreBelief: "The rules protect us.",
+                            evidence: "Follows protocol strictly",
+                            evidencePage: 25,
+                            counterpressure: "Protocol fails in critical moment",
+                            counterpressurePage: 30
+                        ))
+                    } else {
+                        entries.append(BeliefShiftMatrix.BeliefEntry(
+                            chapter: chapterNum,
+                            chapterPage: 145,
+                            coreBelief: "Some rules must be broken for the greater good.",
+                            evidence: "Makes unauthorized decision that saves lives",
+                            evidencePage: 150,
+                            counterpressure: "Faces consequences and judgment",
+                            counterpressurePage: 155
+                        ))
+                    }
+                }
             }
 
-            let matrix = BeliefShiftMatrix(characterName: characterName, entries: entries)
-            matrices.append(matrix)
+            if !entries.isEmpty {
+                let matrix = BeliefShiftMatrix(characterName: characterName, entries: entries)
+                matrices.append(matrix)
+            }
         }
 
         return matrices
@@ -888,84 +946,145 @@ class AnalysisEngine {
     func generateDecisionConsequenceChains(text: String, characterNames: [String], outlineEntries: [DecisionBeliefLoopAnalyzer.OutlineEntry]? = nil) -> [DecisionConsequenceChain] {
         var chains: [DecisionConsequenceChain] = []
 
-        // For now, generate sample data for demonstration
+        // Get actual chapters from outline or fall back to regex detection
+        let chapters: [(number: Int, text: String)]
+        if let entries = outlineEntries, !entries.isEmpty {
+            // Look for level 1 entries (chapters) first
+            let chapterEntries = entries.filter { $0.level == 1 }
+            let effectiveEntries: [DecisionBeliefLoopAnalyzer.OutlineEntry]
+            if !chapterEntries.isEmpty {
+                effectiveEntries = chapterEntries
+            } else {
+                // Fallback: try level 0 (parts) or level 2 (headings)
+                let level0Entries = entries.filter { $0.level == 0 }
+                let level2Entries = entries.filter { $0.level == 2 }
+                if !level0Entries.isEmpty {
+                    effectiveEntries = level0Entries
+                } else if !level2Entries.isEmpty {
+                    effectiveEntries = Array(level2Entries.prefix(10))
+                } else {
+                    effectiveEntries = []
+                }
+            }
+            if !effectiveEntries.isEmpty {
+                let fullText = text as NSString
+                chapters = effectiveEntries.enumerated().map { index, entry in
+                    let startLocation = entry.range.location
+                    let endLocation: Int
+                    if index < effectiveEntries.count - 1 {
+                        endLocation = effectiveEntries[index + 1].range.location
+                    } else {
+                        endLocation = fullText.length
+                    }
+                    let chapterRange = NSRange(location: startLocation, length: endLocation - startLocation)
+                    return (number: index + 1, text: fullText.substring(with: chapterRange))
+                }
+            } else {
+                // No outline structure found - use regex detection
+                let chapterTexts = splitIntoChapters(text: text)
+                chapters = chapterTexts.enumerated().map { (number: $0 + 1, text: $1) }
+            }
+        } else {
+            let chapterTexts = splitIntoChapters(text: text)
+            chapters = chapterTexts.enumerated().map { (number: $0 + 1, text: $1) }
+        }
+
+        // For now, generate sample data but use actual chapter numbers from document
         // In a future version, this would use NLP to detect decision points and consequences
 
         for characterName in characterNames.prefix(3) { // Limit to top 3 characters
             var entries: [DecisionConsequenceChain.ChainEntry] = []
 
-            // Create sample entries for demonstration
+            // Use actual chapter numbers from the document
+            let chapterNumbers = chapters.map { $0.number }
+            let sampleChapters = chapterNumbers.count >= 4 ?
+                [chapterNumbers[0], chapterNumbers[min(chapterNumbers.count / 3, chapterNumbers.count - 1)],
+                 chapterNumbers[min((chapterNumbers.count * 2) / 3, chapterNumbers.count - 1)], chapterNumbers[chapterNumbers.count - 1]] :
+                chapterNumbers
+
+            // Create sample entries for demonstration using actual chapter numbers
             if characterName.lowercased().contains("alex") || characterName.lowercased().contains("protagonist") {
-                entries = [
-                    DecisionConsequenceChain.ChainEntry(
-                        chapter: 1,
-                        chapterPage: 15,
-                        decision: "Refuses help from mentor, chooses solo mission",
-                        decisionPage: 15,
-                        immediateOutcome: "Nearly fails first objective alone",
-                        immediateOutcomePage: 22,
-                        longTermEffect: "Develops mistrust of authority figures",
-                        longTermEffectPage: 30
-                    ),
-                    DecisionConsequenceChain.ChainEntry(
-                        chapter: 4,
-                        chapterPage: 68,
-                        decision: "Accepts dangerous alliance to gain intel",
-                        decisionPage: 68,
-                        immediateOutcome: "Gets valuable information but makes enemy",
-                        immediateOutcomePage: 75,
-                        longTermEffect: "Creates secondary antagonist for Act 2",
-                        longTermEffectPage: 95
-                    ),
-                    DecisionConsequenceChain.ChainEntry(
-                        chapter: 8,
-                        chapterPage: 142,
-                        decision: "Reveals secret to save teammate",
-                        decisionPage: 142,
-                        immediateOutcome: "Team member survives but learns truth",
-                        immediateOutcomePage: 148,
-                        longTermEffect: "Relationship dynamic permanently shifts, builds trust",
-                        longTermEffectPage: 165
-                    ),
-                    DecisionConsequenceChain.ChainEntry(
-                        chapter: 12,
-                        chapterPage: 205,
-                        decision: "Sacrifices personal goal for greater good",
-                        decisionPage: 205,
-                        immediateOutcome: "Mission succeeds, personal loss sustained",
-                        immediateOutcomePage: 212,
-                        longTermEffect: "Character growth complete, embraces new identity",
-                        longTermEffectPage: 220
-                    )
-                ]
+                for (index, chapterNum) in sampleChapters.enumerated() {
+                    switch index {
+                    case 0:
+                        entries.append(DecisionConsequenceChain.ChainEntry(
+                            chapter: chapterNum,
+                            chapterPage: 15,
+                            decision: "Refuses help from mentor, chooses solo mission",
+                            decisionPage: 15,
+                            immediateOutcome: "Nearly fails first objective alone",
+                            immediateOutcomePage: 22,
+                            longTermEffect: "Develops mistrust of authority figures",
+                            longTermEffectPage: 30
+                        ))
+                    case 1:
+                        entries.append(DecisionConsequenceChain.ChainEntry(
+                            chapter: chapterNum,
+                            chapterPage: 68,
+                            decision: "Accepts dangerous alliance to gain intel",
+                            decisionPage: 68,
+                            immediateOutcome: "Gets valuable information but makes enemy",
+                            immediateOutcomePage: 75,
+                            longTermEffect: "Creates secondary antagonist for Act 2",
+                            longTermEffectPage: 95
+                        ))
+                    case 2:
+                        entries.append(DecisionConsequenceChain.ChainEntry(
+                            chapter: chapterNum,
+                            chapterPage: 142,
+                            decision: "Reveals secret to save teammate",
+                            decisionPage: 142,
+                            immediateOutcome: "Team member survives but learns truth",
+                            immediateOutcomePage: 148,
+                            longTermEffect: "Relationship dynamic permanently shifts, builds trust",
+                            longTermEffectPage: 165
+                        ))
+                    default:
+                        entries.append(DecisionConsequenceChain.ChainEntry(
+                            chapter: chapterNum,
+                            chapterPage: 205,
+                            decision: "Sacrifices personal goal for greater good",
+                            decisionPage: 205,
+                            immediateOutcome: "Mission succeeds, personal loss sustained",
+                            immediateOutcomePage: 212,
+                            longTermEffect: "Character growth complete, embraces new identity",
+                            longTermEffectPage: 220
+                        ))
+                    }
+                }
             } else {
-                // Generic entries for other characters
-                entries = [
-                    DecisionConsequenceChain.ChainEntry(
-                        chapter: 2,
-                        chapterPage: 35,
-                        decision: "Chooses loyalty over personal safety",
-                        decisionPage: 35,
-                        immediateOutcome: "Gains trust but faces danger",
-                        immediateOutcomePage: 40,
-                        longTermEffect: "Becomes key ally in conflict",
-                        longTermEffectPage: 55
-                    ),
-                    DecisionConsequenceChain.ChainEntry(
-                        chapter: 7,
-                        chapterPage: 125,
-                        decision: "Breaks protocol to help protagonist",
-                        decisionPage: 125,
-                        immediateOutcome: "Faces disciplinary action",
-                        immediateOutcomePage: 130,
-                        longTermEffect: "Solidifies commitment to cause",
-                        longTermEffectPage: 145
-                    )
-                ]
+                // Generic entries for other characters using actual chapter numbers
+                for (index, chapterNum) in sampleChapters.prefix(2).enumerated() {
+                    if index == 0 {
+                        entries.append(DecisionConsequenceChain.ChainEntry(
+                            chapter: chapterNum,
+                            chapterPage: 35,
+                            decision: "Chooses loyalty over personal safety",
+                            decisionPage: 35,
+                            immediateOutcome: "Gains trust but faces danger",
+                            immediateOutcomePage: 40,
+                            longTermEffect: "Becomes key ally in conflict",
+                            longTermEffectPage: 55
+                        ))
+                    } else {
+                        entries.append(DecisionConsequenceChain.ChainEntry(
+                            chapter: chapterNum,
+                            chapterPage: 125,
+                            decision: "Breaks protocol to help protagonist",
+                            decisionPage: 125,
+                            immediateOutcome: "Faces disciplinary action",
+                            immediateOutcomePage: 130,
+                            longTermEffect: "Solidifies commitment to cause",
+                            longTermEffectPage: 145
+                        ))
+                    }
+                }
             }
 
-            let chain = DecisionConsequenceChain(characterName: characterName, entries: entries)
-            chains.append(chain)
+            if !entries.isEmpty {
+                let chain = DecisionConsequenceChain(characterName: characterName, entries: entries)
+                chains.append(chain)
+            }
         }
 
         return chains

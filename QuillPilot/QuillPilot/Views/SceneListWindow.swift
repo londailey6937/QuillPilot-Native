@@ -23,8 +23,20 @@ final class SceneListWindowController: NSWindowController {
     private var stateFilter: RevisionState? = nil
     private var intentFilter: SceneIntent? = nil
 
-    // Persistence
-    private let scenesStorageKey = "QuillPilot.Scenes.Data"
+    // Persistence - document specific
+    private var currentDocumentURL: URL?
+
+    // Store UI elements for theme updates
+    private var countLabel: NSTextField?
+    private var filterLabel: NSTextField?
+
+    private func scenesStorageKey(for documentURL: URL?) -> String {
+        guard let url = documentURL else {
+            return "QuillPilot.Scenes.Untitled"
+        }
+        // Use document path as unique identifier
+        return "QuillPilot.Scenes.\(url.path)"
+    }
 
     init() {
         let window = NSWindow(
@@ -40,7 +52,7 @@ final class SceneListWindowController: NSWindowController {
         super.init(window: window)
 
         setupUI()
-        loadScenes()
+        // Don't auto-load scenes - wait for document to be opened
     }
 
     required init?(coder: NSCoder) {
@@ -85,14 +97,13 @@ final class SceneListWindowController: NSWindowController {
         toolbar.addSubview(inspectorButton)
 
         // Scene count label
-        let countLabel = NSTextField(labelWithString: "0 scenes")
-        countLabel.frame = NSRect(x: toolbar.bounds.width - 100, y: 12, width: 90, height: 20)
-        countLabel.alignment = .right
-        countLabel.textColor = NSColor.secondaryLabelColor
-        countLabel.font = NSFont.systemFont(ofSize: 11)
-        countLabel.autoresizingMask = [.minXMargin]
-        countLabel.tag = 100
-        toolbar.addSubview(countLabel)
+        countLabel = NSTextField(labelWithString: "0 scenes")
+        countLabel!.frame = NSRect(x: toolbar.bounds.width - 100, y: 12, width: 90, height: 20)
+        countLabel!.alignment = .right
+        countLabel!.textColor = NSColor.secondaryLabelColor
+        countLabel!.font = NSFont.systemFont(ofSize: 11)
+        countLabel!.autoresizingMask = [.minXMargin]
+        toolbar.addSubview(countLabel!)
 
         // Filter bar at top
         filterBar = NSView(frame: NSRect(x: 0, y: contentView.bounds.height - 32, width: contentView.bounds.width, height: 32))
@@ -102,11 +113,11 @@ final class SceneListWindowController: NSWindowController {
         contentView.addSubview(filterBar)
 
         // Filter label
-        let filterLabel = NSTextField(labelWithString: "Filter:")
-        filterLabel.frame = NSRect(x: 8, y: 6, width: 40, height: 20)
-        filterLabel.font = NSFont.systemFont(ofSize: 11)
-        filterLabel.textColor = NSColor.secondaryLabelColor
-        filterBar.addSubview(filterLabel)
+        filterLabel = NSTextField(labelWithString: "Filter:")
+        filterLabel!.frame = NSRect(x: 8, y: 6, width: 40, height: 20)
+        filterLabel!.font = NSFont.systemFont(ofSize: 11)
+        filterLabel!.textColor = NSColor.secondaryLabelColor
+        filterBar.addSubview(filterLabel!)
 
         // State filter popup
         stateFilterPopup = NSPopUpButton(frame: NSRect(x: 50, y: 3, width: 100, height: 26), pullsDown: false)
@@ -169,24 +180,38 @@ final class SceneListWindowController: NSWindowController {
         updateCountLabel()
     }
 
-    private func loadScenes() {
-        // Load from UserDefaults
-        if let data = UserDefaults.standard.data(forKey: scenesStorageKey) {
+    /// Load scenes for a specific document. If documentURL is nil, scenes won't persist.
+    func loadScenes(for documentURL: URL?) {
+        currentDocumentURL = documentURL
+
+        // Clear existing scenes first
+        sceneManager.clear()
+
+        // Load from UserDefaults if we have a document
+        if let url = documentURL,
+           let data = UserDefaults.standard.data(forKey: scenesStorageKey(for: url)) {
             do {
                 try sceneManager.decode(from: data)
             } catch {
                 print("Failed to load scenes: \(error)")
             }
         }
+
         applyFilters()
         tableView.reloadData()
         updateCountLabel()
     }
 
     private func saveScenes() {
+        // Only save if we have a document
+        guard currentDocumentURL != nil else {
+            print("Cannot save scenes: no document loaded")
+            return
+        }
+
         do {
             let data = try sceneManager.encode()
-            UserDefaults.standard.set(data, forKey: scenesStorageKey)
+            UserDefaults.standard.set(data, forKey: scenesStorageKey(for: currentDocumentURL))
         } catch {
             print("Failed to save scenes: \(error)")
         }
@@ -413,5 +438,31 @@ extension SceneListWindowController: NSTableViewDelegate {
         let hasSelection = tableView.selectedRow >= 0
         deleteButton.isEnabled = hasSelection
         inspectorButton.isEnabled = hasSelection
+    }
+
+    private func applyCurrentTheme() {
+        let theme = ThemeManager.shared.currentTheme
+        guard let contentView = window?.contentView else { return }
+
+        // Window background
+        contentView.wantsLayer = true
+        contentView.layer?.backgroundColor = theme.pageBackground.cgColor
+
+        // Toolbar
+        toolbar?.wantsLayer = true
+        toolbar?.layer?.backgroundColor = theme.toolbarBackground.cgColor
+
+        // Filter bar
+        filterBar?.wantsLayer = true
+        filterBar?.layer?.backgroundColor = theme.pageBackground.withAlphaComponent(0.95).cgColor
+
+        // Labels
+        let labelColor = theme.textColor.withAlphaComponent(0.7)
+        countLabel?.textColor = labelColor
+        filterLabel?.textColor = labelColor
+
+        // Table view
+        tableView?.backgroundColor = theme.pageBackground
+        tableView?.reloadData()
     }
 }

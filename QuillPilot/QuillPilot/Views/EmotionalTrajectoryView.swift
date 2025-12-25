@@ -224,15 +224,23 @@ class EmotionalTrajectoryView: NSView {
     }
 
     private func drawLegend(in bounds: NSRect) {
-        let legendX: CGFloat = bounds.maxX - 200
+        // Use two-column layout for legend to save space
+        let legendWidth: CGFloat = 400
+        let columnWidth: CGFloat = 200
+        let legendX: CGFloat = bounds.maxX - legendWidth - 10
         let legendY: CGFloat = bounds.maxY - 40
-        var currentY = legendY
+        let itemsPerColumn = (trajectories.count + 1) / 2
 
-        for trajectory in trajectories {
+        for (index, trajectory) in trajectories.enumerated() {
+            let column = index / itemsPerColumn
+            let row = index % itemsPerColumn
+            let currentX = legendX + CGFloat(column) * columnWidth
+            let currentY = legendY - CGFloat(row) * 18
+
             // Line sample
             let linePath = NSBezierPath()
-            linePath.move(to: NSPoint(x: legendX, y: currentY))
-            linePath.line(to: NSPoint(x: legendX + 30, y: currentY))
+            linePath.move(to: NSPoint(x: currentX, y: currentY))
+            linePath.line(to: NSPoint(x: currentX + 25, y: currentY))
             trajectory.color.setStroke()
             linePath.lineWidth = 2.5
 
@@ -242,17 +250,21 @@ class EmotionalTrajectoryView: NSView {
 
             linePath.stroke()
 
-            // Label
+            // Label - truncate if needed
             let labelAttributes: [NSAttributedString.Key: Any] = [
-                .font: NSFont.systemFont(ofSize: 11),
+                .font: NSFont.systemFont(ofSize: 10),
                 .foregroundColor: NSColor.labelColor
             ]
 
             let suffix = trajectory.isDashed ? " (subtext)" : ""
-            let label = NSAttributedString(string: trajectory.characterName + suffix, attributes: labelAttributes)
-            label.draw(at: NSPoint(x: legendX + 40, y: currentY - 6))
-
-            currentY -= 20
+            var labelText = trajectory.characterName + suffix
+            // Truncate long names
+            if labelText.count > 25 {
+                let index = labelText.index(labelText.startIndex, offsetBy: 22)
+                labelText = String(labelText[..<index]) + "..."
+            }
+            let label = NSAttributedString(string: labelText, attributes: labelAttributes)
+            label.draw(at: NSPoint(x: currentX + 32, y: currentY - 5))
         }
     }
 }

@@ -769,6 +769,9 @@ The Scene List shows all your scenes in order with key information at a glance.
 To Open:
 1. Click 🎬 Scenes in the Navigator panel
 2. The Scene List window appears
+3. Click "+" to add a new scene
+4. Double click the new scene to open the new scene window
+5. Re-title the new scene; complete the fields, and click Save
 
 Scene List Features:
 • Each row shows status icon, title, intent, and order number

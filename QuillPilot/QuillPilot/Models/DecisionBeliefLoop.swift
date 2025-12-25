@@ -388,22 +388,34 @@ class DecisionBeliefLoopAnalyzer {
             }
             // Filter for level 1 entries (Chapter Number, Chapter Title, Heading 1)
             let chapterEntries = entries.filter { $0.level == 1 }
-
-            if chapterEntries.isEmpty {
-                // No chapter-level entries, treat entire document as one chapter
-                chapters = [(text: text, number: 1, startPos: 0)]
+            let effectiveEntries: [OutlineEntry]
+            if !chapterEntries.isEmpty {
+                effectiveEntries = chapterEntries
             } else {
+                // Fallback: try level 0 (parts) or level 2 (headings)
+                let level0Entries = entries.filter { $0.level == 0 }
+                let level2Entries = entries.filter { $0.level == 2 }
+                if !level0Entries.isEmpty {
+                    effectiveEntries = level0Entries
+                } else if !level2Entries.isEmpty {
+                    effectiveEntries = Array(level2Entries.prefix(10))
+                } else {
+                    effectiveEntries = []
+                }
+            }
+
+            if !effectiveEntries.isEmpty {
                 var result: [(text: String, number: Int, startPos: Int)] = []
                 let fullText = text as NSString
 
-                for (index, entry) in chapterEntries.enumerated() {
+                for (index, entry) in effectiveEntries.enumerated() {
                     let startLocation = entry.range.location
                     let endLocation: Int
 
                     // Determine end of chapter
-                    if index < chapterEntries.count - 1 {
+                    if index < effectiveEntries.count - 1 {
                         // End at next chapter start
-                        endLocation = chapterEntries[index + 1].range.location
+                        endLocation = effectiveEntries[index + 1].range.location
                     } else {
                         // Last chapter goes to end of document
                         endLocation = fullText.length
@@ -416,6 +428,9 @@ class DecisionBeliefLoopAnalyzer {
                 }
 
                 chapters = result
+            } else {
+                // No outline structure found - treat entire document as one chapter
+                chapters = [(text: text, number: 1, startPos: 0)]
             }
         } else {
             // Fall back to regex-based chapter detection
@@ -840,22 +855,40 @@ class DecisionBeliefLoopAnalyzer {
         // Get chapters using outline or fall back to regex
         let chapters: [(text: String, number: Int)]
         if let entries = outlineEntries, !entries.isEmpty {
+            // Look for level 1 entries (chapters) first
             let chapterEntries = entries.filter { $0.level == 1 }
-            if chapterEntries.isEmpty {
-                chapters = [(text: text, number: 1)]
+            let effectiveEntries: [OutlineEntry]
+            if !chapterEntries.isEmpty {
+                effectiveEntries = chapterEntries
             } else {
+                // Fallback: try level 0 (parts) or level 2 (headings)
+                let level0Entries = entries.filter { $0.level == 0 }
+                let level2Entries = entries.filter { $0.level == 2 }
+                if !level0Entries.isEmpty {
+                    effectiveEntries = level0Entries
+                } else if !level2Entries.isEmpty {
+                    effectiveEntries = Array(level2Entries.prefix(10))
+                } else {
+                    effectiveEntries = []
+                }
+            }
+            if !effectiveEntries.isEmpty {
                 let fullText = text as NSString
-                chapters = chapterEntries.enumerated().map { index, entry in
+                chapters = effectiveEntries.enumerated().map { index, entry in
                     let startLocation = entry.range.location
                     let endLocation: Int
-                    if index < chapterEntries.count - 1 {
-                        endLocation = chapterEntries[index + 1].range.location
+                    if index < effectiveEntries.count - 1 {
+                        endLocation = effectiveEntries[index + 1].range.location
                     } else {
                         endLocation = fullText.length
                     }
                     let chapterRange = NSRange(location: startLocation, length: endLocation - startLocation)
                     return (text: fullText.substring(with: chapterRange), number: index + 1)
                 }
+            } else {
+                // No outline structure found - use regex detection
+                let chapterTexts = splitIntoChapters(text: text)
+                chapters = chapterTexts.enumerated().map { (text: $1, number: $0 + 1) }
             }
         } else {
             let chapterTexts = splitIntoChapters(text: text)
@@ -1136,15 +1169,55 @@ class DecisionBeliefLoopAnalyzer {
 
     /// Generate internal vs external alignment data for characters
     /// Tracks the gap between inner truth and outer behavior
-    func generateInternalExternalAlignment(from text: String, characterNames: [String]) -> InternalExternalAlignmentData {
+    func generateInternalExternalAlignment(from text: String, characterNames: [String], outlineEntries: [OutlineEntry]? = nil) -> InternalExternalAlignmentData {
         guard !characterNames.isEmpty else {
             return InternalExternalAlignmentData()
         }
 
         var alignmentData = InternalExternalAlignmentData()
 
-        // Split text into chapters
-        let chapters = splitIntoChapters(text: text)
+        // Get chapters using outline or fall back to regex
+        let chapters: [(text: String, number: Int)]
+        if let entries = outlineEntries, !entries.isEmpty {
+            // Look for level 1 entries (chapters) first
+            let chapterEntries = entries.filter { $0.level == 1 }
+            let effectiveEntries: [OutlineEntry]
+            if !chapterEntries.isEmpty {
+                effectiveEntries = chapterEntries
+            } else {
+                // Fallback: try level 0 (parts) or level 2 (headings)
+                let level0Entries = entries.filter { $0.level == 0 }
+                let level2Entries = entries.filter { $0.level == 2 }
+                if !level0Entries.isEmpty {
+                    effectiveEntries = level0Entries
+                } else if !level2Entries.isEmpty {
+                    effectiveEntries = Array(level2Entries.prefix(10))
+                } else {
+                    effectiveEntries = []
+                }
+            }
+            if !effectiveEntries.isEmpty {
+                let fullText = text as NSString
+                chapters = effectiveEntries.enumerated().map { index, entry in
+                    let startLocation = entry.range.location
+                    let endLocation: Int
+                    if index < effectiveEntries.count - 1 {
+                        endLocation = effectiveEntries[index + 1].range.location
+                    } else {
+                        endLocation = fullText.length
+                    }
+                    let chapterRange = NSRange(location: startLocation, length: endLocation - startLocation)
+                    return (text: fullText.substring(with: chapterRange), number: index + 1)
+                }
+            } else {
+                // No outline structure found - use regex detection
+                let chapterTexts = splitIntoChapters(text: text)
+                chapters = chapterTexts.enumerated().map { (text: $1, number: $0 + 1) }
+            }
+        } else {
+            let chapterTexts = splitIntoChapters(text: text)
+            chapters = chapterTexts.enumerated().map { (text: $1, number: $0 + 1) }
+        }
         guard !chapters.isEmpty else { return alignmentData }
 
         // Inner state indicators (what characters feel/think)
@@ -1183,9 +1256,9 @@ class DecisionBeliefLoopAnalyzer {
             var characterAlignment = CharacterAlignmentData(characterName: characterName)
             var gapValues: [Double] = []
 
-            for (chapterIndex, chapter) in chapters.enumerated() {
+            for chapter in chapters {
                 // Find sentences containing the character
-                let sentences = chapter.components(separatedBy: CharacterSet(charactersIn: ".!?"))
+                let sentences = chapter.text.components(separatedBy: CharacterSet(charactersIn: ".!?"))
                 var innerScores: [Double] = []
                 var outerScores: [Double] = []
                 var innerDescription = ""
@@ -1235,7 +1308,7 @@ class DecisionBeliefLoopAnalyzer {
                 // Only add data point if we have meaningful data
                 if !innerScores.isEmpty || !outerScores.isEmpty {
                     let dataPoint = AlignmentDataPoint(
-                        chapter: chapterIndex + 1,
+                        chapter: chapter.number,
                         innerTruth: min(1.0, max(0.0, avgInner)),
                         outerBehavior: min(1.0, max(0.0, avgOuter)),
                         innerLabel: innerDescription.isEmpty ? "Neutral" : innerDescription,
@@ -1283,15 +1356,55 @@ class DecisionBeliefLoopAnalyzer {
 
     /// Generate language drift analysis for characters
     /// Tracks pronouns, modal verbs, emotional vocabulary, sentence length, certainty
-    func generateLanguageDriftAnalysis(from text: String, characterNames: [String]) -> LanguageDriftData {
+    func generateLanguageDriftAnalysis(from text: String, characterNames: [String], outlineEntries: [OutlineEntry]? = nil) -> LanguageDriftData {
         guard !characterNames.isEmpty else {
             return LanguageDriftData()
         }
 
         var driftData = LanguageDriftData()
 
-        // Split text into chapters
-        let chapters = splitIntoChapters(text: text)
+        // Get chapters using outline or fall back to regex
+        let chapters: [(text: String, number: Int)]
+        if let entries = outlineEntries, !entries.isEmpty {
+            // Look for level 1 entries (chapters) first
+            let chapterEntries = entries.filter { $0.level == 1 }
+            let effectiveEntries: [OutlineEntry]
+            if !chapterEntries.isEmpty {
+                effectiveEntries = chapterEntries
+            } else {
+                // Fallback: try level 0 (parts) or level 2 (headings)
+                let level0Entries = entries.filter { $0.level == 0 }
+                let level2Entries = entries.filter { $0.level == 2 }
+                if !level0Entries.isEmpty {
+                    effectiveEntries = level0Entries
+                } else if !level2Entries.isEmpty {
+                    effectiveEntries = Array(level2Entries.prefix(10))
+                } else {
+                    effectiveEntries = []
+                }
+            }
+            if !effectiveEntries.isEmpty {
+                let fullText = text as NSString
+                chapters = effectiveEntries.enumerated().map { index, entry in
+                    let startLocation = entry.range.location
+                    let endLocation: Int
+                    if index < effectiveEntries.count - 1 {
+                        endLocation = effectiveEntries[index + 1].range.location
+                    } else {
+                        endLocation = fullText.length
+                    }
+                    let chapterRange = NSRange(location: startLocation, length: endLocation - startLocation)
+                    return (text: fullText.substring(with: chapterRange), number: index + 1)
+                }
+            } else {
+                // No outline structure found - use regex detection
+                let chapterTexts = splitIntoChapters(text: text)
+                chapters = chapterTexts.enumerated().map { (text: $1, number: $0 + 1) }
+            }
+        } else {
+            let chapterTexts = splitIntoChapters(text: text)
+            chapters = chapterTexts.enumerated().map { (text: $1, number: $0 + 1) }
+        }
         guard !chapters.isEmpty else { return driftData }
 
         // Pronoun patterns
@@ -1319,9 +1432,9 @@ class DecisionBeliefLoopAnalyzer {
             var characterDrift = CharacterLanguageDrift(characterName: characterName)
             var allMetrics: [LanguageMetricsData] = []
 
-            for (chapterIndex, chapter) in chapters.enumerated() {
+            for chapter in chapters {
                 // Find dialogue and narration related to this character
-                let sentences = chapter.components(separatedBy: CharacterSet(charactersIn: ".!?"))
+                let sentences = chapter.text.components(separatedBy: CharacterSet(charactersIn: ".!?"))
                 var characterSentences: [String] = []
 
                 for sentence in sentences {
@@ -1379,7 +1492,7 @@ class DecisionBeliefLoopAnalyzer {
                 let normalizedSentenceLength = min(1.0, avgSentenceLength / 30.0) // Normalize to 30 words max
 
                 let metrics = LanguageMetricsData(
-                    chapter: chapterIndex + 1,
+                    chapter: chapter.number,
                     pronounI: Double(iCount) / Double(totalPronouns),
                     pronounWe: Double(weCount) / Double(totalPronouns),
                     modalMust: Double(mustCount) / Double(totalModals),

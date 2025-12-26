@@ -403,7 +403,7 @@ class FailurePatternChartView: NSView {
 
     private func drawInsights(textColor: NSColor) {
         let insightX: CGFloat = 20
-        let insightY: CGFloat = 60
+        let insightY: CGFloat = 70
 
         let titleAttr: [NSAttributedString.Key: Any] = [
             .font: NSFont.boldSystemFont(ofSize: 10),
@@ -420,7 +420,8 @@ class FailurePatternChartView: NSView {
             .foregroundColor: NSColor.systemPurple.withAlphaComponent(0.8),
             .paragraphStyle: paragraphStyle
         ]
-        insightText.draw(at: NSPoint(x: insightX, y: insightY - 60), withAttributes: insightAttr)
+        // Raise the block slightly to leave bottom padding
+        insightText.draw(at: NSPoint(x: insightX, y: insightY - 50), withAttributes: insightAttr)
     }
 
     private func drawEmptyState() {

@@ -226,13 +226,28 @@ class CharacterPresenceView: NSView {
     }
 
     private func generateColors(count: Int) -> [NSColor] {
-        // Generate unique colors using HSB color space with evenly distributed hues
+        // High-contrast qualitative palette (15 distinct swatches)
+        let palette: [NSColor] = [
+            NSColor(calibratedRed: 0.12, green: 0.47, blue: 0.71, alpha: 1.0), // blue
+            NSColor(calibratedRed: 0.84, green: 0.15, blue: 0.16, alpha: 1.0), // red
+            NSColor(calibratedRed: 0.17, green: 0.63, blue: 0.17, alpha: 1.0), // green
+            NSColor(calibratedRed: 1.00, green: 0.50, blue: 0.05, alpha: 1.0), // orange
+            NSColor(calibratedRed: 0.55, green: 0.34, blue: 0.76, alpha: 1.0), // purple
+            NSColor(calibratedRed: 0.60, green: 0.31, blue: 0.21, alpha: 1.0), // brown
+            NSColor(calibratedRed: 0.90, green: 0.47, blue: 0.76, alpha: 1.0), // pink
+            NSColor(calibratedRed: 0.50, green: 0.50, blue: 0.50, alpha: 1.0), // gray
+            NSColor(calibratedRed: 0.74, green: 0.74, blue: 0.13, alpha: 1.0), // olive
+            NSColor(calibratedRed: 0.09, green: 0.75, blue: 0.81, alpha: 1.0), // cyan
+            NSColor(calibratedRed: 0.11, green: 0.62, blue: 0.52, alpha: 1.0), // teal
+            NSColor(calibratedRed: 0.90, green: 0.67, blue: 0.00, alpha: 1.0), // gold
+            NSColor(calibratedRed: 0.30, green: 0.43, blue: 0.96, alpha: 1.0), // navy
+            NSColor(calibratedRed: 0.84, green: 0.12, blue: 0.55, alpha: 1.0), // magenta
+            NSColor(calibratedRed: 0.40, green: 0.76, blue: 0.65, alpha: 1.0)  // seafoam
+        ]
+
         var colors: [NSColor] = []
         for i in 0..<count {
-            let hue = CGFloat(i) / CGFloat(max(count, 1))
-            let saturation: CGFloat = 0.7
-            let brightness: CGFloat = 0.85
-            colors.append(NSColor(calibratedHue: hue, saturation: saturation, brightness: brightness, alpha: 1.0))
+            colors.append(palette[i % palette.count])
         }
         return colors
     }

@@ -294,6 +294,10 @@ struct CharacterPresenceBarChart: View {
     var textColor: Color = Color(ThemeManager.shared.currentTheme.textColor)
     var backgroundColor: Color = Color(ThemeManager.shared.currentTheme.pageBackground)
 
+    private var characters: [String] {
+        Array(Set(dataPoints.map { $0.character })).sorted()
+    }
+
     private var dataPoints: [CharacterPresenceDataPoint] {
         let points = presence.flatMap { entry in
             entry.chapterPresence.map { chapter, mentions in
@@ -362,6 +366,10 @@ struct CharacterPresenceBarChart: View {
                             plotArea
                                 .background(backgroundColor.opacity(0.5))
                         }
+                        .chartForegroundStyleScale(
+                            domain: characters,
+                            range: distinctColors(count: characters.count)
+                        )
                         .frame(width: max(CGFloat(chapters.count) * 90, geometry.size.width), height: 280)
                     }
                     .scrollContentBackground(.hidden)
@@ -370,6 +378,29 @@ struct CharacterPresenceBarChart: View {
             }
             .background(backgroundColor)
         }
+    }
+
+    private func distinctColors(count: Int) -> [Color] {
+        // High-contrast qualitative palette aligned with AppKit charts
+        let palette: [Color] = [
+            Color(red: 0.12, green: 0.47, blue: 0.71), // blue
+            Color(red: 0.84, green: 0.15, blue: 0.16), // red
+            Color(red: 0.17, green: 0.63, blue: 0.17), // green
+            Color(red: 1.00, green: 0.50, blue: 0.05), // orange
+            Color(red: 0.55, green: 0.34, blue: 0.76), // purple
+            Color(red: 0.60, green: 0.31, blue: 0.21), // brown
+            Color(red: 0.90, green: 0.47, blue: 0.76), // pink
+            Color(red: 0.50, green: 0.50, blue: 0.50), // gray
+            Color(red: 0.74, green: 0.74, blue: 0.13), // olive
+            Color(red: 0.09, green: 0.75, blue: 0.81), // cyan
+            Color(red: 0.11, green: 0.62, blue: 0.52), // teal
+            Color(red: 0.90, green: 0.67, blue: 0.00), // gold
+            Color(red: 0.30, green: 0.43, blue: 0.96), // navy
+            Color(red: 0.84, green: 0.12, blue: 0.55), // magenta
+            Color(red: 0.40, green: 0.76, blue: 0.65)  // seafoam
+        ]
+
+        return (0..<max(count, 1)).map { palette[$0 % palette.count] }
     }
 }
 

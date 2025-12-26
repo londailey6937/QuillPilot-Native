@@ -92,7 +92,6 @@ class AnalysisViewController: NSViewController {
     private var storyOutlineWindow: StoryOutlineWindowController?
     private var locationsWindow: LocationsWindowController?
     private var storyDirectionsWindow: StoryDirectionsWindowController?
-    private var autoStoryWindow: AutoStoryWindowController?
 
     // Track current document for scene persistence
     private var currentDocumentURL: URL?
@@ -155,7 +154,6 @@ class AnalysisViewController: NSViewController {
         case locations = "Locations"
         case storyDirections = "Story Directions"
         case characters = "Characters"
-        case autoStory = "Auto Story"
 
         var icon: String {
             switch self {
@@ -166,7 +164,6 @@ class AnalysisViewController: NSViewController {
             case .locations: return "📍"
             case .storyDirections: return "🔀"
             case .characters: return "👥"
-            case .autoStory: return "✨"
             }
         }
     }
@@ -472,16 +469,6 @@ class AnalysisViewController: NSViewController {
             }
             characterLibraryWindow?.showWindow(nil)
             characterLibraryWindow?.window?.makeKeyAndOrderFront(nil)
-            return
-        }
-
-        if category == .autoStory {
-            // Open Auto Story window
-            if autoStoryWindow == nil {
-                autoStoryWindow = AutoStoryWindowController()
-            }
-            autoStoryWindow?.showWindow(nil)
-            autoStoryWindow?.window?.makeKeyAndOrderFront(nil)
             return
         }
 

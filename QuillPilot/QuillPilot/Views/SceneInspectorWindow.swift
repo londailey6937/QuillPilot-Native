@@ -18,21 +18,27 @@ final class SceneInspectorWindowController: NSWindowController {
     private var conflictField: NSTextField!
     private var outcomeField: NSTextField!
 
+    // Scene Writer components
+    private var sceneWriterTextView: NSTextView!
+    private var sceneWriterStatusLabel: NSTextField!
+    private var sceneWriterStatusIcon: NSTextField!
+
     private var currentScene: Scene?
     private var onSave: ((Scene) -> Void)?
+    private var onPaste: ((String) -> Void)?
 
     // Store labels for theme updates
     private var allLabels: [NSTextField] = []
 
     init() {
         let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 420, height: 700),
+            contentRect: NSRect(x: 0, y: 0, width: 1050, height: 700),
             styleMask: [.titled, .closable, .resizable],
             backing: .buffered,
             defer: false
         )
         window.title = "Scene Inspector"
-        window.minSize = NSSize(width: 380, height: 500)
+        window.minSize = NSSize(width: 900, height: 500)
         window.isReleasedWhenClosed = false
 
         super.init(window: window)
@@ -50,9 +56,10 @@ final class SceneInspectorWindowController: NSWindowController {
         fatalError("init(coder:) has not been implemented")
     }
 
-    func loadScene(_ scene: Scene, onSave: @escaping (Scene) -> Void) {
+    func loadScene(_ scene: Scene, onSave: @escaping (Scene) -> Void, onPaste: ((String) -> Void)? = nil) {
         self.currentScene = scene
         self.onSave = onSave
+        self.onPaste = onPaste
 
         titleField.stringValue = scene.title
         summaryField.stringValue = scene.summary
@@ -64,6 +71,9 @@ final class SceneInspectorWindowController: NSWindowController {
         goalField.stringValue = scene.goal
         conflictField.stringValue = scene.conflict
         outcomeField.stringValue = scene.outcome
+
+        // Update Scene Writer status
+        updateSceneWriterStatus(scene.revisionState)
 
         // Set popup selections
         if let intentIndex = SceneIntent.allCases.firstIndex(of: scene.intent) {
@@ -81,84 +91,110 @@ final class SceneInspectorWindowController: NSWindowController {
         contentView.autoresizingMask = [.width, .height]
         window.contentView = contentView
 
-        var y: CGFloat = contentView.bounds.height - 40
+        // Create horizontal split container
+        let inspectorPanel = NSView(frame: NSRect(x: 0, y: 0, width: 420, height: contentView.bounds.height))
+        inspectorPanel.autoresizingMask = [.height]
+        contentView.addSubview(inspectorPanel)
+
+        // Vertical separator line
+        let separator = NSBox()
+        separator.boxType = .separator
+        separator.frame = NSRect(x: 420, y: 0, width: 1, height: contentView.bounds.height)
+        separator.autoresizingMask = [.height]
+        contentView.addSubview(separator)
+
+        // Scene Writer panel
+        let writerPanel = NSView(frame: NSRect(x: 421, y: 0, width: contentView.bounds.width - 421, height: contentView.bounds.height))
+        writerPanel.autoresizingMask = [.width, .height]
+        contentView.addSubview(writerPanel)
+
+        // Setup Inspector Panel (left side)
+        setupInspectorPanel(inspectorPanel)
+
+        // Setup Scene Writer Panel (right side)
+        setupSceneWriterPanel(writerPanel)
+    }
+
+    private func setupInspectorPanel(_ panel: NSView) {
+        var y: CGFloat = panel.bounds.height - 40
         let fieldX: CGFloat = 100
-        let fieldWidth: CGFloat = contentView.bounds.width - fieldX - 20
+        let fieldWidth: CGFloat = panel.bounds.width - fieldX - 20
         let rowHeight: CGFloat = 28
         let spacing: CGFloat = 8
 
         // Title
-        addLabel("Title:", at: NSPoint(x: 10, y: y), in: contentView)
+        addLabel("Title:", at: NSPoint(x: 10, y: y), in: panel)
         titleField = NSTextField(frame: NSRect(x: fieldX, y: y, width: fieldWidth, height: 24))
         titleField.autoresizingMask = [.width]
         titleField.placeholderString = "Scene title"
-        contentView.addSubview(titleField)
+        panel.addSubview(titleField)
         y -= rowHeight + spacing
 
         // Intent
-        addLabel("Intent:", at: NSPoint(x: 10, y: y), in: contentView)
+        addLabel("Intent:", at: NSPoint(x: 10, y: y), in: panel)
         intentPopup = NSPopUpButton(frame: NSRect(x: fieldX, y: y - 2, width: 150, height: 26))
         for intent in SceneIntent.allCases {
             intentPopup.addItem(withTitle: intent.rawValue)
         }
-        contentView.addSubview(intentPopup)
+        panel.addSubview(intentPopup)
         y -= rowHeight + spacing
 
         // Revision State
-        addLabel("Status:", at: NSPoint(x: 10, y: y), in: contentView)
+        addLabel("Status:", at: NSPoint(x: 10, y: y), in: panel)
         statePopup = NSPopUpButton(frame: NSRect(x: fieldX, y: y - 2, width: 150, height: 26))
+        statePopup.target = self
+        statePopup.action = #selector(statusChanged)
         for state in RevisionState.allCases {
             statePopup.addItem(withTitle: "\(state.icon) \(state.rawValue)")
         }
-        contentView.addSubview(statePopup)
+        panel.addSubview(statePopup)
         y -= rowHeight + spacing
 
         // POV - Connected to Character Library
-        addLabel("POV:", at: NSPoint(x: 10, y: y), in: contentView)
+        addLabel("POV:", at: NSPoint(x: 10, y: y), in: panel)
         povComboBox = NSComboBox(frame: NSRect(x: fieldX, y: y, width: fieldWidth, height: 26))
-        povComboBox.autoresizingMask = [.width]
+        povComboBox.autoresizingMask = []
         povComboBox.placeholderString = "Point of view character"
         povComboBox.completes = true
         // Populate with characters from Character Library
         let characterNames = CharacterLibrary.shared.characters.map { $0.nickname }
         povComboBox.addItems(withObjectValues: characterNames)
-        contentView.addSubview(povComboBox)
+        panel.addSubview(povComboBox)
         y -= rowHeight + spacing
 
         // Location - Editable dropdown with previously used locations
-        addLabel("Location:", at: NSPoint(x: 10, y: y), in: contentView)
+        addLabel("Location:", at: NSPoint(x: 10, y: y), in: panel)
         locationComboBox = NSComboBox(frame: NSRect(x: fieldX, y: y, width: fieldWidth, height: 26))
-        locationComboBox.autoresizingMask = [.width]
+        locationComboBox.autoresizingMask = []
         locationComboBox.placeholderString = "Where the scene takes place"
         locationComboBox.completes = true
         // Populate with previously used locations from UserDefaults
         if let savedLocations = UserDefaults.standard.stringArray(forKey: "QuillPilot.Scene.Locations") {
             locationComboBox.addItems(withObjectValues: savedLocations)
         }
-        contentView.addSubview(locationComboBox)
+        panel.addSubview(locationComboBox)
         y -= rowHeight + spacing
 
         // Time
-        addLabel("Time:", at: NSPoint(x: 10, y: y), in: contentView)
+        addLabel("Time:", at: NSPoint(x: 10, y: y), in: panel)
         timeField = NSTextField(frame: NSRect(x: fieldX, y: y, width: fieldWidth, height: 24))
-        timeField.autoresizingMask = [.width]
+        timeField.autoresizingMask = []
         timeField.placeholderString = "Time of day or period"
-        contentView.addSubview(timeField)
+        panel.addSubview(timeField)
         y -= rowHeight + spacing
 
         // Characters
-        addLabel("Characters:", at: NSPoint(x: 10, y: y), in: contentView)
+        addLabel("Characters:", at: NSPoint(x: 10, y: y), in: panel)
         charactersField = NSTextField(frame: NSRect(x: fieldX, y: y, width: fieldWidth, height: 24))
-        charactersField.autoresizingMask = [.width]
+        charactersField.autoresizingMask = []
         charactersField.placeholderString = "Character names (comma separated)"
-        contentView.addSubview(charactersField)
+        panel.addSubview(charactersField)
         y -= rowHeight + spacing + 10
 
         // Separator line
-        let separator1 = NSBox(frame: NSRect(x: 10, y: y + 4, width: contentView.bounds.width - 20, height: 1))
+        let separator1 = NSBox(frame: NSRect(x: 10, y: y + 4, width: panel.bounds.width - 20, height: 1))
         separator1.boxType = .separator
-        separator1.autoresizingMask = [.width]
-        contentView.addSubview(separator1)
+        panel.addSubview(separator1)
         y -= 10
 
         // Section header: Dramatic Elements
@@ -166,55 +202,53 @@ final class SceneInspectorWindowController: NSWindowController {
         dramaticHeader.frame = NSRect(x: 10, y: y, width: 200, height: 18)
         dramaticHeader.font = NSFont.systemFont(ofSize: 11, weight: .semibold)
         dramaticHeader.textColor = NSColor.secondaryLabelColor
-        contentView.addSubview(dramaticHeader)
+        panel.addSubview(dramaticHeader)
         y -= rowHeight
 
         // Goal
-        addLabel("Goal:", at: NSPoint(x: 10, y: y), in: contentView)
+        addLabel("Goal:", at: NSPoint(x: 10, y: y), in: panel)
         goalField = NSTextField(frame: NSRect(x: fieldX, y: y, width: fieldWidth, height: 24))
-        goalField.autoresizingMask = [.width]
+        goalField.autoresizingMask = []
         goalField.placeholderString = "What does the POV character want?"
-        contentView.addSubview(goalField)
+        panel.addSubview(goalField)
         y -= rowHeight + spacing
 
         // Conflict
-        addLabel("Conflict:", at: NSPoint(x: 10, y: y), in: contentView)
+        addLabel("Conflict:", at: NSPoint(x: 10, y: y), in: panel)
         conflictField = NSTextField(frame: NSRect(x: fieldX, y: y, width: fieldWidth, height: 24))
-        conflictField.autoresizingMask = [.width]
+        conflictField.autoresizingMask = []
         conflictField.placeholderString = "What opposes the goal?"
-        contentView.addSubview(conflictField)
+        panel.addSubview(conflictField)
         y -= rowHeight + spacing
 
         // Outcome
-        addLabel("Outcome:", at: NSPoint(x: 10, y: y), in: contentView)
+        addLabel("Outcome:", at: NSPoint(x: 10, y: y), in: panel)
         outcomeField = NSTextField(frame: NSRect(x: fieldX, y: y, width: fieldWidth, height: 24))
-        outcomeField.autoresizingMask = [.width]
+        outcomeField.autoresizingMask = []
         outcomeField.placeholderString = "Success / Failure / Complication"
-        contentView.addSubview(outcomeField)
+        panel.addSubview(outcomeField)
         y -= rowHeight + spacing + 10
 
         // Separator line
-        let separator2 = NSBox(frame: NSRect(x: 10, y: y + 4, width: contentView.bounds.width - 20, height: 1))
+        let separator2 = NSBox(frame: NSRect(x: 10, y: y + 4, width: panel.bounds.width - 20, height: 1))
         separator2.boxType = .separator
-        separator2.autoresizingMask = [.width]
-        contentView.addSubview(separator2)
+        panel.addSubview(separator2)
         y -= 10
 
         // Summary
-        addLabel("Summary:", at: NSPoint(x: 10, y: y), in: contentView)
+        addLabel("Summary:", at: NSPoint(x: 10, y: y), in: panel)
         summaryField = NSTextField(frame: NSRect(x: fieldX, y: y, width: fieldWidth, height: 24))
-        summaryField.autoresizingMask = [.width]
+        summaryField.autoresizingMask = []
         summaryField.placeholderString = "Brief summary of scene"
-        contentView.addSubview(summaryField)
+        panel.addSubview(summaryField)
         y -= rowHeight + spacing + 10
 
         // Notes label
-        addLabel("Notes:", at: NSPoint(x: 10, y: y), in: contentView)
+        addLabel("Notes:", at: NSPoint(x: 10, y: y), in: panel)
         y -= 20
 
         // Notes text view
-        let notesScrollView = NSScrollView(frame: NSRect(x: 10, y: 60, width: contentView.bounds.width - 20, height: y - 50))
-        notesScrollView.autoresizingMask = [.width, .height]
+        let notesScrollView = NSScrollView(frame: NSRect(x: 10, y: 60, width: panel.bounds.width - 20, height: y - 50))
         notesScrollView.hasVerticalScroller = true
         notesScrollView.borderType = .bezelBorder
 
@@ -224,23 +258,106 @@ final class SceneInspectorWindowController: NSWindowController {
         notesView.font = NSFont.systemFont(ofSize: 13)
         notesView.textContainerInset = NSSize(width: 5, height: 5)
         notesScrollView.documentView = notesView
-        contentView.addSubview(notesScrollView)
+        panel.addSubview(notesScrollView)
 
         // Save button
         let saveButton = NSButton(title: "Save", target: self, action: #selector(saveScene))
         saveButton.bezelStyle = .rounded
         saveButton.keyEquivalent = "\r"
-        saveButton.frame = NSRect(x: contentView.bounds.width - 90, y: 15, width: 80, height: 32)
-        saveButton.autoresizingMask = [.minXMargin]
-        contentView.addSubview(saveButton)
+        saveButton.frame = NSRect(x: panel.bounds.width - 90, y: 15, width: 80, height: 32)
+        panel.addSubview(saveButton)
 
         // Cancel button
         let cancelButton = NSButton(title: "Cancel", target: self, action: #selector(cancelEdit))
         cancelButton.bezelStyle = .rounded
         cancelButton.keyEquivalent = "\u{1b}"
-        cancelButton.frame = NSRect(x: contentView.bounds.width - 180, y: 15, width: 80, height: 32)
-        cancelButton.autoresizingMask = [.minXMargin]
-        contentView.addSubview(cancelButton)
+        cancelButton.frame = NSRect(x: panel.bounds.width - 180, y: 15, width: 80, height: 32)
+        panel.addSubview(cancelButton)
+    }
+
+    private func setupSceneWriterPanel(_ panel: NSView) {
+        // Header with status
+        let headerView = NSView(frame: NSRect(x: 0, y: panel.bounds.height - 40, width: panel.bounds.width, height: 40))
+        headerView.autoresizingMask = [.width]
+        panel.addSubview(headerView)
+
+        let titleLabel = NSTextField(labelWithString: "Scene Writer")
+        titleLabel.frame = NSRect(x: 15, y: 10, width: 150, height: 20)
+        titleLabel.font = NSFont.systemFont(ofSize: 14, weight: .semibold)
+        headerView.addSubview(titleLabel)
+
+        // Status icon and label
+        sceneWriterStatusIcon = NSTextField(labelWithString: "⚪️")
+        sceneWriterStatusIcon.frame = NSRect(x: panel.bounds.width - 120, y: 10, width: 30, height: 20)
+        sceneWriterStatusIcon.autoresizingMask = [.minXMargin]
+        sceneWriterStatusIcon.alignment = .center
+        headerView.addSubview(sceneWriterStatusIcon)
+
+        sceneWriterStatusLabel = NSTextField(labelWithString: "Draft")
+        sceneWriterStatusLabel.frame = NSRect(x: panel.bounds.width - 85, y: 10, width: 70, height: 20)
+        sceneWriterStatusLabel.autoresizingMask = [.minXMargin]
+        sceneWriterStatusLabel.font = NSFont.systemFont(ofSize: 11)
+        sceneWriterStatusLabel.textColor = NSColor.secondaryLabelColor
+        headerView.addSubview(sceneWriterStatusLabel)
+
+        // Text view with scroll view
+        let scrollView = NSScrollView(frame: NSRect(x: 10, y: 60, width: panel.bounds.width - 20, height: panel.bounds.height - 110))
+        scrollView.autoresizingMask = [.width, .height]
+        scrollView.hasVerticalScroller = true
+        scrollView.borderType = .bezelBorder
+
+        sceneWriterTextView = NSTextView(frame: scrollView.bounds)
+        sceneWriterTextView.autoresizingMask = [.width, .height]
+        sceneWriterTextView.isRichText = false
+        sceneWriterTextView.font = NSFont.systemFont(ofSize: 13)
+        sceneWriterTextView.textContainerInset = NSSize(width: 5, height: 5)
+        sceneWriterTextView.isAutomaticQuoteSubstitutionEnabled = true
+        sceneWriterTextView.isAutomaticDashSubstitutionEnabled = true
+        scrollView.documentView = sceneWriterTextView
+        panel.addSubview(scrollView)
+
+        // Button container
+        let buttonContainer = NSView(frame: NSRect(x: 0, y: 0, width: panel.bounds.width, height: 50))
+        buttonContainer.autoresizingMask = [.width]
+        panel.addSubview(buttonContainer)
+
+        // Copy to Clipboard button
+        let copyButton = NSButton(title: "Copy to Clipboard", target: self, action: #selector(copyToClipboard))
+        copyButton.bezelStyle = .rounded
+        copyButton.frame = NSRect(x: panel.bounds.width - 165, y: 10, width: 145, height: 32)
+        copyButton.autoresizingMask = [.minXMargin]
+        buttonContainer.addSubview(copyButton)
+
+        // Save button
+        let saveWriterButton = NSButton(title: "Save", target: self, action: #selector(saveSceneWriter))
+        saveWriterButton.bezelStyle = .rounded
+        saveWriterButton.frame = NSRect(x: panel.bounds.width - 300, y: 10, width: 125, height: 32)
+        saveWriterButton.autoresizingMask = [.minXMargin]
+        buttonContainer.addSubview(saveWriterButton)
+    }
+
+    @objc private func statusChanged() {
+        guard statePopup.indexOfSelectedItem >= 0 else { return }
+        let newState = RevisionState.allCases[statePopup.indexOfSelectedItem]
+        updateSceneWriterStatus(newState)
+    }
+
+    private func updateSceneWriterStatus(_ state: RevisionState) {
+        sceneWriterStatusIcon.stringValue = state.icon
+        sceneWriterStatusLabel.stringValue = state.rawValue
+    }
+
+    @objc private func copyToClipboard() {
+        let text = sceneWriterTextView.string
+        let pasteboard = NSPasteboard.general
+        pasteboard.clearContents()
+        pasteboard.setString(text, forType: .string)
+    }
+
+    @objc private func saveSceneWriter() {
+        // Save the scene writer content to the scene's notes or a dedicated field
+        // For now, we'll just save it along with the scene
+        saveScene()
     }
 
     private func addLabel(_ text: String, at point: NSPoint, in view: NSView) {

@@ -14,20 +14,20 @@ class CharacterLibraryWindowController: NSWindowController {
 
     convenience init() {
         let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 1000, height: 700),
+            contentRect: NSRect(x: 0, y: 0, width: 1000, height: 500),
             styleMask: [.titled, .closable, .resizable, .miniaturizable],
             backing: .buffered,
             defer: false
         )
         window.title = "Character Library"
-        window.minSize = NSSize(width: 800, height: 600)
+        window.minSize = NSSize(width: 800, height: 400)
 
         // Center the window
         if let screen = NSScreen.main {
             let screenFrame = screen.frame
             let x = (screenFrame.width - 1000) / 2
-            let y = (screenFrame.height - 700) / 2
-            window.setFrame(NSRect(x: x, y: y, width: 1000, height: 700), display: true)
+            let y = (screenFrame.height - 500) / 2
+            window.setFrame(NSRect(x: x, y: y, width: 1000, height: 500), display: true)
         }
 
         self.init(window: window)

@@ -584,7 +584,7 @@ class AnalysisViewController: NSViewController {
 
             headerLabel.stringValue = "Document Analysis"
             updateButton.isHidden = false
-            infoLabel.stringValue = "Click Update to refresh all analysis."
+            infoLabel.stringValue = ""
 
             // Add placeholder
             let placeholder = makeLabel("Click Update to analyze your document", size: 13, bold: false)
@@ -691,7 +691,7 @@ class AnalysisViewController: NSViewController {
         contentStack.addArrangedSubview(headerContainer)
 
         // Info label
-        infoLabel = makeLabel("Click Update to refresh all analysis.", size: 13, bold: false)
+        infoLabel = makeLabel("", size: 13, bold: false)
         infoLabel.textColor = .secondaryLabelColor
         infoLabel.lineBreakMode = .byWordWrapping
         infoLabel.maximumNumberOfLines = 0
@@ -711,12 +711,7 @@ class AnalysisViewController: NSViewController {
             resultsStack.trailingAnchor.constraint(equalTo: contentStack.trailingAnchor)
         ])
 
-        // Initial placeholder
-        let placeholder = makeLabel("Analysis will appear here as it runs.", size: 13, bold: false)
-        placeholder.textColor = .secondaryLabelColor
-        placeholder.lineBreakMode = .byWordWrapping
-        placeholder.maximumNumberOfLines = 0
-        resultsStack.addArrangedSubview(placeholder)
+        // Initial placeholder removed - analysis will populate directly
 
         // Start scrolled to top for empty/initial states
         scrollToTop()
@@ -2067,7 +2062,11 @@ extension AnalysisViewController {
         let library = CharacterLibrary.shared
         let characterNames: [String]
         if !library.characters.isEmpty {
-            characterNames = library.characters.map { $0.nickname }.filter { !$0.isEmpty }
+            characterNames = library.characters.compactMap { character -> String? in
+                let fullName = character.fullName.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !fullName.isEmpty else { return nil }
+                return fullName.components(separatedBy: .whitespaces).first
+            }
         } else if let presenceEntries = latestAnalysisResults?.characterPresence, !presenceEntries.isEmpty {
             characterNames = presenceEntries.map { $0.characterName }
         } else {
@@ -2253,7 +2252,11 @@ extension AnalysisViewController {
         let characterNames: [String]
 
         if !library.characters.isEmpty {
-            characterNames = library.characters.map { $0.nickname }.filter { !$0.isEmpty }
+            characterNames = library.characters.compactMap { character -> String? in
+                let fullName = character.fullName.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !fullName.isEmpty else { return nil }
+                return fullName.components(separatedBy: .whitespaces).first
+            }
         } else if let presenceEntries = latestAnalysisResults?.characterPresence, !presenceEntries.isEmpty {
             characterNames = presenceEntries.map { $0.characterName }
         } else {
@@ -3441,7 +3444,11 @@ extension AnalysisViewController {
         let library = CharacterLibrary.shared
         let characterNames: [String]
         if !library.characters.isEmpty {
-            characterNames = library.characters.map { $0.nickname }.filter { !$0.isEmpty }
+            characterNames = library.characters.compactMap { character -> String? in
+                let fullName = character.fullName.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !fullName.isEmpty else { return nil }
+                return fullName.components(separatedBy: .whitespaces).first
+            }
         } else if !results.characterPresence.isEmpty {
             characterNames = results.characterPresence.map { $0.characterName }
         } else {

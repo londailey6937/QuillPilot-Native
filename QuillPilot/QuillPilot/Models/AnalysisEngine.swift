@@ -294,12 +294,16 @@ class AnalysisEngine {
         results.plotAnalysis = plotDetector.detectPlotPoints(text: analysisText, wordCount: results.wordCount)
 
         // Character arc analysis
-        // Use ONLY nickname from Character Library - no text extraction when library exists
-        let libraryNames = CharacterLibrary.shared.characters.map { $0.nickname }.filter { !$0.isEmpty }
+        // Use ONLY first name from full name field in Character Library
+        let libraryNames = CharacterLibrary.shared.characters.compactMap { character -> String? in
+            let fullName = character.fullName.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !fullName.isEmpty else { return nil }
+            return fullName.components(separatedBy: .whitespaces).first
+        }
 
         let characterNames: [String]
         if !libraryNames.isEmpty {
-            // Library exists - use ONLY library names
+            // Library exists - use ONLY first names from library
             characterNames = libraryNames
         } else {
             // No library - fall back to text extraction
@@ -871,87 +875,125 @@ class AnalysisEngine {
             chapters = chapterTexts.enumerated().map { (number: $0 + 1, text: $1) }
         }
 
-        // For now, generate sample data but use actual chapter numbers from document
-        // In a future version, this would use NLP to detect belief statements in the narrative
+        // Real analysis: Extract beliefs, evidence, and counterpressures from text
+        let beliefIndicators = ["believe", "think", "thought", "realize", "understand", "know", "trust", "faith", "value", "principle", "convinced", "certain", "sure"]
+        let evidenceIndicators = ["because", "shows", "demonstrates", "proves", "revealed", "acted", "chose", "decided", "refused"]
+        let counterpressureIndicators = ["but", "however", "challenged", "questioned", "opposed", "confronted", "despite", "although", "forced", "pressured"]
 
-        for characterName in characterNames.prefix(3) { // Limit to top 3 characters
+        for characterName in characterNames {
             var entries: [BeliefShiftMatrix.BeliefEntry] = []
 
-            // Use actual chapter numbers from the document
-            let chapterNumbers = chapters.map { $0.number }
-            let sampleChapters = chapterNumbers.count >= 3 ?
-                [chapterNumbers[0], chapterNumbers[min(chapterNumbers.count / 2, chapterNumbers.count - 1)], chapterNumbers[chapterNumbers.count - 1]] :
-                chapterNumbers
-
-            // Create sample entries for demonstration using actual chapter numbers
-            if characterName.lowercased().contains("alex") || characterName.lowercased().contains("protagonist") {
-                for (index, chapterNum) in sampleChapters.enumerated() {
-                    if index == 0 {
-                        entries.append(BeliefShiftMatrix.BeliefEntry(
-                            chapter: chapterNum,
-                            chapterPage: 12,
-                            coreBelief: "I survive alone.",
-                            evidence: "Refuses help from teammates, takes risky solo missions",
-                            evidencePage: 15,
-                            counterpressure: "Offered protection by mentor figure",
-                            counterpressurePage: 18
-                        ))
-                    } else if index == 1 {
-                        entries.append(BeliefShiftMatrix.BeliefEntry(
-                            chapter: chapterNum,
-                            chapterPage: 87,
-                            coreBelief: "Help costs freedom.",
-                            evidence: "Accepts dangerous deal to maintain autonomy",
-                            evidencePage: 92,
-                            counterpressure: "Loses control in exchange for assistance",
-                            counterpressurePage: 95
-                        ))
-                    } else {
-                        entries.append(BeliefShiftMatrix.BeliefEntry(
-                            chapter: chapterNum,
-                            chapterPage: 203,
-                            coreBelief: "Interdependence is strength.",
-                            evidence: "Makes voluntary sacrifice for team",
-                            evidencePage: 210,
-                            counterpressure: "Fear of betrayal resurfaces briefly",
-                            counterpressurePage: 215
-                        ))
-                    }
-                }
+            // Sample key chapters for analysis (beginning, middle, end)
+            let sampleIndices: [Int]
+            if chapters.count >= 3 {
+                sampleIndices = [0, chapters.count / 2, chapters.count - 1]
             } else {
-                // Generic entries for other characters using actual chapter numbers
-                for (index, chapterNum) in sampleChapters.prefix(2).enumerated() {
-                    if index == 0 {
-                        entries.append(BeliefShiftMatrix.BeliefEntry(
-                            chapter: chapterNum,
-                            chapterPage: 20,
-                            coreBelief: "The rules protect us.",
-                            evidence: "Follows protocol strictly",
-                            evidencePage: 25,
-                            counterpressure: "Protocol fails in critical moment",
-                            counterpressurePage: 30
-                        ))
-                    } else {
-                        entries.append(BeliefShiftMatrix.BeliefEntry(
-                            chapter: chapterNum,
-                            chapterPage: 145,
-                            coreBelief: "Some rules must be broken for the greater good.",
-                            evidence: "Makes unauthorized decision that saves lives",
-                            evidencePage: 150,
-                            counterpressure: "Faces consequences and judgment",
-                            counterpressurePage: 155
-                        ))
-                    }
-                }
+                sampleIndices = Array(0..<chapters.count)
             }
 
+            for index in sampleIndices {
+                let chapter = chapters[index]
+
+                // Only analyze chapters where character appears
+                let pattern = "\\b" + NSRegularExpression.escapedPattern(for: characterName) + "\\b"
+                guard let regex = try? NSRegularExpression(pattern: pattern, options: .caseInsensitive),
+                      regex.firstMatch(in: chapter.text, range: NSRange(chapter.text.startIndex..., in: chapter.text)) != nil else {
+                    continue
+                }
+
+                // Extract belief statement
+                let belief = extractBeliefStatement(from: chapter.text, character: characterName, indicators: beliefIndicators)
+                guard !belief.isEmpty else { continue }
+
+                // Extract supporting evidence
+                let evidence = extractEvidence(from: chapter.text, character: characterName, indicators: evidenceIndicators)
+
+                // Extract counterpressure
+                let counterpressure = extractCounterpressure(from: chapter.text, character: characterName, indicators: counterpressureIndicators)
+
+                let entry = BeliefShiftMatrix.BeliefEntry(
+                    chapter: chapter.number,
+                    chapterPage: 0,
+                    coreBelief: belief,
+                    evidence: evidence.isEmpty ? "Character's actions reflect this belief" : evidence,
+                    evidencePage: 0,
+                    counterpressure: counterpressure.isEmpty ? "Circumstances test this perspective" : counterpressure,
+                    counterpressurePage: 0
+                )
+
+                entries.append(entry)
+            }
+
+            // Only add matrix if we found at least one belief
             if !entries.isEmpty {
-                let matrix = BeliefShiftMatrix(characterName: characterName, entries: entries)
-                matrices.append(matrix)
+                matrices.append(BeliefShiftMatrix(characterName: characterName, entries: entries))
             }
         }
 
         return matrices
+    }
+
+    private func extractBeliefStatement(from text: String, character: String, indicators: [String]) -> String {
+        let sentences = text.components(separatedBy: CharacterSet(charactersIn: ".!?")).filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+
+        for sentence in sentences {
+            let lower = sentence.lowercased()
+            let pattern = "\\b" + NSRegularExpression.escapedPattern(for: character.lowercased()) + "\\b"
+
+            guard let regex = try? NSRegularExpression(pattern: pattern, options: .caseInsensitive),
+                  regex.firstMatch(in: sentence, range: NSRange(sentence.startIndex..., in: sentence)) != nil else {
+                continue
+            }
+
+            for indicator in indicators {
+                if lower.contains(indicator) {
+                    return sentence.trimmingCharacters(in: .whitespacesAndNewlines).prefix(120).description
+                }
+            }
+        }
+        return ""
+    }
+
+    private func extractEvidence(from text: String, character: String, indicators: [String]) -> String {
+        let sentences = text.components(separatedBy: CharacterSet(charactersIn: ".!?")).filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+
+        for sentence in sentences {
+            let lower = sentence.lowercased()
+            let pattern = "\\b" + NSRegularExpression.escapedPattern(for: character.lowercased()) + "\\b"
+
+            guard let regex = try? NSRegularExpression(pattern: pattern, options: .caseInsensitive),
+                  regex.firstMatch(in: sentence, range: NSRange(sentence.startIndex..., in: sentence)) != nil else {
+                continue
+            }
+
+            for indicator in indicators {
+                if lower.contains(indicator) {
+                    return sentence.trimmingCharacters(in: .whitespacesAndNewlines).prefix(120).description
+                }
+            }
+        }
+        return ""
+    }
+
+    private func extractCounterpressure(from text: String, character: String, indicators: [String]) -> String {
+        let sentences = text.components(separatedBy: CharacterSet(charactersIn: ".!?")).filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+
+        for sentence in sentences {
+            let lower = sentence.lowercased()
+            let pattern = "\\b" + NSRegularExpression.escapedPattern(for: character.lowercased()) + "\\b"
+
+            guard let regex = try? NSRegularExpression(pattern: pattern, options: .caseInsensitive),
+                  regex.firstMatch(in: sentence, range: NSRange(sentence.startIndex..., in: sentence)) != nil else {
+                continue
+            }
+
+            for indicator in indicators {
+                if lower.contains(indicator) {
+                    return sentence.trimmingCharacters(in: .whitespacesAndNewlines).prefix(120).description
+                }
+            }
+        }
+        return ""
     }
 
     func generateDecisionConsequenceChains(text: String, characterNames: [String], outlineEntries: [DecisionBeliefLoopAnalyzer.OutlineEntry]? = nil) -> [DecisionConsequenceChain] {
@@ -1000,105 +1042,126 @@ class AnalysisEngine {
             chapters = chapterTexts.enumerated().map { (number: $0 + 1, text: $1) }
         }
 
-        // For now, generate sample data but use actual chapter numbers from document
-        // In a future version, this would use NLP to detect decision points and consequences
+        // Real analysis: Extract decisions and consequences from text
+        let decisionIndicators = ["decided", "chose", "choose", "selected", "agreed", "refused", "accepted", "rejected", "committed"]
+        let outcomeIndicators = ["resulted", "consequence", "outcome", "happened", "led to", "caused", "as a result", "therefore", "thus"]
+        let effectIndicators = ["changed", "shaped", "influenced", "affected", "transformed", "learned", "realized", "became"]
 
-        for characterName in characterNames.prefix(3) { // Limit to top 3 characters
+        for characterName in characterNames {
             var entries: [DecisionConsequenceChain.ChainEntry] = []
 
-            // Use actual chapter numbers from the document
-            let chapterNumbers = chapters.map { $0.number }
-            let sampleChapters = chapterNumbers.count >= 4 ?
-                [chapterNumbers[0], chapterNumbers[min(chapterNumbers.count / 3, chapterNumbers.count - 1)],
-                 chapterNumbers[min((chapterNumbers.count * 2) / 3, chapterNumbers.count - 1)], chapterNumbers[chapterNumbers.count - 1]] :
-                chapterNumbers
-
-            // Create sample entries for demonstration using actual chapter numbers
-            if characterName.lowercased().contains("alex") || characterName.lowercased().contains("protagonist") {
-                for (index, chapterNum) in sampleChapters.enumerated() {
-                    switch index {
-                    case 0:
-                        entries.append(DecisionConsequenceChain.ChainEntry(
-                            chapter: chapterNum,
-                            chapterPage: 15,
-                            decision: "Refuses help from mentor, chooses solo mission",
-                            decisionPage: 15,
-                            immediateOutcome: "Nearly fails first objective alone",
-                            immediateOutcomePage: 22,
-                            longTermEffect: "Develops mistrust of authority figures",
-                            longTermEffectPage: 30
-                        ))
-                    case 1:
-                        entries.append(DecisionConsequenceChain.ChainEntry(
-                            chapter: chapterNum,
-                            chapterPage: 68,
-                            decision: "Accepts dangerous alliance to gain intel",
-                            decisionPage: 68,
-                            immediateOutcome: "Gets valuable information but makes enemy",
-                            immediateOutcomePage: 75,
-                            longTermEffect: "Creates secondary antagonist for Act 2",
-                            longTermEffectPage: 95
-                        ))
-                    case 2:
-                        entries.append(DecisionConsequenceChain.ChainEntry(
-                            chapter: chapterNum,
-                            chapterPage: 142,
-                            decision: "Reveals secret to save teammate",
-                            decisionPage: 142,
-                            immediateOutcome: "Team member survives but learns truth",
-                            immediateOutcomePage: 148,
-                            longTermEffect: "Relationship dynamic permanently shifts, builds trust",
-                            longTermEffectPage: 165
-                        ))
-                    default:
-                        entries.append(DecisionConsequenceChain.ChainEntry(
-                            chapter: chapterNum,
-                            chapterPage: 205,
-                            decision: "Sacrifices personal goal for greater good",
-                            decisionPage: 205,
-                            immediateOutcome: "Mission succeeds, personal loss sustained",
-                            immediateOutcomePage: 212,
-                            longTermEffect: "Character growth complete, embraces new identity",
-                            longTermEffectPage: 220
-                        ))
-                    }
-                }
+            // Sample key chapters (beginning, early-middle, late-middle, end)
+            let sampleIndices: [Int]
+            if chapters.count >= 4 {
+                sampleIndices = [0, chapters.count / 3, (chapters.count * 2) / 3, chapters.count - 1]
             } else {
-                // Generic entries for other characters using actual chapter numbers
-                for (index, chapterNum) in sampleChapters.prefix(2).enumerated() {
-                    if index == 0 {
-                        entries.append(DecisionConsequenceChain.ChainEntry(
-                            chapter: chapterNum,
-                            chapterPage: 35,
-                            decision: "Chooses loyalty over personal safety",
-                            decisionPage: 35,
-                            immediateOutcome: "Gains trust but faces danger",
-                            immediateOutcomePage: 40,
-                            longTermEffect: "Becomes key ally in conflict",
-                            longTermEffectPage: 55
-                        ))
-                    } else {
-                        entries.append(DecisionConsequenceChain.ChainEntry(
-                            chapter: chapterNum,
-                            chapterPage: 125,
-                            decision: "Breaks protocol to help protagonist",
-                            decisionPage: 125,
-                            immediateOutcome: "Faces disciplinary action",
-                            immediateOutcomePage: 130,
-                            longTermEffect: "Solidifies commitment to cause",
-                            longTermEffectPage: 145
-                        ))
-                    }
-                }
+                sampleIndices = Array(0..<chapters.count)
             }
 
+            for index in sampleIndices {
+                let chapter = chapters[index]
+
+                // Only analyze chapters where character appears
+                let pattern = "\\b" + NSRegularExpression.escapedPattern(for: characterName) + "\\b"
+                guard let regex = try? NSRegularExpression(pattern: pattern, options: .caseInsensitive),
+                      regex.firstMatch(in: chapter.text, range: NSRange(chapter.text.startIndex..., in: chapter.text)) != nil else {
+                    continue
+                }
+
+                // Extract decision
+                let decision = extractDecision(from: chapter.text, character: characterName, indicators: decisionIndicators)
+                guard !decision.isEmpty else { continue }
+
+                // Extract immediate outcome
+                let immediateOutcome = extractOutcome(from: chapter.text, character: characterName, indicators: outcomeIndicators)
+
+                // Extract long-term effect
+                let longTermEffect = extractEffect(from: chapter.text, character: characterName, indicators: effectIndicators)
+
+                let entry = DecisionConsequenceChain.ChainEntry(
+                    chapter: chapter.number,
+                    chapterPage: 0,
+                    decision: decision,
+                    decisionPage: 0,
+                    immediateOutcome: immediateOutcome.isEmpty ? "Direct consequences unfold" : immediateOutcome,
+                    immediateOutcomePage: 0,
+                    longTermEffect: longTermEffect.isEmpty ? "Character trajectory shifts" : longTermEffect,
+                    longTermEffectPage: 0
+                )
+
+                entries.append(entry)
+            }
+
+            // Only add chain if we found at least one decision
             if !entries.isEmpty {
-                let chain = DecisionConsequenceChain(characterName: characterName, entries: entries)
-                chains.append(chain)
+                chains.append(DecisionConsequenceChain(characterName: characterName, entries: entries))
             }
         }
 
         return chains
+    }
+
+    private func extractDecision(from text: String, character: String, indicators: [String]) -> String {
+        let sentences = text.components(separatedBy: CharacterSet(charactersIn: ".!?")).filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+
+        for sentence in sentences {
+            let lower = sentence.lowercased()
+            let pattern = "\\b" + NSRegularExpression.escapedPattern(for: character.lowercased()) + "\\b"
+
+            guard let regex = try? NSRegularExpression(pattern: pattern, options: .caseInsensitive),
+                  regex.firstMatch(in: sentence, range: NSRange(sentence.startIndex..., in: sentence)) != nil else {
+                continue
+            }
+
+            for indicator in indicators {
+                if lower.contains(indicator) {
+                    return sentence.trimmingCharacters(in: .whitespacesAndNewlines).prefix(120).description
+                }
+            }
+        }
+        return ""
+    }
+
+    private func extractOutcome(from text: String, character: String, indicators: [String]) -> String {
+        let sentences = text.components(separatedBy: CharacterSet(charactersIn: ".!?")).filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+
+        for sentence in sentences {
+            let lower = sentence.lowercased()
+            let pattern = "\\b" + NSRegularExpression.escapedPattern(for: character.lowercased()) + "\\b"
+
+            guard let regex = try? NSRegularExpression(pattern: pattern, options: .caseInsensitive),
+                  regex.firstMatch(in: sentence, range: NSRange(sentence.startIndex..., in: sentence)) != nil else {
+                continue
+            }
+
+            for indicator in indicators {
+                if lower.contains(indicator) {
+                    return sentence.trimmingCharacters(in: .whitespacesAndNewlines).prefix(120).description
+                }
+            }
+        }
+        return ""
+    }
+
+    private func extractEffect(from text: String, character: String, indicators: [String]) -> String {
+        let sentences = text.components(separatedBy: CharacterSet(charactersIn: ".!?")).filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+
+        for sentence in sentences {
+            let lower = sentence.lowercased()
+            let pattern = "\\b" + NSRegularExpression.escapedPattern(for: character.lowercased()) + "\\b"
+
+            guard let regex = try? NSRegularExpression(pattern: pattern, options: .caseInsensitive),
+                  regex.firstMatch(in: sentence, range: NSRange(sentence.startIndex..., in: sentence)) != nil else {
+                continue
+            }
+
+            for indicator in indicators {
+                if lower.contains(indicator) {
+                    return sentence.trimmingCharacters(in: .whitespacesAndNewlines).prefix(120).description
+                }
+            }
+        }
+        return ""
     }
 
     private func splitIntoChapters(text: String) -> [String] {

@@ -363,6 +363,15 @@ extension MainWindowController: FormattingToolbarDelegate {
 
     func formattingToolbar(_ toolbar: FormattingToolbar, didSelectStyle styleName: String) {
         mainContentViewController.applyStyle(styleName)
+
+        // Refresh outline if an outline-related style is applied
+        let outlineStyles = ["Part Title", "Chapter Number", "Chapter Title", "Chapter Subtitle", "Heading 1", "Heading 2", "Heading 3"]
+        if outlineStyles.contains(styleName) {
+            // Delay refresh slightly to allow style to be applied first
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                NotificationCenter.default.post(name: Notification.Name("QuillPilotOutlineRefresh"), object: nil)
+            }
+        }
     }
 
     func formattingToolbarDidColumns(_ toolbar: FormattingToolbar) {
@@ -1136,6 +1145,9 @@ extension MainWindowController {
                         // Trigger analysis after document loads
                         NSLog("📊 Triggering initial analysis after document import")
                         self.mainContentViewController.performAnalysis()
+
+                        // Refresh outline after document loads
+                        NotificationCenter.default.post(name: Notification.Name("QuillPilotOutlineRefresh"), object: nil)
                     }
                 } catch {
                     NSLog("📄 DOCX extraction failed: \(error)")
@@ -2236,7 +2248,6 @@ class OutlineViewController: NSViewController {
     private var roots: [Node] = []
 
     private var headerLabel: NSTextField!
-    private var refreshButton: NSButton!
     private var outlineView: NSOutlineView!
 
     private var levelColors: [NSColor] = [
@@ -2257,16 +2268,8 @@ class OutlineViewController: NSViewController {
 
         headerLabel = NSTextField(labelWithString: "Document Outline")
         headerLabel.font = NSFont.boldSystemFont(ofSize: 14)
-
-        refreshButton = NSButton(title: "Refresh", target: self, action: #selector(refreshTapped))
-        refreshButton.bezelStyle = .rounded
-
-        let headerStack = NSStackView(views: [headerLabel, NSView(), refreshButton])
-        headerStack.orientation = .horizontal
-        headerStack.alignment = .centerY
-        headerStack.spacing = 8
-        headerStack.translatesAutoresizingMaskIntoConstraints = false
-        view.addSubview(headerStack)
+        headerLabel.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(headerLabel)
 
         outlineView = NSOutlineView()
         outlineView.headerView = nil
@@ -2293,11 +2296,11 @@ class OutlineViewController: NSViewController {
         view.addSubview(scrollView)
 
         NSLayoutConstraint.activate([
-            headerStack.topAnchor.constraint(equalTo: view.topAnchor, constant: 12),
-            headerStack.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 12),
-            headerStack.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -12),
+            headerLabel.topAnchor.constraint(equalTo: view.topAnchor, constant: 12),
+            headerLabel.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 12),
+            headerLabel.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -12),
 
-            scrollView.topAnchor.constraint(equalTo: headerStack.bottomAnchor, constant: 8),
+            scrollView.topAnchor.constraint(equalTo: headerLabel.bottomAnchor, constant: 8),
             scrollView.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 8),
             scrollView.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -8),
             scrollView.bottomAnchor.constraint(equalTo: view.bottomAnchor, constant: -8)
@@ -2374,11 +2377,6 @@ class OutlineViewController: NSViewController {
                 }
             }
         }
-    }
-
-    @objc private func refreshTapped() {
-        // The content controller will rebuild and call update(with:)
-        NotificationCenter.default.post(name: Notification.Name("QuillPilotOutlineRefresh"), object: nil)
     }
 }
 

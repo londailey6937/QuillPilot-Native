@@ -348,10 +348,18 @@ final class SceneInspectorWindowController: NSWindowController {
     }
 
     @objc private func copyToClipboard() {
-        let text = sceneWriterTextView.string
+        let sceneText = sceneWriterTextView.string
+
+        // Get current status
+        let statusIcon = sceneWriterStatusIcon.stringValue
+        let statusLabel = sceneWriterStatusLabel.stringValue
+
+        // Format: Status icon + label on first line, then scene text with page break
+        let formattedText = "\(statusIcon) \(statusLabel)\n\n\(sceneText)\n\n---\n\n"
+
         let pasteboard = NSPasteboard.general
         pasteboard.clearContents()
-        pasteboard.setString(text, forType: .string)
+        pasteboard.setString(formattedText, forType: .string)
     }
 
     @objc private func saveSceneWriter() {

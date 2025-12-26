@@ -3225,14 +3225,12 @@ extension AnalysisViewController {
     }
 
     @objc private func showPresence() {
-        if let results = latestAnalysisResults {
-            openPresencePopout(presence: results.characterPresence)
-        } else {
-            analyzeCallback?()
-            DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) { [weak self] in
-                if let results = self?.latestAnalysisResults {
-                    self?.openPresencePopout(presence: results.characterPresence)
-                }
+        // Always trigger fresh analysis to ensure we use current outline structure
+        // Document outline is the source of truth for chapter detection
+        analyzeCallback?()
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) { [weak self] in
+            if let results = self?.latestAnalysisResults {
+                self?.openPresencePopout(presence: results.characterPresence)
             }
         }
     }

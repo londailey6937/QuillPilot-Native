@@ -226,22 +226,13 @@ class CharacterPresenceView: NSView {
     }
 
     private func generateColors(count: Int) -> [NSColor] {
-        let baseColors: [NSColor] = [
-            NSColor.systemBlue,
-            NSColor.systemOrange,
-            NSColor.systemGreen,
-            NSColor.systemPurple,
-            NSColor.systemPink,
-            NSColor.systemTeal,
-            NSColor.systemYellow,
-            NSColor.systemRed,
-            NSColor.systemIndigo,
-            NSColor.systemBrown
-        ]
-
+        // Generate unique colors using HSB color space with evenly distributed hues
         var colors: [NSColor] = []
         for i in 0..<count {
-            colors.append(baseColors[i % baseColors.count])
+            let hue = CGFloat(i) / CGFloat(max(count, 1))
+            let saturation: CGFloat = 0.7
+            let brightness: CGFloat = 0.85
+            colors.append(NSColor(calibratedHue: hue, saturation: saturation, brightness: brightness, alpha: 1.0))
         }
         return colors
     }

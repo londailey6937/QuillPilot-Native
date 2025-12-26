@@ -2153,16 +2153,12 @@ class ContentViewController: NSViewController {
             NSLog("📊 MainWindowController: Inside background thread")
             let analysisEngine = AnalysisEngine()
 
-            // Convert outline entries for AnalysisEngine
-            let analysisOutlineEntries: [DecisionBeliefLoopAnalyzer.OutlineEntry]? = editorOutlines.isEmpty ? nil : editorOutlines.map {
+            // Convert outline entries for AnalysisEngine. Always pass an array (empty means no outline yet).
+            let analysisOutlineEntries: [DecisionBeliefLoopAnalyzer.OutlineEntry] = editorOutlines.map {
                 DecisionBeliefLoopAnalyzer.OutlineEntry(title: $0.title, level: $0.level, range: $0.range, page: $0.page)
             }
 
-            if let entries = analysisOutlineEntries {
-                NSLog("📋 MainWindowController: Passing \(entries.count) outline entries to analyzeText")
-            } else {
-                NSLog("⚠️ MainWindowController: No outline entries available for analyzeText")
-            }
+            NSLog("📋 MainWindowController: Passing \(analysisOutlineEntries.count) outline entries to analyzeText")
 
             var results = analysisEngine.analyzeText(text, outlineEntries: analysisOutlineEntries, pageMapping: pageMapping)
 
@@ -2178,7 +2174,7 @@ class ContentViewController: NSViewController {
 
                 if !characterNames.isEmpty {
                     // Reuse already-converted outline entries instead of converting again
-                    NSLog("📋 MainWindowController: Using character library with \(analysisOutlineEntries?.count ?? 0) outline entries")
+                    NSLog("📋 MainWindowController: Using character library with \(analysisOutlineEntries.count) outline entries")
 
                     // Perform character arc analysis with Decision-Belief Loop Framework
                     let (loops, interactions, presence) = analysisEngine.analyzeCharacterArcs(

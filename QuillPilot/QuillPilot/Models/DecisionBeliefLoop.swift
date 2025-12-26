@@ -854,43 +854,43 @@ class DecisionBeliefLoopAnalyzer {
 
         // Get chapters using outline or fall back to regex
         let chapters: [(text: String, number: Int)]
-        if let entries = outlineEntries, !entries.isEmpty {
-            // Look for level 1 entries (chapters) first
+        if let entries = outlineEntries {
+            // If caller provided outline entries, treat them as source of truth.
+            // Empty entries mean no chapters defined yet, so return no chapters.
+            guard !entries.isEmpty else { return presenceData }
+
+            // Look for level 1 entries (chapters) first - these are the main chapter divisions
             let chapterEntries = entries.filter { $0.level == 1 }
             let effectiveEntries: [OutlineEntry]
             if !chapterEntries.isEmpty {
+                // Use level 1 entries (chapters)
                 effectiveEntries = chapterEntries
             } else {
-                // Fallback: try level 0 (parts) or level 2 (headings)
+                // Only fallback to level 0 (parts/acts) if no chapters found
+                // Do NOT use level 2 (scenes/sections) as chapters
                 let level0Entries = entries.filter { $0.level == 0 }
-                let level2Entries = entries.filter { $0.level == 2 }
                 if !level0Entries.isEmpty {
                     effectiveEntries = level0Entries
-                } else if !level2Entries.isEmpty {
-                    effectiveEntries = Array(level2Entries.prefix(10))
                 } else {
-                    effectiveEntries = []
+                    // No valid chapter structure provided
+                    return presenceData
                 }
             }
-            if !effectiveEntries.isEmpty {
-                let fullText = text as NSString
-                chapters = effectiveEntries.enumerated().map { index, entry in
-                    let startLocation = entry.range.location
-                    let endLocation: Int
-                    if index < effectiveEntries.count - 1 {
-                        endLocation = effectiveEntries[index + 1].range.location
-                    } else {
-                        endLocation = fullText.length
-                    }
-                    let chapterRange = NSRange(location: startLocation, length: endLocation - startLocation)
-                    return (text: fullText.substring(with: chapterRange), number: index + 1)
+
+            let fullText = text as NSString
+            chapters = effectiveEntries.enumerated().map { index, entry in
+                let startLocation = entry.range.location
+                let endLocation: Int
+                if index < effectiveEntries.count - 1 {
+                    endLocation = effectiveEntries[index + 1].range.location
+                } else {
+                    endLocation = fullText.length
                 }
-            } else {
-                // No outline structure found - use regex detection
-                let chapterTexts = splitIntoChapters(text: text)
-                chapters = chapterTexts.enumerated().map { (text: $1, number: $0 + 1) }
+                let chapterRange = NSRange(location: startLocation, length: endLocation - startLocation)
+                return (text: fullText.substring(with: chapterRange), number: index + 1)
             }
         } else {
+            // No outline provided; fall back to regex detection
             let chapterTexts = splitIntoChapters(text: text)
             chapters = chapterTexts.enumerated().map { (text: $1, number: $0 + 1) }
         }
@@ -1024,18 +1024,15 @@ class DecisionBeliefLoopAnalyzer {
     }
 
     private func countMentions(of characterName: String, in text: String) -> Int {
-        let lowercasedText = text.lowercased()
-        let lowercasedName = characterName.lowercased()
-
-        var count = 0
-        var searchRange = lowercasedText.startIndex..<lowercasedText.endIndex
-
-        while let range = lowercasedText.range(of: lowercasedName, options: [], range: searchRange) {
-            count += 1
-            searchRange = range.upperBound..<lowercasedText.endIndex
+        // Use word boundaries to avoid false positives (e.g., "Alex" in "Alexander")
+        let pattern = "\\b" + NSRegularExpression.escapedPattern(for: characterName) + "\\b"
+        guard let regex = try? NSRegularExpression(pattern: pattern, options: .caseInsensitive) else {
+            return 0
         }
 
-        return count
+        let range = NSRange(text.startIndex..<text.endIndex, in: text)
+        let matches = regex.matches(in: text, options: [], range: range)
+        return matches.count
     }
 
     // MARK: - Relationship Evolution Map Generation

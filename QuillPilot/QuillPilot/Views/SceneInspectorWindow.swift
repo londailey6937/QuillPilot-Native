@@ -308,11 +308,41 @@ final class SceneInspectorWindowController: NSWindowController {
 
         sceneWriterTextView = NSTextView(frame: scrollView.bounds)
         sceneWriterTextView.autoresizingMask = [.width, .height]
-        sceneWriterTextView.isRichText = false
-        sceneWriterTextView.font = NSFont.systemFont(ofSize: 13)
+        sceneWriterTextView.isRichText = true
         sceneWriterTextView.textContainerInset = NSSize(width: 5, height: 5)
         sceneWriterTextView.isAutomaticQuoteSubstitutionEnabled = true
         sceneWriterTextView.isAutomaticDashSubstitutionEnabled = true
+
+        // Apply Body Text style from StyleCatalog
+        if let bodyStyle = StyleCatalog.shared.style(named: "Body Text") {
+            let paragraphStyle = NSMutableParagraphStyle()
+            paragraphStyle.alignment = NSTextAlignment(rawValue: bodyStyle.alignmentRawValue) ?? .left
+            paragraphStyle.lineHeightMultiple = bodyStyle.lineHeightMultiple
+            paragraphStyle.paragraphSpacingBefore = bodyStyle.spacingBefore
+            paragraphStyle.paragraphSpacing = bodyStyle.spacingAfter
+            paragraphStyle.headIndent = bodyStyle.headIndent
+            paragraphStyle.firstLineHeadIndent = bodyStyle.firstLineIndent
+            paragraphStyle.tailIndent = bodyStyle.tailIndent
+            paragraphStyle.lineBreakMode = .byWordWrapping
+
+            var font = NSFont(name: bodyStyle.fontName, size: bodyStyle.fontSize) ?? NSFont.systemFont(ofSize: bodyStyle.fontSize)
+            if bodyStyle.isBold {
+                font = NSFontManager.shared.convert(font, toHaveTrait: .boldFontMask)
+            }
+            if bodyStyle.isItalic {
+                font = NSFontManager.shared.convert(font, toHaveTrait: .italicFontMask)
+            }
+
+            sceneWriterTextView.font = font
+            sceneWriterTextView.typingAttributes = [
+                .font: font,
+                .paragraphStyle: paragraphStyle,
+                .foregroundColor: NSColor.textColor
+            ]
+        } else {
+            sceneWriterTextView.font = NSFont.systemFont(ofSize: 13)
+        }
+
         scrollView.documentView = sceneWriterTextView
         panel.addSubview(scrollView)
 

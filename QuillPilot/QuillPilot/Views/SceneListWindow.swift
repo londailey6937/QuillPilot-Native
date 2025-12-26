@@ -11,7 +11,6 @@ final class SceneListWindowController: NSWindowController {
     private var filterBar: NSView!
     private var addButton: NSButton!
     private var deleteButton: NSButton!
-    private var inspectorButton: NSButton!
     private var stateFilterPopup: NSPopUpButton!
     private var intentFilterPopup: NSPopUpButton!
 
@@ -73,31 +72,26 @@ final class SceneListWindowController: NSWindowController {
         toolbar.layer?.backgroundColor = NSColor.windowBackgroundColor.cgColor
         contentView.addSubview(toolbar)
 
-        // Add button
+        // Add button (larger)
         addButton = NSButton(title: "+", target: self, action: #selector(addScene))
         addButton.bezelStyle = .texturedRounded
-        addButton.frame = NSRect(x: 8, y: 8, width: 30, height: 28)
+        addButton.frame = NSRect(x: 8, y: 6, width: 40, height: 32)
+        addButton.font = NSFont.systemFont(ofSize: 20)
         addButton.toolTip = "Add new scene"
         toolbar.addSubview(addButton)
 
-        // Delete button
+        // Delete button (larger)
         deleteButton = NSButton(title: "−", target: self, action: #selector(deleteSelectedScene))
         deleteButton.bezelStyle = .texturedRounded
-        deleteButton.frame = NSRect(x: 42, y: 8, width: 30, height: 28)
+        deleteButton.frame = NSRect(x: 52, y: 6, width: 40, height: 32)
+        deleteButton.font = NSFont.systemFont(ofSize: 20)
         deleteButton.toolTip = "Delete selected scene"
         deleteButton.isEnabled = false
         toolbar.addSubview(deleteButton)
 
-        // Inspector button
-        inspectorButton = NSButton(title: "ℹ︎", target: self, action: #selector(showInspector))
-        inspectorButton.bezelStyle = .texturedRounded
-        inspectorButton.frame = NSRect(x: 76, y: 8, width: 30, height: 28)
-        inspectorButton.toolTip = "Show scene inspector"
-        inspectorButton.isEnabled = false
-        toolbar.addSubview(inspectorButton)
-
         // Scene count label
         countLabel = NSTextField(labelWithString: "0 scenes")
+        countLabel!.tag = 100
         countLabel!.frame = NSRect(x: toolbar.bounds.width - 100, y: 12, width: 90, height: 20)
         countLabel!.alignment = .right
         countLabel!.textColor = NSColor.secondaryLabelColor
@@ -253,7 +247,6 @@ final class SceneListWindowController: NSWindowController {
         // Clear selection when filters change
         tableView.deselectAll(nil)
         deleteButton.isEnabled = false
-        inspectorButton.isEnabled = false
     }
 
     private func updateCountLabel() {
@@ -302,7 +295,6 @@ final class SceneListWindowController: NSWindowController {
 
         // Update button states
         deleteButton.isEnabled = false
-        inspectorButton.isEnabled = false
     }
 
     @objc private func showInspector() {
@@ -437,7 +429,6 @@ extension SceneListWindowController: NSTableViewDelegate {
     func tableViewSelectionDidChange(_ notification: Notification) {
         let hasSelection = tableView.selectedRow >= 0
         deleteButton.isEnabled = hasSelection
-        inspectorButton.isEnabled = hasSelection
     }
 
     private func applyCurrentTheme() {

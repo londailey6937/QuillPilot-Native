@@ -47,6 +47,7 @@ final class SceneListWindowController: NSWindowController {
         window.title = "Scenes"
         window.minSize = NSSize(width: 280, height: 300)
         window.isReleasedWhenClosed = false
+        window.collectionBehavior = [.moveToActiveSpace]
 
         super.init(window: window)
 

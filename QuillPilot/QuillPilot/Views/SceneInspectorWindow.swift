@@ -40,6 +40,7 @@ final class SceneInspectorWindowController: NSWindowController {
         window.title = "Scene Inspector"
         window.minSize = NSSize(width: 900, height: 500)
         window.isReleasedWhenClosed = false
+        window.collectionBehavior = [.moveToActiveSpace]
 
         super.init(window: window)
 

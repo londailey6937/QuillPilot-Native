@@ -294,8 +294,8 @@ class AnalysisEngine {
         results.plotAnalysis = plotDetector.detectPlotPoints(text: analysisText, wordCount: results.wordCount)
 
         // Character arc analysis
-        // Use ONLY fullName from Character Library - no text extraction when library exists
-        let libraryNames = CharacterLibrary.shared.characters.map { $0.fullName }.filter { !$0.isEmpty }
+        // Use ONLY nickname from Character Library - no text extraction when library exists
+        let libraryNames = CharacterLibrary.shared.characters.map { $0.nickname }.filter { !$0.isEmpty }
 
         let characterNames: [String]
         if !libraryNames.isEmpty {
@@ -774,7 +774,7 @@ class AnalysisEngine {
 
     private func extractCharacterNames(from text: String) -> [String] {
         // Get library character names first
-        let libraryNames = Set(CharacterLibrary.shared.characters.map { $0.fullName })
+        let libraryNames = Set(CharacterLibrary.shared.characters.map { $0.nickname })
 
         // Find capitalized words (potential names)
         let words = text.components(separatedBy: .whitespacesAndNewlines)

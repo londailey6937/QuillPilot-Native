@@ -120,7 +120,7 @@ final class SceneInspectorWindowController: NSWindowController {
         povComboBox.placeholderString = "Point of view character"
         povComboBox.completes = true
         // Populate with characters from Character Library
-        let characterNames = CharacterLibrary.shared.characters.map { $0.fullName }
+        let characterNames = CharacterLibrary.shared.characters.map { $0.nickname }
         povComboBox.addItems(withObjectValues: characterNames)
         contentView.addSubview(povComboBox)
         y -= rowHeight + spacing

@@ -332,7 +332,7 @@ class AutoStoryWindowController: NSWindowController {
     private func gatherCharacters() -> [String] {
         // Try to access Character Library
         let library = CharacterLibrary.shared
-        return library.characters.map { $0.fullName }
+        return library.characters.map { $0.nickname }
     }
 
     private func gatherLocations() -> [String] {

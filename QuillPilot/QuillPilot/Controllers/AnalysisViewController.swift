@@ -1876,7 +1876,7 @@ extension AnalysisViewController {
         }
 
         // Ensure every library character is represented even if the analysis data was missing
-        let libraryNames = CharacterLibrary.shared.characters.map { $0.fullName }.filter { !$0.isEmpty }
+        let libraryNames = CharacterLibrary.shared.characters.map { $0.nickname }.filter { !$0.isEmpty }
         let existingNames = Set(characterDrifts.map { $0.characterName })
         let missingNames = libraryNames.filter { !existingNames.contains($0) }
 
@@ -2067,7 +2067,7 @@ extension AnalysisViewController {
         let library = CharacterLibrary.shared
         let characterNames: [String]
         if !library.characters.isEmpty {
-            characterNames = library.characters.map { $0.fullName }.filter { !$0.isEmpty }
+            characterNames = library.characters.map { $0.nickname }.filter { !$0.isEmpty }
         } else if let presenceEntries = latestAnalysisResults?.characterPresence, !presenceEntries.isEmpty {
             characterNames = presenceEntries.map { $0.characterName }
         } else {
@@ -2253,7 +2253,7 @@ extension AnalysisViewController {
         let characterNames: [String]
 
         if !library.characters.isEmpty {
-            characterNames = library.characters.map { $0.fullName }.filter { !$0.isEmpty }
+            characterNames = library.characters.map { $0.nickname }.filter { !$0.isEmpty }
         } else if let presenceEntries = latestAnalysisResults?.characterPresence, !presenceEntries.isEmpty {
             characterNames = presenceEntries.map { $0.characterName }
         } else {
@@ -3441,7 +3441,7 @@ extension AnalysisViewController {
         let library = CharacterLibrary.shared
         let characterNames: [String]
         if !library.characters.isEmpty {
-            characterNames = library.characters.map { $0.fullName }.filter { !$0.isEmpty }
+            characterNames = library.characters.map { $0.nickname }.filter { !$0.isEmpty }
         } else if !results.characterPresence.isEmpty {
             characterNames = results.characterPresence.map { $0.characterName }
         } else {

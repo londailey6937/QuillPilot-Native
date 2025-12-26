@@ -66,6 +66,25 @@ class AnalysisViewController: NSViewController {
     // Window delegate for auto-closing popouts
     private let autoCloseDelegate = AutoCloseWindowDelegate()
 
+    // High-contrast qualitative palette reused across popouts
+    private let qualitativePalette: [NSColor] = [
+        NSColor(calibratedRed: 0.12, green: 0.47, blue: 0.71, alpha: 1.0),
+        NSColor(calibratedRed: 0.84, green: 0.15, blue: 0.16, alpha: 1.0),
+        NSColor(calibratedRed: 0.17, green: 0.63, blue: 0.17, alpha: 1.0),
+        NSColor(calibratedRed: 1.00, green: 0.50, blue: 0.05, alpha: 1.0),
+        NSColor(calibratedRed: 0.55, green: 0.34, blue: 0.76, alpha: 1.0),
+        NSColor(calibratedRed: 0.60, green: 0.31, blue: 0.21, alpha: 1.0),
+        NSColor(calibratedRed: 0.90, green: 0.47, blue: 0.76, alpha: 1.0),
+        NSColor(calibratedRed: 0.50, green: 0.50, blue: 0.50, alpha: 1.0),
+        NSColor(calibratedRed: 0.74, green: 0.74, blue: 0.13, alpha: 1.0),
+        NSColor(calibratedRed: 0.09, green: 0.75, blue: 0.81, alpha: 1.0),
+        NSColor(calibratedRed: 0.11, green: 0.62, blue: 0.52, alpha: 1.0),
+        NSColor(calibratedRed: 0.90, green: 0.67, blue: 0.00, alpha: 1.0),
+        NSColor(calibratedRed: 0.30, green: 0.43, blue: 0.96, alpha: 1.0),
+        NSColor(calibratedRed: 0.84, green: 0.12, blue: 0.55, alpha: 1.0),
+        NSColor(calibratedRed: 0.40, green: 0.76, blue: 0.65, alpha: 1.0)
+    ]
+
     // Character Library Window (Navigator panel only)
     private var characterLibraryWindow: CharacterLibraryWindowController?
     private var themeWindow: ThemeWindowController?
@@ -1827,7 +1846,7 @@ extension AnalysisViewController {
         driftView.autoresizingMask = [.width, .height]
 
         // Convert data to view format
-        let characterDrifts = driftData.characterDrifts.map { charData in
+        var characterDrifts = driftData.characterDrifts.map { charData in
             let metrics = charData.metrics.map { m in
                 LanguageDriftAnalysisView.LanguageMetrics(
                     chapter: m.chapter,
@@ -1854,6 +1873,53 @@ extension AnalysisViewController {
                 metrics: metrics,
                 driftSummary: summary
             )
+        }
+
+        // Ensure every library character is represented even if the analysis data was missing
+        let libraryNames = CharacterLibrary.shared.characters.map { $0.fullName }.filter { !$0.isEmpty }
+        let existingNames = Set(characterDrifts.map { $0.characterName })
+        let missingNames = libraryNames.filter { !existingNames.contains($0) }
+
+        if !missingNames.isEmpty {
+            // Derive chapter count from existing data or outline, fall back to 6
+            let existingChapterCount = characterDrifts.first?.metrics.count
+            let outlineEntries = getOutlineEntriesCallback?()
+            let outlineChapters = outlineEntries?.filter { $0.level == 1 }.count
+            let chapterCount = existingChapterCount ?? (outlineChapters ?? 6)
+
+            for name in missingNames {
+                var metrics: [LanguageDriftAnalysisView.LanguageMetrics] = []
+                for chapter in 1...max(chapterCount, 1) {
+                    metrics.append(
+                        LanguageDriftAnalysisView.LanguageMetrics(
+                            chapter: chapter,
+                            pronounI: 0.3,
+                            pronounWe: 0.3,
+                            modalMust: 0.3,
+                            modalChoice: 0.3,
+                            emotionalDensity: 0.3,
+                            avgSentenceLength: 0.3,
+                            certaintyScore: 0.3
+                        )
+                    )
+                }
+
+                let summary = LanguageDriftAnalysisView.DriftSummary(
+                    pronounShift: "Stable",
+                    modalShift: "Stable",
+                    emotionalTrend: "Stable",
+                    sentenceTrend: "Stable",
+                    certaintyTrend: "Stable"
+                )
+
+                characterDrifts.append(
+                    LanguageDriftAnalysisView.CharacterLanguageDrift(
+                        characterName: name,
+                        metrics: metrics,
+                        driftSummary: summary
+                    )
+                )
+            }
         }
 
         driftView.setDriftData(characterDrifts)
@@ -1996,41 +2062,29 @@ extension AnalysisViewController {
     }
 
     private func generateFailurePatterns() -> [FailurePatternChartView.CharacterFailurePattern] {
-        // Colors for different characters
-        let colors: [NSColor] = [.systemPurple, .systemTeal, .systemOrange, .systemPink, .systemIndigo, .systemGreen]
-
         var patterns: [FailurePatternChartView.CharacterFailurePattern] = []
 
-        // Use character library if available
         let library = CharacterLibrary.shared
+        let characterNames: [String]
         if !library.characters.isEmpty {
-            for (index, character) in library.characters.prefix(6).enumerated() {
-                let failures = generateFailuresForCharacter(characterName: character.displayName, index: index)
-                let progression = determineFailureProgression(failures: failures)
-
-                let pattern = FailurePatternChartView.CharacterFailurePattern(
-                    characterName: character.displayName,
-                    color: colors[index % colors.count],
-                    failures: failures,
-                    progression: progression
-                )
-                patterns.append(pattern)
-            }
+            characterNames = library.characters.map { $0.fullName }.filter { !$0.isEmpty }
+        } else if let presenceEntries = latestAnalysisResults?.characterPresence, !presenceEntries.isEmpty {
+            characterNames = presenceEntries.map { $0.characterName }
         } else {
-            // Default sample data if no characters
-            let defaultCharacters = ["Alex", "Allison", "Raymond", "Kessler"]
-            for (index, name) in defaultCharacters.enumerated() {
-                let failures = generateFailuresForCharacter(characterName: name, index: index)
-                let progression = determineFailureProgression(failures: failures)
+            characterNames = ["Alex", "Allison", "Raymond", "Kessler"]
+        }
 
-                let pattern = FailurePatternChartView.CharacterFailurePattern(
-                    characterName: name,
-                    color: colors[index % colors.count],
-                    failures: failures,
-                    progression: progression
-                )
-                patterns.append(pattern)
-            }
+        for (index, name) in characterNames.enumerated() {
+            let failures = generateFailuresForCharacter(characterName: name, index: index)
+            let progression = determineFailureProgression(failures: failures)
+
+            let pattern = FailurePatternChartView.CharacterFailurePattern(
+                characterName: name,
+                color: qualitativePalette[index % qualitativePalette.count],
+                failures: failures,
+                progression: progression
+            )
+            patterns.append(pattern)
         }
 
         return patterns
@@ -2195,41 +2249,30 @@ extension AnalysisViewController {
     }
 
     private func generateThematicJourneys() -> [ThematicResonanceMapView.CharacterThematicJourney] {
-        // Colors for different characters
-        let colors: [NSColor] = [.systemPurple, .systemTeal, .systemOrange, .systemPink, .systemIndigo, .systemGreen]
+        let library = CharacterLibrary.shared
+        let characterNames: [String]
+
+        if !library.characters.isEmpty {
+            characterNames = library.characters.map { $0.fullName }.filter { !$0.isEmpty }
+        } else if let presenceEntries = latestAnalysisResults?.characterPresence, !presenceEntries.isEmpty {
+            characterNames = presenceEntries.map { $0.characterName }
+        } else {
+            characterNames = ["Alex", "Allison", "Raymond", "Kessler"]
+        }
 
         var journeys: [ThematicResonanceMapView.CharacterThematicJourney] = []
 
-        // Use character library if available
-        let library = CharacterLibrary.shared
-        if !library.characters.isEmpty {
-            for (index, character) in library.characters.prefix(6).enumerated() {
-                let stances = generateStancesForCharacter(characterName: character.displayName, index: index)
-                let trajectory = determineTrajectory(stances: stances)
+        for (index, name) in characterNames.enumerated() {
+            let stances = generateStancesForCharacter(characterName: name, index: index)
+            let trajectory = determineTrajectory(stances: stances)
 
-                let journey = ThematicResonanceMapView.CharacterThematicJourney(
-                    characterName: character.displayName,
-                    color: colors[index % colors.count],
-                    stances: stances,
-                    overallTrajectory: trajectory
-                )
-                journeys.append(journey)
-            }
-        } else {
-            // Default sample data if no characters
-            let defaultCharacters = ["Alex", "Allison", "Raymond", "Kessler"]
-            for (index, name) in defaultCharacters.enumerated() {
-                let stances = generateStancesForCharacter(characterName: name, index: index)
-                let trajectory = determineTrajectory(stances: stances)
-
-                let journey = ThematicResonanceMapView.CharacterThematicJourney(
-                    characterName: name,
-                    color: colors[index % colors.count],
-                    stances: stances,
-                    overallTrajectory: trajectory
-                )
-                journeys.append(journey)
-            }
+            let journey = ThematicResonanceMapView.CharacterThematicJourney(
+                characterName: name,
+                color: qualitativePalette[index % qualitativePalette.count],
+                stances: stances,
+                overallTrajectory: trajectory
+            )
+            journeys.append(journey)
         }
 
         return journeys
@@ -3318,6 +3361,8 @@ extension AnalysisViewController {
             window.isReleasedWhenClosed = false
             window.delegate = autoCloseDelegate
 
+            window.center()
+
             emotionalTrajectoryPopoutWindow = window
         }
 
@@ -3369,6 +3414,7 @@ extension AnalysisViewController {
         containerView.addSubview(trajectoryView)
 
         window.contentView = containerView
+        window.center()
         window.makeKeyAndOrderFront(nil)
     }
 
@@ -3393,11 +3439,16 @@ extension AnalysisViewController {
 
         // Get character names from Character Library (all characters)
         let library = CharacterLibrary.shared
-        let characterNames = library.characters.isEmpty ?
-            results.characterPresence.prefix(3).map { $0.characterName } : // Fall back to presence data if no library
-            library.characters.map { $0.displayName } // Use all characters from library
+        let characterNames: [String]
+        if !library.characters.isEmpty {
+            characterNames = library.characters.map { $0.fullName }.filter { !$0.isEmpty }
+        } else if !results.characterPresence.isEmpty {
+            characterNames = results.characterPresence.map { $0.characterName }
+        } else {
+            characterNames = ["Protagonist", "Ally", "Antagonist"]
+        }
 
-        let colors: [NSColor] = [.systemBlue, .systemRed, .systemGreen, .systemOrange, .systemPurple, .systemTeal, .systemIndigo, .systemPink]
+        let colors = qualitativePalette
 
         for (index, characterName) in characterNames.enumerated() {
             // Generate emotional states based on character presence and arc

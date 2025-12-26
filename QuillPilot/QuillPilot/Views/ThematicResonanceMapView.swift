@@ -76,9 +76,9 @@ class ThematicResonanceMapView: NSView {
         }
 
         let leftPadding: CGFloat = 200
-        let rightPadding: CGFloat = 200
+        let rightPadding: CGFloat = 240
         let topPadding: CGFloat = 160
-        let bottomPadding: CGFloat = 80
+        let bottomPadding: CGFloat = 120
         let chartWidth = bounds.width - leftPadding - rightPadding
         let chartHeight = bounds.height - topPadding - bottomPadding
         let chartRect = NSRect(x: leftPadding, y: bottomPadding, width: chartWidth, height: chartHeight)

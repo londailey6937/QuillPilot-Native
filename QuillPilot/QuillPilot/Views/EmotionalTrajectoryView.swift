@@ -84,8 +84,8 @@ class EmotionalTrajectoryView: NSView {
         drawAxes(in: chartRect)
 
         // Draw trajectories
-        for trajectory in trajectories {
-            drawTrajectory(trajectory, in: chartRect, context: context)
+        for (index, trajectory) in trajectories.enumerated() {
+            drawTrajectory(trajectory, in: chartRect, context: context, index: index, total: trajectories.count)
         }
 
         // Draw legend
@@ -162,8 +162,11 @@ class EmotionalTrajectoryView: NSView {
         }
     }
 
-    private func drawTrajectory(_ trajectory: CharacterTrajectory, in chartRect: NSRect, context: CGContext?) {
+    private func drawTrajectory(_ trajectory: CharacterTrajectory, in chartRect: NSRect, context: CGContext?, index: Int, total: Int) {
         guard !trajectory.states.isEmpty else { return }
+
+        let spacingStep: CGFloat = 6.0
+        let spacingOffset = (CGFloat(index) - CGFloat(total - 1) / 2.0) * spacingStep
 
         let path = NSBezierPath()
 
@@ -183,7 +186,8 @@ class EmotionalTrajectoryView: NSView {
             let x = chartRect.minX + chartRect.width * CGFloat(state.position)
             // Map value from [-1, 1] to chart coordinates
             let normalizedValue = (getValue(from: state) + 1.0) / 2.0 // Convert to [0, 1]
-            let y = chartRect.minY + chartRect.height * CGFloat(normalizedValue)
+            let baseY = chartRect.minY + chartRect.height * CGFloat(normalizedValue)
+            let y = max(chartRect.minY, min(chartRect.maxY, baseY + spacingOffset))
 
             if isFirst {
                 path.move(to: NSPoint(x: x, y: y))
@@ -211,7 +215,8 @@ class EmotionalTrajectoryView: NSView {
         for state in trajectory.states {
             let x = chartRect.minX + chartRect.width * CGFloat(state.position)
             let normalizedValue = (getValue(from: state) + 1.0) / 2.0
-            let y = chartRect.minY + chartRect.height * CGFloat(normalizedValue)
+            let baseY = chartRect.minY + chartRect.height * CGFloat(normalizedValue)
+            let y = max(chartRect.minY, min(chartRect.maxY, baseY + spacingOffset))
 
             let point = NSBezierPath(ovalIn: NSRect(x: x - 3, y: y - 3, width: 6, height: 6))
             trajectory.color.setFill()

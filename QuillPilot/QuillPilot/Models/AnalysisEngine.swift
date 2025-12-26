@@ -7,6 +7,7 @@
 //
 
 import Foundation
+import Cocoa
 
 struct AnalysisResults {
     var wordCount: Int = 0
@@ -293,8 +294,18 @@ class AnalysisEngine {
         results.plotAnalysis = plotDetector.detectPlotPoints(text: analysisText, wordCount: results.wordCount)
 
         // Character arc analysis
-        // Extract character names from text (capitalized words that appear frequently)
-        let characterNames = extractCharacterNames(from: analysisText)
+        // Use ONLY fullName from Character Library - no text extraction when library exists
+        let libraryNames = CharacterLibrary.shared.characters.map { $0.fullName }.filter { !$0.isEmpty }
+
+        let characterNames: [String]
+        if !libraryNames.isEmpty {
+            // Library exists - use ONLY library names
+            characterNames = libraryNames
+        } else {
+            // No library - fall back to text extraction
+            characterNames = extractCharacterNames(from: analysisText)
+        }
+
         if !characterNames.isEmpty {
             let (loops, interactions, presence) = analyzeCharacterArcs(text: analysisText, characterNames: characterNames, outlineEntries: outlineEntries)
             results.decisionBeliefLoops = loops

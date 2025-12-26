@@ -1081,6 +1081,12 @@ class DecisionBeliefLoopAnalyzer {
                 let char1 = characterNames[i]
                 let char2 = characterNames[j]
 
+                // Build regexes for word boundary matching
+                let pattern1 = "\\b" + NSRegularExpression.escapedPattern(for: char1) + "\\b"
+                let pattern2 = "\\b" + NSRegularExpression.escapedPattern(for: char2) + "\\b"
+                guard let regex1 = try? NSRegularExpression(pattern: pattern1, options: .caseInsensitive),
+                      let regex2 = try? NSRegularExpression(pattern: pattern2, options: .caseInsensitive) else { continue }
+
                 // Analyze relationship evolution across chapters
                 var evolutionPoints: [RelationshipEvolutionPoint] = []
                 var overallTrust: Double = 0.0
@@ -1094,9 +1100,13 @@ class DecisionBeliefLoopAnalyzer {
 
                     // Analyze sentences mentioning both characters
                     for sentence in sentences {
-                        let lowerSentence = sentence.lowercased()
-                        if lowerSentence.contains(char1.lowercased()) && lowerSentence.contains(char2.lowercased()) {
+                        let range = NSRange(sentence.startIndex..., in: sentence)
+                        let hasChar1 = regex1.firstMatch(in: sentence, options: [], range: range) != nil
+                        let hasChar2 = regex2.firstMatch(in: sentence, options: [], range: range) != nil
+
+                        if hasChar1 && hasChar2 {
                             interactionCount += 1
+                            let lowerSentence = sentence.lowercased()
 
                             // Positive relationship indicators
                             let positiveWords = ["help", "support", "agree", "together", "friend", "ally", "trust", "love", "care"]
@@ -1249,9 +1259,13 @@ class DecisionBeliefLoopAnalyzer {
             "cried": -0.3, "sobbed": -0.4, "screamed": -0.4, "yelled": -0.3
         ]
 
-        for characterName in characterNames.prefix(6) { // Limit to 6 characters
+        for characterName in characterNames { // All characters from library
             var characterAlignment = CharacterAlignmentData(characterName: characterName)
             var gapValues: [Double] = []
+
+            // Build regex for word boundary matching
+            let characterPattern = "\\b" + NSRegularExpression.escapedPattern(for: characterName) + "\\b"
+            let characterRegex = try? NSRegularExpression(pattern: characterPattern, options: .caseInsensitive)
 
             for chapter in chapters {
                 // Find sentences containing the character
@@ -1262,8 +1276,11 @@ class DecisionBeliefLoopAnalyzer {
                 var outerDescription = ""
 
                 for sentence in sentences {
+                    // Use word boundary match
+                    guard let regex = characterRegex else { continue }
+                    let range = NSRange(sentence.startIndex..., in: sentence)
+                    guard regex.firstMatch(in: sentence, options: [], range: range) != nil else { continue }
                     let lowerSentence = sentence.lowercased()
-                    guard lowerSentence.contains(characterName.lowercased()) else { continue }
 
                     // Check for inner state words
                     for (word, baseScore) in innerStateWords {
@@ -1425,7 +1442,7 @@ class DecisionBeliefLoopAnalyzer {
         let certainWords = ["know", "certain", "sure", "definitely", "absolutely", "clearly", "obviously", "undoubtedly", "always", "never", "must be", "will"]
         let uncertainWords = ["maybe", "perhaps", "might", "possibly", "probably", "seems", "appears", "think", "believe", "guess", "wonder", "could be", "not sure"]
 
-        for characterName in characterNames.prefix(6) {
+        for characterName in characterNames {
             var characterDrift = CharacterLanguageDrift(characterName: characterName)
             var allMetrics: [LanguageMetricsData] = []
 
@@ -1434,10 +1451,16 @@ class DecisionBeliefLoopAnalyzer {
                 let sentences = chapter.text.components(separatedBy: CharacterSet(charactersIn: ".!?"))
                 var characterSentences: [String] = []
 
+                // Use word boundary matching to avoid false positives
+                let characterPattern = "\\b" + NSRegularExpression.escapedPattern(for: characterName) + "\\b"
+                let characterRegex = try? NSRegularExpression(pattern: characterPattern, options: .caseInsensitive)
+
                 for sentence in sentences {
-                    let lowerSentence = sentence.lowercased()
-                    if lowerSentence.contains(characterName.lowercased()) {
-                        characterSentences.append(sentence)
+                    if let regex = characterRegex {
+                        let range = NSRange(sentence.startIndex..., in: sentence)
+                        if regex.firstMatch(in: sentence, options: [], range: range) != nil {
+                            characterSentences.append(sentence)
+                        }
                     }
                 }
 

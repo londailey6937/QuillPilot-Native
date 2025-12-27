@@ -1,10 +1,12 @@
 import Cocoa
 
+@MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private var mainWindowController: MainWindowController?
     private var documentationWindow: DocumentationWindowController?
     private var dialogueTipsWindow: DialogueTipsWindowController?
     private var aboutWindow: NSWindow?
+    private var welcomeWindow: WelcomeWindowController?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         setupMenuBar()
@@ -17,9 +19,34 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             mainWindowController = MainWindowController()
         }
 
-        Task { @MainActor [weak self] in
+        // Show welcome screen on launch
+        showWelcomeWindow()
+    }
+
+    private func showWelcomeWindow() {
+        welcomeWindow = WelcomeWindowController()
+        welcomeWindow?.onNewDocument = { [weak self] in
             self?.presentMainWindow(orderingSource: nil)
+            // Create a truly new document - clear everything
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                self?.mainWindowController?.performNewDocument(nil)
+            }
         }
+        welcomeWindow?.onOpenDocument = { [weak self] in
+            self?.presentMainWindow(orderingSource: nil)
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                self?.openDocument(nil)
+            }
+        }
+        welcomeWindow?.onOpenRecent = { [weak self] url in
+            self?.presentMainWindow(orderingSource: nil)
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                self?.mainWindowController?.performOpenDocumentForURL(url)
+            }
+        }
+        welcomeWindow?.showWindow(nil)
+        welcomeWindow?.window?.makeKeyAndOrderFront(nil)
+        NSApp.activate(ignoringOtherApps: true)
     }
 
     /// Creates the QuillPilot app icon programmatically using feather.png
@@ -144,9 +171,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationDidBecomeActive(_ notification: Notification) {
+        // Keep welcome window in front until the user chooses an action
+        if welcomeWindow?.window?.isVisible == true {
+            return
+        }
+
         if mainWindowController == nil {
             mainWindowController = MainWindowController()
         }
+
         Task { @MainActor [weak self] in
             self?.presentMainWindow(orderingSource: self)
         }
@@ -186,6 +219,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     @objc private func openDocument(_ sender: Any?) {
         Task { @MainActor [weak self] in
             self?.mainWindowController?.performOpenDocument(sender)
+        }
+    }
+
+    @objc private func newDocument(_ sender: Any?) {
+        Task { @MainActor [weak self] in
+            self?.mainWindowController?.performNewDocument(sender)
         }
     }
 
@@ -229,9 +268,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let fileMenu = NSMenu(title: "File")
         fileMenuItem.submenu = fileMenu
 
+        let newItem = NSMenuItem(title: "New", action: #selector(newDocument(_:)), keyEquivalent: "n")
+        newItem.target = self
+        fileMenu.addItem(newItem)
+
         let openItem = NSMenuItem(title: "Open…", action: #selector(openDocument(_:)), keyEquivalent: "o")
         openItem.target = self
         fileMenu.addItem(openItem)
+
+        fileMenu.addItem(.separator())
 
         let saveItem = NSMenuItem(title: "Save", action: #selector(saveDocument(_:)), keyEquivalent: "s")
         saveItem.target = self
@@ -240,6 +285,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let saveAsItem = NSMenuItem(title: "Save As…", action: #selector(saveDocumentAs(_:)), keyEquivalent: "S")
         saveAsItem.target = self
         fileMenu.addItem(saveAsItem)
+
+        fileMenu.addItem(.separator())
 
         let printItem = NSMenuItem(title: "Print…", action: #selector(printDocument(_:)), keyEquivalent: "p")
         printItem.target = self

@@ -302,12 +302,13 @@ class AnalysisEngine {
         }
 
         let characterNames: [String]
+        // ONLY use Character Library - do not extract from text
+        // Analysis should only occur on characters in the library (source of truth)
         if !libraryNames.isEmpty {
-            // Library exists - use ONLY first names from library
             characterNames = libraryNames
         } else {
-            // No library - fall back to text extraction
-            characterNames = extractCharacterNames(from: analysisText)
+            // No library = no character analysis
+            characterNames = []
         }
 
         if !characterNames.isEmpty {
@@ -819,17 +820,64 @@ class AnalysisEngine {
     }
 
     func analyzeCharacterArcs(text: String, characterNames: [String], outlineEntries: [DecisionBeliefLoopAnalyzer.OutlineEntry]? = nil, pageMapping: [(location: Int, page: Int)]? = nil) -> ([DecisionBeliefLoop], [CharacterInteraction], [CharacterPresence]) {
+        // Validate that all character names exist in the Character Library
+        let library = CharacterLibrary.shared
+        let validCharacterNames: [String]
+
+        NSLog("📊 analyzeCharacterArcs: Input characterNames = \(characterNames)")
+        NSLog("📊 analyzeCharacterArcs: Library has \(library.characters.count) characters")
+
+        if !library.characters.isEmpty {
+            // Filter to only include characters that exist in the library
+            let libraryFirstNames = library.characters.compactMap { character -> String? in
+                let fullName = character.fullName.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !fullName.isEmpty else { return nil }
+                return fullName.components(separatedBy: .whitespaces).first
+            }
+            NSLog("📊 analyzeCharacterArcs: Library first names = \(libraryFirstNames)")
+            validCharacterNames = characterNames.filter { libraryFirstNames.contains($0) }
+            NSLog("📊 analyzeCharacterArcs: Valid character names after filtering = \(validCharacterNames)")
+        } else {
+            // No library = no character analysis
+            validCharacterNames = []
+            NSLog("📊 analyzeCharacterArcs: No library characters, returning empty")
+        }
+
+        // If no valid characters after filtering, return empty results
+        guard !validCharacterNames.isEmpty else {
+            NSLog("📊 analyzeCharacterArcs: No valid characters, returning empty arrays")
+            return ([], [], [])
+        }
+
         let analyzer = DecisionBeliefLoopAnalyzer()
 
         // Analyze text and populate Decision-Belief Loop with actual detected patterns
-        let loops = analyzer.analyzeLoops(text: text, characterNames: characterNames, outlineEntries: outlineEntries, pageMapping: pageMapping)
-        let interactions = analyzer.analyzeInteractions(text: text, characterNames: characterNames)
-        let presence = analyzer.analyzePresenceByChapter(text: text, characterNames: characterNames, outlineEntries: outlineEntries)
+        let loops = analyzer.analyzeLoops(text: text, characterNames: validCharacterNames, outlineEntries: outlineEntries, pageMapping: pageMapping)
+        let interactions = analyzer.analyzeInteractions(text: text, characterNames: validCharacterNames)
+        let presence = analyzer.analyzePresenceByChapter(text: text, characterNames: validCharacterNames, outlineEntries: outlineEntries)
+
+        NSLog("📊 analyzeCharacterArcs: Returning \(loops.count) loops, \(interactions.count) interactions, \(presence.count) presence entries")
 
         return (loops, interactions, presence)
     }
 
     func generateBeliefShiftMatrices(text: String, characterNames: [String], outlineEntries: [DecisionBeliefLoopAnalyzer.OutlineEntry]? = nil) -> [BeliefShiftMatrix] {
+        // Validate against Character Library
+        let library = CharacterLibrary.shared
+        let validCharacterNames: [String]
+        if !library.characters.isEmpty {
+            let libraryFirstNames = library.characters.compactMap { character -> String? in
+                let fullName = character.fullName.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !fullName.isEmpty else { return nil }
+                return fullName.components(separatedBy: .whitespaces).first
+            }
+            validCharacterNames = characterNames.filter { libraryFirstNames.contains($0) }
+        } else {
+            return [] // No library = no analysis
+        }
+
+        guard !validCharacterNames.isEmpty else { return [] }
+
         var matrices: [BeliefShiftMatrix] = []
 
         // Get actual chapters from outline or fall back to regex detection
@@ -880,7 +928,7 @@ class AnalysisEngine {
         let evidenceIndicators = ["because", "shows", "demonstrates", "proves", "revealed", "acted", "chose", "decided", "refused"]
         let counterpressureIndicators = ["but", "however", "challenged", "questioned", "opposed", "confronted", "despite", "although", "forced", "pressured"]
 
-        for characterName in characterNames {
+        for characterName in validCharacterNames {
             var entries: [BeliefShiftMatrix.BeliefEntry] = []
 
             // Sample key chapters for analysis (beginning, middle, end)
@@ -997,6 +1045,22 @@ class AnalysisEngine {
     }
 
     func generateDecisionConsequenceChains(text: String, characterNames: [String], outlineEntries: [DecisionBeliefLoopAnalyzer.OutlineEntry]? = nil) -> [DecisionConsequenceChain] {
+        // Validate against Character Library
+        let library = CharacterLibrary.shared
+        let validCharacterNames: [String]
+        if !library.characters.isEmpty {
+            let libraryFirstNames = library.characters.compactMap { character -> String? in
+                let fullName = character.fullName.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !fullName.isEmpty else { return nil }
+                return fullName.components(separatedBy: .whitespaces).first
+            }
+            validCharacterNames = characterNames.filter { libraryFirstNames.contains($0) }
+        } else {
+            return [] // No library = no analysis
+        }
+
+        guard !validCharacterNames.isEmpty else { return [] }
+
         var chains: [DecisionConsequenceChain] = []
 
         // Get actual chapters from outline or fall back to regex detection
@@ -1047,7 +1111,7 @@ class AnalysisEngine {
         let outcomeIndicators = ["resulted", "consequence", "outcome", "happened", "led to", "caused", "as a result", "therefore", "thus"]
         let effectIndicators = ["changed", "shaped", "influenced", "affected", "transformed", "learned", "realized", "became"]
 
-        for characterName in characterNames {
+        for characterName in validCharacterNames {
             var entries: [DecisionConsequenceChain.ChainEntry] = []
 
             // Sample key chapters (beginning, early-middle, late-middle, end)

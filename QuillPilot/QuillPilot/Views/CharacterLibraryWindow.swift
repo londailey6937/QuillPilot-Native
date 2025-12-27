@@ -48,5 +48,9 @@ class CharacterLibraryWindowController: NSWindowController {
 
         window.contentView = contentView
         window.contentViewController = characterLibraryVC
+
+        // Make the view controller the first responder so Cmd+S works
+        window.initialFirstResponder = characterLibraryVC?.view
+        window.makeFirstResponder(characterLibraryVC)
     }
 }

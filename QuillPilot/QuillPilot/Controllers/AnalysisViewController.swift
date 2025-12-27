@@ -120,23 +120,22 @@ class AnalysisViewController: NSViewController {
 
     /// Called when a new document is loaded or created
     func documentDidChange(url: URL?) {
+        NSLog("📄 AnalysisViewController: documentDidChange called")
         // Store current document URL for when scene window is created
         currentDocumentURL = url
         // Load scenes for this document if window exists
         sceneListWindow?.loadScenes(for: url)
-        // Clear analysis results to force refresh on next analysis
+        // Clear analysis results and all UI to prevent stale data across documents
         latestAnalysisResults = nil
-        // Close any open character analysis popouts
-        presencePopoutWindow?.close()
-        presencePopoutWindow = nil
-        interactionsPopoutWindow?.close()
-        interactionsPopoutWindow = nil
-        emotionalTrajectoryPopoutWindow?.close()
-        emotionalTrajectoryPopoutWindow = nil
-        decisionConsequenceChainPopoutWindow?.close()
-        decisionConsequenceChainPopoutWindow = nil
-        beliefShiftMatrixPopoutWindow?.close()
-        beliefShiftMatrixPopoutWindow = nil
+        clearAllAnalysisUI()
+
+        // Clear plot visualization view to remove stale data
+        if #available(macOS 13.0, *) {
+            NSLog("📊 Clearing plot and character visualization views")
+            plotVisualizationView.configure(with: nil)
+            plotVisualizationView.removeFromSuperview()
+            characterArcVisualizationView.removeFromSuperview()
+        }
     }
 
     private func scrollToTop() {
@@ -216,6 +215,12 @@ class AnalysisViewController: NSViewController {
             if let theme = notification.object as? AppTheme {
                 self?.applyTheme(theme)
             }
+        }
+
+        // Clear analysis if Character Library is empty on startup
+        if CharacterLibrary.shared.characters.isEmpty {
+            latestAnalysisResults = nil
+            clearAllAnalysisUI()
         }
     }
 
@@ -715,6 +720,12 @@ class AnalysisViewController: NSViewController {
     }
 
     func displayResults(_ results: AnalysisResults) {
+        // If Character Library is empty, don't display character-based analysis
+        if CharacterLibrary.shared.characters.isEmpty && results.wordCount == 0 {
+            latestAnalysisResults = nil
+            clearAllAnalysisUI()
+            return
+        }
 
         // Store results for visualization
         storeAnalysisResults(results)
@@ -1263,10 +1274,48 @@ class AnalysisViewController: NSViewController {
 
     // MARK: - Visualization Methods
 
-    private var latestAnalysisResults: AnalysisResults?
+    var latestAnalysisResults: AnalysisResults?
 
     func storeAnalysisResults(_ results: AnalysisResults) {
         latestAnalysisResults = results
+    }
+
+    func clearAllAnalysisUI() {
+        // Clear main results display
+        resultsStack.arrangedSubviews.forEach { view in
+            resultsStack.removeArrangedSubview(view)
+            view.removeFromSuperview()
+        }
+
+        // Close all popout windows
+        presencePopoutWindow?.close()
+        presencePopoutWindow = nil
+        interactionsPopoutWindow?.close()
+        interactionsPopoutWindow = nil
+        emotionalTrajectoryPopoutWindow?.close()
+        emotionalTrajectoryPopoutWindow = nil
+        decisionConsequenceChainPopoutWindow?.close()
+        decisionConsequenceChainPopoutWindow = nil
+        beliefShiftMatrixPopoutWindow?.close()
+        beliefShiftMatrixPopoutWindow = nil
+        failurePatternChartPopoutWindow?.close()
+        failurePatternChartPopoutWindow = nil
+        thematicResonanceMapPopoutWindow?.close()
+        thematicResonanceMapPopoutWindow = nil
+        relationshipMapPopoutWindow?.close()
+        relationshipMapPopoutWindow = nil
+        alignmentChartPopoutWindow?.close()
+        alignmentChartPopoutWindow = nil
+        languageDriftPopoutWindow?.close()
+        languageDriftPopoutWindow = nil
+        emotionalJourneyPopoutWindow?.close()
+        emotionalJourneyPopoutWindow = nil
+        analysisPopoutWindow?.close()
+        analysisPopoutWindow = nil
+        outlinePopoutWindow?.close()
+        outlinePopoutWindow = nil
+        plotPopoutWindow?.close()
+        plotPopoutWindow = nil
     }
 
     @available(macOS 13.0, *)
@@ -2057,7 +2106,7 @@ extension AnalysisViewController {
         } else if let presenceEntries = latestAnalysisResults?.characterPresence, !presenceEntries.isEmpty {
             characterNames = presenceEntries.map { $0.characterName }
         } else {
-            characterNames = ["Alex", "Allison", "Raymond", "Kessler"]
+            characterNames = []
         }
 
         for (index, name) in characterNames.enumerated() {
@@ -2247,7 +2296,7 @@ extension AnalysisViewController {
         } else if let presenceEntries = latestAnalysisResults?.characterPresence, !presenceEntries.isEmpty {
             characterNames = presenceEntries.map { $0.characterName }
         } else {
-            characterNames = ["Alex", "Allison", "Raymond", "Kessler"]
+            characterNames = []
         }
 
         var journeys: [ThematicResonanceMapView.CharacterThematicJourney] = []
@@ -3206,6 +3255,9 @@ extension AnalysisViewController {
     }
 
     @objc private func showDecisionBeliefLoops() {
+        // Don't show if Character Library is empty
+        guard !CharacterLibrary.shared.characters.isEmpty else { return }
+
         if let results = latestAnalysisResults {
             openDecisionBeliefPopout(loops: results.decisionBeliefLoops)
         } else {
@@ -3219,6 +3271,9 @@ extension AnalysisViewController {
     }
 
     @objc private func showBeliefShiftMatrix() {
+        // Don't show if Character Library is empty
+        guard !CharacterLibrary.shared.characters.isEmpty else { return }
+
         if let results = latestAnalysisResults {
             openBeliefShiftMatrixPopout(matrices: results.beliefShiftMatrices)
         } else {
@@ -3232,6 +3287,9 @@ extension AnalysisViewController {
     }
 
     @objc private func showDecisionConsequenceChains() {
+        // Don't show if Character Library is empty
+        guard !CharacterLibrary.shared.characters.isEmpty else { return }
+
         if let results = latestAnalysisResults {
             openDecisionConsequenceChainsPopout(chains: results.decisionConsequenceChains)
         } else {
@@ -3245,6 +3303,9 @@ extension AnalysisViewController {
     }
 
     @objc private func showInteractions() {
+        // Don't show if Character Library is empty
+        guard !CharacterLibrary.shared.characters.isEmpty else { return }
+
         if let results = latestAnalysisResults {
             openInteractionsPopout(interactions: results.characterInteractions)
         } else {
@@ -3258,17 +3319,31 @@ extension AnalysisViewController {
     }
 
     @objc private func showPresence() {
+        NSLog("👥 showPresence called")
+        // Don't show if Character Library is empty
+        guard !CharacterLibrary.shared.characters.isEmpty else {
+            NSLog("⚠️ Character Library is empty, not showing presence")
+            return
+        }
+
         // Always trigger fresh analysis to ensure we use current outline structure
         // Document outline is the source of truth for chapter detection
+        NSLog("🔄 Triggering fresh analysis for character presence")
         analyzeCallback?()
-        DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) { [weak self] in
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in
             if let results = self?.latestAnalysisResults {
+                NSLog("📊 Opening presence popout with \(results.characterPresence.count) entries")
                 self?.openPresencePopout(presence: results.characterPresence)
+            } else {
+                NSLog("⚠️ No analysis results available for presence")
             }
         }
     }
 
     @objc private func showRelationshipEvolutionMaps() {
+        // Don't show if Character Library is empty
+        guard !CharacterLibrary.shared.characters.isEmpty else { return }
+
         if let results = latestAnalysisResults {
             openRelationshipEvolutionMapPopout(evolutionData: results.relationshipEvolutionData)
         } else {
@@ -3282,6 +3357,9 @@ extension AnalysisViewController {
     }
 
     @objc private func showInternalExternalAlignment() {
+        // Don't show if Character Library is empty
+        guard !CharacterLibrary.shared.characters.isEmpty else { return }
+
         if let results = latestAnalysisResults {
             openInternalExternalAlignmentPopout(alignmentData: results.internalExternalAlignment)
         } else {
@@ -3295,6 +3373,9 @@ extension AnalysisViewController {
     }
 
     @objc private func showLanguageDriftAnalysis() {
+        // Don't show if Character Library is empty
+        guard !CharacterLibrary.shared.characters.isEmpty else { return }
+
         if let results = latestAnalysisResults {
             openLanguageDriftPopout(driftData: results.languageDriftData)
         } else {
@@ -3308,6 +3389,9 @@ extension AnalysisViewController {
     }
 
     @objc private func showThematicResonanceMap() {
+        // Don't show if Character Library is empty
+        guard !CharacterLibrary.shared.characters.isEmpty else { return }
+
         // Generate data asynchronously to avoid blocking UI
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             DispatchQueue.main.async {
@@ -3317,10 +3401,16 @@ extension AnalysisViewController {
     }
 
     @objc private func showFailurePatternCharts() {
+        // Don't show if Character Library is empty
+        guard !CharacterLibrary.shared.characters.isEmpty else { return }
+
         openFailurePatternChartsPopout()
     }
 
     @objc private func showEmotionalTrajectory() {
+        // Don't show if Character Library is empty
+        guard !CharacterLibrary.shared.characters.isEmpty else { return }
+
         if let results = latestAnalysisResults {
             openEmotionalTrajectoryPopout(results: results)
         } else {
@@ -3480,34 +3570,34 @@ extension AnalysisViewController {
             )
             trajectories.append(trajectory)
 
-            // Optionally add a "subtext" version (dashed) for the first character
-            if index == 0 {
-                var subtextStates: [EmotionalTrajectoryView.EmotionalState] = []
-                for i in 0...10 {
-                    let position = Double(i) / 10.0
-                    let baseConfidence = sin(position * .pi * 2 + 0.5) * 0.6 - 0.3
-                    let baseHope = cos(position * .pi * 1.5 + 0.5) * 0.7 - 0.5
-                    let baseControl = sin(position * .pi * 3 + 0.5) * 0.5 - 0.1
-                    let baseAttachment = cos(position * .pi * 2.5 + 0.5) * 0.6 - 0.2
+            // Add a "subtext" version (dashed) for every character with slight phase/offset tweaks per index
+            var subtextStates: [EmotionalTrajectoryView.EmotionalState] = []
+            for i in 0...10 {
+                let position = Double(i) / 10.0
+                let phaseOffset = 0.3 + (Double(index) * 0.15)
 
-                    let state = EmotionalTrajectoryView.EmotionalState(
-                        position: position,
-                        confidence: baseConfidence,
-                        hope: baseHope,
-                        control: baseControl,
-                        attachment: baseAttachment
-                    )
-                    subtextStates.append(state)
-                }
+                let baseConfidence = sin(position * .pi * 2 + phaseOffset) * 0.6 - 0.25
+                let baseHope = cos(position * .pi * 1.5 + phaseOffset) * 0.7 - 0.4
+                let baseControl = sin(position * .pi * 3 + phaseOffset) * 0.5 - 0.05
+                let baseAttachment = cos(position * .pi * 2.5 + phaseOffset) * 0.6 - 0.15
 
-                let subtextTrajectory = EmotionalTrajectoryView.CharacterTrajectory(
-                    characterName: characterName,
-                    color: colors[index % colors.count],
-                    states: subtextStates,
-                    isDashed: true
+                let state = EmotionalTrajectoryView.EmotionalState(
+                    position: position,
+                    confidence: baseConfidence,
+                    hope: baseHope,
+                    control: baseControl,
+                    attachment: baseAttachment
                 )
-                trajectories.append(subtextTrajectory)
+                subtextStates.append(state)
             }
+
+            let subtextTrajectory = EmotionalTrajectoryView.CharacterTrajectory(
+                characterName: characterName,
+                color: colors[index % colors.count],
+                states: subtextStates,
+                isDashed: true
+            )
+            trajectories.append(subtextTrajectory)
         }
 
         return trajectories

@@ -29,6 +29,8 @@ protocol EditorViewControllerDelegate: AnyObject {
     func textDidChange()
     func titleDidChange(_ title: String)
     func selectionDidChange()
+    func suspendAnalysisForLayout()
+    func resumeAnalysisAfterLayout()
 }
 
 class EditorViewController: NSViewController {
@@ -1636,17 +1638,22 @@ class EditorViewController: NSViewController {
     }
 
     func setAttributedContent(_ attributed: NSAttributedString) {
+        delegate?.suspendAnalysisForLayout()
+
         // Apply style retagging to infer paragraph styles
         let retagged = detectAndRetagStyles(in: attributed)
         textView.textStorage?.setAttributedString(retagged)
         applyDefaultTypingAttributes()
         updatePageLayout()
         scrollToTop()
-        delegate?.textDidChange()
+
+        delegate?.resumeAnalysisAfterLayout()
     }
 
     /// Fast content setter for imported documents - skips expensive style processing
     func setAttributedContentDirect(_ attributed: NSAttributedString) {
+        delegate?.suspendAnalysisForLayout()
+
         // For large documents, defer layout to prevent UI freeze
         let isLargeDocument = attributed.length > 100_000
 
@@ -1664,16 +1671,19 @@ class EditorViewController: NSViewController {
         if isLargeDocument {
             // Re-enable and do layout in chunks
             textView.layoutManager?.backgroundLayoutEnabled = true
-            // Defer heavy layout work
+            // Defer heavy layout work AND analysis until pages are ready
             DispatchQueue.main.async { [weak self] in
                 self?.updatePageLayout()
                 self?.scrollToTop()
-                self?.delegate?.textDidChange()
+                // Wait for layout to settle before triggering analysis
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                    self?.delegate?.resumeAnalysisAfterLayout()
+                }
             }
         } else {
             updatePageLayout()
             scrollToTop()
-            delegate?.textDidChange()
+            delegate?.resumeAnalysisAfterLayout()
         }
     }
 

@@ -52,7 +52,11 @@ class CharacterLibraryViewController: NSViewController {
         applyTheme(currentTheme)
         refreshCharacterList()
 
+        // Put the view controller into the responder chain so menu commands (e.g., Cmd+S) reach it
+        view.nextResponder = self
+
         NotificationCenter.default.addObserver(forName: .characterLibraryDidChange, object: nil, queue: .main) { [weak self] _ in
+            NSLog("📋 CharacterLibraryViewController: Received characterLibraryDidChange notification")
             self?.refreshCharacterList()
         }
 
@@ -61,6 +65,47 @@ class CharacterLibraryViewController: NSViewController {
                 self?.applyTheme(theme)
             }
         }
+    }
+
+    // MARK: - Responder Chain for Cmd+S
+
+    override var acceptsFirstResponder: Bool { true }
+
+    @objc func saveDocument(_ sender: Any?) {
+        // Bridge the standard Save menu action to our custom handler
+        performSave(sender)
+    }
+
+    @objc func performSave(_ sender: Any?) {
+        NSLog("⌨️ Cmd+S pressed in Character Library")
+
+        // First, save the current character to the library
+        if let character = selectedCharacter {
+            saveCharacterFromFields(character)
+            NSLog("💾 Saved character to library: \(character.displayName)")
+        }
+
+        // Then trigger the main document save by forwarding to whatever NSDocument is active
+        let candidateDocuments: [NSDocument?] = [
+            NSApp.keyWindow?.windowController?.document as? NSDocument,
+            NSApp.mainWindow?.windowController?.document as? NSDocument
+        ] + NSApp.windows.compactMap { $0.windowController?.document as? NSDocument }
+
+        if let document = candidateDocuments.compactMap({ $0 }).first {
+            NSLog("💾 Forwarding save to main document: \(String(describing: type(of: document)))")
+            document.save(sender)
+        } else {
+            NSLog("⚠️ Could not find any open document to save")
+        }
+    }
+
+    override func keyDown(with event: NSEvent) {
+        // Capture Cmd+S even when a text field is first responder
+        if event.modifierFlags.contains(.command), event.charactersIgnoringModifiers?.lowercased() == "s" {
+            performSave(event)
+            return
+        }
+        super.keyDown(with: event)
     }
 
     private func setupUI() {
@@ -80,7 +125,7 @@ class CharacterLibraryViewController: NSViewController {
         separator.translatesAutoresizingMaskIntoConstraints = false
         splitContainer.addArrangedSubview(separator)
 
-        detailView = createDetailPanel()
+        let detailView = createDetailPanel()
         detailView.translatesAutoresizingMaskIntoConstraints = false
         splitContainer.addArrangedSubview(detailView)
 
@@ -291,10 +336,20 @@ class CharacterLibraryViewController: NSViewController {
         guard sender.tag < characters.count else { return }
         let character = characters[sender.tag]
 
+        let isDoubleClick = (NSApp.currentEvent?.clickCount ?? 1) >= 2
+
         selectedCharacter = character
 
         refreshCharacterList()
         showCharacterDetail()
+
+        // Scroll detail view to top when selecting a character
+        scrollDetailToTop()
+
+        // On double-click, also snap the list to the top so the selection is visible immediately
+        if isDoubleClick {
+            scrollListToTop()
+        }
     }
 
     @objc private func addCharacterTapped() {
@@ -303,6 +358,43 @@ class CharacterLibraryViewController: NSViewController {
         selectedCharacter = newCharacter
         refreshCharacterList()
         showCharacterDetail()
+
+        // Scroll character list to top to show the newly added character
+        scrollListToTop()
+        scrollDetailToTop()
+    }
+
+    private func scrollListToTop() {
+        NSLog("📜 Scrolling character list to top")
+        DispatchQueue.main.async { [weak self] in
+            guard let scrollView = self?.scrollView else {
+                NSLog("⚠️ scrollView is nil")
+                return
+            }
+            scrollView.contentView.setBoundsOrigin(.zero)
+            scrollView.reflectScrolledClipView(scrollView.contentView)
+            NSLog("✅ Character list scrolled to top")
+        }
+    }
+
+    private func scrollDetailToTop() {
+        NSLog("📜 Scrolling detail view to top")
+        DispatchQueue.main.async { [weak self] in
+            guard let detailScrollView = self?.detailScrollView else {
+                NSLog("⚠️ detailScrollView is nil")
+                return
+            }
+            detailScrollView.contentView.setBoundsOrigin(.zero)
+            detailScrollView.reflectScrolledClipView(detailScrollView.contentView)
+            NSLog("✅ Detail view scrolled to top")
+        }
+    }
+
+    func saveCurrentCharacter() {
+        // If we have a selected character and fields are populated, save it
+        if let character = selectedCharacter {
+            saveCharacterFromFields(character)
+        }
     }
 
     private func showCharacterDetail() {
@@ -490,32 +582,38 @@ class CharacterLibraryViewController: NSViewController {
         return popup
     }
 
+    private func saveCharacterFromFields(_ character: CharacterProfile) {
+        guard var updatedChar = selectedCharacter else { return }
+
+        updatedChar.fullName = nameField.stringValue
+        updatedChar.nickname = nicknameField.stringValue
+        updatedChar.role = CharacterRole.allCases.first { $0.rawValue == rolePopup.titleOfSelectedItem } ?? .supporting
+        updatedChar.age = ageField.stringValue
+        updatedChar.occupation = occupationField.stringValue
+        updatedChar.appearance = appearanceField.string
+        updatedChar.residence = residenceField.stringValue
+        updatedChar.pets = petsField.stringValue
+        updatedChar.background = backgroundField.string
+        updatedChar.education = educationField.stringValue
+        updatedChar.family = familyField.string
+        updatedChar.personalityTraits = traitsField.string.components(separatedBy: "\n").filter { !$0.isEmpty }
+        updatedChar.principles = principlesField.string.components(separatedBy: "\n").filter { !$0.isEmpty }
+        updatedChar.skills = skillsField.string.components(separatedBy: "\n").filter { !$0.isEmpty }
+        updatedChar.motivations = motivationsField.string
+        updatedChar.weaknesses = weaknessesField.string
+        updatedChar.connections = connectionsField.string
+        updatedChar.quotes = quotesField.string.components(separatedBy: "\n").filter { !$0.isEmpty }
+        updatedChar.notes = notesField.string
+        updatedChar.isSampleCharacter = false
+
+        CharacterLibrary.shared.updateCharacter(updatedChar)
+        selectedCharacter = updatedChar
+    }
+
     @objc private func saveCharacterTapped() {
-        guard var character = selectedCharacter else { return }
+        guard let character = selectedCharacter else { return }
 
-        character.fullName = nameField.stringValue
-        character.nickname = nicknameField.stringValue
-        character.role = CharacterRole.allCases.first { $0.rawValue == rolePopup.titleOfSelectedItem } ?? .supporting
-        character.age = ageField.stringValue
-        character.occupation = occupationField.stringValue
-        character.appearance = appearanceField.string
-        character.residence = residenceField.stringValue
-        character.pets = petsField.stringValue
-        character.background = backgroundField.string
-        character.education = educationField.stringValue
-        character.family = familyField.string
-        character.personalityTraits = traitsField.string.components(separatedBy: "\n").filter { !$0.isEmpty }
-        character.principles = principlesField.string.components(separatedBy: "\n").filter { !$0.isEmpty }
-        character.skills = skillsField.string.components(separatedBy: "\n").filter { !$0.isEmpty }
-        character.motivations = motivationsField.string
-        character.weaknesses = weaknessesField.string
-        character.connections = connectionsField.string
-        character.quotes = quotesField.string.components(separatedBy: "\n").filter { !$0.isEmpty }
-        character.notes = notesField.string
-        character.isSampleCharacter = false
-
-        CharacterLibrary.shared.updateCharacter(character)
-        selectedCharacter = character
+        saveCharacterFromFields(character)
 
         let alert = NSAlert()
         alert.messageText = "Character Saved"

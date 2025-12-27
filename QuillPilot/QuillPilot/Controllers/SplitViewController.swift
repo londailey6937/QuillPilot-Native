@@ -157,6 +157,16 @@ class SplitViewController: NSSplitViewController {
         analysisWorkItem = workItem
         DispatchQueue.global(qos: .userInitiated).async(execute: workItem)
     }
+
+    // MARK: - Clear Analysis
+
+    func clearAnalysis() {
+        // Cancel any pending analysis
+        analysisWorkItem?.cancel()
+        // Clear the analysis results
+        analysisViewController.latestAnalysisResults = nil
+        analysisViewController.clearAllAnalysisUI()
+    }
 }
 
 // MARK: - EditorViewControllerDelegate
@@ -168,6 +178,14 @@ extension SplitViewController: EditorViewControllerDelegate {
         }
         NSObject.cancelPreviousPerformRequests(withTarget: self, selector: #selector(performAnalysisDelayed), object: nil)
         perform(#selector(performAnalysisDelayed), with: nil, afterDelay: 1.5)
+    }
+
+    func suspendAnalysisForLayout() {
+        // No-op: analysis already throttled; handled via textDidChange guard
+    }
+
+    func resumeAnalysisAfterLayout() {
+        textDidChange()
     }
 
     func applyTheme(_ theme: AppTheme) {

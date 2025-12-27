@@ -807,13 +807,17 @@ extension MainWindowController: FormattingToolbarDelegate {
     func formattingToolbarDidClearAll(_ toolbar: FormattingToolbar) {
         let alert = NSAlert()
         alert.messageText = "Clear All"
-        alert.informativeText = "This will remove all text and formatting. This action cannot be undone."
+        alert.informativeText = "This will remove all text, formatting, and analysis. This action cannot be undone."
         alert.alertStyle = .warning
         alert.addButton(withTitle: "Clear All")
         alert.addButton(withTitle: "Cancel")
 
         if alert.runModal() == .alertFirstButtonReturn {
             mainContentViewController.editorViewController.clearAll()
+            // Clear analysis results and Character Library
+            mainContentViewController.clearAnalysis()
+            CharacterLibrary.shared.clearForNewDocument()
+            mainContentViewController.documentDidChange(url: nil)
         }
     }
 
@@ -1075,6 +1079,43 @@ extension MainWindowController {
         }
     }
 
+    @MainActor
+    func performNewDocument(_ sender: Any?) {
+        // Ask user to confirm if document has content
+        if let content = mainContentViewController.editorViewController.getTextContent(), !content.isEmpty {
+            let alert = NSAlert()
+            alert.messageText = "Create New Document"
+            alert.informativeText = "This will clear the current document and all analysis. Do you want to continue?"
+            alert.alertStyle = .warning
+            alert.addButton(withTitle: "New Document")
+            alert.addButton(withTitle: "Cancel")
+
+            if alert.runModal() != .alertFirstButtonReturn {
+                return
+            }
+        }
+
+        // Clear the document and analysis
+        NSLog("🆕 NEW DOCUMENT: Clearing editor content")
+        mainContentViewController.editorViewController.clearAll()
+
+        NSLog("🆕 NEW DOCUMENT: Clearing analysis")
+        mainContentViewController.clearAnalysis()
+
+        // Clear Character Library for the new document
+        NSLog("🆕 NEW DOCUMENT: Clearing Character Library")
+        CharacterLibrary.shared.clearForNewDocument()
+
+        // Notify that document changed (clears analysis popouts)
+        NSLog("🆕 NEW DOCUMENT: Notifying document changed")
+        mainContentViewController.documentDidChange(url: nil)
+
+        // Reset the current file path and window title
+        currentDocumentURL = nil
+        window?.title = "QuillPilot"
+        NSLog("🆕 NEW DOCUMENT: Complete")
+    }
+
     private func exportData(format: ExportFormat) throws -> Data {
         switch format {
         case .rtf:
@@ -1093,6 +1134,13 @@ extension MainWindowController {
         NSLog("=== importFile called with: \(url.path) ===")
         let ext = url.pathExtension.lowercased()
         NSLog("File extension: \(ext)")
+
+        // Clear previous document state before loading new one
+        NSLog("📂 OPENING DOCUMENT: Clearing Character Library")
+        CharacterLibrary.shared.clearForNewDocument()
+
+        NSLog("📂 OPENING DOCUMENT: Clearing analysis")
+        mainContentViewController.clearAnalysis()
 
         // Support .docx Word documents
         switch ext {
@@ -1908,6 +1956,10 @@ class ContentViewController: NSViewController {
     private var analysisViewController: AnalysisViewController!
     private var backToTopButton: NSButton!
 
+    // Analysis throttling during layout
+    private var analysisSuspended = false
+    private var analysisPending = false
+
     var editorLeadingAnchor: NSLayoutXAxisAnchor? {
         editorViewController?.view.leadingAnchor
     }
@@ -2117,6 +2169,10 @@ class ContentViewController: NSViewController {
         editorViewController.setPlainTextContent(text)
     }
 
+    func clearAnalysis() {
+        analysisViewController?.latestAnalysisResults = nil
+        analysisViewController?.clearAllAnalysisUI()
+    }
     private func applyRulerToEditor(_ ruler: EnhancedRulerView) {
         editorViewController.setPageMargins(left: ruler.leftMargin, right: ruler.rightMargin)
         editorViewController.setFirstLineIndent(ruler.firstLineIndent)
@@ -4234,6 +4290,12 @@ private enum DocxTextExtractor {
 // MARK: - EditorViewController Delegate
 extension ContentViewController: EditorViewControllerDelegate {
     func textDidChange() {
+        guard !analysisSuspended else {
+            analysisPending = true
+            return
+        }
+        analysisPending = false
+
         // Throttle stats update and outline refresh to improve typing performance
         NSObject.cancelPreviousPerformRequests(withTarget: self, selector: #selector(updateStatsDelayed), object: nil)
         NSObject.cancelPreviousPerformRequests(withTarget: self, selector: #selector(refreshOutlineDelayed), object: nil)
@@ -4269,6 +4331,18 @@ extension ContentViewController: EditorViewControllerDelegate {
         // Trigger auto-analysis after a longer delay
         NSObject.cancelPreviousPerformRequests(withTarget: self, selector: #selector(performAnalysisDelayed), object: nil)
         perform(#selector(performAnalysisDelayed), with: nil, afterDelay: analysisDelay)
+    }
+
+    func suspendAnalysisForLayout() {
+        analysisSuspended = true
+        analysisPending = false
+    }
+
+    func resumeAnalysisAfterLayout() {
+        analysisSuspended = false
+        if analysisPending {
+            textDidChange()
+        }
     }
 
     func titleDidChange(_ title: String) {

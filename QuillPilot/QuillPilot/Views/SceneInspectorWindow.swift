@@ -157,8 +157,12 @@ final class SceneInspectorWindowController: NSWindowController {
         povComboBox.autoresizingMask = []
         povComboBox.placeholderString = "Point of view character"
         povComboBox.completes = true
-        // Populate with characters from Character Library
-        let characterNames = CharacterLibrary.shared.characters.map { $0.nickname }
+        // Populate with characters from Character Library (first name from fullName)
+        let characterNames = CharacterLibrary.shared.characters.compactMap { character -> String? in
+            let fullName = character.fullName.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !fullName.isEmpty else { return nil }
+            return fullName.components(separatedBy: .whitespaces).first
+        }
         povComboBox.addItems(withObjectValues: characterNames)
         panel.addSubview(povComboBox)
         y -= rowHeight + spacing

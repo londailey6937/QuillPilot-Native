@@ -847,6 +847,8 @@ extension MainWindowController {
         // If we have a current document URL, save directly without showing panel
         if let url = currentDocumentURL {
             saveToURL(url, format: currentDocumentFormat)
+            // Ensure characters are saved with document
+            CharacterLibrary.shared.saveCharacters()
             return
         }
 
@@ -913,6 +915,10 @@ extension MainWindowController {
                 let data = try DocxBuilder.makeDocxData(from: stamped)
                 try data.write(to: url, options: .atomic)
                 NSLog("✅ DOCX exported to \(url.path)")
+
+                // Save characters alongside document
+                CharacterLibrary.shared.setDocumentURL(url) // Update document URL
+                CharacterLibrary.shared.saveCharacters()
 
             case .rtf:
                 // Export to RTF (text only, images stripped)
@@ -1103,8 +1109,8 @@ extension MainWindowController {
         mainContentViewController.clearAnalysis()
 
         // Clear Character Library for the new document
-        NSLog("🆕 NEW DOCUMENT: Clearing Character Library")
-        CharacterLibrary.shared.clearForNewDocument()
+        NSLog("🆕 NEW DOCUMENT: Starting fresh character library")
+        CharacterLibrary.shared.loadCharacters(for: nil)
 
         // Notify that document changed (clears analysis popouts)
         NSLog("🆕 NEW DOCUMENT: Notifying document changed")
@@ -1135,9 +1141,9 @@ extension MainWindowController {
         let ext = url.pathExtension.lowercased()
         NSLog("File extension: \(ext)")
 
-        // Clear previous document state before loading new one
-        NSLog("📂 OPENING DOCUMENT: Clearing Character Library")
-        CharacterLibrary.shared.clearForNewDocument()
+        // Load characters for this document
+        NSLog("📂 OPENING DOCUMENT: Loading characters for document")
+        CharacterLibrary.shared.loadCharacters(for: url)
 
         NSLog("📂 OPENING DOCUMENT: Clearing analysis")
         mainContentViewController.clearAnalysis()

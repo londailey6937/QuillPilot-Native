@@ -108,38 +108,68 @@ class CharacterLibrary {
     static let shared = CharacterLibrary()
 
     private(set) var characters: [CharacterProfile] = []
+    private(set) var currentDocumentURL: URL?
 
     private init() {
-        loadCharacters()
+        // Start with empty library - characters load when document opens
     }
 
-    private var libraryURL: URL {
-        let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
-        let appFolder = appSupport.appendingPathComponent("QuillPilot", isDirectory: true)
-
-        // Create directory if needed
-        try? FileManager.default.createDirectory(at: appFolder, withIntermediateDirectories: true)
-
-        return appFolder.appendingPathComponent("CharacterLibrary.json")
+    /// Get the sidecar file URL for a document's characters
+    /// Example: "MyStory.docx" -> "MyStory.docx.characters.json"
+    private func charactersURL(for documentURL: URL) -> URL {
+        return documentURL.appendingPathExtension("characters.json")
     }
 
-    func loadCharacters() {
+    /// Load characters for a specific document
+    func loadCharacters(for documentURL: URL?) {
+        guard let documentURL = documentURL else {
+            NSLog("📚 No document URL provided, starting with empty library")
+            characters = []
+            currentDocumentURL = nil
+            NotificationCenter.default.post(name: .characterLibraryDidChange, object: nil)
+            return
+        }
+
+        currentDocumentURL = documentURL
+        let charactersFile = charactersURL(for: documentURL)
+
         do {
-            let data = try Data(contentsOf: libraryURL)
+            let data = try Data(contentsOf: charactersFile)
             let decoded = try JSONDecoder().decode([CharacterProfile].self, from: data)
             characters = decoded
+            NSLog("📚 Loaded \(characters.count) characters from \(charactersFile.lastPathComponent)")
         } catch {
-            // If no saved characters, start with empty library
+            // If no saved characters for this document, start with empty library
+            NSLog("📚 No existing characters file for document, starting fresh")
             characters = []
+        }
+
+        NotificationCenter.default.post(name: .characterLibraryDidChange, object: nil)
+    }
+
+    /// Save characters for the current document
+    func saveCharacters() {
+        guard let documentURL = currentDocumentURL else {
+            NSLog("⚠️ Cannot save characters - no document URL set")
+            return
+        }
+
+        let charactersFile = charactersURL(for: documentURL)
+
+        do {
+            let data = try JSONEncoder().encode(characters)
+            try data.write(to: charactersFile, options: .atomic)
+            NSLog("📚 Saved \(characters.count) characters to \(charactersFile.lastPathComponent)")
+        } catch {
+            NSLog("❌ Error saving characters: \(error.localizedDescription)")
         }
     }
 
-    func saveCharacters() {
-        do {
-            let data = try JSONEncoder().encode(characters)
-            try data.write(to: libraryURL)
-        } catch {
-            // Error saving, silent failure
+    /// Update the current document URL without reloading characters (for Save As operations)
+    func setDocumentURL(_ url: URL?) {
+        currentDocumentURL = url
+        if let url = url {
+            NSLog("📚 Document URL updated to \(url.lastPathComponent)")
         }
     }
 
@@ -171,13 +201,10 @@ class CharacterLibrary {
         )
     }
 
-    /// Clear all characters for a new document
+    /// Clear all characters for a new document (for backward compatibility)
     func clearForNewDocument() {
-        NSLog("📚 CharacterLibrary: Clearing \(characters.count) characters")
-        characters = []
-        saveCharacters()
-        NSLog("📚 CharacterLibrary: Posting notification")
-        NotificationCenter.default.post(name: .characterLibraryDidChange, object: nil)
+        NSLog("📚 CharacterLibrary: Clearing characters for new document")
+        loadCharacters(for: nil)
     }
 }
 

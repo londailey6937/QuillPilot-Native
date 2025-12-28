@@ -2662,8 +2662,7 @@ extension AnalysisViewController {
         let theme = ThemeManager.shared.currentTheme
 
         // Log sizes before rebuild
-        if let popoutWindow = analysisPopoutWindow,
-           let container = analysisPopoutContainer,
+        if let container = analysisPopoutContainer,
            let scrollView = container.subviews.compactMap({ $0 as? NSScrollView }).first,
            let contentView = scrollView.documentView {
             logPopoutMetrics("refresh-start", scrollView: scrollView, contentView: contentView, stack: stack)

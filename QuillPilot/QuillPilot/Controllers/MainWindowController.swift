@@ -1235,6 +1235,14 @@ extension MainWindowController {
                         self.mainContentViewController.editorViewController.setAttributedContentDirect(restored)
                         NSLog("📄 Content set complete in \(CFAbsoluteTimeGetCurrent() - setStart)s")
 
+                        // Apply current theme to ensure text colors are correct (especially in dark mode)
+                        self.mainContentViewController.editorViewController.applyTheme(ThemeManager.shared.currentTheme)
+
+                        // Update stats panel with the loaded document text
+                        if let text = self.mainContentViewController.editorViewController.textView?.string {
+                            self.headerView.specsPanel.updateStats(text: text)
+                        }
+
                         // Trigger analysis after document loads
                         NSLog("📊 Triggering initial analysis after document import")
                         self.mainContentViewController.performAnalysis()

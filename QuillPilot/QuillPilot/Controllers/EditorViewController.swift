@@ -1706,6 +1706,10 @@ class EditorViewController: NSViewController {
             newTypingAttributes[.font] = NSFont(name: "Times New Roman", size: 14) ?? NSFont.systemFont(ofSize: 14)
         }
 
+        // Override foregroundColor with current theme color
+        // (Don't preserve dark colors from documents when in dark mode)
+        newTypingAttributes[.foregroundColor] = currentTheme.textColor
+
         // Ensure we have a paragraph style
         if newTypingAttributes[.paragraphStyle] == nil {
             let neutralParagraph = NSMutableParagraphStyle()
@@ -3839,6 +3843,14 @@ case "Book Subtitle":
         textView?.backgroundColor = .clear  // Transparent so page backgrounds show through
         textView?.textColor = theme.textColor
         textView?.insertionPointColor = theme.insertionPointColor
+
+        // Update all text in the document to use the theme color
+        if let textStorage = textView?.textStorage, textStorage.length > 0 {
+            textStorage.beginEditing()
+            // Apply theme text color to ALL text in the document
+            textStorage.addAttribute(.foregroundColor, value: theme.textColor, range: NSRange(location: 0, length: textStorage.length))
+            textStorage.endEditing()
+        }
 
         if let font = textView?.font,
            let paragraphStyle = textView?.defaultParagraphStyle {

@@ -13,11 +13,13 @@ import Charts
 class PlotVisualizationView: NSView {
 
     private var plotAnalysis: PlotAnalysis?
+    private var wrapInScrollView: Bool = true
     private var chartView: NSHostingView<PlotTensionChart>?
     weak var delegate: PlotVisualizationDelegate?
 
-    func configure(with analysis: PlotAnalysis?) {
+    func configure(with analysis: PlotAnalysis?, wrapInScrollView: Bool = true) {
         self.plotAnalysis = analysis
+        self.wrapInScrollView = wrapInScrollView
         setupChartView()
     }
 
@@ -35,7 +37,8 @@ class PlotVisualizationView: NSView {
             onPopout: { [weak self] in
                 guard let self else { return }
                 self.delegate?.openPlotPopout(analysis)
-            }
+            },
+            wrapInScrollView: wrapInScrollView
         )
 
         let hostingView = NSHostingView(rootView: chart)
@@ -67,6 +70,21 @@ struct PlotTensionChart: View {
     let plotAnalysis: PlotAnalysis
     let onPointTap: (Int) -> Void
     let onPopout: () -> Void
+    var wrapInScrollView: Bool = true
+
+    // Tighten the visible range so low-variance novels don’t hug the bottom of the chart
+    private var yDomain: ClosedRange<Double> {
+        let curveValues = plotAnalysis.overallTensionCurve.map { $0.tensionLevel }
+        let pointValues = plotAnalysis.plotPoints.map { $0.tensionLevel }
+        let combined = curveValues + pointValues
+        guard let minVal = combined.min(), let maxVal = combined.max() else { return 0...1 }
+        // keep some headroom so peaks do not collide with annotations and ensure the axis starts near zero
+        let lower = max(0.0, minVal - 0.05)
+        let upper = min(1.0, maxVal + 0.10)
+        let span = max(upper - lower, 0.35) // avoid overly compressed ranges
+        let clampedUpper = min(1.0, lower + span)
+        return lower...clampedUpper
+    }
 
     // Theme-aware colors
     private var primaryTextColor: Color {
@@ -85,8 +103,19 @@ struct PlotTensionChart: View {
     }
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 16) {
+        Group {
+            if wrapInScrollView {
+                ScrollView {
+                    content
+                }
+            } else {
+                content
+            }
+        }
+    }
+
+    private var content: some View {
+        VStack(alignment: .leading, spacing: 16) {
                 // Header with format indicator
                 HStack(alignment: .center, spacing: 12) {
                     VStack(alignment: .leading, spacing: 4) {
@@ -155,9 +184,8 @@ struct PlotTensionChart: View {
                 if !plotAnalysis.plotPoints.isEmpty {
                     plotPointsListView
                 }
-            }
-            .padding(.vertical)
         }
+        .padding(.vertical)
     }
 
     // MARK: - Format-Specific Metrics
@@ -370,7 +398,7 @@ struct PlotTensionChart: View {
                 }
             }
             .chartXScale(domain: 0...1)
-            .chartYScale(domain: 0...1)
+              .chartYScale(domain: yDomain)
             .chartXAxis {
                 AxisMarks(values: [0, 0.25, 0.5, 0.75, 1.0]) { value in
                     AxisGridLine()
@@ -397,11 +425,12 @@ struct PlotTensionChart: View {
             }
             .chartXAxisLabel(plotAnalysis.documentFormat == .screenplay ? "Page" : "Story Progress", alignment: .center)
             .chartYAxisLabel("Tension Level", position: .leading)
-            .frame(height: 1000)
-            .padding()
-            .padding(.bottom, 120)
+              .frame(height: plotAnalysis.documentFormat == .screenplay ? 1000 : 880)
+              .padding(.top, 40) // keep chart from touching content above
+              .padding(.bottom, plotAnalysis.documentFormat == .screenplay ? 32 : 24)
+              .padding(.horizontal)
         }
-        .padding(.bottom, 60)
+          .padding(.bottom, 24)
     }
 
     // MARK: - No Data View

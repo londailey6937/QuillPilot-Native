@@ -23,7 +23,7 @@ private class AutoCloseWindowDelegate: NSObject, NSWindowDelegate {
     }
 }
 
-class AnalysisViewController: NSViewController {
+class AnalysisViewController: NSViewController, NSWindowDelegate {
 
     private var menuSidebar: NSView!
     private var menuSeparator: NSView!
@@ -44,8 +44,12 @@ class AnalysisViewController: NSViewController {
     private var outlinePopoutWindow: NSWindow?
     private var analysisPopoutWindow: NSWindow?
     private var plotPopoutWindow: NSWindow?
+    private weak var plotPopoutScrollView: NSScrollView?
+    private weak var plotPopoutContentView: NSView?
+    private weak var plotPopoutStack: NSStackView?
     private weak var analysisPopoutStack: NSStackView?
     private weak var analysisPopoutContainer: NSView?
+
 
     // Passive voice disclosure tracking
     private var passiveDisclosureViews: [NSButton: NSScrollView] = [:]
@@ -59,13 +63,40 @@ class AnalysisViewController: NSViewController {
         let stackFrameH = contentStack?.frame.size.height ?? 0
         NSLog("🟢 ScrollDebug [\(label)] scrollFrame=\(scrollFrameH) contentSize=\(contentSizeH) documentFrame=\(documentFrameH) stackFrame=\(stackFrameH)")
     }
-
     private func logPopoutMetrics(_ label: String, scrollView: NSScrollView, contentView: NSView, stack: NSStackView) {
         let scrollFrameH = scrollView.frame.size.height
         let contentSizeH = scrollView.contentSize.height
         let documentFrameH = contentView.frame.size.height
         let stackFrameH = stack.frame.size.height
         NSLog("🟢 ScrollDebug [popout-\(label)] scrollFrame=\(scrollFrameH) contentSize=\(contentSizeH) documentFrame=\(documentFrameH) stackFrame=\(stackFrameH)")
+    }
+
+    // NSWindowDelegate: keep plot popout scroll sizing in sync
+    func windowDidResize(_ notification: Notification) {
+        guard let window = notification.object as? NSWindow,
+              window == plotPopoutWindow,
+              let scrollView = plotPopoutScrollView,
+              let contentView = plotPopoutContentView,
+              let stack = plotPopoutStack else { return }
+        resizePopoutContent(scrollView: scrollView, contentView: contentView, stack: stack)
+    }
+
+    /// Force the popout scroll view to have a content height larger than the viewport so the mouse wheel scrolls.
+    private func resizePopoutContent(scrollView: NSScrollView, contentView: NSView, stack: NSStackView) {
+        contentView.layoutSubtreeIfNeeded()
+        stack.layoutSubtreeIfNeeded()
+        let targetHeight = max(stack.fittingSize.height + 24, scrollView.contentSize.height + 1)
+        contentView.setFrameSize(NSSize(width: scrollView.contentSize.width, height: targetHeight))
+        logPopoutMetrics("resize", scrollView: scrollView, contentView: contentView, stack: stack)
+    }
+
+    @objc private func scrollPlotPopoutToChart() {
+        guard let scrollView = plotPopoutScrollView,
+              let contentView = plotPopoutContentView else { return }
+        let maxY = contentView.bounds.height - scrollView.contentSize.height
+        let targetPoint = NSPoint(x: 0, y: max(0, maxY))
+        scrollView.contentView.scroll(to: targetPoint)
+        scrollView.reflectScrolledClipView(scrollView.contentView)
     }
 
     // Character analysis popouts
@@ -3039,6 +3070,9 @@ extension AnalysisViewController {
         // After refresh, log sizes
         logPopoutMetrics("window-created", scrollView: scrollView, contentView: contentView, stack: stack)
 
+        // Resize to ensure scrolling works after rebuild
+        resizePopoutContent(scrollView: scrollView, contentView: contentView, stack: stack)
+
         // Log after initial population
         logPopoutMetrics("refresh-end", scrollView: scrollView, contentView: contentView, stack: stack)
 
@@ -3156,6 +3190,7 @@ extension AnalysisViewController {
         window.isReleasedWhenClosed = false
         window.hidesOnDeactivate = true
         window.backgroundColor = theme.popoutBackground
+        window.delegate = self
 
         let scrollView = NSScrollView()
         scrollView.hasVerticalScroller = true
@@ -3175,6 +3210,11 @@ extension AnalysisViewController {
         stack.edgeInsets = NSEdgeInsets(top: 24, left: 24, bottom: 24, right: 24)
         stack.translatesAutoresizingMaskIntoConstraints = false
 
+        let jumpButton = NSButton(title: "Scroll to chart", target: self, action: #selector(scrollPlotPopoutToChart))
+        jumpButton.bezelStyle = .rounded
+        jumpButton.controlSize = .small
+        stack.addArrangedSubview(jumpButton)
+
         let header = NSTextField(labelWithString: "Plot Structure Analysis")
         header.font = NSFont.boldSystemFont(ofSize: 18)
         header.textColor = theme.popoutTextColor
@@ -3184,7 +3224,8 @@ extension AnalysisViewController {
         if let results = latestAnalysisResults, let plotAnalysis = results.plotAnalysis {
             let plotView = PlotVisualizationView()
             plotView.translatesAutoresizingMaskIntoConstraints = false
-            plotView.configure(with: plotAnalysis)
+            // Disable the inner SwiftUI scroll view so the AppKit scroll view handles wheel events
+            plotView.configure(with: plotAnalysis, wrapInScrollView: false)
             stack.addArrangedSubview(plotView)
 
             NSLayoutConstraint.activate([
@@ -3229,8 +3270,29 @@ extension AnalysisViewController {
         // Apply theme colors
         applyThemeToPopout(window: window, container: container, stack: stack)
 
+        // Size content to enable scrolling
+        resizePopoutContent(scrollView: scrollView, contentView: contentView, stack: stack)
+
         // Debug sizes at creation
         logPopoutMetrics("plot-popout-created", scrollView: scrollView, contentView: contentView, stack: stack)
+
+        // Store references for later scroll/resize handling
+        plotPopoutWindow = window
+        plotPopoutScrollView = scrollView
+        plotPopoutContentView = contentView
+        plotPopoutStack = stack
+
+        // Re-run sizing after first layout cycle so scrollFrame/contentSize are valid
+        DispatchQueue.main.async { [weak self, weak scrollView, weak contentView, weak stack] in
+            guard let self,
+                  let scrollView,
+                  let contentView,
+                  let stack else { return }
+            scrollView.layoutSubtreeIfNeeded()
+            scrollView.superview?.layoutSubtreeIfNeeded()
+            scrollView.window?.contentView?.layoutSubtreeIfNeeded()
+            self.resizePopoutContent(scrollView: scrollView, contentView: contentView, stack: stack)
+        }
 
         NotificationCenter.default.addObserver(
             forName: NSWindow.willCloseNotification,
@@ -3238,6 +3300,9 @@ extension AnalysisViewController {
             queue: .main
         ) { [weak self] _ in
             self?.plotPopoutWindow = nil
+            self?.plotPopoutScrollView = nil
+            self?.plotPopoutContentView = nil
+            self?.plotPopoutStack = nil
         }
 
         return window

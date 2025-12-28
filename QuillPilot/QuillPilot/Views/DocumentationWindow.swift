@@ -678,6 +678,27 @@ Below 50%: Consider restructuring
 """, color: bodyColor))
         content.append(makeNewline())
 
+        content.append(makeHeading("🎚️ Understanding Tension", color: headingColor))
+        content.append(makeBody("""
+What the % means
+• Tension is normalized per story (0–100%) from sentence/beat-level signals: stakes, conflict verbs, reversals, momentum, and peril vocabulary.
+• 25% = low relative tension for THIS manuscript, not an industry standard; 75% = high pressure relative to your own quietest passages.
+
+How the curve is built
+• We score each segment, smooth spikes, and clamp to keep extreme outliers from flattening the rest.
+• Novel view auto-tightens the Y-axis to your data so quiet fiction doesn’t hug the bottom; screenplays default to the full 0–100 range for clearer pacing spikes.
+
+Reading the graph
+• Look for rises: conflicts, reveals, and reversals should trend upward into the midpoint and act turns.
+• Look for resets: valleys after climaxes show aftermath; long flat stretches can indicate low narrative momentum.
+• Use the beat markers: hover or click a beat to jump to that section and confirm the tension change is earned in the prose.
+
+Common checks
+• Novel: If the curve lives under 30%, add micro-conflicts or sharper reversals; aim for a visible slope into midpoint and crisis.
+• Screenplay: Ensure pinch points and climax sit clearly above the mid-line; if peaks clip near 100%, the chart adds headroom so labels stay readable.
+""", color: bodyColor))
+        content.append(makeNewline())
+
         content.append(makeHeading("📊 Story Outline", color: headingColor))
         content.append(makeBody("""
 Access: Click 📖 in Navigator panel

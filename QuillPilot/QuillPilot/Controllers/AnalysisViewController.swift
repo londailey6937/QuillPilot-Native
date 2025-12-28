@@ -50,6 +50,24 @@ class AnalysisViewController: NSViewController {
     // Passive voice disclosure tracking
     private var passiveDisclosureViews: [NSButton: NSScrollView] = [:]
 
+    // Debug helper to track scrolling layout
+    private func logScrollMetrics(_ label: String) {
+        guard let scrollView else { return }
+        let scrollFrameH = scrollView.frame.size.height
+        let contentSizeH = scrollView.contentSize.height
+        let documentFrameH = documentView?.frame.size.height ?? 0
+        let stackFrameH = contentStack?.frame.size.height ?? 0
+        NSLog("🟢 ScrollDebug [\(label)] scrollFrame=\(scrollFrameH) contentSize=\(contentSizeH) documentFrame=\(documentFrameH) stackFrame=\(stackFrameH)")
+    }
+
+    private func logPopoutMetrics(_ label: String, scrollView: NSScrollView, contentView: NSView, stack: NSStackView) {
+        let scrollFrameH = scrollView.frame.size.height
+        let contentSizeH = scrollView.contentSize.height
+        let documentFrameH = contentView.frame.size.height
+        let stackFrameH = stack.frame.size.height
+        NSLog("🟢 ScrollDebug [popout-\(label)] scrollFrame=\(scrollFrameH) contentSize=\(contentSizeH) documentFrame=\(documentFrameH) stackFrame=\(stackFrameH)")
+    }
+
     // Character analysis popouts
     private var emotionalJourneyPopoutWindow: NSWindow?
     private var interactionsPopoutWindow: NSWindow?
@@ -598,13 +616,13 @@ class AnalysisViewController: NSViewController {
     private func setupScrollView() {
         // Simple scroll view setup matching OutlineViewController structure
         scrollView = NSScrollView()
-        scrollView.hasVerticalScroller = false
-        scrollView.autohidesScrollers = true
-        scrollView.scrollerStyle = .overlay
+        scrollView.hasVerticalScroller = true
+        scrollView.autohidesScrollers = false // always show to confirm scrolling is available
+        scrollView.scrollerStyle = .legacy    // legacy style makes the bar visible
         scrollView.drawsBackground = false
         scrollView.borderType = .noBorder
-        scrollView.verticalScroller?.isHidden = true
         scrollView.horizontalScroller?.isHidden = true
+        scrollView.verticalScroller?.isHidden = false
         scrollView.translatesAutoresizingMaskIntoConstraints = false
 
         // Document view - simple flipped view, no constraints
@@ -642,6 +660,9 @@ class AnalysisViewController: NSViewController {
 
         // Keep reference to scrollContainer for show/hide toggling
         scrollContainer = scrollView
+
+        // Debug initial metrics
+        logScrollMetrics("setupScrollView")
     }
 
     private func setupContent() {
@@ -715,11 +736,17 @@ class AnalysisViewController: NSViewController {
             contentStack.topAnchor.constraint(equalTo: documentView.topAnchor, constant: 12),
             contentStack.leadingAnchor.constraint(equalTo: documentView.leadingAnchor, constant: 12),
             contentStack.trailingAnchor.constraint(equalTo: documentView.trailingAnchor, constant: -12),
-            contentStack.bottomAnchor.constraint(equalTo: documentView.bottomAnchor, constant: -32)
+            contentStack.bottomAnchor.constraint(equalTo: documentView.bottomAnchor, constant: -32),
+            // Ensure documentView expands with content for scrolling
+            documentView.heightAnchor.constraint(greaterThanOrEqualTo: contentStack.heightAnchor, constant: 44)
         ])
+
+        // Debug after layout constraints applied
+        logScrollMetrics("setupContent")
     }
 
     func displayResults(_ results: AnalysisResults) {
+        logScrollMetrics("displayResults-start")
         // If Character Library is empty, don't display character-based analysis
         if CharacterLibrary.shared.characters.isEmpty && results.wordCount == 0 {
             latestAnalysisResults = nil
@@ -1338,10 +1365,15 @@ class AnalysisViewController: NSViewController {
 
             NSLayoutConstraint.activate([
                 plotVisualizationView.widthAnchor.constraint(equalTo: resultsStack.widthAnchor),
-                plotVisualizationView.heightAnchor.constraint(greaterThanOrEqualToConstant: 600)
+                plotVisualizationView.heightAnchor.constraint(greaterThanOrEqualToConstant: 1400)
             ])
 
             plotVisualizationView.configure(with: plotAnalysis)
+
+            // Force layout update to enable scrolling
+            contentStack.layoutSubtreeIfNeeded()
+            documentView.layoutSubtreeIfNeeded()
+            logScrollMetrics("displayResults")
         }
 
         // Add character visualizations below plot
@@ -1376,6 +1408,7 @@ class AnalysisViewController: NSViewController {
 
     @available(macOS 13.0, *)
     private func displayPlotAnalysis() {
+        logScrollMetrics("displayPlotAnalysis-start")
 
         guard let results = latestAnalysisResults else {
             let placeholder = makeLabel("📖 Run analysis first to view plot insights", size: 14, bold: true)
@@ -1401,10 +1434,15 @@ class AnalysisViewController: NSViewController {
 
         NSLayoutConstraint.activate([
             plotVisualizationView.widthAnchor.constraint(equalTo: resultsStack.widthAnchor),
-            plotVisualizationView.heightAnchor.constraint(greaterThanOrEqualToConstant: 720)
+            plotVisualizationView.heightAnchor.constraint(greaterThanOrEqualToConstant: 1400)
         ])
 
         plotVisualizationView.configure(with: plotAnalysis)
+
+        // Force layout update to enable scrolling
+        contentStack.layoutSubtreeIfNeeded()
+        documentView.layoutSubtreeIfNeeded()
+        logScrollMetrics("displayPlotAnalysis")
         scrollToTop()
     }
 
@@ -2592,6 +2630,14 @@ extension AnalysisViewController {
         guard let stack = analysisPopoutStack else { return }
         let theme = ThemeManager.shared.currentTheme
 
+        // Log sizes before rebuild
+        if let popoutWindow = analysisPopoutWindow,
+           let container = analysisPopoutContainer,
+           let scrollView = container.subviews.compactMap({ $0 as? NSScrollView }).first,
+           let contentView = scrollView.documentView {
+            logPopoutMetrics("refresh-start", scrollView: scrollView, contentView: contentView, stack: stack)
+        }
+
         // Clear current content and disclosure mappings
         stack.arrangedSubviews.forEach { view in
             stack.removeArrangedSubview(view)
@@ -2990,6 +3036,12 @@ extension AnalysisViewController {
 
         refreshAnalysisPopoutContent()
 
+        // After refresh, log sizes
+        logPopoutMetrics("window-created", scrollView: scrollView, contentView: contentView, stack: stack)
+
+        // Log after initial population
+        logPopoutMetrics("refresh-end", scrollView: scrollView, contentView: contentView, stack: stack)
+
         NotificationCenter.default.addObserver(
             forName: NSWindow.willCloseNotification,
             object: window,
@@ -3107,8 +3159,8 @@ extension AnalysisViewController {
 
         let scrollView = NSScrollView()
         scrollView.hasVerticalScroller = true
-        scrollView.autohidesScrollers = true
-        scrollView.scrollerStyle = .overlay
+        scrollView.autohidesScrollers = false // keep visible while debugging
+        scrollView.scrollerStyle = .legacy
         scrollView.drawsBackground = false
         scrollView.borderType = .noBorder
         scrollView.translatesAutoresizingMaskIntoConstraints = false
@@ -3137,7 +3189,7 @@ extension AnalysisViewController {
 
             NSLayoutConstraint.activate([
                 plotView.widthAnchor.constraint(equalTo: stack.widthAnchor),
-                plotView.heightAnchor.constraint(greaterThanOrEqualToConstant: 800)
+                plotView.heightAnchor.constraint(greaterThanOrEqualToConstant: 1400)
             ])
         } else {
             let info = NSTextField(labelWithString: "Plot structure visualization will appear here\n\nRun an analysis to see plot tension and pacing")
@@ -3151,6 +3203,7 @@ extension AnalysisViewController {
 
         NSLayoutConstraint.activate([
             contentView.widthAnchor.constraint(equalTo: scrollView.widthAnchor),
+            contentView.heightAnchor.constraint(greaterThanOrEqualTo: stack.heightAnchor, constant: 1),
 
             stack.topAnchor.constraint(equalTo: contentView.topAnchor, constant: 12),
             stack.leadingAnchor.constraint(equalTo: contentView.leadingAnchor, constant: 12),
@@ -3175,6 +3228,9 @@ extension AnalysisViewController {
 
         // Apply theme colors
         applyThemeToPopout(window: window, container: container, stack: stack)
+
+        // Debug sizes at creation
+        logPopoutMetrics("plot-popout-created", scrollView: scrollView, contentView: contentView, stack: stack)
 
         NotificationCenter.default.addObserver(
             forName: NSWindow.willCloseNotification,

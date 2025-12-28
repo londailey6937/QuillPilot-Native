@@ -397,10 +397,11 @@ struct PlotTensionChart: View {
             }
             .chartXAxisLabel(plotAnalysis.documentFormat == .screenplay ? "Page" : "Story Progress", alignment: .center)
             .chartYAxisLabel("Tension Level", position: .leading)
-            .frame(height: 400)
+            .frame(height: 1000)
             .padding()
-            .padding(.bottom, 40)
+            .padding(.bottom, 120)
         }
+        .padding(.bottom, 60)
     }
 
     // MARK: - No Data View

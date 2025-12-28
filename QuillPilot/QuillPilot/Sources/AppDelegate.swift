@@ -396,9 +396,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let theme = ThemeManager.shared.currentTheme
         contentView.layer?.backgroundColor = theme.pageAround.cgColor
 
-        // Animated Logo
+        // Logo
         let logoSize: CGFloat = 140
-        let logoView = AnimatedLogoView(size: logoSize, animate: true)
+        let logoView = LogoView(size: logoSize)
         logoView.frame = NSRect(
             x: (windowSize.width - logoSize) / 2,
             y: windowSize.height - logoSize - 30,

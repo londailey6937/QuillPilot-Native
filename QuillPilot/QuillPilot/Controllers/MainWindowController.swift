@@ -63,6 +63,8 @@ class MainWindowController: NSWindowController {
     // Document tracking for auto-save
     private var currentDocumentURL: URL?
     private var currentDocumentFormat: ExportFormat = .docx
+    private var autoSaveTimer: Timer?
+    private var hasUnsavedChanges = false
 
     // Sheet field references
     private var columnsSheetField: NSTextField?
@@ -124,6 +126,9 @@ class MainWindowController: NSWindowController {
         }
         mainContentViewController.onSelectionChange = { [weak self] styleName in
             self?.toolbarView.updateSelectedStyle(styleName)
+        }
+        mainContentViewController.onTextChange = { [weak self] in
+            self?.markDocumentDirty()
         }
 
         // Connect manuscript info changes to editor headers/footers
@@ -206,6 +211,9 @@ class MainWindowController: NSWindowController {
             }
             self.headerView.specsPanel.updateStats(text: text)
         }
+
+        // Start auto-save timer (saves every 30 seconds if changes detected)
+        startAutoSaveTimer()
     }
 
     private func applyTheme(_ theme: AppTheme) {
@@ -329,6 +337,8 @@ class MainWindowController: NSWindowController {
     }
 
     deinit {
+        autoSaveTimer?.invalidate()
+        autoSaveTimer = nil
         if let themeObserver {
             NotificationCenter.default.removeObserver(themeObserver)
         }
@@ -849,6 +859,7 @@ extension MainWindowController {
             saveToURL(url, format: currentDocumentFormat)
             // Ensure characters are saved with document
             CharacterLibrary.shared.saveCharacters()
+            hasUnsavedChanges = false
             return
         }
 
@@ -903,6 +914,7 @@ extension MainWindowController {
             // Remember this for auto-save
             self.currentDocumentURL = url
             self.currentDocumentFormat = format
+            self.hasUnsavedChanges = false
         }
     }
 
@@ -934,10 +946,35 @@ extension MainWindowController {
                 try data.write(to: url, options: .atomic)
                 NSLog("✅ PDF exported to \(url.path)")
             }
+            hasUnsavedChanges = false
         } catch {
             NSLog("❌ Save failed: \(error.localizedDescription)")
             self.presentErrorAlert(message: "Save failed", details: error.localizedDescription)
         }
+    }
+
+    // MARK: - Auto-Save
+    private func startAutoSaveTimer() {
+        autoSaveTimer?.invalidate()
+        autoSaveTimer = Timer.scheduledTimer(withTimeInterval: 30.0, repeats: true) { [weak self] _ in
+            self?.performAutoSave()
+        }
+    }
+
+    @objc private func performAutoSave() {
+        // Only auto-save if we have a document URL and unsaved changes
+        guard hasUnsavedChanges, let url = currentDocumentURL else {
+            return
+        }
+
+        // Silently save in background
+        saveToURL(url, format: currentDocumentFormat)
+        CharacterLibrary.shared.saveCharacters()
+        NSLog("💾 Auto-saved to \(url.lastPathComponent)")
+    }
+
+    func markDocumentDirty() {
+        hasUnsavedChanges = true
     }
 
     private func restoreImageSizes(in attributed: NSAttributedString) -> NSAttributedString {
@@ -1118,6 +1155,7 @@ extension MainWindowController {
 
         // Reset the current file path and window title
         currentDocumentURL = nil
+        hasUnsavedChanges = false
         window?.title = "QuillPilot"
         NSLog("🆕 NEW DOCUMENT: Complete")
     }
@@ -1156,6 +1194,7 @@ extension MainWindowController {
             headerView.setDocumentTitle(filename)
             currentDocumentURL = url
             currentDocumentFormat = .docx
+            hasUnsavedChanges = false
             mainContentViewController.editorViewController.headerText = ""
             mainContentViewController.editorViewController.footerText = ""
 
@@ -1237,7 +1276,7 @@ extension MainWindowController {
 // MARK: - Header View (Logo, Title, Specs, Login)
 class HeaderView: NSView {
 
-    private var logoView: AnimatedLogoView!
+    private var logoView: LogoView!
     private var titleLabel: NSTextField!
     var specsPanel: DocumentInfoPanel!
     private var themeToggle: NSButton!
@@ -1255,8 +1294,8 @@ class HeaderView: NSView {
     private func setupUI() {
         wantsLayer = true
 
-        // Animated logo (left) - use the full animated logo view
-        logoView = AnimatedLogoView(size: 40, animate: true)
+        // Logo (left)
+        logoView = LogoView(size: 40)
         logoView.translatesAutoresizingMaskIntoConstraints = false
         addSubview(logoView)
 
@@ -1955,6 +1994,7 @@ class ContentViewController: NSViewController {
     var onTitleChange: ((String) -> Void)?
     var onStatsUpdate: ((String) -> Void)?
     var onSelectionChange: ((String?) -> Void)?
+    var onTextChange: (() -> Void)?
 
     private var outlineViewController: OutlineViewController!
     private var outlinePanelController: AnalysisViewController!
@@ -4296,6 +4336,9 @@ private enum DocxTextExtractor {
 // MARK: - EditorViewController Delegate
 extension ContentViewController: EditorViewControllerDelegate {
     func textDidChange() {
+        // Notify auto-save that document has changed
+        onTextChange?()
+
         guard !analysisSuspended else {
             analysisPending = true
             return

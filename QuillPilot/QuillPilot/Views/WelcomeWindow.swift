@@ -117,20 +117,9 @@ class WelcomeWindowController: NSWindowController {
     }
 
     private func createLogoView() -> NSView {
-        let container = NSView(frame: NSRect(x: 0, y: 0, width: 150, height: 150))
-        container.wantsLayer = true
-        container.layer?.backgroundColor = NSColor(red: 0.97, green: 0.90, blue: 0.82, alpha: 1.0).cgColor
-        container.layer?.cornerRadius = 24
-
-        // Load feather image
-        if let featherImage = NSImage(named: "FeatherLogo") {
-            let imageView = NSImageView(frame: NSRect(x: 15, y: 15, width: 120, height: 120))
-            imageView.image = featherImage
-            imageView.imageScaling = .scaleProportionallyUpOrDown
-            container.addSubview(imageView)
-        }
-
-        return container
+        // Use the same LogoView as the header for consistency
+        let logoView = LogoView(size: 150)
+        return logoView
     }
 
     private func createActionButton(title: String, icon: String, action: Selector) -> NSButton {

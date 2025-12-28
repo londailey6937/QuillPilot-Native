@@ -117,6 +117,24 @@ QuillPilot is a professional writing application designed for novelists, screenw
 """, color: bodyColor))
         content.append(makeNewline())
 
+        content.append(makeHeading("💾 Auto-Save", color: headingColor))
+        content.append(makeBody("""
+QuillPilot automatically saves your work every 30 seconds to protect against data loss.
+
+How it works:
+• Auto-save runs silently in the background
+• Only saves when changes are detected
+• Only saves documents that have been saved at least once
+• New documents require manual save (⌘S) before auto-save activates
+
+Manual saving:
+• ⌘S - Quick save to current location
+• ⌘⇧S - Save As (choose new location/format)
+
+You can continue writing without interruption - auto-save handles everything in the background.
+""", color: bodyColor))
+        content.append(makeNewline())
+
         content.append(makeHeading("🎨 Format Painter", color: headingColor))
         content.append(makeBody("""
 Copy formatting from one text selection and apply it to another.
@@ -1041,8 +1059,11 @@ A: As many as your story needs. A 80,000-word novel might have 40-80 scenes, but
 ⌘N - New document
 ⌘O - Open document
 ⌘S - Save document
+⌘⇧S - Save As (choose new location/format)
 ⌘P - Print
 ⌘W - Close window
+
+Note: Auto-save runs every 30 seconds for saved documents.
 """, color: bodyColor))
         content.append(makeNewline())
 

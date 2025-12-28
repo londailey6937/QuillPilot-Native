@@ -78,12 +78,26 @@ struct PlotTensionChart: View {
         let pointValues = plotAnalysis.plotPoints.map { $0.tensionLevel }
         let combined = curveValues + pointValues
         guard let minVal = combined.min(), let maxVal = combined.max() else { return 0...1 }
-        // keep some headroom so peaks do not collide with annotations and ensure the axis starts near zero
-        let lower = max(0.0, minVal - 0.05)
-        let upper = min(1.0, maxVal + 0.10)
-        let span = max(upper - lower, 0.35) // avoid overly compressed ranges
-        let clampedUpper = min(1.0, lower + span)
-        return lower...clampedUpper
+
+        // Cap the upper range to leave readable space for labels/annotations (screenplays allow slightly higher peaks)
+        let upperCap: Double = plotAnalysis.documentFormat == .screenplay ? 0.86 : 0.78
+
+        var lower = max(0.0, minVal - 0.05)
+        var upper = min(upperCap, maxVal + 0.08)
+
+        // Enforce a minimum span so flat curves don’t collapse; then re-clamp to the cap
+        let minSpan: Double = 0.35
+        if upper - lower < minSpan {
+            upper = min(upperCap, lower + minSpan)
+            lower = max(0.0, upper - minSpan)
+        }
+
+        // Guard against degenerate ranges if data is extremely low
+        if lower >= upper {
+            lower = max(0.0, upper - minSpan)
+        }
+
+        return lower...upper
     }
 
     // Theme-aware colors
@@ -426,7 +440,7 @@ struct PlotTensionChart: View {
             .chartXAxisLabel(plotAnalysis.documentFormat == .screenplay ? "Page" : "Story Progress", alignment: .center)
             .chartYAxisLabel("Tension Level", position: .leading)
               .frame(height: plotAnalysis.documentFormat == .screenplay ? 1000 : 880)
-              .padding(.top, 40) // keep chart from touching content above
+              .padding(.top, 60) // extra headroom so peaks don’t crowd text
               .padding(.bottom, plotAnalysis.documentFormat == .screenplay ? 32 : 24)
               .padding(.horizontal)
         }

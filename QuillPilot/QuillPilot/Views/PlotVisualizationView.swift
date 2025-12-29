@@ -79,10 +79,10 @@ struct PlotTensionChart: View {
 
     // Theme-aware colors
     private var primaryTextColor: Color {
-        Color.primary
+        Color(nsColor: .labelColor)
     }
     private var secondaryTextColor: Color {
-        Color.secondary
+        Color(nsColor: .secondaryLabelColor)
     }
 
     private var formatColor: Color {
@@ -229,7 +229,7 @@ struct PlotTensionChart: View {
                 .font(.caption)
                 .foregroundColor(secondaryTextColor)
                 .padding(.top, 4)
-            
+
             Text("Scores: 70-100% = Strong, 40-69% = Adequate, Below 40% = Needs Work")
                 .font(.caption2)
                 .foregroundColor(secondaryTextColor.opacity(0.8))
@@ -290,6 +290,11 @@ struct PlotTensionChart: View {
                 .font(.caption)
                 .foregroundColor(secondaryTextColor)
                 .padding(.top, 4)
+
+            Text("Scores: 70-100% = Strong, 40-69% = Adequate, Below 40% = Needs Work")
+                .font(.caption2)
+                .foregroundColor(secondaryTextColor.opacity(0.8))
+                .italic()
         }
     }
 

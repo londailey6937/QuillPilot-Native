@@ -72,40 +72,17 @@ struct PlotTensionChart: View {
     let onPopout: () -> Void
     var wrapInScrollView: Bool = true
 
-    // Tighten the visible range so low-variance novels don’t hug the bottom of the chart
+    // Use standard 0-1 domain to show full chart without clipping
     private var yDomain: ClosedRange<Double> {
-        let curveValues = plotAnalysis.overallTensionCurve.map { $0.tensionLevel }
-        let pointValues = plotAnalysis.plotPoints.map { $0.tensionLevel }
-        let combined = curveValues + pointValues
-        guard let minVal = combined.min(), let maxVal = combined.max() else { return 0...1 }
-
-        // Cap the upper range to leave readable space for labels/annotations (screenplays allow slightly higher peaks)
-        let upperCap: Double = plotAnalysis.documentFormat == .screenplay ? 0.86 : 0.78
-
-        var lower = max(0.0, minVal - 0.05)
-        var upper = min(upperCap, maxVal + 0.08)
-
-        // Enforce a minimum span so flat curves don’t collapse; then re-clamp to the cap
-        let minSpan: Double = 0.35
-        if upper - lower < minSpan {
-            upper = min(upperCap, lower + minSpan)
-            lower = max(0.0, upper - minSpan)
-        }
-
-        // Guard against degenerate ranges if data is extremely low
-        if lower >= upper {
-            lower = max(0.0, upper - minSpan)
-        }
-
-        return lower...upper
+        return 0...1
     }
 
     // Theme-aware colors
     private var primaryTextColor: Color {
-        Color(nsColor: NSColor(calibratedWhite: 0.9, alpha: 1.0))
+        Color.primary
     }
     private var secondaryTextColor: Color {
-        Color(nsColor: NSColor(calibratedWhite: 0.7, alpha: 1.0))
+        Color.secondary
     }
 
     private var formatColor: Color {
@@ -252,6 +229,24 @@ struct PlotTensionChart: View {
                 .font(.caption)
                 .foregroundColor(secondaryTextColor)
                 .padding(.top, 4)
+            
+            Text("Scores: 70-100% = Strong, 40-69% = Adequate, Below 40% = Needs Work")
+                .font(.caption2)
+                .foregroundColor(secondaryTextColor.opacity(0.8))
+                .italic()
+                .font(.caption)
+                .foregroundColor(secondaryTextColor)
+                .padding(.top, 4)
+
+            Text("Scores: 70-100% = Strong, 40-69% = Adequate, Below 40% = Needs Work")
+                .font(.caption2)
+                .foregroundColor(secondaryTextColor.opacity(0.8))
+                .italic()
+
+            Text("Scores: 70-100% = Strong, 40-69% = Adequate, Below 40% = Needs Work")
+                .font(.caption2)
+                .foregroundColor(secondaryTextColor.opacity(0.8))
+                .italic()
         }
     }
 
@@ -439,9 +434,9 @@ struct PlotTensionChart: View {
             }
             .chartXAxisLabel(plotAnalysis.documentFormat == .screenplay ? "Page" : "Story Progress", alignment: .center)
             .chartYAxisLabel("Tension Level", position: .leading)
-              .frame(height: plotAnalysis.documentFormat == .screenplay ? 1000 : 880)
-              .padding(.top, 60) // extra headroom so peaks don’t crowd text
-              .padding(.bottom, plotAnalysis.documentFormat == .screenplay ? 32 : 24)
+              .frame(height: 500)
+              .padding(.top, 20)
+              .padding(.bottom, 20)
               .padding(.horizontal)
         }
           .padding(.bottom, 24)
@@ -562,10 +557,10 @@ struct PlotPointRow: View {
 
     // Theme-aware colors
     private var primaryTextColor: Color {
-        Color(nsColor: NSColor(calibratedWhite: 0.9, alpha: 1.0))
+        Color.primary
     }
     private var secondaryTextColor: Color {
-        Color(nsColor: NSColor(calibratedWhite: 0.65, alpha: 1.0))
+        Color.secondary
     }
 
     var body: some View {

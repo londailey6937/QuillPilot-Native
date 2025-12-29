@@ -1361,7 +1361,6 @@ class HeaderView: NSView {
 
     @objc func toggleTheme(_ sender: Any?) {
         ThemeManager.shared.toggleTheme()
-        print("Theme toggled to: \(ThemeManager.shared.currentTheme)")
     }
 
     func applyTheme(_ theme: AppTheme) {
@@ -1790,7 +1789,6 @@ class FormattingToolbar: NSView {
 
     @objc private func styleChanged(_ sender: NSPopUpButton) {
         let selectedStyle = sender.titleOfSelectedItem ?? ""
-        print("[DEBUG] styleChanged called - selectedStyle: '\(selectedStyle)'")
         delegate?.formattingToolbar(self, didSelectStyle: selectedStyle)
         // Save the selected style to UserDefaults for persistence
         UserDefaults.standard.set(selectedStyle, forKey: "LastSelectedStyle")

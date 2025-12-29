@@ -382,9 +382,7 @@ class DecisionBeliefLoopAnalyzer {
 
         // Use outline entries if available, otherwise fall back to regex detection
         if let entries = outlineEntries, !entries.isEmpty {
-            print("📖 Decision-Belief Loop: Using \(entries.count) outline entries for chapter detection")
             entries.prefix(3).forEach { entry in
-                print("  Chapter: '\(entry.title)' level=\(entry.level) range=\(entry.range)")
             }
             // Filter for level 1 entries (Chapter Number, Chapter Title, Heading 1)
             let chapterEntries = entries.filter { $0.level == 1 }
@@ -434,7 +432,6 @@ class DecisionBeliefLoopAnalyzer {
             }
         } else {
             // Fall back to regex-based chapter detection
-            print("⚠️ Decision-Belief Loop: No outline entries, falling back to regex chapter detection")
             let chapterTexts = splitIntoChapters(text: text)
             var startPos = 0
             chapters = chapterTexts.enumerated().map { index, chapterText in
@@ -445,7 +442,6 @@ class DecisionBeliefLoopAnalyzer {
         }
 
         var loops: [DecisionBeliefLoop] = []
-        print("👥 Analyzing \(characterNames.count) characters: \(characterNames.joined(separator: ", "))")
 
         for characterName in characterNames {
             var loop = DecisionBeliefLoop(characterName: characterName)

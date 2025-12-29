@@ -54,23 +54,6 @@ class AnalysisViewController: NSViewController, NSWindowDelegate {
     // Passive voice disclosure tracking
     private var passiveDisclosureViews: [NSButton: NSScrollView] = [:]
 
-    // Debug helper to track scrolling layout
-    private func logScrollMetrics(_ label: String) {
-        guard let scrollView else { return }
-        let scrollFrameH = scrollView.frame.size.height
-        let contentSizeH = scrollView.contentSize.height
-        let documentFrameH = documentView?.frame.size.height ?? 0
-        let stackFrameH = contentStack?.frame.size.height ?? 0
-        NSLog("🟢 ScrollDebug [\(label)] scrollFrame=\(scrollFrameH) contentSize=\(contentSizeH) documentFrame=\(documentFrameH) stackFrame=\(stackFrameH)")
-    }
-    private func logPopoutMetrics(_ label: String, scrollView: NSScrollView, contentView: NSView, stack: NSStackView) {
-        let scrollFrameH = scrollView.frame.size.height
-        let contentSizeH = scrollView.contentSize.height
-        let documentFrameH = contentView.frame.size.height
-        let stackFrameH = stack.frame.size.height
-        NSLog("🟢 ScrollDebug [popout-\(label)] scrollFrame=\(scrollFrameH) contentSize=\(contentSizeH) documentFrame=\(documentFrameH) stackFrame=\(stackFrameH)")
-    }
-
     // NSWindowDelegate: keep plot popout scroll sizing in sync
     func windowDidResize(_ notification: Notification) {
         guard let window = notification.object as? NSWindow,
@@ -87,7 +70,6 @@ class AnalysisViewController: NSViewController, NSWindowDelegate {
         stack.layoutSubtreeIfNeeded()
         let targetHeight = max(stack.fittingSize.height + 24, scrollView.contentSize.height + 1)
         contentView.setFrameSize(NSSize(width: scrollView.contentSize.width, height: targetHeight))
-        logPopoutMetrics("resize", scrollView: scrollView, contentView: contentView, stack: stack)
     }
 
     @objc private func scrollPlotPopoutToChart() {
@@ -691,9 +673,6 @@ class AnalysisViewController: NSViewController, NSWindowDelegate {
 
         // Keep reference to scrollContainer for show/hide toggling
         scrollContainer = scrollView
-
-        // Debug initial metrics
-        logScrollMetrics("setupScrollView")
     }
 
     private func setupContent() {
@@ -771,13 +750,9 @@ class AnalysisViewController: NSViewController, NSWindowDelegate {
             // Ensure documentView expands with content for scrolling
             documentView.heightAnchor.constraint(greaterThanOrEqualTo: contentStack.heightAnchor, constant: 44)
         ])
-
-        // Debug after layout constraints applied
-        logScrollMetrics("setupContent")
     }
 
     func displayResults(_ results: AnalysisResults) {
-        logScrollMetrics("displayResults-start")
         // If Character Library is empty, don't display character-based analysis
         if CharacterLibrary.shared.characters.isEmpty && results.wordCount == 0 {
             latestAnalysisResults = nil
@@ -1404,7 +1379,6 @@ class AnalysisViewController: NSViewController, NSWindowDelegate {
             // Force layout update to enable scrolling
             contentStack.layoutSubtreeIfNeeded()
             documentView.layoutSubtreeIfNeeded()
-            logScrollMetrics("displayResults")
         }
 
         // Add character visualizations below plot
@@ -1439,7 +1413,6 @@ class AnalysisViewController: NSViewController, NSWindowDelegate {
 
     @available(macOS 13.0, *)
     private func displayPlotAnalysis() {
-        logScrollMetrics("displayPlotAnalysis-start")
 
         guard let results = latestAnalysisResults else {
             let placeholder = makeLabel("📖 Run analysis first to view plot insights", size: 14, bold: true)
@@ -1473,7 +1446,6 @@ class AnalysisViewController: NSViewController, NSWindowDelegate {
         // Force layout update to enable scrolling
         contentStack.layoutSubtreeIfNeeded()
         documentView.layoutSubtreeIfNeeded()
-        logScrollMetrics("displayPlotAnalysis")
         scrollToTop()
     }
 
@@ -2665,7 +2637,6 @@ extension AnalysisViewController {
         if let container = analysisPopoutContainer,
            let scrollView = container.subviews.compactMap({ $0 as? NSScrollView }).first,
            let contentView = scrollView.documentView {
-            logPopoutMetrics("refresh-start", scrollView: scrollView, contentView: contentView, stack: stack)
         }
 
         // Clear current content and disclosure mappings
@@ -3067,13 +3038,11 @@ extension AnalysisViewController {
         refreshAnalysisPopoutContent()
 
         // After refresh, log sizes
-        logPopoutMetrics("window-created", scrollView: scrollView, contentView: contentView, stack: stack)
 
         // Resize to ensure scrolling works after rebuild
         resizePopoutContent(scrollView: scrollView, contentView: contentView, stack: stack)
 
         // Log after initial population
-        logPopoutMetrics("refresh-end", scrollView: scrollView, contentView: contentView, stack: stack)
 
         NotificationCenter.default.addObserver(
             forName: NSWindow.willCloseNotification,
@@ -3273,7 +3242,6 @@ extension AnalysisViewController {
         resizePopoutContent(scrollView: scrollView, contentView: contentView, stack: stack)
 
         // Debug sizes at creation
-        logPopoutMetrics("plot-popout-created", scrollView: scrollView, contentView: contentView, stack: stack)
 
         // Store references for later scroll/resize handling
         plotPopoutWindow = window

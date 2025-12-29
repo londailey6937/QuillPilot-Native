@@ -188,7 +188,6 @@ final class SceneListWindowController: NSWindowController {
             do {
                 try sceneManager.decode(from: data)
             } catch {
-                print("Failed to load scenes: \(error)")
             }
         }
 
@@ -200,7 +199,6 @@ final class SceneListWindowController: NSWindowController {
     private func saveScenes() {
         // Only save if we have a document
         guard currentDocumentURL != nil else {
-            print("Cannot save scenes: no document loaded")
             return
         }
 
@@ -208,7 +206,6 @@ final class SceneListWindowController: NSWindowController {
             let data = try sceneManager.encode()
             UserDefaults.standard.set(data, forKey: scenesStorageKey(for: currentDocumentURL))
         } catch {
-            print("Failed to save scenes: \(error)")
         }
     }
 

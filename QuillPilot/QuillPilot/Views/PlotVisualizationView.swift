@@ -14,7 +14,7 @@ class PlotVisualizationView: NSView {
 
     private var plotAnalysis: PlotAnalysis?
     private var wrapInScrollView: Bool = true
-    private var chartView: NSHostingView<PlotTensionChart>?
+    private var chartHostingView: NSView?
     weak var delegate: PlotVisualizationDelegate?
 
     func configure(with analysis: PlotAnalysis?, wrapInScrollView: Bool = true) {
@@ -25,7 +25,7 @@ class PlotVisualizationView: NSView {
 
     private func setupChartView() {
         // Remove old chart if exists
-        chartView?.removeFromSuperview()
+        chartHostingView?.removeFromSuperview()
 
         guard let analysis = plotAnalysis else { return }
 
@@ -52,7 +52,7 @@ class PlotVisualizationView: NSView {
             hostingView.bottomAnchor.constraint(equalTo: bottomAnchor)
         ])
 
-        chartView = hostingView
+        chartHostingView = hostingView
     }
 }
 
@@ -77,12 +77,13 @@ struct PlotTensionChart: View {
         return 0...1
     }
 
-    // Theme-aware colors
+    // Header text colors: use ThemeManager to detect actual app theme
+    // (This affects everything above and including "Story Beats" heading)
     private var primaryTextColor: Color {
-        Color(nsColor: .labelColor)
+        Color(nsColor: ThemeManager.shared.currentTheme.popoutTextColor)
     }
     private var secondaryTextColor: Color {
-        Color(nsColor: .secondaryLabelColor)
+        Color(nsColor: ThemeManager.shared.currentTheme.popoutSecondaryColor)
     }
 
     private var formatColor: Color {
@@ -560,12 +561,15 @@ struct PlotPointRow: View {
     let format: DocumentFormat
     let onTap: () -> Void
 
-    // Theme-aware colors
+    // Explicitly white/light text since rows have dark background
     private var primaryTextColor: Color {
-        Color.primary
+        .white
     }
     private var secondaryTextColor: Color {
-        Color.secondary
+        Color.white.opacity(0.85)
+    }
+    private var rowBackgroundColor: Color {
+        Color(nsColor: NSColor(calibratedWhite: 0.25, alpha: 1.0))
     }
 
     var body: some View {
@@ -611,7 +615,7 @@ struct PlotPointRow: View {
             }
             .padding(.vertical, 8)
             .padding(.horizontal, 12)
-            .background(Color(nsColor: NSColor(calibratedWhite: 0.25, alpha: 1.0)))
+            .background(rowBackgroundColor)
             .cornerRadius(8)
         }
         .buttonStyle(.plain)

@@ -45,6 +45,22 @@ class EmotionalTrajectoryView: NSView {
         }
     }
 
+    override init(frame frameRect: NSRect) {
+        super.init(frame: frameRect)
+        setupThemeObserver()
+    }
+
+    required init?(coder: NSCoder) {
+        super.init(coder: coder)
+        setupThemeObserver()
+    }
+
+    private func setupThemeObserver() {
+        NotificationCenter.default.addObserver(forName: .themeDidChange, object: nil, queue: .main) { [weak self] _ in
+            self?.needsDisplay = true
+        }
+    }
+
     func setTrajectories(_ trajectories: [CharacterTrajectory], metric: EmotionalMetric = .confidence) {
         self.trajectories = trajectories
         self.selectedMetric = metric
@@ -71,8 +87,9 @@ class EmotionalTrajectoryView: NSView {
 
         let context = NSGraphicsContext.current?.cgContext
 
-        // Draw background
-        NSColor.controlBackgroundColor.setFill()
+        // Draw background using theme colors
+        let theme = ThemeManager.shared.currentTheme
+        theme.popoutBackground.setFill()
         bounds.fill()
 
         // Define chart area with padding for axes and labels
@@ -93,10 +110,14 @@ class EmotionalTrajectoryView: NSView {
     }
 
     private func drawEmptyState() {
+        let theme = ThemeManager.shared.currentTheme
+        theme.popoutBackground.setFill()
+        bounds.fill()
+
         let text = "No emotional trajectory data available.\nAnalyze your document to see character emotional arcs."
         let attributes: [NSAttributedString.Key: Any] = [
             .font: NSFont.systemFont(ofSize: 14),
-            .foregroundColor: NSColor.secondaryLabelColor
+            .foregroundColor: theme.popoutSecondaryColor
         ]
 
         let attrString = NSAttributedString(string: text, attributes: attributes)
@@ -112,7 +133,8 @@ class EmotionalTrajectoryView: NSView {
     }
 
     private func drawGrid(in chartRect: NSRect) {
-        NSColor.separatorColor.withAlphaComponent(0.3).setStroke()
+        let theme = ThemeManager.shared.currentTheme
+        theme.popoutSecondaryColor.withAlphaComponent(0.3).setStroke()
 
         let gridPath = NSBezierPath()
         gridPath.lineWidth = 0.5
@@ -135,10 +157,11 @@ class EmotionalTrajectoryView: NSView {
     }
 
     private func drawAxes(in chartRect: NSRect) {
-        // Draw axis labels
+        // Draw axis labels using theme colors
+        let theme = ThemeManager.shared.currentTheme
         let labelAttributes: [NSAttributedString.Key: Any] = [
             .font: NSFont.systemFont(ofSize: 11),
-            .foregroundColor: NSColor.labelColor
+            .foregroundColor: theme.popoutTextColor
         ]
 
         // Y-axis labels
@@ -256,9 +279,10 @@ class EmotionalTrajectoryView: NSView {
             linePath.stroke()
 
             // Label - truncate if needed
+            let theme = ThemeManager.shared.currentTheme
             let labelAttributes: [NSAttributedString.Key: Any] = [
                 .font: NSFont.systemFont(ofSize: 10),
-                .foregroundColor: NSColor.labelColor
+                .foregroundColor: theme.popoutTextColor
             ]
 
             let suffix = trajectory.isDashed ? " (subtext)" : ""

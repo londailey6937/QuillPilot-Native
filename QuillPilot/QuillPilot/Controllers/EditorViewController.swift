@@ -2548,7 +2548,8 @@ case "Book Subtitle":
 
         let paragraph = paragraphStyle(from: definition)
         let font = font(from: definition)
-        let textColor = color(fromHex: definition.textColorHex, fallback: currentTheme.textColor)
+        // Always use theme text color instead of stored color to respect light/dark mode
+        let textColor = currentTheme.textColor
         let backgroundColor = definition.backgroundColorHex.flatMap { color(fromHex: $0, fallback: .clear) }
 
         applyParagraphEditsToSelectedParagraphs { style in

@@ -64,12 +64,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         // Try to load and draw feather.png
         let featherImage: NSImage?
-        if let bundleImage = NSImage(named: "FeatherLogo") {
+        if let bundleImage = NSImage(named: "feather") {
             featherImage = bundleImage
         } else if let bundleImage = Bundle.main.image(forResource: "feather") {
             featherImage = bundleImage
         } else {
-            let path = "/Users/londailey/QuillPilot/QuillPilot/QuillPilot/Assets.xcassets/FeatherLogo.imageset/feather.png"
+            let path = "/Users/londailey/QuillPilot_Native/QuillPilot/QuillPilot/Assets.xcassets/feather.imageset/feather.png"
             featherImage = NSImage(contentsOfFile: path)
         }
 

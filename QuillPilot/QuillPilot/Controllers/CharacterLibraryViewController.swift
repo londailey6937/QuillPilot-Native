@@ -109,11 +109,16 @@ class CharacterLibraryViewController: NSViewController {
     }
 
     private func setupUI() {
+        // Set initial view background
+        view.layer?.backgroundColor = currentTheme.popoutBackground.cgColor
+
         let splitContainer = NSStackView()
         splitContainer.translatesAutoresizingMaskIntoConstraints = false
         splitContainer.orientation = .horizontal
         splitContainer.spacing = 1
         splitContainer.distribution = .fill
+        splitContainer.wantsLayer = true
+        splitContainer.layer?.backgroundColor = currentTheme.popoutBackground.cgColor
         view.addSubview(splitContainer)
 
         let listPanel = createCharacterListPanel()
@@ -122,6 +127,7 @@ class CharacterLibraryViewController: NSViewController {
 
         let separator = NSView()
         separator.wantsLayer = true
+        separator.layer?.backgroundColor = currentTheme.popoutSecondaryColor.withAlphaComponent(0.3).cgColor
         separator.translatesAutoresizingMaskIntoConstraints = false
         splitContainer.addArrangedSubview(separator)
 
@@ -142,6 +148,7 @@ class CharacterLibraryViewController: NSViewController {
     private func createCharacterListPanel() -> NSView {
         let container = NSView()
         container.wantsLayer = true
+        container.layer?.backgroundColor = currentTheme.popoutBackground.cgColor
 
         let header = NSStackView()
         header.translatesAutoresizingMaskIntoConstraints = false
@@ -151,7 +158,7 @@ class CharacterLibraryViewController: NSViewController {
 
         let titleLabel = NSTextField(labelWithString: "📚 Characters")
         titleLabel.font = .boldSystemFont(ofSize: 14)
-        titleLabel.textColor = .labelColor
+        titleLabel.textColor = currentTheme.popoutTextColor
         header.addArrangedSubview(titleLabel)
 
         let spacer = NSView()
@@ -211,6 +218,7 @@ class CharacterLibraryViewController: NSViewController {
     private func createDetailPanel() -> NSView {
         let container = NSView()
         container.wantsLayer = true
+        container.layer?.backgroundColor = currentTheme.popoutBackground.cgColor
 
         detailScrollView = NSScrollView()
         detailScrollView.translatesAutoresizingMaskIntoConstraints = false
@@ -498,7 +506,7 @@ class CharacterLibraryViewController: NSViewController {
 
         let labelView = NSTextField(labelWithString: label + ":")
         labelView.font = .systemFont(ofSize: 12)
-        labelView.textColor = .secondaryLabelColor
+        labelView.textColor = currentTheme.popoutSecondaryColor
         labelView.translatesAutoresizingMaskIntoConstraints = false
         labelView.widthAnchor.constraint(equalToConstant: 120).isActive = true
         container.addArrangedSubview(labelView)
@@ -520,7 +528,7 @@ class CharacterLibraryViewController: NSViewController {
     private func addTextArea(_ label: String, value: String, height: CGFloat) -> NSTextView {
         let labelView = NSTextField(labelWithString: label + ":")
         labelView.font = .systemFont(ofSize: 12)
-        labelView.textColor = .secondaryLabelColor
+        labelView.textColor = currentTheme.popoutSecondaryColor
         detailContentStack.addArrangedSubview(labelView)
 
         let scrollView = NSScrollView()
@@ -562,7 +570,7 @@ class CharacterLibraryViewController: NSViewController {
 
         let labelView = NSTextField(labelWithString: label + ":")
         labelView.font = .systemFont(ofSize: 12)
-        labelView.textColor = .secondaryLabelColor
+        labelView.textColor = currentTheme.popoutSecondaryColor
         labelView.translatesAutoresizingMaskIntoConstraints = false
         labelView.widthAnchor.constraint(equalToConstant: 120).isActive = true
         container.addArrangedSubview(labelView)
@@ -642,12 +650,40 @@ class CharacterLibraryViewController: NSViewController {
 
     func applyTheme(_ theme: AppTheme) {
         currentTheme = theme
-        view.layer?.backgroundColor = theme.outlineBackground.cgColor
+        view.layer?.backgroundColor = theme.popoutBackground.cgColor
+
+        // Recursively update all subview backgrounds
+        updateAllSubviewBackgrounds(view, theme: theme)
+
         scrollView?.drawsBackground = false
+        scrollView?.backgroundColor = theme.popoutBackground
         detailScrollView?.drawsBackground = false
+        detailScrollView?.backgroundColor = theme.popoutBackground
+
+        // Update scroll view backgrounds
+        if let docView = scrollView?.documentView {
+            docView.wantsLayer = true
+            docView.layer?.backgroundColor = theme.popoutBackground.cgColor
+        }
+        if let detailDocView = detailScrollView?.documentView {
+            detailDocView.wantsLayer = true
+            detailDocView.layer?.backgroundColor = theme.popoutBackground.cgColor
+        }
+
         refreshCharacterList()
         if selectedCharacter != nil {
             showCharacterDetail()
+        }
+    }
+
+    private func updateAllSubviewBackgrounds(_ view: NSView, theme: AppTheme) {
+        view.wantsLayer = true
+        // Set background for containers but not for controls like buttons
+        if !(view is NSButton) && !(view is NSTextField) && !(view is NSPopUpButton) && !(view is NSTextView) {
+            view.layer?.backgroundColor = theme.popoutBackground.cgColor
+        }
+        for subview in view.subviews {
+            updateAllSubviewBackgrounds(subview, theme: theme)
         }
     }
 }

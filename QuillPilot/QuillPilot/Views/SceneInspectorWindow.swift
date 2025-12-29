@@ -42,6 +42,14 @@ final class SceneInspectorWindowController: NSWindowController {
         window.isReleasedWhenClosed = false
         window.collectionBehavior = [.moveToActiveSpace]
 
+        // Set initial window background
+        let theme = ThemeManager.shared.currentTheme
+        window.backgroundColor = theme.popoutBackground
+
+        // Set window appearance to match theme (light/dark mode)
+        let isDarkMode = ThemeManager.shared.isDarkMode
+        window.appearance = NSAppearance(named: isDarkMode ? .darkAqua : .aqua)
+
         super.init(window: window)
 
         setupUI()
@@ -52,7 +60,6 @@ final class SceneInspectorWindowController: NSWindowController {
             self?.applyCurrentTheme()
         }
     }
-
     required init?(coder: NSCoder) {
         fatalError("init(coder:) has not been implemented")
     }
@@ -88,13 +95,19 @@ final class SceneInspectorWindowController: NSWindowController {
     private func setupUI() {
         guard let window = window else { return }
 
+        let theme = ThemeManager.shared.currentTheme
+
         let contentView = NSView(frame: window.contentView?.bounds ?? .zero)
         contentView.autoresizingMask = [.width, .height]
+        contentView.wantsLayer = true
+        contentView.layer?.backgroundColor = theme.popoutBackground.cgColor
         window.contentView = contentView
 
         // Create horizontal split container
         let inspectorPanel = NSView(frame: NSRect(x: 0, y: 0, width: 420, height: contentView.bounds.height))
         inspectorPanel.autoresizingMask = [.height]
+        inspectorPanel.wantsLayer = true
+        inspectorPanel.layer?.backgroundColor = theme.popoutBackground.cgColor
         contentView.addSubview(inspectorPanel)
 
         // Vertical separator line
@@ -107,6 +120,8 @@ final class SceneInspectorWindowController: NSWindowController {
         // Scene Writer panel
         let writerPanel = NSView(frame: NSRect(x: 421, y: 0, width: contentView.bounds.width - 421, height: contentView.bounds.height))
         writerPanel.autoresizingMask = [.width, .height]
+        writerPanel.wantsLayer = true
+        writerPanel.layer?.backgroundColor = theme.popoutBackground.cgColor
         contentView.addSubview(writerPanel)
 
         // Setup Inspector Panel (left side)
@@ -408,7 +423,7 @@ final class SceneInspectorWindowController: NSWindowController {
         label.frame = NSRect(x: point.x, y: point.y, width: 85, height: 20)
         label.alignment = .right
         label.font = NSFont.systemFont(ofSize: 12, weight: .medium)
-        label.textColor = NSColor.secondaryLabelColor
+        label.textColor = ThemeManager.shared.currentTheme.popoutSecondaryColor
         allLabels.append(label)
         view.addSubview(label)
     }
@@ -417,29 +432,59 @@ final class SceneInspectorWindowController: NSWindowController {
         let theme = ThemeManager.shared.currentTheme
         guard let contentView = window?.contentView else { return }
 
-        // Window background
+        // Window background and appearance
+        window?.backgroundColor = theme.popoutBackground
+        let isDarkMode = ThemeManager.shared.isDarkMode
+        window?.appearance = NSAppearance(named: isDarkMode ? .darkAqua : .aqua)
+
         contentView.wantsLayer = true
-        contentView.layer?.backgroundColor = theme.pageBackground.cgColor
+        contentView.layer?.backgroundColor = theme.popoutBackground.cgColor
+
+        // Update all subviews recursively
+        updateSubviewBackgrounds(contentView, theme: theme)
 
         // Text fields
-        let fieldColor = theme.textColor
+        let fieldColor = theme.popoutTextColor
         titleField?.textColor = fieldColor
+        titleField?.backgroundColor = theme.popoutBackground
         summaryField?.textColor = fieldColor
+        summaryField?.backgroundColor = theme.popoutBackground
         timeField?.textColor = fieldColor
+        timeField?.backgroundColor = theme.popoutBackground
         charactersField?.textColor = fieldColor
+        charactersField?.backgroundColor = theme.popoutBackground
         goalField?.textColor = fieldColor
+        goalField?.backgroundColor = theme.popoutBackground
         conflictField?.textColor = fieldColor
+        conflictField?.backgroundColor = theme.popoutBackground
         outcomeField?.textColor = fieldColor
+        outcomeField?.backgroundColor = theme.popoutBackground
         povComboBox?.textColor = fieldColor
         locationComboBox?.textColor = fieldColor
 
         // Notes text view
         notesView?.textColor = fieldColor
-        notesView?.backgroundColor = theme.pageBackground
+        notesView?.backgroundColor = theme.popoutBackground
+
+        // Scene writer text view
+        sceneWriterTextView?.textColor = fieldColor
+        sceneWriterTextView?.backgroundColor = theme.popoutBackground
 
         // Labels
-        let labelColor = theme.textColor.withAlphaComponent(0.7)
+        let labelColor = theme.popoutTextColor.withAlphaComponent(0.7)
         allLabels.forEach { $0.textColor = labelColor }
+    }
+
+    private func updateSubviewBackgrounds(_ view: NSView, theme: AppTheme) {
+        view.wantsLayer = true
+        // Set background for all container views but not for controls
+        if !(view is NSButton) && !(view is NSTextField) && !(view is NSPopUpButton) &&
+           !(view is NSTextView) && !(view is NSComboBox) && !(view is NSBox) {
+            view.layer?.backgroundColor = theme.popoutBackground.cgColor
+        }
+        for subview in view.subviews {
+            updateSubviewBackgrounds(subview, theme: theme)
+        }
     }
 
     @objc private func saveScene() {

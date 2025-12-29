@@ -124,21 +124,48 @@ class WelcomeWindowController: NSWindowController {
 
     private func createActionButton(title: String, icon: String, action: Selector) -> NSButton {
         let button = NSButton(frame: .zero)
-        button.title = title
-        button.bezelStyle = .rounded
         button.target = self
         button.action = action
-        button.font = NSFont.systemFont(ofSize: 14, weight: .medium)
+        button.isBordered = false  // Remove default styling
 
-        // Style the button
+        // Style the button with explicit colors to isolate from global theme changes
         button.wantsLayer = true
         button.layer?.cornerRadius = 8
+        button.layer?.backgroundColor = NSColor(red: 0.92, green: 0.85, blue: 0.77, alpha: 1.0).cgColor
+        button.layer?.borderWidth = 1
+        button.layer?.borderColor = NSColor(red: 0.80, green: 0.73, blue: 0.65, alpha: 1.0).cgColor
 
+        // Use attributed string for explicit text color control
+        let darkTextColor = NSColor(red: 0.17, green: 0.24, blue: 0.31, alpha: 1.0)
+
+        // Build attributed string with icon and text
+        let attachment = NSTextAttachment()
         if let symbolImage = NSImage(systemSymbolName: icon, accessibilityDescription: title) {
-            button.image = symbolImage
-            button.imagePosition = .imageLeading
-            button.imageScaling = .scaleProportionallyDown
+            let config = NSImage.SymbolConfiguration(pointSize: 14, weight: .medium)
+            if let configuredImage = symbolImage.withSymbolConfiguration(config) {
+                // Create a tinted copy of the image
+                let tintedImage = configuredImage.copy() as! NSImage
+                tintedImage.lockFocus()
+                darkTextColor.set()
+                NSRect(origin: .zero, size: tintedImage.size).fill(using: .sourceAtop)
+                tintedImage.unlockFocus()
+                attachment.image = tintedImage
+            }
         }
+
+        let imageString = NSMutableAttributedString(attachment: attachment)
+        let textString = NSAttributedString(string: "  \(title)", attributes: [
+            .font: NSFont.systemFont(ofSize: 14, weight: .medium),
+            .foregroundColor: darkTextColor
+        ])
+        imageString.append(textString)
+
+        // Center the content
+        let paragraphStyle = NSMutableParagraphStyle()
+        paragraphStyle.alignment = .center
+        imageString.addAttribute(.paragraphStyle, value: paragraphStyle, range: NSRange(location: 0, length: imageString.length))
+
+        button.attributedTitle = imageString
 
         return button
     }

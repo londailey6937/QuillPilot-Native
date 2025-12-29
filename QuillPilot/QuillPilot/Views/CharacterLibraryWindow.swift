@@ -22,6 +22,14 @@ class CharacterLibraryWindowController: NSWindowController {
         window.title = "Character Library"
         window.minSize = NSSize(width: 800, height: 400)
 
+        // Set window background to match theme
+        let theme = ThemeManager.shared.currentTheme
+        window.backgroundColor = theme.popoutBackground
+
+        // Set window appearance to match theme (light/dark mode)
+        let isDarkMode = ThemeManager.shared.isDarkMode
+        window.appearance = NSAppearance(named: isDarkMode ? .darkAqua : .aqua)
+
         // Center the window
         if let screen = NSScreen.main {
             let screenFrame = screen.frame
@@ -32,6 +40,25 @@ class CharacterLibraryWindowController: NSWindowController {
 
         self.init(window: window)
         setupUI()
+
+        // Listen for theme changes
+        NotificationCenter.default.addObserver(forName: .themeDidChange, object: nil, queue: .main) { [weak self] _ in
+            self?.applyTheme()
+        }
+    }
+
+    private func applyTheme() {
+        let theme = ThemeManager.shared.currentTheme
+        window?.backgroundColor = theme.popoutBackground
+
+        // Update window appearance to match theme
+        let isDarkMode = ThemeManager.shared.isDarkMode
+        window?.appearance = NSAppearance(named: isDarkMode ? .darkAqua : .aqua)
+
+        if let contentView = window?.contentView {
+            contentView.wantsLayer = true
+            contentView.layer?.backgroundColor = theme.popoutBackground.cgColor
+        }
     }
 
     private func setupUI() {
@@ -41,6 +68,11 @@ class CharacterLibraryWindowController: NSWindowController {
 
         let contentView = NSView(frame: window.contentView!.bounds)
         contentView.autoresizingMask = [.width, .height]
+        contentView.wantsLayer = true
+
+        // Set initial background color
+        let theme = ThemeManager.shared.currentTheme
+        contentView.layer?.backgroundColor = theme.popoutBackground.cgColor
 
         characterLibraryVC!.view.frame = contentView.bounds
         characterLibraryVC!.view.autoresizingMask = [.width, .height]

@@ -40,10 +40,17 @@ class LogoView: NSView {
     }
 
     private func loadLogo() {
-        let featherPath = "/Users/londailey/QuillPilot-Native/QuillPilot/QuillPilot/Assets.xcassets/feather.imageset/feather.png"
-        if let img = NSImage(contentsOfFile: featherPath) {
+        // Try to load from app bundle first
+        if let img = NSImage(named: "feather") {
             logoImage = img
             logoImage?.isTemplate = false
+        } else {
+            // Fallback to absolute path if running from Xcode
+            let featherPath = "/Users/londailey/QuillPilot_Native/QuillPilot/QuillPilot/Assets.xcassets/feather.imageset/feather.png"
+            if let img = NSImage(contentsOfFile: featherPath) {
+                logoImage = img
+                logoImage?.isTemplate = false
+            }
         }
         needsDisplay = true
     }

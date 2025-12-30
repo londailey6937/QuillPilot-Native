@@ -2646,7 +2646,7 @@ extension AnalysisViewController {
         // Log sizes before rebuild
         if let container = analysisPopoutContainer,
            let scrollView = container.subviews.compactMap({ $0 as? NSScrollView }).first,
-           let contentView = scrollView.documentView {
+           let _ = scrollView.documentView {
         }
 
         // Clear current content and disclosure mappings

@@ -8,6 +8,12 @@
 
 import Cocoa
 
+private extension NSRange {
+    func toOptional() -> NSRange? {
+        return location == NSNotFound ? nil : self
+    }
+}
+
 // MARK: - TOC Entry Model
 struct TOCEntry: Identifiable {
     let id = UUID()
@@ -54,10 +60,15 @@ class TOCIndexManager {
     func generateTOC(from textStorage: NSTextStorage, pageWidth: CGFloat = 612, pageHeight: CGFloat = 792) -> [TOCEntry] {
         var entries: [TOCEntry] = []
         let fullRange = NSRange(location: 0, length: textStorage.length)
+        let styleAttributeKey = NSAttributedString.Key("QuillStyleName")
+
+        // Exclude any existing TOC/Index sections so we don't re-ingest previously inserted lists
+        let excludedRanges = findExcludedRanges(in: textStorage)
 
         textStorage.enumerateAttributes(in: fullRange, options: []) { attrs, range, _ in
-            // Check for paragraph style or custom style attribute
-            if let styleName = attrs[.init("QuillPilotStyle")] as? String {
+            if rangeIntersectsExcluded(range, excludedRanges) { return }
+            // Check for QuillStyleName attribute
+            if let styleName = attrs[styleAttributeKey] as? String {
                 let level = levelForStyle(styleName)
                 if level > 0 {
                     let text = (textStorage.string as NSString).substring(with: range).trimmingCharacters(in: .whitespacesAndNewlines)
@@ -74,7 +85,7 @@ class TOCIndexManager {
                 }
             }
 
-            // Also check font size for headings
+            // Also check font size for headings (fallback for unstyled documents)
             if let font = attrs[.font] as? NSFont {
                 if font.pointSize >= 18 {
                     let text = (textStorage.string as NSString).substring(with: range).trimmingCharacters(in: .whitespacesAndNewlines)
@@ -140,7 +151,7 @@ class TOCIndexManager {
 
     // Auto-generate index from marked text
     func generateIndexFromMarkers(in textStorage: NSTextStorage) -> [IndexEntry] {
-        var entries: [IndexEntry] = []
+        let entries: [IndexEntry] = []
         let pattern = "\\{\\{index:([^}]+)\\}\\}"
 
         guard let regex = try? NSRegularExpression(pattern: pattern, options: []) else {
@@ -176,6 +187,51 @@ class TOCIndexManager {
     }
 }
 
+// MARK: - Helpers for section exclusion/removal
+
+// Finds the range of a section that begins with the given title and continues until the next occurrence of the same title (or document end).
+private func findSectionRange(title: String, in storage: NSTextStorage) -> NSRange? {
+    let fullString = storage.string as NSString
+    let searchRange = NSRange(location: 0, length: fullString.length)
+    guard let titleRange = fullString.range(of: title, options: [.caseInsensitive], range: searchRange).toOptional() else {
+        return nil
+    }
+
+    let nextSearchStart = titleRange.location + titleRange.length
+    if nextSearchStart < fullString.length,
+       let nextTitleRange = fullString.range(of: title, options: [.caseInsensitive], range: NSRange(location: nextSearchStart, length: fullString.length - nextSearchStart)).toOptional() {
+        let length = nextTitleRange.location - titleRange.location
+        return NSRange(location: titleRange.location, length: length)
+    }
+
+    // No subsequent title found; remove to end of document
+    return NSRange(location: titleRange.location, length: fullString.length - titleRange.location)
+}
+
+private func findExcludedRanges(in storage: NSTextStorage) -> [NSRange] {
+    var ranges: [NSRange] = []
+    if let toc = findSectionRange(title: "Table of Contents", in: storage) {
+        ranges.append(toc)
+    }
+    if let idx = findSectionRange(title: "Index", in: storage) {
+        ranges.append(idx)
+    }
+    return ranges
+}
+
+private func rangeIntersectsExcluded(_ range: NSRange, _ excluded: [NSRange]) -> Bool {
+    for ex in excluded {
+        if NSIntersectionRange(range, ex).length > 0 { return true }
+    }
+    return false
+}
+
+private func removeAllSections(title: String, in storage: NSTextStorage) {
+    while let r = findSectionRange(title: title, in: storage) {
+        storage.deleteCharacters(in: r)
+    }
+}
+
 // MARK: - TOC & Index Window Controller
 class TOCIndexWindowController: NSWindowController, NSOutlineViewDataSource, NSOutlineViewDelegate, NSTableViewDataSource, NSTableViewDelegate {
 
@@ -189,17 +245,61 @@ class TOCIndexWindowController: NSWindowController, NSOutlineViewDataSource, NSO
 
     private let categories = ["General", "People", "Places", "Concepts", "Events", "Terms"]
 
+    private func resolveDocumentFont(from textView: NSTextView) -> NSFont {
+        // Try to find the most common body text font by sampling the document
+        if let storage = textView.textStorage, storage.length > 100 {
+            var fontCounts: [String: (font: NSFont, count: Int)] = [:]
+            let samplePoints = [
+                storage.length / 4,      // 25%
+                storage.length / 2,      // 50%
+                storage.length * 3 / 4,  // 75%
+                min(1000, storage.length - 1),  // Near start but past headers
+                min(5000, storage.length - 1)   // Further in
+            ]
+
+            for point in samplePoints {
+                let safePoint = min(point, storage.length - 1)
+                if let font = storage.attribute(.font, at: safePoint, effectiveRange: nil) as? NSFont {
+                    // Skip very large fonts (likely headings)
+                    if font.pointSize <= 14 {
+                        let key = font.familyName ?? font.fontName
+                        if let existing = fontCounts[key] {
+                            fontCounts[key] = (font, existing.count + 1)
+                        } else {
+                            fontCounts[key] = (font, 1)
+                        }
+                    }
+                }
+            }
+
+            // Return most common body font
+            if let mostCommon = fontCounts.max(by: { $0.value.count < $1.value.count }) {
+                return mostCommon.value.font
+            }
+        }
+
+        // Fallback to textView's font property
+        if let viewFont = textView.font {
+            return viewFont
+        }
+
+        return NSFont(name: "Helvetica", size: 12) ?? NSFont.systemFont(ofSize: 12)
+    }
+
     convenience init() {
-        let window = NSWindow(
+        let panel = NSPanel(
             contentRect: NSRect(x: 0, y: 0, width: 450, height: 600),
-            styleMask: [.titled, .closable, .resizable, .miniaturizable],
+            styleMask: [.titled, .closable, .resizable, .utilityWindow],
             backing: .buffered,
             defer: false
         )
-        window.title = "Table of Contents & Index"
-        window.minSize = NSSize(width: 350, height: 400)
+        panel.title = "Table of Contents & Index"
+        panel.minSize = NSSize(width: 350, height: 400)
+        panel.isFloatingPanel = false
+        panel.becomesKeyOnlyIfNeeded = true
+        panel.hidesOnDeactivate = false
 
-        self.init(window: window)
+        self.init(window: panel)
         setupUI()
         applyTheme()
 
@@ -413,27 +513,81 @@ class TOCIndexWindowController: NSWindowController, NSOutlineViewDataSource, NSO
             return
         }
 
+        // Remove any previously inserted TOC to avoid duplicates
+        if let storage = textView.textStorage {
+            removeAllSections(title: "Table of Contents", in: storage)
+        }
+
         let tocString = NSMutableAttributedString()
 
+        // Detect document font (prefer typing attributes or selection)
+        let documentFont = resolveDocumentFont(from: textView)
+        print("DEBUG TOC: Resolved document font: \(documentFont.fontName) family: \(documentFont.familyName ?? "nil")")
+
+        // Get font for this family at different sizes, derived from document font
+        func fontFromDocument(_ baseFont: NSFont, size: CGFloat, bold: Bool) -> NSFont {
+            if bold {
+                let descriptor = baseFont.fontDescriptor.withSymbolicTraits(.bold)
+                return NSFont(descriptor: descriptor, size: size) ?? NSFont.boldSystemFont(ofSize: size)
+            }
+            let descriptor = baseFont.fontDescriptor.withSymbolicTraits([])
+            return NSFont(descriptor: descriptor, size: size) ?? baseFont.withSize(size)
+        }
+
         // Title
+        let titleFont = fontFromDocument(documentFont, size: 18, bold: true)
+        let titleParagraph = NSMutableParagraphStyle()
+        titleParagraph.alignment = .center
         let titleAttrs: [NSAttributedString.Key: Any] = [
-            .font: NSFont.boldSystemFont(ofSize: 18),
-            .foregroundColor: ThemeManager.shared.currentTheme.textColor
+            .font: titleFont,
+            .foregroundColor: ThemeManager.shared.currentTheme.textColor,
+            .paragraphStyle: titleParagraph
         ]
         tocString.append(NSAttributedString(string: "Table of Contents\n\n", attributes: titleAttrs))
 
-        // Entries
+        // Calculate usable width inside the text container (respect padding)
+        let textContainer = textView.textContainer!
+        let containerWidth = textContainer.containerSize.width
+        let lineFragmentPadding = textContainer.lineFragmentPadding
+        // Use actual container width for both tab stops and dot calculation
+        let actualLineWidth = containerWidth - (lineFragmentPadding * 2)
+
+        // Entries with leader dots
         for entry in entries {
-            let indent = String(repeating: "    ", count: entry.level - 1)
             let fontSize: CGFloat = entry.level == 1 ? 14 : (entry.level == 2 ? 12 : 11)
-            let weight: NSFont.Weight = entry.level == 1 ? .semibold : .regular
+            let isBold = entry.level == 1
+            let entryFont = fontFromDocument(documentFont, size: fontSize, bold: isBold)
+            let leftIndent = CGFloat(entry.level - 1) * 20
+
+            // Calculate widths to determine how many dots to insert
+            let titleAttrsForMeasure: [NSAttributedString.Key: Any] = [.font: entryFont]
+            let titleWidth = (entry.title as NSString).size(withAttributes: titleAttrsForMeasure).width
+            let pageNumStr = String(entry.pageNumber)
+            let pageNumWidth = (pageNumStr as NSString).size(withAttributes: titleAttrsForMeasure).width
+            let dotWidth = (".").size(withAttributes: titleAttrsForMeasure).width
+            let spaceWidth = (" ").size(withAttributes: titleAttrsForMeasure).width
+
+            // Calculate dots to fill space between title and page number
+            let contentWidth = actualLineWidth - leftIndent
+            let paddingSpace = spaceWidth * 2  // Just minimal padding around dots
+            let availableForDots = contentWidth - titleWidth - pageNumWidth - paddingSpace
+            let dotCount = max(3, Int(availableForDots / dotWidth))
+            let leaderDots = " " + String(repeating: ".", count: dotCount) + " "
+
+            // Create paragraph style with right-aligned tab stop at actual line edge
+            let paragraphStyle = NSMutableParagraphStyle()
+            paragraphStyle.firstLineHeadIndent = leftIndent
+            paragraphStyle.headIndent = leftIndent
+            paragraphStyle.tabStops = []
+            paragraphStyle.tabStops = [NSTextTab(textAlignment: .right, location: actualLineWidth, options: [:])]
 
             let entryAttrs: [NSAttributedString.Key: Any] = [
-                .font: NSFont.systemFont(ofSize: fontSize, weight: weight),
-                .foregroundColor: ThemeManager.shared.currentTheme.textColor
+                .font: entryFont,
+                .foregroundColor: ThemeManager.shared.currentTheme.textColor,
+                .paragraphStyle: paragraphStyle
             ]
 
-            let line = "\(indent)\(entry.title) ............ \(entry.pageNumber)\n"
+            let line = "\(entry.title)\(leaderDots)\t\(pageNumStr)\n"
             tocString.append(NSAttributedString(string: line, attributes: entryAttrs))
         }
 
@@ -461,7 +615,8 @@ class TOCIndexWindowController: NSWindowController, NSOutlineViewDataSource, NSO
         let term = addTermField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !term.isEmpty else { return }
 
-        guard let textView = editorTextView, let textStorage = textView.textStorage else { return }
+        guard let textView = editorTextView,
+                let _ = textView.textStorage else { return }
 
         let selectedRange = textView.selectedRange()
         let pageNumber = (selectedRange.location / 3000) + 1
@@ -498,25 +653,53 @@ class TOCIndexWindowController: NSWindowController, NSOutlineViewDataSource, NSO
             return
         }
 
+        // Remove any previously inserted Index to avoid duplicates
+        if let storage = textView.textStorage {
+            removeAllSections(title: "Index", in: storage)
+        }
+
         let indexString = NSMutableAttributedString()
 
+        // Detect document font (prefer typing attributes or selection)
+        let documentFont = resolveDocumentFont(from: textView)
+
+        // Get font for this family at different sizes, derived from document font
+        func fontFromDocument(_ baseFont: NSFont, size: CGFloat, bold: Bool) -> NSFont {
+            if bold {
+                let descriptor = baseFont.fontDescriptor.withSymbolicTraits(.bold)
+                return NSFont(descriptor: descriptor, size: size) ?? NSFont.boldSystemFont(ofSize: size)
+            }
+            let descriptor = baseFont.fontDescriptor.withSymbolicTraits([])
+            return NSFont(descriptor: descriptor, size: size) ?? baseFont.withSize(size)
+        }
+
+        // Calculate usable width inside the text container (respect padding)
+        let textContainer = textView.textContainer!
+        let containerWidth = textContainer.containerSize.width
+        let lineFragmentPadding = textContainer.lineFragmentPadding
+        // Use actual container width for both tab stops and dot calculation
+        let actualLineWidth = containerWidth - (lineFragmentPadding * 2)
+
         // Title
+        let titleFont = fontFromDocument(documentFont, size: 18, bold: true)
+        let titleParagraph = NSMutableParagraphStyle()
+        titleParagraph.alignment = .center
         let titleAttrs: [NSAttributedString.Key: Any] = [
-            .font: NSFont.boldSystemFont(ofSize: 18),
-            .foregroundColor: ThemeManager.shared.currentTheme.textColor
+            .font: titleFont,
+            .foregroundColor: ThemeManager.shared.currentTheme.textColor,
+            .paragraphStyle: titleParagraph
         ]
         indexString.append(NSAttributedString(string: "Index\n\n", attributes: titleAttrs))
 
         // Group by first letter
         var currentLetter: Character = " "
-        let entryAttrs: [NSAttributedString.Key: Any] = [
-            .font: NSFont.systemFont(ofSize: 12),
-            .foregroundColor: ThemeManager.shared.currentTheme.textColor
-        ]
+        let letterFont = fontFromDocument(documentFont, size: 14, bold: true)
         let letterAttrs: [NSAttributedString.Key: Any] = [
-            .font: NSFont.boldSystemFont(ofSize: 14),
+            .font: letterFont,
             .foregroundColor: ThemeManager.shared.currentTheme.textColor
         ]
+
+        let entryFont = fontFromDocument(documentFont, size: 12, bold: false)
 
         for entry in entries {
             let firstLetter = entry.term.first?.uppercased().first ?? "?"
@@ -526,7 +709,36 @@ class TOCIndexWindowController: NSWindowController, NSOutlineViewDataSource, NSO
             }
 
             let pageList = entry.pageNumbers.map { String($0) }.joined(separator: ", ")
-            let line = "    \(entry.term) ............ \(pageList)\n"
+
+            // Calculate leader dots
+            let termAttrsForMeasure: [NSAttributedString.Key: Any] = [.font: entryFont]
+            let termWidth = (entry.term as NSString).size(withAttributes: termAttrsForMeasure).width
+            let pageListWidth = (pageList as NSString).size(withAttributes: termAttrsForMeasure).width
+            let dotWidth = (".").size(withAttributes: termAttrsForMeasure).width
+            let spaceWidth = (" ").size(withAttributes: termAttrsForMeasure).width
+            let leftIndent: CGFloat = 20
+
+            // Calculate dots to fill space between term and page numbers
+            let contentWidth = actualLineWidth - leftIndent
+            let paddingSpace = spaceWidth * 2  // Minimal padding around dots
+            let availableForDots = contentWidth - termWidth - pageListWidth - paddingSpace
+            let dotCount = max(3, Int(availableForDots / dotWidth))
+            let leaderDots = " " + String(repeating: ".", count: dotCount) + " "
+
+            // Create paragraph style with right-aligned tab stop at actual line edge
+            let paragraphStyle = NSMutableParagraphStyle()
+            paragraphStyle.firstLineHeadIndent = leftIndent
+            paragraphStyle.headIndent = leftIndent
+            paragraphStyle.tabStops = []
+            paragraphStyle.tabStops = [NSTextTab(textAlignment: .right, location: actualLineWidth, options: [:])]
+
+            let entryAttrs: [NSAttributedString.Key: Any] = [
+                .font: entryFont,
+                .foregroundColor: ThemeManager.shared.currentTheme.textColor,
+                .paragraphStyle: paragraphStyle
+            ]
+
+            let line = "\(entry.term)\(leaderDots)\t\(pageList)\n"
             indexString.append(NSAttributedString(string: line, attributes: entryAttrs))
         }
 
@@ -551,6 +763,27 @@ class TOCIndexWindowController: NSWindowController, NSOutlineViewDataSource, NSO
             textView.window?.makeFirstResponder(textView)
         }
     }
+
+    // MARK: - Utilities
+
+// Finds the range of a section that begins with the given title and continues until the next occurrence of the same title (or document end).
+private func findSectionRange(title: String, in storage: NSTextStorage) -> NSRange? {
+    let fullString = storage.string as NSString
+    let searchRange = NSRange(location: 0, length: fullString.length)
+    guard let titleRange = fullString.range(of: title, options: [.caseInsensitive], range: searchRange).toOptional() else {
+        return nil
+    }
+
+    let nextSearchStart = titleRange.location + titleRange.length
+    if nextSearchStart < fullString.length,
+       let nextTitleRange = fullString.range(of: title, options: [.caseInsensitive], range: NSRange(location: nextSearchStart, length: fullString.length - nextSearchStart)).toOptional() {
+        let length = nextTitleRange.location - titleRange.location
+        return NSRange(location: titleRange.location, length: length)
+    }
+
+    // No subsequent title found; remove to end of document
+    return NSRange(location: titleRange.location, length: fullString.length - titleRange.location)
+}
 
     // MARK: - NSOutlineViewDataSource
 

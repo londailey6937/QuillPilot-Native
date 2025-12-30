@@ -216,6 +216,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NotificationCenter.default.post(name: NSNotification.Name("ShowSearchPanel"), object: nil)
     }
 
+    @objc private func applyDropCap(_ sender: Any?) {
+        mainWindowController?.mainContentViewController?.editorViewController.applyDropCap(lines: 3)
+    }
+
+    @objc private func applyOldStyleNumerals(_ sender: Any?) {
+        mainWindowController?.mainContentViewController?.editorViewController.applyOldStyleNumerals(to: nil)
+    }
+
+    @objc private func applyOpticalKerning(_ sender: Any?) {
+        mainWindowController?.mainContentViewController?.editorViewController.applyOpticalKerning(to: nil)
+    }
+
     @objc private func openDocument(_ sender: Any?) {
         Task { @MainActor [weak self] in
             self?.mainWindowController?.performOpenDocument(sender)
@@ -312,6 +324,36 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         findItem.target = self
         editMenu.addItem(findItem)
 
+        // Format Menu
+        let formatMenuItem = NSMenuItem()
+        mainMenu.addItem(formatMenuItem)
+        let formatMenu = NSMenu(title: "Format")
+        formatMenuItem.submenu = formatMenu
+
+        // Typography submenu
+        let typographyItem = NSMenuItem(title: "Typography", action: nil, keyEquivalent: "")
+        let typographyMenu = NSMenu(title: "Typography")
+        typographyItem.submenu = typographyMenu
+        formatMenu.addItem(typographyItem)
+
+        let dropCapItem = NSMenuItem(title: "Apply Drop Cap", action: #selector(applyDropCap(_:)), keyEquivalent: "")
+        dropCapItem.target = self
+        typographyMenu.addItem(dropCapItem)
+
+        let oldStyleNumItem = NSMenuItem(title: "Use Old-Style Numerals", action: #selector(applyOldStyleNumerals(_:)), keyEquivalent: "")
+        oldStyleNumItem.target = self
+        typographyMenu.addItem(oldStyleNumItem)
+
+        let opticalKernItem = NSMenuItem(title: "Apply Optical Kerning", action: #selector(applyOpticalKerning(_:)), keyEquivalent: "")
+        opticalKernItem.target = self
+        typographyMenu.addItem(opticalKernItem)
+
+        typographyMenu.addItem(.separator())
+
+        let infoItem = NSMenuItem(title: "ℹ️ Ligatures & smart quotes enabled by default", action: nil, keyEquivalent: "")
+        infoItem.isEnabled = false
+        typographyMenu.addItem(infoItem)
+
         // View Menu
         let viewMenuItem = NSMenuItem()
         mainMenu.addItem(viewMenuItem)
@@ -321,6 +363,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let headerFooterItem = NSMenuItem(title: "Header & Footer Settings…", action: #selector(showHeaderFooterSettings(_:)), keyEquivalent: "")
         headerFooterItem.target = self
         viewMenu.addItem(headerFooterItem)
+
+        let tocIndexItem = NSMenuItem(title: "Table of Contents & Index…", action: #selector(showTOCIndex(_:)), keyEquivalent: "t")
+        tocIndexItem.keyEquivalentModifierMask = [.command, .shift]
+        tocIndexItem.target = self
+        viewMenu.addItem(tocIndexItem)
 
         // Window Menu
         let windowMenuItem = NSMenuItem()
@@ -353,6 +400,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc private func showHeaderFooterSettings(_ sender: Any?) {
         mainWindowController?.showHeaderFooterSettings()
+    }
+
+    @objc private func showTOCIndex(_ sender: Any?) {
+        mainWindowController?.showTOCIndex()
     }
 
     @objc private func showDocumentation(_ sender: Any?) {
@@ -426,7 +477,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         contentView.addSubview(versionLabel)
 
         // Description
-        let descriptionLabel = NSTextField(wrappingLabelWithString: "A powerful writing application for macOS with AI-assisted analysis, character tracking, and beautiful typography.")
+        let descriptionLabel = NSTextField(wrappingLabelWithString: "Professional writing software with publication-quality typography, intelligent manuscript analysis, and comprehensive tools for novelists, essayists, and screenwriters.")
         descriptionLabel.font = NSFont.systemFont(ofSize: 11)
         descriptionLabel.textColor = theme.textColor.withAlphaComponent(0.8)
         descriptionLabel.alignment = .center

@@ -1220,7 +1220,8 @@ class EditorViewController: NSViewController {
         alert.accessoryView = inputField
         alert.window.initialFirstResponder = inputField
 
-        let response = alert.runModal()
+        // Apply theme to alert
+        let response = alert.runThemedModal()
 
         if response == .alertFirstButtonReturn {
             // OK - add or update caption
@@ -1903,12 +1904,7 @@ class EditorViewController: NSViewController {
                 NSLog("Format Painter activated - copied formatting")
             } else {
                 // No selection, show alert
-                let alert = NSAlert()
-                alert.messageText = "Format Painter"
-                alert.informativeText = "Select text with the formatting you want to copy first."
-                alert.alertStyle = .informational
-                alert.addButton(withTitle: "OK")
-                alert.runModal()
+                showThemedAlert(title: "Format Painter", message: "Select text with the formatting you want to copy first.")
             }
         } else {
             // Deactivate format painter
@@ -2594,7 +2590,95 @@ case "Book Subtitle":
         if definition.isItalic {
             font = NSFontManager.shared.convert(font, toHaveTrait: .italicFontMask)
         }
+        // Apply professional typography features
+        font = fontWithTypographyFeatures(font, fontName: definition.fontName)
         return font
+    }
+
+    // MARK: - Professional Typography Features
+
+    /// Enhances font with professional typography features (ligatures, kerning, OpenType)
+    private func fontWithTypographyFeatures(_ baseFont: NSFont, fontName: String) -> NSFont {
+        var descriptor = baseFont.fontDescriptor
+
+        var features: [[NSFontDescriptor.FeatureKey: Int]] = []
+
+        // Enable ligatures for serif and professional fonts
+        let supportsLigatures = ["Times New Roman", "Georgia", "Baskerville", "Garamond", "Palatino", "Hoefler Text"].contains(fontName)
+        if supportsLigatures {
+            features.append([
+                .typeIdentifier: kLigaturesType,
+                .selectorIdentifier: kCommonLigaturesOnSelector
+            ])
+        }
+
+        // Apply features if any were added
+        if !features.isEmpty {
+            descriptor = descriptor.addingAttributes([
+                .featureSettings: features
+            ])
+        }
+
+        return NSFont(descriptor: descriptor, size: baseFont.pointSize) ?? baseFont
+    }
+
+    /// Apply smart typography (smart quotes, em/en dashes) to text
+    func enableSmartTypography() {
+        textView.isAutomaticQuoteSubstitutionEnabled = true
+        textView.isAutomaticDashSubstitutionEnabled = true
+        textView.isAutomaticTextReplacementEnabled = true
+    }
+
+    /// Apply optical kerning to selection or entire document
+    func applyOpticalKerning(to range: NSRange? = nil) {
+        guard let storage = textView.textStorage else { return }
+        let targetRange = range ?? NSRange(location: 0, length: storage.length)
+        storage.addAttribute(.kern, value: 0.0, range: targetRange) // 0.0 = use font's optical kerning
+    }
+
+    /// Apply drop cap to the current paragraph
+    func applyDropCap(lines: Int = 3) {
+        guard let storage = textView.textStorage else { return }
+        let selected = textView.selectedRange()
+        let paragraphRange = (textView.string as NSString).paragraphRange(for: selected)
+
+        guard paragraphRange.length > 0 else { return }
+
+        // Get first character
+        let firstCharRange = NSRange(location: paragraphRange.location, length: 1)
+        let currentFont = storage.attribute(.font, at: firstCharRange.location, effectiveRange: nil) as? NSFont ?? NSFont.systemFont(ofSize: 14)
+
+        // Make drop cap 3x larger
+        let dropCapSize = currentFont.pointSize * CGFloat(lines)
+        let dropCapFont = NSFont(descriptor: currentFont.fontDescriptor, size: dropCapSize) ?? currentFont
+
+        storage.addAttribute(.font, value: dropCapFont, range: firstCharRange)
+        storage.addAttribute(.baselineOffset, value: -(dropCapSize * 0.2), range: firstCharRange)
+    }
+
+    /// Enable OpenType features for old-style numerals
+    func applyOldStyleNumerals(to range: NSRange? = nil) {
+        guard let storage = textView.textStorage else { return }
+        let targetRange = range ?? NSRange(location: 0, length: storage.length)
+
+        storage.enumerateAttribute(.font, in: targetRange) { value, subrange, _ in
+            guard let font = value as? NSFont else { return }
+
+            let features: [[NSFontDescriptor.FeatureKey: Int]] = [
+                [
+                    .typeIdentifier: kNumberCaseType,
+                    .selectorIdentifier: kLowerCaseNumbersSelector
+                ]
+            ]
+
+            let descriptor = font.fontDescriptor.addingAttributes([
+                .featureSettings: features
+            ])
+
+            if let newFont = NSFont(descriptor: descriptor, size: font.pointSize) {
+                storage.addAttribute(.font, value: newFont, range: subrange)
+            }
+        }
     }
 
     /// Merges style base font with existing font to preserve intentional inline changes
@@ -3490,12 +3574,7 @@ case "Book Subtitle":
     func addTableColumn() {
         // Adding a column requires rebuilding the entire table
         // This is complex with NSTextTable, so we'll notify the user
-        let alert = NSAlert()
-        alert.messageText = "Add Column"
-        alert.informativeText = "To add a column, please insert a new table with the desired column count."
-        alert.alertStyle = .informational
-        alert.addButton(withTitle: "OK")
-        alert.runModal()
+        showThemedAlert(title: "Add Column", message: "To add a column, please insert a new table with the desired column count.")
     }
 
     func deleteTableRow() {
@@ -3525,12 +3604,7 @@ case "Book Subtitle":
     }
 
     func deleteTableColumn() {
-        let alert = NSAlert()
-        alert.messageText = "Delete Column"
-        alert.informativeText = "To delete a column, please recreate the table with the desired column count."
-        alert.alertStyle = .informational
-        alert.addButton(withTitle: "OK")
-        alert.runModal()
+        showThemedAlert(title: "Delete Column", message: "To delete a column, please recreate the table with the desired column count.")
     }
 
     func deleteTable() {

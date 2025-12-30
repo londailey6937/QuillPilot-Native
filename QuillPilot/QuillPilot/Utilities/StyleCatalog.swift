@@ -37,7 +37,7 @@ final class StyleCatalog {
         if let saved = savedTemplate, templates[saved] != nil {
             currentTemplateName = saved
         } else {
-            currentTemplateName = builtIns.first?.name ?? "Fiction Manuscript"
+            currentTemplateName = "Palatino"
         }
     }
 
@@ -110,7 +110,31 @@ final class StyleCatalog {
             name: "Screenplay",
             styles: screenplayStyles()
         )
-        return [fiction, nonfiction, screenplay]
+        let baskerville = StyleTemplate(
+            name: "Baskerville Classic",
+            styles: baskervilleStyles()
+        )
+        let garamond = StyleTemplate(
+            name: "Garamond Elegant",
+            styles: garamondStyles()
+        )
+        let palatino = StyleTemplate(
+            name: "Palatino",
+            styles: palatinoStyles()
+        )
+        let hoefler = StyleTemplate(
+            name: "Hoefler Text",
+            styles: hoeflerStyles()
+        )
+        let bradley = StyleTemplate(
+            name: "Bradley Hand (Script)",
+            styles: bradleyHandStyles()
+        )
+        let snell = StyleTemplate(
+            name: "Snell Roundhand (Script)",
+            styles: snellRoundhandStyles()
+        )
+        return [fiction, nonfiction, screenplay, baskerville, garamond, palatino, hoefler, bradley, snell]
     }
 
     private static func baseDefinition(
@@ -219,5 +243,121 @@ final class StyleCatalog {
             allStyles[key] = value
         }
         return allStyles
+    }
+
+    private static func baskervilleStyles() -> [String: StyleDefinition] {
+        var styles: [String: StyleDefinition] = [:]
+        let font = "Baskerville"
+        styles["Body Text"] = baseDefinition(font: font, size: 14, lineHeight: 1.8)
+        styles["Body Text – No Indent"] = baseDefinition(font: font, size: 14, lineHeight: 1.8, firstLine: 0)
+        styles["Book Title"] = baseDefinition(font: font, size: 28, bold: false, alignment: .center, lineHeight: 1.2, before: 0, after: 24, headIndent: 0, firstLine: 0)
+        styles["Book Subtitle"] = baseDefinition(font: font, size: 18, alignment: .center, lineHeight: 1.2, before: 0, after: 18, headIndent: 0, firstLine: 0)
+        styles["Author Name"] = baseDefinition(font: font, size: 14, alignment: .center, lineHeight: 1.2, before: 0, after: 12, headIndent: 0, firstLine: 0)
+        styles["Chapter Number"] = baseDefinition(font: font, size: 16, alignment: .center, lineHeight: 1.2, before: 36, after: 12, headIndent: 0, firstLine: 0)
+        styles["Chapter Title"] = baseDefinition(font: font, size: 22, alignment: .center, lineHeight: 1.2, before: 0, after: 24, headIndent: 0, firstLine: 0)
+        styles["Chapter Subtitle"] = baseDefinition(font: font, size: 16, italic: true, alignment: .center, lineHeight: 1.2, before: 0, after: 18, headIndent: 0, firstLine: 0)
+        styles["Scene Break"] = baseDefinition(font: font, size: 14, alignment: .center, lineHeight: 1.2, before: 18, after: 18, headIndent: 0, firstLine: 0)
+        styles["Dialogue"] = styles["Body Text"]
+        styles["Internal Thought"] = baseDefinition(font: font, size: 14, italic: true, lineHeight: 1.8)
+        styles["Block Quote"] = baseDefinition(font: font, size: 13, alignment: .left, lineHeight: 1.6, before: 12, after: 12, headIndent: 36, firstLine: 36, tailIndent: -36)
+        styles["Epigraph"] = baseDefinition(font: font, size: 13, italic: true, alignment: .left, lineHeight: 1.6, before: 12, after: 12, headIndent: 36, firstLine: 36, tailIndent: -36)
+        styles["Epigraph Attribution"] = baseDefinition(font: font, size: 12, alignment: .right, lineHeight: 1.2, before: 6, after: 18, headIndent: 0, firstLine: 0)
+        return styles
+    }
+
+    private static func garamondStyles() -> [String: StyleDefinition] {
+        var styles: [String: StyleDefinition] = [:]
+        let font = "Garamond"
+        styles["Body Text"] = baseDefinition(font: font, size: 14, lineHeight: 1.75)
+        styles["Body Text – No Indent"] = baseDefinition(font: font, size: 14, lineHeight: 1.75, firstLine: 0)
+        styles["Book Title"] = baseDefinition(font: font, size: 26, bold: false, alignment: .center, lineHeight: 1.2, before: 0, after: 20, headIndent: 0, firstLine: 0)
+        styles["Book Subtitle"] = baseDefinition(font: font, size: 17, italic: true, alignment: .center, lineHeight: 1.2, before: 0, after: 16, headIndent: 0, firstLine: 0)
+        styles["Author Name"] = baseDefinition(font: font, size: 14, alignment: .center, lineHeight: 1.2, before: 0, after: 12, headIndent: 0, firstLine: 0)
+        styles["Chapter Number"] = baseDefinition(font: font, size: 14, alignment: .center, lineHeight: 1.2, before: 30, after: 10, headIndent: 0, firstLine: 0)
+        styles["Chapter Title"] = baseDefinition(font: font, size: 20, alignment: .center, lineHeight: 1.2, before: 0, after: 20, headIndent: 0, firstLine: 0)
+        styles["Chapter Subtitle"] = baseDefinition(font: font, size: 15, italic: true, alignment: .center, lineHeight: 1.2, before: 0, after: 16, headIndent: 0, firstLine: 0)
+        styles["Scene Break"] = baseDefinition(font: font, size: 14, alignment: .center, lineHeight: 1.2, before: 16, after: 16, headIndent: 0, firstLine: 0)
+        styles["Dialogue"] = styles["Body Text"]
+        styles["Internal Thought"] = baseDefinition(font: font, size: 14, italic: true, lineHeight: 1.75)
+        styles["Block Quote"] = baseDefinition(font: font, size: 13, alignment: .left, lineHeight: 1.6, before: 12, after: 12, headIndent: 36, firstLine: 36, tailIndent: -36)
+        styles["Epigraph"] = baseDefinition(font: font, size: 13, italic: true, alignment: .left, lineHeight: 1.5, before: 12, after: 12, headIndent: 36, firstLine: 36, tailIndent: -36)
+        styles["Epigraph Attribution"] = baseDefinition(font: font, size: 12, alignment: .right, lineHeight: 1.2, before: 6, after: 18, headIndent: 0, firstLine: 0)
+        return styles
+    }
+
+    private static func palatinoStyles() -> [String: StyleDefinition] {
+        var styles: [String: StyleDefinition] = [:]
+        let font = "Palatino"
+        styles["Body Text"] = baseDefinition(font: font, size: 13, lineHeight: 1.8)
+        styles["Body Text – No Indent"] = baseDefinition(font: font, size: 13, lineHeight: 1.8, firstLine: 0)
+        styles["Book Title"] = baseDefinition(font: font, size: 26, bold: true, alignment: .center, lineHeight: 1.2, before: 0, after: 22, headIndent: 0, firstLine: 0)
+        styles["Book Subtitle"] = baseDefinition(font: font, size: 17, alignment: .center, lineHeight: 1.2, before: 0, after: 16, headIndent: 0, firstLine: 0)
+        styles["Author Name"] = baseDefinition(font: font, size: 14, alignment: .center, lineHeight: 1.2, before: 0, after: 12, headIndent: 0, firstLine: 0)
+        styles["Chapter Number"] = baseDefinition(font: font, size: 15, alignment: .center, lineHeight: 1.2, before: 32, after: 12, headIndent: 0, firstLine: 0)
+        styles["Chapter Title"] = baseDefinition(font: font, size: 21, bold: true, alignment: .center, lineHeight: 1.2, before: 0, after: 22, headIndent: 0, firstLine: 0)
+        styles["Chapter Subtitle"] = baseDefinition(font: font, size: 15, italic: true, alignment: .center, lineHeight: 1.2, before: 0, after: 16, headIndent: 0, firstLine: 0)
+        styles["Scene Break"] = baseDefinition(font: font, size: 13, alignment: .center, lineHeight: 1.2, before: 16, after: 16, headIndent: 0, firstLine: 0)
+        styles["Dialogue"] = styles["Body Text"]
+        styles["Internal Thought"] = baseDefinition(font: font, size: 13, italic: true, lineHeight: 1.8)
+        styles["Block Quote"] = baseDefinition(font: font, size: 12, alignment: .left, lineHeight: 1.6, before: 12, after: 12, headIndent: 36, firstLine: 36, tailIndent: -36)
+        styles["Epigraph"] = baseDefinition(font: font, size: 12, italic: true, alignment: .left, lineHeight: 1.5, before: 12, after: 12, headIndent: 36, firstLine: 36, tailIndent: -36)
+        styles["Epigraph Attribution"] = baseDefinition(font: font, size: 11, alignment: .right, lineHeight: 1.2, before: 6, after: 18, headIndent: 0, firstLine: 0)
+        return styles
+    }
+
+    private static func hoeflerStyles() -> [String: StyleDefinition] {
+        var styles: [String: StyleDefinition] = [:]
+        let font = "Hoefler Text"
+        styles["Body Text"] = baseDefinition(font: font, size: 14, lineHeight: 1.7)
+        styles["Body Text – No Indent"] = baseDefinition(font: font, size: 14, lineHeight: 1.7, firstLine: 0)
+        styles["Book Title"] = baseDefinition(font: font, size: 30, bold: true, alignment: .center, lineHeight: 1.2, before: 0, after: 24, headIndent: 0, firstLine: 0)
+        styles["Book Subtitle"] = baseDefinition(font: font, size: 18, italic: true, alignment: .center, lineHeight: 1.2, before: 0, after: 18, headIndent: 0, firstLine: 0)
+        styles["Author Name"] = baseDefinition(font: font, size: 15, alignment: .center, lineHeight: 1.2, before: 0, after: 12, headIndent: 0, firstLine: 0)
+        styles["Chapter Number"] = baseDefinition(font: font, size: 16, alignment: .center, lineHeight: 1.2, before: 36, after: 14, headIndent: 0, firstLine: 0)
+        styles["Chapter Title"] = baseDefinition(font: font, size: 24, bold: true, alignment: .center, lineHeight: 1.2, before: 0, after: 24, headIndent: 0, firstLine: 0)
+        styles["Chapter Subtitle"] = baseDefinition(font: font, size: 16, italic: true, alignment: .center, lineHeight: 1.2, before: 0, after: 18, headIndent: 0, firstLine: 0)
+        styles["Scene Break"] = baseDefinition(font: font, size: 14, alignment: .center, lineHeight: 1.2, before: 18, after: 18, headIndent: 0, firstLine: 0)
+        styles["Dialogue"] = styles["Body Text"]
+        styles["Internal Thought"] = baseDefinition(font: font, size: 14, italic: true, lineHeight: 1.7)
+        styles["Block Quote"] = baseDefinition(font: font, size: 13, alignment: .left, lineHeight: 1.6, before: 12, after: 12, headIndent: 36, firstLine: 36, tailIndent: -36)
+        styles["Epigraph"] = baseDefinition(font: font, size: 13, italic: true, alignment: .left, lineHeight: 1.5, before: 12, after: 12, headIndent: 36, firstLine: 36, tailIndent: -36)
+        styles["Epigraph Attribution"] = baseDefinition(font: font, size: 12, alignment: .right, lineHeight: 1.2, before: 6, after: 18, headIndent: 0, firstLine: 0)
+        return styles
+    }
+
+    private static func bradleyHandStyles() -> [String: StyleDefinition] {
+        var styles: [String: StyleDefinition] = [:]
+        let font = "Bradley Hand"
+        styles["Body Text"] = baseDefinition(font: font, size: 16, lineHeight: 1.8)
+        styles["Body Text – No Indent"] = baseDefinition(font: font, size: 16, lineHeight: 1.8, firstLine: 0)
+        styles["Book Title"] = baseDefinition(font: font, size: 32, bold: true, alignment: .center, lineHeight: 1.2, before: 0, after: 24, headIndent: 0, firstLine: 0)
+        styles["Book Subtitle"] = baseDefinition(font: font, size: 20, alignment: .center, lineHeight: 1.2, before: 0, after: 18, headIndent: 0, firstLine: 0)
+        styles["Author Name"] = baseDefinition(font: font, size: 16, alignment: .center, lineHeight: 1.2, before: 0, after: 12, headIndent: 0, firstLine: 0)
+        styles["Chapter Number"] = baseDefinition(font: font, size: 18, alignment: .center, lineHeight: 1.2, before: 36, after: 12, headIndent: 0, firstLine: 0)
+        styles["Chapter Title"] = baseDefinition(font: font, size: 26, bold: true, alignment: .center, lineHeight: 1.2, before: 0, after: 24, headIndent: 0, firstLine: 0)
+        styles["Scene Break"] = baseDefinition(font: font, size: 16, alignment: .center, lineHeight: 1.2, before: 18, after: 18, headIndent: 0, firstLine: 0)
+        styles["Dialogue"] = styles["Body Text"]
+        styles["Internal Thought"] = baseDefinition(font: font, size: 15, italic: true, lineHeight: 1.8)
+        styles["Block Quote"] = baseDefinition(font: font, size: 14, alignment: .left, lineHeight: 1.6, before: 12, after: 12, headIndent: 36, firstLine: 36, tailIndent: -36)
+        styles["Epigraph"] = baseDefinition(font: font, size: 14, alignment: .left, lineHeight: 1.5, before: 12, after: 12, headIndent: 36, firstLine: 36, tailIndent: -36)
+        return styles
+    }
+
+    private static func snellRoundhandStyles() -> [String: StyleDefinition] {
+        var styles: [String: StyleDefinition] = [:]
+        let font = "Snell Roundhand"
+        styles["Body Text"] = baseDefinition(font: font, size: 16, lineHeight: 1.9)
+        styles["Body Text – No Indent"] = baseDefinition(font: font, size: 16, lineHeight: 1.9, firstLine: 0)
+        styles["Book Title"] = baseDefinition(font: font, size: 34, bold: true, alignment: .center, lineHeight: 1.2, before: 0, after: 26, headIndent: 0, firstLine: 0)
+        styles["Book Subtitle"] = baseDefinition(font: font, size: 22, alignment: .center, lineHeight: 1.2, before: 0, after: 20, headIndent: 0, firstLine: 0)
+        styles["Author Name"] = baseDefinition(font: font, size: 17, alignment: .center, lineHeight: 1.2, before: 0, after: 14, headIndent: 0, firstLine: 0)
+        styles["Chapter Number"] = baseDefinition(font: font, size: 19, alignment: .center, lineHeight: 1.2, before: 38, after: 14, headIndent: 0, firstLine: 0)
+        styles["Chapter Title"] = baseDefinition(font: font, size: 28, bold: true, alignment: .center, lineHeight: 1.2, before: 0, after: 26, headIndent: 0, firstLine: 0)
+        styles["Scene Break"] = baseDefinition(font: font, size: 16, alignment: .center, lineHeight: 1.2, before: 20, after: 20, headIndent: 0, firstLine: 0)
+        styles["Dialogue"] = styles["Body Text"]
+        styles["Internal Thought"] = baseDefinition(font: font, size: 15, italic: true, lineHeight: 1.9)
+        styles["Block Quote"] = baseDefinition(font: font, size: 14, alignment: .left, lineHeight: 1.7, before: 12, after: 12, headIndent: 36, firstLine: 36, tailIndent: -36)
+        styles["Epigraph"] = baseDefinition(font: font, size: 14, alignment: .left, lineHeight: 1.6, before: 12, after: 12, headIndent: 36, firstLine: 36, tailIndent: -36)
+        return styles
     }
 }

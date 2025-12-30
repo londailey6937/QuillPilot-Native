@@ -29,8 +29,20 @@ class HeaderFooterSettingsWindow: NSWindowController {
         window.title = "Header & Footer Settings"
         window.center()
 
+        // Apply theme
+        let isDarkMode = ThemeManager.shared.isDarkMode
+        window.appearance = NSAppearance(named: isDarkMode ? .darkAqua : .aqua)
+
         self.init(window: window)
         setupUI()
+
+        // Observe theme changes
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(themeDidChange),
+            name: .themeDidChange,
+            object: nil
+        )
     }
 
     private func setupUI() {
@@ -169,5 +181,14 @@ class HeaderFooterSettingsWindow: NSWindowController {
     @objc private func cancel() {
         onCancel?()
         window?.close()
+    }
+
+    @objc private func themeDidChange() {
+        let isDarkMode = ThemeManager.shared.isDarkMode
+        window?.appearance = NSAppearance(named: isDarkMode ? .darkAqua : .aqua)
+    }
+
+    deinit {
+        NotificationCenter.default.removeObserver(self)
     }
 }

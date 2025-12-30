@@ -157,21 +157,27 @@ What it copies:
 
         content.append(makeHeading("✍️ Paragraph Styles", color: headingColor))
         content.append(makeBody("""
-Apply professional formatting with one click using the Styles dropdown.
+QuillPilot uses a powerful template-based style system. Each template contains a complete set of professionally-formatted paragraph styles.
 
-Fiction Styles:
-• Book Title, Author Name, Chapter Title
-• Body Text, Body Text – No Indent
-• Dialogue, Internal Thought
-• Scene Break, Epigraph, and more
+Using Styles:
+1. Click the Styles dropdown in the toolbar
+2. The current template appears at top (📚 PALATINO)
+3. Select any style to apply it to selected text or current paragraph
+4. Styles are grouped by category: Titles, Headings, Body, Special, Screenplay
 
-Non-Fiction Styles:
-• Heading 1, 2, 3
-• Body Text, Block Quote
-• Callout, Sidebar
-• Figure/Table Captions
+Switching Templates:
+1. Open the Styles dropdown
+2. Scroll to "SWITCH TEMPLATE" at the bottom
+3. Choose from 9 templates:
+   • Baskerville Classic, Garamond Elegant, Hoefler Text, Palatino
+   • Bradley Hand (Script), Snell Roundhand (Script)
+   • Fiction Manuscript (Times New Roman)
+   • Non-Fiction (Georgia)
+   • Screenplay (Courier New)
 
-Customize styles: Click the ⚙️ button next to Styles to open the Style Editor.
+Each template includes styles like Body Text, Chapter Title, Dialogue, Epigraphs, Block Quotes, and more—all optimized for that typeface.
+
+All styles display in their actual fonts in the dropdown, and each template's styles appear automatically when you switch.
 """, color: bodyColor))
         content.append(makeNewline())
 
@@ -1112,6 +1118,54 @@ Note: Auto-save runs every 30 seconds for saved documents.
 ⌘E - Center text
 ⌘{ - Decrease indent
 ⌘} - Increase indent
+""", color: bodyColor))
+        content.append(makeNewline())
+
+        content.append(makeHeading("✨ Typography", color: headingColor))
+        content.append(makeBody("""
+QuillPilot includes professional typography features:
+
+Automatic Features:
+• Ligatures - Automatically enabled for serif fonts (fi, fl, ff, ffi, ffl)
+• Smart Quotes - Converts straight quotes to curly quotes
+• Smart Dashes - Converts double/triple hyphens to en/em dashes
+
+Format > Typography Menu:
+• Apply Drop Cap - Create a decorative large initial letter (3 lines tall)
+• Use Old-Style Numerals - Enable elegant lowercase-style numbers (OpenType)
+• Apply Optical Kerning - Adjust letter spacing for better visual balance
+
+These features work best with professional fonts like Times New Roman, Georgia, Baskerville, Garamond, Palatino, and Hoefler Text.
+""", color: bodyColor))
+        content.append(makeNewline())
+
+        content.append(makeHeading("📚 Style Templates", color: headingColor))
+        content.append(makeBody("""
+QuillPilot includes 9 professionally-designed style templates, each with a complete set of paragraph styles optimized for that typeface:
+
+Accessing Templates:
+1. Click the Styles dropdown in the toolbar
+2. The current template name appears at the top (📚 PALATINO)
+3. Scroll to the bottom and select "SWITCH TEMPLATE"
+4. Choose from:
+   • Baskerville Classic - Elegant 18th-century serif
+   • Bradley Hand (Script) - Casual handwritten style
+   • Fiction Manuscript - Standard Times New Roman
+   • Garamond Elegant - Renaissance typeface
+   • Hoefler Text - Contemporary readable serif
+   • Non-Fiction - Georgia with optimized spacing
+   • Palatino - Calligraphic serif (default)
+   • Screenplay - Courier New with proper formatting
+   • Snell Roundhand (Script) - Formal calligraphy
+
+Each Template Includes:
+• Body Text styles (with/without indent)
+• Title pages (Book Title, Subtitle, Author)
+• Chapter formatting (Number, Title, Subtitle)
+• Special elements (Epigraphs, Block Quotes, Dialogue)
+• Scene breaks and transitions
+
+Your template selection is saved automatically.
 """, color: bodyColor))
         content.append(makeNewline())
 

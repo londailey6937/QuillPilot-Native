@@ -50,10 +50,11 @@ class MainWindowController: NSWindowController {
     private var headerView: HeaderView!
     private var toolbarView: FormattingToolbar!
     private var rulerView: EnhancedRulerView!
-    private var mainContentViewController: ContentViewController!
+    var mainContentViewController: ContentViewController!
     private var themeObserver: NSObjectProtocol?
     private var headerFooterSettingsWindow: HeaderFooterSettingsWindow?
     private var styleEditorWindow: StyleEditorWindowController?
+    private var tocIndexWindow: TOCIndexWindowController?
     private var searchPanel: SearchPanelController?
 
     // View controllers (referenced in multiple methods)
@@ -333,6 +334,17 @@ class MainWindowController: NSWindowController {
         }
 
         settingsWindow.window?.makeKeyAndOrderFront(nil)
+        NSApp.activate(ignoringOtherApps: true)
+    }
+
+    func showTOCIndex() {
+        if tocIndexWindow == nil {
+            tocIndexWindow = TOCIndexWindowController()
+        }
+        // Connect the editor text view
+        tocIndexWindow?.editorTextView = mainContentViewController?.editorViewController?.textView
+        tocIndexWindow?.showWindow(nil)
+        tocIndexWindow?.window?.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
     }
 
@@ -815,19 +827,20 @@ extension MainWindowController: FormattingToolbarDelegate {
     }
 
     func formattingToolbarDidClearAll(_ toolbar: FormattingToolbar) {
-        let alert = NSAlert()
-        alert.messageText = "Clear All"
-        alert.informativeText = "This will remove all text, formatting, and analysis. This action cannot be undone."
-        alert.alertStyle = .warning
-        alert.addButton(withTitle: "Clear All")
-        alert.addButton(withTitle: "Cancel")
-
-        if alert.runModal() == .alertFirstButtonReturn {
-            mainContentViewController.editorViewController.clearAll()
+        guard let window = self.window else { return }
+        let alert = NSAlert.themedConfirmation(
+            title: "Clear All",
+            message: "This will remove all text, formatting, and analysis. This action cannot be undone.",
+            confirmTitle: "Clear All",
+            cancelTitle: "Cancel"
+        )
+        alert.runThemedSheet(for: window) { [weak self] response in
+            guard response == .alertFirstButtonReturn else { return }
+            self?.mainContentViewController.editorViewController.clearAll()
             // Clear analysis results and Character Library
-            mainContentViewController.clearAnalysis()
+            self?.mainContentViewController.clearAnalysis()
             CharacterLibrary.shared.clearForNewDocument()
-            mainContentViewController.documentDidChange(url: nil)
+            self?.mainContentViewController.documentDidChange(url: nil)
         }
     }
 
@@ -1122,17 +1135,23 @@ extension MainWindowController {
     func performNewDocument(_ sender: Any?) {
         // Ask user to confirm if document has content
         if let content = mainContentViewController.editorViewController.getTextContent(), !content.isEmpty {
-            let alert = NSAlert()
-            alert.messageText = "Create New Document"
-            alert.informativeText = "This will clear the current document and all analysis. Do you want to continue?"
-            alert.alertStyle = .warning
-            alert.addButton(withTitle: "New Document")
-            alert.addButton(withTitle: "Cancel")
-
-            if alert.runModal() != .alertFirstButtonReturn {
-                return
+            guard let window = self.window else { return }
+            let alert = NSAlert.themedConfirmation(
+                title: "Create New Document",
+                message: "This will clear the current document and all analysis. Do you want to continue?",
+                confirmTitle: "New Document",
+                cancelTitle: "Cancel"
+            )
+            alert.runThemedSheet(for: window) { [weak self] response in
+                guard response == .alertFirstButtonReturn else { return }
+                self?.clearDocumentAndAnalysis()
             }
+            return
         }
+        clearDocumentAndAnalysis()
+    }
+
+    private func clearDocumentAndAnalysis() {
 
         // Clear the document and analysis
         NSLog("🆕 NEW DOCUMENT: Clearing editor content")
@@ -1417,81 +1436,103 @@ class FormattingToolbar: NSView {
         }
 
         func addStyle(_ title: String) {
-            stylesMenu.addItem(NSMenuItem(title: title, action: nil, keyEquivalent: ""))
+            let item = NSMenuItem(title: title, action: nil, keyEquivalent: "")
+
+            // Show style name in its actual font (no font name suffix)
+            if let styleDefinition = StyleCatalog.shared.style(named: title) {
+                let fontName = styleDefinition.fontName
+                let fontSize: CGFloat = min(styleDefinition.fontSize, 13) // Cap at 13pt for menu
+                let font = NSFont(name: fontName, size: fontSize) ?? NSFont.systemFont(ofSize: fontSize)
+
+                let attributes: [NSAttributedString.Key: Any] = [
+                    .font: font,
+                    .foregroundColor: currentTheme.textColor
+                ]
+
+                // Display style name in its own font
+                item.attributedTitle = NSAttributedString(string: title, attributes: attributes)
+            }
+
+            stylesMenu.addItem(item)
         }
 
-        addHeader("Fiction")
-        [
-            "Book Title",
-            "Book Subtitle",
-            "Author Name",
-            "Front Matter Heading",
-            "Epigraph",
-            "Epigraph Attribution",
-            "Part Title",
-            "Part Subtitle",
-            "Chapter Number",
-            "Chapter Title",
-            "Chapter Subtitle",
-            "Body Text",
-            "Body Text – No Indent",
-            "Scene Break",
-            "Dialogue",
-            "Internal Thought",
-            "Letter / Document",
-            "Block Quote",
-            "Block Quote Attribution",
-            "Sidebar",
-            "Back Matter Heading",
-            "Notes Entry",
-            "Bibliography Entry",
-            "Index Entry"
-        ].forEach(addStyle)
-
+        // Add template selector at the top
+        let templateItem = NSMenuItem(title: "Template: \(StyleCatalog.shared.currentTemplateName)", action: nil, keyEquivalent: "")
+        templateItem.isEnabled = false
+        let templateAttrs: [NSAttributedString.Key: Any] = [
+            .font: NSFont.systemFont(ofSize: 11, weight: .bold),
+            .foregroundColor: currentTheme.textColor
+        ]
+        templateItem.attributedTitle = NSAttributedString(string: "  📚 \(StyleCatalog.shared.currentTemplateName.uppercased())", attributes: templateAttrs)
+        stylesMenu.addItem(templateItem)
         stylesMenu.addItem(.separator())
-        addHeader("Non-Fiction")
-        [
-            "Heading 1",
-            "Heading 2",
-            "Heading 3",
-            "Body Text",
-            "Body Text – No Indent",
-            "Block Quote",
-            "Sidebar",
-            "Callout",
-            "Figure Caption",
-            "Table Caption",
-            "Footnote / Endnote",
-            "Notes Entry",
-            "Bibliography Entry",
-            "Index Entry"
-        ].forEach(addStyle)
 
-        stylesMenu.addItem(.separator())
-        addHeader("Screenplay")
-        [
-            "Screenplay — Title",
-            "Screenplay — Author",
-            "Screenplay — Contact",
-            "Screenplay — Draft",
-            "Screenplay — Slugline",
-            "Screenplay — Action",
-            "Screenplay — Character",
-            "Screenplay — Parenthetical",
-            "Screenplay — Dialogue",
-            "Screenplay — Transition",
-            "Screenplay — Shot"
-        ].forEach(addStyle)
+        // Dynamically load all styles from current template
+        let allStyles = StyleCatalog.shared.getAllStyles()
+        let sortedStyleNames = allStyles.keys.sorted()
 
-        stylesMenu.addItem(.separator())
-        addHeader("Inline")
-        [
-            "Emphasis (Italic)",
-            "Strong (Bold)",
-            "Small Caps",
-            "Superscript",
-            "Subscript"
-        ].forEach(addStyle)
+        // Group styles by category based on naming patterns
+        var titleStyles: [String] = []
+        var headingStyles: [String] = []
+        var bodyStyles: [String] = []
+        var specialStyles: [String] = []
+        var screenplayStyles: [String] = []
+
+        for styleName in sortedStyleNames {
+            if styleName.contains("Screenplay") {
+                screenplayStyles.append(styleName)
+            } else if styleName.contains("Title") || styleName.contains("Author") || styleName.contains("Subtitle") {
+                titleStyles.append(styleName)
+            } else if styleName.contains("Heading") || styleName.contains("Chapter") || styleName.contains("Part") {
+                headingStyles.append(styleName)
+            } else if styleName.contains("Body") || styleName == "Dialogue" {
+                bodyStyles.append(styleName)
+            } else {
+                specialStyles.append(styleName)
+            }
+        }
+
+        // Add grouped styles
+        if !titleStyles.isEmpty {
+            addHeader("Titles")
+            titleStyles.forEach(addStyle)
+            stylesMenu.addItem(.separator())
+        }
+
+        if !headingStyles.isEmpty {
+            addHeader("Headings")
+            headingStyles.forEach(addStyle)
+            stylesMenu.addItem(.separator())
+        }
+
+        if !bodyStyles.isEmpty {
+            addHeader("Body")
+            bodyStyles.forEach(addStyle)
+            stylesMenu.addItem(.separator())
+        }
+
+        if !specialStyles.isEmpty {
+            addHeader("Special")
+            specialStyles.forEach(addStyle)
+            stylesMenu.addItem(.separator())
+        }
+
+        if !screenplayStyles.isEmpty {
+            addHeader("Screenplay")
+            screenplayStyles.forEach(addStyle)
+            stylesMenu.addItem(.separator())
+        }
+
+        // Add template switcher submenu
+        addHeader("Switch Template")
+        for templateName in StyleCatalog.shared.availableTemplates() {
+            let switchItem = NSMenuItem(title: templateName, action: #selector(switchTemplate(_:)), keyEquivalent: "")
+            switchItem.target = self
+            if templateName == StyleCatalog.shared.currentTemplateName {
+                switchItem.state = .on
+            }
+            stylesMenu.addItem(switchItem)
+        }
 
         stylePopup.menu = stylesMenu
         // Restore last selected style from UserDefaults, default to "Body Text"
@@ -1519,7 +1560,7 @@ class FormattingToolbar: NSView {
 
         // Font family popup
         fontPopup = registerControl(NSPopUpButton(frame: .zero, pullsDown: false))
-        fontPopup.addItems(withTitles: ["Inter", "Georgia", "Times New Roman", "Arial", "Courier New"])
+        fontPopup.addItems(withTitles: ["Inter", "Georgia", "Times New Roman", "Garamond", "Minion Pro", "Helvetica", "Calibri", "Source Sans Pro", "Arial", "Courier New"])
         fontPopup.translatesAutoresizingMaskIntoConstraints = false
         fontPopup.target = self
         fontPopup.action = #selector(fontFamilyChanged(_:))
@@ -1721,7 +1762,8 @@ class FormattingToolbar: NSView {
                     // Set text color for the popup button directly for placeholder text
                     if let cell = popup.cell as? NSPopUpButtonCell {
                         let cellTitle = cell.title as String
-                        let itemTitle = popup.itemTitle(at: popup.indexOfSelectedItem)
+                        let selectedIndex = popup.indexOfSelectedItem
+                        let itemTitle = (selectedIndex >= 0 && selectedIndex < popup.numberOfItems) ? popup.itemTitle(at: selectedIndex) : ""
                         let currentTitle = !cellTitle.isEmpty ? cellTitle : itemTitle
                         cell.attributedTitle = NSAttributedString(
                             string: currentTitle,
@@ -1786,6 +1828,142 @@ class FormattingToolbar: NSView {
         ]
         sender.attributedTitle = NSAttributedString(string: selectedStyle, attributes: attrs)
         sender.synchronizeTitleAndSelectedItem()
+    }
+
+    @objc private func switchTemplate(_ sender: NSMenuItem) {
+        let templateName = sender.title
+        StyleCatalog.shared.setCurrentTemplate(templateName)
+
+        // Rebuild the styles menu with new template
+        rebuildStylesMenu()
+
+        // Show themed confirmation
+        guard let window = self.window else { return }
+        let alert = NSAlert.themedInformational(
+            title: "Template Changed",
+            message: "Switched to \(templateName) template. New styles are now available in the dropdown."
+        )
+        alert.runThemedSheet(for: window)
+    }
+
+    private func rebuildStylesMenu() {
+        // Clear and rebuild only the styles popup menu
+        let stylesMenu = NSMenu()
+        let currentTheme = ThemeManager.shared.currentTheme
+
+        func addHeader(_ title: String) {
+            let item = NSMenuItem(title: title, action: nil, keyEquivalent: "")
+            item.isEnabled = false
+            let attributes: [NSAttributedString.Key: Any] = [
+                .font: NSFont.systemFont(ofSize: 11, weight: .semibold),
+                .foregroundColor: currentTheme.textColor.withAlphaComponent(0.6)
+            ]
+            item.attributedTitle = NSAttributedString(string: "  \(title.uppercased())", attributes: attributes)
+            stylesMenu.addItem(item)
+        }
+
+        func addStyle(_ title: String) {
+            let item = NSMenuItem(title: title, action: nil, keyEquivalent: "")
+            if let styleDefinition = StyleCatalog.shared.style(named: title) {
+                let fontName = styleDefinition.fontName
+                let fontSize: CGFloat = min(styleDefinition.fontSize, 13)
+                let font = NSFont(name: fontName, size: fontSize) ?? NSFont.systemFont(ofSize: fontSize)
+                let attributes: [NSAttributedString.Key: Any] = [
+                    .font: font,
+                    .foregroundColor: currentTheme.textColor
+                ]
+                item.attributedTitle = NSAttributedString(string: title, attributes: attributes)
+            }
+            stylesMenu.addItem(item)
+        }
+
+        // Add template selector at the top
+        let templateItem = NSMenuItem(title: "Template: \(StyleCatalog.shared.currentTemplateName)", action: nil, keyEquivalent: "")
+        templateItem.isEnabled = false
+        let templateAttrs: [NSAttributedString.Key: Any] = [
+            .font: NSFont.systemFont(ofSize: 11, weight: .bold),
+            .foregroundColor: currentTheme.textColor
+        ]
+        templateItem.attributedTitle = NSAttributedString(string: "  📚 \(StyleCatalog.shared.currentTemplateName.uppercased())", attributes: templateAttrs)
+        stylesMenu.addItem(templateItem)
+        stylesMenu.addItem(.separator())
+
+        // Dynamically load all styles from current template
+        let allStyles = StyleCatalog.shared.getAllStyles()
+        let sortedStyleNames = allStyles.keys.sorted()
+
+        // Group styles by category
+        var titleStyles: [String] = []
+        var headingStyles: [String] = []
+        var bodyStyles: [String] = []
+        var specialStyles: [String] = []
+        var screenplayStyles: [String] = []
+
+        for styleName in sortedStyleNames {
+            if styleName.contains("Screenplay") {
+                screenplayStyles.append(styleName)
+            } else if styleName.contains("Title") || styleName.contains("Author") || styleName.contains("Subtitle") {
+                titleStyles.append(styleName)
+            } else if styleName.contains("Heading") || styleName.contains("Chapter") || styleName.contains("Part") {
+                headingStyles.append(styleName)
+            } else if styleName.contains("Body") || styleName == "Dialogue" {
+                bodyStyles.append(styleName)
+            } else {
+                specialStyles.append(styleName)
+            }
+        }
+
+        if !titleStyles.isEmpty {
+            addHeader("Titles")
+            titleStyles.forEach(addStyle)
+            stylesMenu.addItem(.separator())
+        }
+
+        if !headingStyles.isEmpty {
+            addHeader("Headings")
+            headingStyles.forEach(addStyle)
+            stylesMenu.addItem(.separator())
+        }
+
+        if !bodyStyles.isEmpty {
+            addHeader("Body")
+            bodyStyles.forEach(addStyle)
+            stylesMenu.addItem(.separator())
+        }
+
+        if !specialStyles.isEmpty {
+            addHeader("Special")
+            specialStyles.forEach(addStyle)
+            stylesMenu.addItem(.separator())
+        }
+
+        if !screenplayStyles.isEmpty {
+            addHeader("Screenplay")
+            screenplayStyles.forEach(addStyle)
+            stylesMenu.addItem(.separator())
+        }
+
+        // Add template switcher
+        addHeader("Switch Template")
+        for templateName in StyleCatalog.shared.availableTemplates() {
+            let switchItem = NSMenuItem(title: templateName, action: #selector(switchTemplate(_:)), keyEquivalent: "")
+            switchItem.target = self
+            if templateName == StyleCatalog.shared.currentTemplateName {
+                switchItem.state = .on
+            }
+            stylesMenu.addItem(switchItem)
+        }
+
+        // Update the popup's menu
+        stylePopup.menu = stylesMenu
+
+        // Try to restore previous selection
+        let lastStyle = UserDefaults.standard.string(forKey: "LastSelectedStyle") ?? "Body Text"
+        if stylePopup.itemTitles.contains(lastStyle) {
+            stylePopup.selectItem(withTitle: lastStyle)
+        } else if stylePopup.itemTitles.contains("Body Text") {
+            stylePopup.selectItem(withTitle: "Body Text")
+        }
     }
 
     @objc private func boldTapped() {

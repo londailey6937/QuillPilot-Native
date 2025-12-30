@@ -60,13 +60,21 @@ class WelcomeWindowController: NSWindowController {
         titleLabel.frame = NSRect(x: 25, y: 235, width: 250, height: 40)
         leftPanel.addSubview(titleLabel)
 
-        // Tagline
-        let taglineLabel = NSTextField(labelWithString: "Your Creative Writing Companion")
-        taglineLabel.font = NSFont.systemFont(ofSize: 13, weight: .regular)
-        taglineLabel.textColor = NSColor(red: 0.4, green: 0.4, blue: 0.4, alpha: 1.0)
-        taglineLabel.alignment = .center
-        taglineLabel.frame = NSRect(x: 25, y: 210, width: 250, height: 20)
-        leftPanel.addSubview(taglineLabel)
+        // Tagline - Line 1
+        let tagline1 = NSTextField(labelWithString: "Your Complete Writing Tool")
+        tagline1.font = NSFont.systemFont(ofSize: 13, weight: .regular)
+        tagline1.textColor = NSColor(red: 0.4, green: 0.4, blue: 0.4, alpha: 1.0)
+        tagline1.alignment = .center
+        tagline1.frame = NSRect(x: 0, y: 218, width: 300, height: 18)
+        leftPanel.addSubview(tagline1)
+
+        // Tagline - Line 2
+        let tagline2 = NSTextField(labelWithString: "for Fiction & Non-Fiction")
+        tagline2.font = NSFont.systemFont(ofSize: 13, weight: .regular)
+        tagline2.textColor = NSColor(red: 0.4, green: 0.4, blue: 0.4, alpha: 1.0)
+        tagline2.alignment = .center
+        tagline2.frame = NSRect(x: 0, y: 202, width: 300, height: 18)
+        leftPanel.addSubview(tagline2)
 
         // New Document button
         let newButton = createActionButton(title: "New Document", icon: "doc.badge.plus", action: #selector(newDocumentClicked))

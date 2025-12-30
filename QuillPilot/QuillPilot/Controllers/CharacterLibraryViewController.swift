@@ -85,17 +85,13 @@ class CharacterLibraryViewController: NSViewController {
             NSLog("💾 Saved character to library: \(character.displayName)")
         }
 
-        // Then trigger the main document save by forwarding to whatever NSDocument is active
-        let candidateDocuments: [NSDocument?] = [
-            NSApp.keyWindow?.windowController?.document as? NSDocument,
-            NSApp.mainWindow?.windowController?.document as? NSDocument
-        ] + NSApp.windows.compactMap { $0.windowController?.document as? NSDocument }
-
-        if let document = candidateDocuments.compactMap({ $0 }).first {
-            NSLog("💾 Forwarding save to main document: \(String(describing: type(of: document)))")
-            document.save(sender)
+        // Forward to the main window controller to save the document
+        if let mainWindow = NSApp.windows.first(where: { $0.windowController is MainWindowController }),
+           let mainController = mainWindow.windowController as? MainWindowController {
+            NSLog("💾 Forwarding save to main document")
+            mainController.performSaveDocument(sender)
         } else {
-            NSLog("⚠️ Could not find any open document to save")
+            NSLog("⚠️ Could not find main window controller to save document")
         }
     }
 

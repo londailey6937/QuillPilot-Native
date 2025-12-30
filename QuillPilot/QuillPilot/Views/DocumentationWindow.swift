@@ -1151,9 +1151,13 @@ Add ⇧ (Shift) to select while moving
     // MARK: - Helper Methods
 
     private func makeTitle(_ text: String, color: NSColor) -> NSAttributedString {
+        let paragraphStyle = NSMutableParagraphStyle()
+        paragraphStyle.paragraphSpacingBefore = 20
+
         let attributes: [NSAttributedString.Key: Any] = [
             .font: NSFont.systemFont(ofSize: 24, weight: .bold),
-            .foregroundColor: color
+            .foregroundColor: color,
+            .paragraphStyle: paragraphStyle
         ]
         return NSAttributedString(string: text + "\n\n", attributes: attributes)
     }

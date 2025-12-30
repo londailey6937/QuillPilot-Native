@@ -2695,8 +2695,10 @@ case "Book Subtitle":
                     if !rawTitle.isEmpty {
                         let glyphRange = layoutManager.glyphRange(forCharacterRange: paragraphRange, actualCharacterRange: nil)
                         let bounds = layoutManager.boundingRect(forGlyphRange: glyphRange, in: textContainer)
-                        let pageHeight = pageHeight * editorZoom
-                        let pageIndex = max(0, Int(floor(bounds.midY / pageHeight))) + 1
+                        let scaledPageHeight = pageHeight * editorZoom
+                        let pageGap: CGFloat = 20
+                        // Account for page gaps when calculating page number
+                        let pageIndex = max(0, Int(floor(bounds.midY / (scaledPageHeight + pageGap)))) + 1
                         results.append(OutlineEntry(title: rawTitle, level: level, range: paragraphRange, page: pageIndex))
                         if results.count <= 3 {
                             NSLog("📋✅ Found: '\(rawTitle)' style='\(styleName)' level=\(level)")

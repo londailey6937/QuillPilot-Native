@@ -629,13 +629,10 @@ class AnalysisViewController: NSViewController, NSWindowDelegate {
     private func setupScrollView() {
         // Simple scroll view setup matching OutlineViewController structure
         scrollView = NSScrollView()
-        scrollView.hasVerticalScroller = true
-        scrollView.autohidesScrollers = false // always show to confirm scrolling is available
-        scrollView.scrollerStyle = .legacy    // legacy style makes the bar visible
+        scrollView.hasVerticalScroller = false
+        scrollView.hasHorizontalScroller = false
         scrollView.drawsBackground = false
         scrollView.borderType = .noBorder
-        scrollView.horizontalScroller?.isHidden = true
-        scrollView.verticalScroller?.isHidden = false
         scrollView.translatesAutoresizingMaskIntoConstraints = false
 
         // Document view - simple flipped view, no constraints
@@ -698,7 +695,7 @@ class AnalysisViewController: NSViewController, NSWindowDelegate {
         headerContainer.spacing = 12
         headerContainer.alignment = .centerY
 
-        let headerTitle = isOutlinePanel ? "Navigator" : "Document Analysis"
+        let headerTitle = isOutlinePanel ? "" : "Document Analysis"
         headerLabel = makeLabel(headerTitle, size: 18, bold: true)
         headerContainer.addArrangedSubview(headerLabel)
 
@@ -750,6 +747,19 @@ class AnalysisViewController: NSViewController, NSWindowDelegate {
             // Ensure documentView expands with content for scrolling
             documentView.heightAnchor.constraint(greaterThanOrEqualTo: contentStack.heightAnchor, constant: 44)
         ])
+    }
+
+    // MARK: - Toggle Menu Sidebar
+    func toggleMenuSidebar() {
+        print("[DEBUG] toggleMenuSidebar called, isOutlinePanel: \(isOutlinePanel)")
+        print("[DEBUG] menuSidebar.isHidden: \(menuSidebar.isHidden)")
+        let isHidden = menuSidebar.isHidden
+        NSAnimationContext.runAnimationGroup { context in
+            context.duration = 0.2
+            menuSidebar.animator().isHidden = !isHidden
+            menuSeparator.animator().isHidden = !isHidden
+        }
+        print("[DEBUG] menuSidebar.isHidden after: \(menuSidebar.isHidden)")
     }
 
     func displayResults(_ results: AnalysisResults) {

@@ -99,7 +99,7 @@ class MainWindowController: NSWindowController {
         containerView.wantsLayer = true
         containerView.layer?.backgroundColor = ThemeManager.shared.currentTheme.pageAround.cgColor
 
-        // Create header (logo, title, specs, login) - 60px tall
+        // Create header (logo, title, specs, theme toggle) - 60px tall
         headerView = HeaderView()
         headerView.translatesAutoresizingMaskIntoConstraints = false
         containerView.addSubview(headerView)
@@ -857,8 +857,6 @@ extension MainWindowController {
         // If we have a current document URL, save directly without showing panel
         if let url = currentDocumentURL {
             saveToURL(url, format: currentDocumentFormat)
-            // Ensure characters are saved with document
-            CharacterLibrary.shared.saveCharacters()
             hasUnsavedChanges = false
             return
         }
@@ -928,9 +926,8 @@ extension MainWindowController {
                 try data.write(to: url, options: .atomic)
                 NSLog("✅ DOCX exported to \(url.path)")
 
-                // Save characters alongside document
-                CharacterLibrary.shared.setDocumentURL(url) // Update document URL
-                CharacterLibrary.shared.saveCharacters()
+                // Update document URL for character library (but don't auto-save)
+                CharacterLibrary.shared.setDocumentURL(url)
 
             case .rtf:
                 // Export to RTF (text only, images stripped)
@@ -969,7 +966,6 @@ extension MainWindowController {
 
         // Silently save in background
         saveToURL(url, format: currentDocumentFormat)
-        CharacterLibrary.shared.saveCharacters()
         NSLog("💾 Auto-saved to \(url.lastPathComponent)")
     }
 
@@ -1281,14 +1277,13 @@ extension MainWindowController {
     }
 }
 
-// MARK: - Header View (Logo, Title, Specs, Login)
+// MARK: - Header View (Logo, Title, Specs, Theme Toggle)
 class HeaderView: NSView {
 
     private var logoView: LogoView!
     private var titleLabel: NSTextField!
     var specsPanel: DocumentInfoPanel!
     private var themeToggle: NSButton!
-    private var loginButton: NSButton!
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
@@ -1325,12 +1320,6 @@ class HeaderView: NSView {
         themeToggle.translatesAutoresizingMaskIntoConstraints = false
         addSubview(themeToggle)
 
-        // Login button (right)
-        loginButton = NSButton(title: "Login", target: nil, action: nil)
-        loginButton.bezelStyle = .rounded
-        loginButton.translatesAutoresizingMaskIntoConstraints = false
-        addSubview(loginButton)
-
         NSLayoutConstraint.activate([
             // Logo at left - fills height with 4pt padding
             logoView.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 16),
@@ -1347,13 +1336,9 @@ class HeaderView: NSView {
             specsPanel.centerYAnchor.constraint(equalTo: centerYAnchor),
             specsPanel.widthAnchor.constraint(lessThanOrEqualToConstant: 500),
 
-            // Theme toggle before login
-            themeToggle.trailingAnchor.constraint(equalTo: loginButton.leadingAnchor, constant: -12),
-            themeToggle.centerYAnchor.constraint(equalTo: centerYAnchor),
-
-            // Login button at right
-            loginButton.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -16),
-            loginButton.centerYAnchor.constraint(equalTo: centerYAnchor)
+            // Theme toggle at right
+            themeToggle.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -16),
+            themeToggle.centerYAnchor.constraint(equalTo: centerYAnchor)
         ])
 
         applyTheme(ThemeManager.shared.currentTheme)
@@ -1374,12 +1359,6 @@ class HeaderView: NSView {
             .font: themeToggle.font ?? NSFont.systemFont(ofSize: 13)
         ]
         themeToggle.attributedTitle = NSAttributedString(string: themeToggle.title, attributes: toggleAttributes)
-
-        let loginAttributes: [NSAttributedString.Key: Any] = [
-            .foregroundColor: theme.headerText,
-            .font: loginButton.font ?? NSFont.systemFont(ofSize: 13)
-        ]
-        loginButton.attributedTitle = NSAttributedString(string: loginButton.title, attributes: loginAttributes)
         specsPanel.applyTheme(theme)
     }
 
@@ -1635,6 +1614,12 @@ class FormattingToolbar: NSView {
         indentBtn.bezelStyle = .texturedRounded
         indentBtn.toolTip = "Increase Indent"
 
+        // Sidebar toggle button
+        let sidebarBtn = createToolbarButton("◨", fontSize: 18)
+        sidebarBtn.target = self
+        sidebarBtn.action = #selector(sidebarToggleTapped)
+        sidebarBtn.toolTip = "Toggle Sidebars"
+
         // Add all to stack view (all aligned left)
         let toolbarStack = NSStackView(views: [
             stylePopup, editStylesButton, formatPainterBtn, fontPopup, decreaseSizeBtn, sizePopup, increaseSizeBtn,
@@ -1644,7 +1629,7 @@ class FormattingToolbar: NSView {
             imageButton,
             columnsBtn, tableBtn,
             outdentBtn, indentBtn,
-            searchBtn, clearBtn
+            searchBtn, clearBtn, sidebarBtn
         ])
         toolbarStack.orientation = .horizontal
         toolbarStack.spacing = 8
@@ -1871,6 +1856,12 @@ class FormattingToolbar: NSView {
         delegate?.formattingToolbarDidClearAll(self)
     }
 
+    @objc private func sidebarToggleTapped() {
+        // Post notification to toggle sidebars
+        print("[DEBUG] sidebarToggleTapped - posting ToggleSidebars notification")
+        NotificationCenter.default.post(name: NSNotification.Name("ToggleSidebars"), object: nil)
+    }
+
     @objc private func searchTapped() {
         // Post notification to show search panel
         NotificationCenter.default.post(name: NSNotification.Name("ShowSearchPanel"), object: nil)
@@ -2033,6 +2024,15 @@ class ContentViewController: NSViewController {
         NotificationCenter.default.addObserver(forName: Notification.Name("QuillPilotOutlineRefresh"), object: nil, queue: .main) { [weak self] _ in
             self?.refreshOutline()
         }
+
+        // Listen for sidebar toggle notification
+        print("[DEBUG] ContentViewController.viewDidLoad - adding observer for ToggleSidebars")
+        NotificationCenter.default.addObserver(forName: Notification.Name("ToggleSidebars"), object: nil, queue: .main) { [weak self] _ in
+            print("[DEBUG] ContentViewController received ToggleSidebars notification")
+            self?.outlinePanelController?.toggleMenuSidebar()
+            self?.analysisViewController?.toggleMenuSidebar()
+        }
+
         refreshOutline()
     }
 
@@ -2109,7 +2109,6 @@ class ContentViewController: NSViewController {
     private func scrollToOutlineEntry(_ entry: EditorViewController.OutlineEntry) {
         guard let textView = editorViewController.textView else { return }
         textView.scrollRangeToVisible(entry.range)
-        textView.showFindIndicator(for: entry.range)
     }
 
     func applyTheme(_ theme: AppTheme) {

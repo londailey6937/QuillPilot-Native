@@ -66,6 +66,20 @@ class SplitViewController: NSSplitViewController {
         // Configure split view
         splitView.dividerStyle = .thin
         splitView.autosaveName = "QuillPilotSplitView"
+
+        // Listen for sidebar toggle notification
+        print("[DEBUG] SplitViewController.viewDidLoad - adding observer for ToggleSidebars")
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(toggleAllSidebars),
+            name: NSNotification.Name("ToggleSidebars"),
+            object: nil
+        )
+        print("[DEBUG] SplitViewController.viewDidLoad - observer added")
+    }
+
+    deinit {
+        NotificationCenter.default.removeObserver(self)
     }
 
     override func viewDidLayout() {
@@ -108,6 +122,15 @@ class SplitViewController: NSSplitViewController {
         if let analysisItem = splitViewItems.last {
             analysisItem.animator().isCollapsed = !analysisItem.isCollapsed
         }
+    }
+
+    @objc func toggleAllSidebars() {
+        // Toggle the icon menu sidebars on both outline (left) and analysis (right) panels
+        print("[DEBUG] toggleAllSidebars called")
+        print("[DEBUG] outlinePanelController: \(outlinePanelController != nil)")
+        print("[DEBUG] analysisViewController: \(analysisViewController != nil)")
+        outlinePanelController.toggleMenuSidebar()
+        analysisViewController.toggleMenuSidebar()
     }
 
     // MARK: - Analysis

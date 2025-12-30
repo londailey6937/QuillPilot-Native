@@ -15,7 +15,6 @@ class DocumentInfoPanel: NSView {
     private var wordCountLabel: NSTextField!
     private var charactersLabel: NSTextField!
     private var readingLevelLabel: NSTextField!
-    private var genreLabel: NSTextField!
     private var stackView: NSStackView!
     private var statLabels: [NSTextField] = []
 
@@ -46,6 +45,7 @@ class DocumentInfoPanel: NSView {
         titleField.placeholderString = "Untitled"
         titleField.delegate = self
         titleField.translatesAutoresizingMaskIntoConstraints = false
+        titleField.refusesFirstResponder = true  // Prevent auto-selection on open
 
         // Author field (hidden per request)
         authorField = NSTextField()
@@ -70,11 +70,8 @@ class DocumentInfoPanel: NSView {
         // Reading level
         readingLevelLabel = createStatLabel("Reading Level: --")
 
-        // Genre
-        genreLabel = createStatLabel("Genre: Detecting...")
-
-        // Horizontal stack for stats (word count | characters | reading level | genre)
-        let statsStack = NSStackView(views: [wordCountLabel, charactersLabel, readingLevelLabel, genreLabel])
+        // Horizontal stack for stats (word count | characters | reading level)
+        let statsStack = NSStackView(views: [wordCountLabel, charactersLabel, readingLevelLabel])
         statsStack.orientation = .horizontal
         statsStack.spacing = 16
         statsStack.distribution = .equalSpacing
@@ -120,10 +117,6 @@ class DocumentInfoPanel: NSView {
         // Reading level (Flesch-Kincaid Grade Level)
         let readingLevel = calculateReadingLevel(text: text)
         readingLevelLabel.stringValue = "Reading Level: \(readingLevel)"
-
-        // Genre detection
-        let genre = detectGenre(text: text)
-        genreLabel.stringValue = "Genre: \(genre)"
     }
 
     func setTitle(_ title: String) {
@@ -223,58 +216,6 @@ class DocumentInfoPanel: NSView {
         return max(count, 1)
     }
 
-    // MARK: - Genre Detection
-    private func detectGenre(text: String) -> String {
-        guard !text.isEmpty && text.count > 100 else { return "Unknown" }
-
-        let lowercased = text.lowercased()
-
-        // Romance indicators
-        let romanceKeywords = ["love", "heart", "kiss", "romance", "passion", "desire"]
-        let romanceCount = romanceKeywords.reduce(0) { count, keyword in
-            count + lowercased.components(separatedBy: keyword).count - 1
-        }
-
-        // Mystery/Thriller indicators
-        let mysteryKeywords = ["murder", "detective", "mystery", "crime", "suspect", "investigation"]
-        let mysteryCount = mysteryKeywords.reduce(0) { count, keyword in
-            count + lowercased.components(separatedBy: keyword).count - 1
-        }
-
-        // Fantasy/Sci-Fi indicators
-        let fantasyKeywords = ["magic", "dragon", "wizard", "spell", "kingdom", "sword"]
-        let fantasyCount = fantasyKeywords.reduce(0) { count, keyword in
-            count + lowercased.components(separatedBy: keyword).count - 1
-        }
-
-        let sciFiKeywords = ["robot", "space", "alien", "technology", "future", "cyber"]
-        let sciFiCount = sciFiKeywords.reduce(0) { count, keyword in
-            count + lowercased.components(separatedBy: keyword).count - 1
-        }
-
-        // Horror indicators
-        let horrorKeywords = ["fear", "terror", "scream", "blood", "death", "nightmare"]
-        let horrorCount = horrorKeywords.reduce(0) { count, keyword in
-            count + lowercased.components(separatedBy: keyword).count - 1
-        }
-
-        // Determine genre based on highest count
-        let genres = [
-            ("Romance", romanceCount),
-            ("Mystery/Thriller", mysteryCount),
-            ("Fantasy", fantasyCount),
-            ("Sci-Fi", sciFiCount),
-            ("Horror", horrorCount)
-        ]
-
-        let topGenre = genres.max { $0.1 < $1.1 }
-
-        if let genre = topGenre, genre.1 > 0 {
-            return genre.0
-        }
-
-        return "General Fiction"
-    }
 }
 
 extension DocumentInfoPanel: NSTextFieldDelegate {

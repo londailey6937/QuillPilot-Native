@@ -49,10 +49,19 @@ final class SceneListWindowController: NSWindowController {
         window.isReleasedWhenClosed = false
         window.collectionBehavior = [.moveToActiveSpace]
 
+        // Set window appearance to match theme (light/dark mode)
+        let isDarkMode = ThemeManager.shared.isDarkMode
+        window.appearance = NSAppearance(named: isDarkMode ? .darkAqua : .aqua)
+
         super.init(window: window)
 
         setupUI()
-        // Don't auto-load scenes - wait for document to be opened
+        applyCurrentTheme()
+
+        // Listen for theme changes
+        NotificationCenter.default.addObserver(forName: .themeDidChange, object: nil, queue: .main) { [weak self] _ in
+            self?.applyCurrentTheme()
+        }
     }
 
     required init?(coder: NSCoder) {
@@ -394,10 +403,11 @@ extension SceneListWindowController: NSTableViewDelegate {
         container.addSubview(statusLabel)
 
         // Title
+        let theme = ThemeManager.shared.currentTheme
         let titleLabel = NSTextField(labelWithString: scene.title)
         titleLabel.frame = NSRect(x: 32, y: 26, width: container.bounds.width - 80, height: 18)
         titleLabel.font = NSFont.systemFont(ofSize: 13, weight: .medium)
-        titleLabel.textColor = NSColor.labelColor
+        titleLabel.textColor = theme.textColor
         titleLabel.lineBreakMode = .byTruncatingTail
         titleLabel.autoresizingMask = [.width]
         container.addSubview(titleLabel)
@@ -407,7 +417,7 @@ extension SceneListWindowController: NSTableViewDelegate {
         let subtitleLabel = NSTextField(labelWithString: subtitle)
         subtitleLabel.frame = NSRect(x: 32, y: 6, width: container.bounds.width - 80, height: 16)
         subtitleLabel.font = NSFont.systemFont(ofSize: 11)
-        subtitleLabel.textColor = NSColor.secondaryLabelColor
+        subtitleLabel.textColor = theme.textColor.withAlphaComponent(0.7)
         subtitleLabel.lineBreakMode = .byTruncatingTail
         subtitleLabel.autoresizingMask = [.width]
         container.addSubview(subtitleLabel)
@@ -417,7 +427,7 @@ extension SceneListWindowController: NSTableViewDelegate {
         orderLabel.frame = NSRect(x: container.bounds.width - 40, y: 14, width: 32, height: 20)
         orderLabel.alignment = .right
         orderLabel.font = NSFont.monospacedDigitSystemFont(ofSize: 11, weight: .regular)
-        orderLabel.textColor = NSColor.tertiaryLabelColor
+        orderLabel.textColor = theme.textColor.withAlphaComponent(0.5)
         orderLabel.autoresizingMask = [.minXMargin]
         container.addSubview(orderLabel)
 
@@ -432,6 +442,11 @@ extension SceneListWindowController: NSTableViewDelegate {
     private func applyCurrentTheme() {
         let theme = ThemeManager.shared.currentTheme
         guard let contentView = window?.contentView else { return }
+
+        // Window appearance
+        let isDarkMode = ThemeManager.shared.isDarkMode
+        window?.appearance = NSAppearance(named: isDarkMode ? .darkAqua : .aqua)
+        window?.backgroundColor = theme.pageBackground
 
         // Window background
         contentView.wantsLayer = true
@@ -453,5 +468,13 @@ extension SceneListWindowController: NSTableViewDelegate {
         // Table view
         tableView?.backgroundColor = theme.pageBackground
         tableView?.reloadData()
+
+        // Update button content colors (text color for rounded buttons)
+        if let add = addButton {
+            add.contentTintColor = theme.textColor
+        }
+        if let delete = deleteButton {
+            delete.contentTintColor = theme.textColor
+        }
     }
 }

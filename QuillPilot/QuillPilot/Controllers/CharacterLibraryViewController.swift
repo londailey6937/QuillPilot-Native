@@ -619,29 +619,175 @@ class CharacterLibraryViewController: NSViewController {
 
         saveCharacterFromFields(character)
 
-        let alert = NSAlert()
-        alert.messageText = "Character Saved"
-        alert.informativeText = "\(character.displayName) has been saved to your Character Library."
-        alert.alertStyle = .informational
-        alert.addButton(withTitle: "OK")
-        alert.runModal()
+        // Show themed confirmation popup with logo
+        showThemedSaveConfirmation(for: character)
+    }
+
+    private func showThemedSaveConfirmation(for character: CharacterProfile) {
+        let theme = ThemeManager.shared.currentTheme
+        let isDarkMode = ThemeManager.shared.isDarkMode
+
+        // Create custom panel for themed alert
+        let panel = NSPanel(
+            contentRect: NSRect(x: 0, y: 0, width: 320, height: 160),
+            styleMask: [.titled, .closable],
+            backing: .buffered,
+            defer: false
+        )
+        panel.title = ""
+        panel.isFloatingPanel = true
+        panel.becomesKeyOnlyIfNeeded = false
+        panel.backgroundColor = theme.popoutBackground
+        panel.appearance = NSAppearance(named: isDarkMode ? .darkAqua : .aqua)
+
+        let contentView = NSView(frame: panel.contentView!.bounds)
+        contentView.wantsLayer = true
+        contentView.layer?.backgroundColor = theme.popoutBackground.cgColor
+        panel.contentView = contentView
+
+        // Logo image
+        let logoSize: CGFloat = 48
+        let logoView = NSImageView(frame: NSRect(x: 20, y: contentView.bounds.height - logoSize - 20, width: logoSize, height: logoSize))
+        if let feather = NSImage(named: "feather") ?? Bundle.main.image(forResource: "feather") {
+            logoView.image = feather
+        } else {
+            logoView.image = NSApp.applicationIconImage
+        }
+        logoView.imageScaling = .scaleProportionallyUpOrDown
+        contentView.addSubview(logoView)
+
+        // Title label
+        let titleLabel = NSTextField(labelWithString: "Character Saved")
+        titleLabel.frame = NSRect(x: 80, y: contentView.bounds.height - 45, width: 220, height: 24)
+        titleLabel.font = NSFont.boldSystemFont(ofSize: 16)
+        titleLabel.textColor = theme.popoutTextColor
+        contentView.addSubview(titleLabel)
+
+        // Info label
+        let infoLabel = NSTextField(labelWithString: "\(character.displayName) has been saved to your Character Library.")
+        infoLabel.frame = NSRect(x: 80, y: contentView.bounds.height - 75, width: 220, height: 36)
+        infoLabel.font = NSFont.systemFont(ofSize: 13)
+        infoLabel.textColor = theme.popoutTextColor.withAlphaComponent(0.8)
+        infoLabel.cell?.lineBreakMode = .byWordWrapping
+        infoLabel.maximumNumberOfLines = 2
+        contentView.addSubview(infoLabel)
+
+        // OK button
+        let okButton = NSButton(title: "OK", target: nil, action: nil)
+        okButton.bezelStyle = .rounded
+        okButton.frame = NSRect(x: contentView.bounds.width - 90, y: 15, width: 70, height: 32)
+        okButton.keyEquivalent = "\r"
+        okButton.target = panel
+        okButton.action = #selector(NSPanel.close)
+        contentView.addSubview(okButton)
+
+        // Center and show
+        panel.center()
+        panel.makeKeyAndOrderFront(nil)
+
+        // Auto-close after 2 seconds
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
+            panel.close()
+        }
     }
 
     @objc private func deleteCharacterTapped() {
         guard let character = selectedCharacter else { return }
 
-        let alert = NSAlert()
-        alert.messageText = "Delete Character?"
-        alert.informativeText = "Are you sure you want to delete \(character.displayName)? This cannot be undone."
-        alert.alertStyle = .warning
-        alert.addButton(withTitle: "Delete")
-        alert.addButton(withTitle: "Cancel")
+        // Show themed confirmation dialog
+        showThemedDeleteConfirmation(for: character)
+    }
 
-        if alert.runModal() == .alertFirstButtonReturn {
-            CharacterLibrary.shared.deleteCharacter(character)
-            selectedCharacter = nil
-            showPlaceholder()
+    private func showThemedDeleteConfirmation(for character: CharacterProfile) {
+        let theme = ThemeManager.shared.currentTheme
+        let isDarkMode = ThemeManager.shared.isDarkMode
+
+        // Create custom panel for themed alert
+        let panel = NSPanel(
+            contentRect: NSRect(x: 0, y: 0, width: 340, height: 180),
+            styleMask: [.titled, .closable],
+            backing: .buffered,
+            defer: false
+        )
+        panel.title = ""
+        panel.isFloatingPanel = true
+        panel.becomesKeyOnlyIfNeeded = false
+        panel.backgroundColor = theme.popoutBackground
+        panel.appearance = NSAppearance(named: isDarkMode ? .darkAqua : .aqua)
+
+        let contentView = NSView(frame: panel.contentView!.bounds)
+        contentView.wantsLayer = true
+        contentView.layer?.backgroundColor = theme.popoutBackground.cgColor
+        panel.contentView = contentView
+
+        // Logo image
+        let logoSize: CGFloat = 48
+        let logoView = NSImageView(frame: NSRect(x: 20, y: contentView.bounds.height - logoSize - 20, width: logoSize, height: logoSize))
+        if let feather = NSImage(named: "feather") ?? Bundle.main.image(forResource: "feather") {
+            logoView.image = feather
+        } else {
+            logoView.image = NSApp.applicationIconImage
         }
+        logoView.imageScaling = .scaleProportionallyUpOrDown
+        contentView.addSubview(logoView)
+
+        // Title label
+        let titleLabel = NSTextField(labelWithString: "Delete Character?")
+        titleLabel.frame = NSRect(x: 80, y: contentView.bounds.height - 45, width: 240, height: 24)
+        titleLabel.font = NSFont.boldSystemFont(ofSize: 16)
+        titleLabel.textColor = theme.popoutTextColor
+        contentView.addSubview(titleLabel)
+
+        // Info label
+        let infoLabel = NSTextField(labelWithString: "Are you sure you want to delete \(character.displayName)? This cannot be undone.")
+        infoLabel.frame = NSRect(x: 80, y: contentView.bounds.height - 95, width: 240, height: 54)
+        infoLabel.font = NSFont.systemFont(ofSize: 13)
+        infoLabel.textColor = theme.popoutTextColor.withAlphaComponent(0.8)
+        infoLabel.cell?.lineBreakMode = .byWordWrapping
+        infoLabel.maximumNumberOfLines = 3
+        contentView.addSubview(infoLabel)
+
+        // Cancel button
+        let cancelButton = NSButton(title: "Cancel", target: nil, action: nil)
+        cancelButton.bezelStyle = .rounded
+        cancelButton.frame = NSRect(x: contentView.bounds.width - 170, y: 15, width: 70, height: 32)
+        cancelButton.keyEquivalent = "\u{1b}"
+        cancelButton.target = panel
+        cancelButton.action = #selector(NSPanel.close)
+        contentView.addSubview(cancelButton)
+
+        // Delete button
+        let deleteButton = NSButton(title: "Delete", target: nil, action: nil)
+        deleteButton.bezelStyle = .rounded
+        deleteButton.frame = NSRect(x: contentView.bounds.width - 90, y: 15, width: 70, height: 32)
+        deleteButton.keyEquivalent = "\r"
+        deleteButton.action = #selector(handleDeleteConfirmed)
+        deleteButton.target = self
+        contentView.addSubview(deleteButton)
+
+        // Store character and panel for deletion handler
+        self.pendingDeleteCharacter = character
+        self.deleteConfirmationPanel = panel
+
+        // Center and show
+        panel.center()
+        panel.makeKeyAndOrderFront(nil)
+    }
+
+    // Temporary storage for delete confirmation
+    private var pendingDeleteCharacter: CharacterProfile?
+    private var deleteConfirmationPanel: NSPanel?
+
+    @objc private func handleDeleteConfirmed() {
+        guard let character = pendingDeleteCharacter else { return }
+
+        CharacterLibrary.shared.deleteCharacter(character)
+        selectedCharacter = nil
+        showPlaceholder()
+
+        deleteConfirmationPanel?.close()
+        deleteConfirmationPanel = nil
+        pendingDeleteCharacter = nil
     }
 
     func applyTheme(_ theme: AppTheme) {

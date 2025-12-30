@@ -1163,11 +1163,16 @@ Add ⇧ (Shift) to select while moving
     }
 
     private func makeHeading(_ text: String, color: NSColor) -> NSAttributedString {
+        let paragraphStyle = NSMutableParagraphStyle()
+        paragraphStyle.paragraphSpacingBefore = 12
+        paragraphStyle.paragraphSpacing = 6
+
         let attributes: [NSAttributedString.Key: Any] = [
             .font: NSFont.systemFont(ofSize: 18, weight: .semibold),
-            .foregroundColor: color
+            .foregroundColor: color,
+            .paragraphStyle: paragraphStyle
         ]
-        return NSAttributedString(string: text + "\n\n", attributes: attributes)
+        return NSAttributedString(string: text + "\n", attributes: attributes)
     }
 
     private func makeBody(_ text: String, color: NSColor) -> NSAttributedString {

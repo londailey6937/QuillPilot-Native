@@ -43,7 +43,8 @@ class DocumentationWindowController: NSWindowController {
         tabView.tabViewType = .topTabsBezelBorder
 
         // Create tabs
-        createTab(title: "📝 Getting Started", identifier: "start")
+        createTab(title: "� Why QuillPilot?", identifier: "why")
+        createTab(title: "�📝 Getting Started", identifier: "start")
         createTab(title: "📊 Analysis Tools", identifier: "analysis")
         createTab(title: "👥 Character Features", identifier: "characters")
         createTab(title: "📖 Plot & Structure", identifier: "plot")
@@ -91,6 +92,7 @@ class DocumentationWindowController: NSWindowController {
     }
 
     private func loadDocumentation() {
+        loadWhyTab()
         loadStartTab()
         loadAnalysisTab()
         loadCharactersTab()
@@ -101,8 +103,110 @@ class DocumentationWindowController: NSWindowController {
 
     // MARK: - Tab 1: Getting Started
 
-    private func loadStartTab() {
+    private func loadWhyTab() {
         guard textViews.count > 0 else { return }
+        let textView = textViews[0]
+        let theme = ThemeManager.shared.currentTheme
+        let titleColor = theme.textColor
+        let headingColor = theme.textColor
+        let bodyColor = theme.textColor
+
+        let content = NSMutableAttributedString()
+
+        content.append(makeTitle("Why QuillPilot?", color: titleColor))
+        content.append(makeBody("""
+QuillPilot is a writing environment that prioritizes how words feel on the page, not just how they're organized in a project. It's designed for experienced fiction writers who already understand story structure and want tools that enhance execution, not manage exploration.
+""", color: bodyColor))
+        content.append(makeNewline())
+
+        content.append(makeHeading("What Makes QuillPilot Different", color: headingColor))
+        content.append(makeNewline())
+
+        content.append(makeHeading("Output-First Writing", color: headingColor))
+        content.append(makeBody("""
+What you see is what you submit. No compile step. No export-format-revise cycle.
+
+For professional novelists, this changes how you judge pacing, feel paragraph density, evaluate dialogue rhythm, and spot visual monotony. The manuscript you write is the manuscript you send.
+""", color: bodyColor))
+        content.append(makeNewline())
+
+        content.append(makeHeading("Typography as a Writing Tool", color: headingColor))
+        content.append(makeBody("""
+Good typography reduces cognitive load, improves rereading accuracy, and makes structural problems visible earlier.
+
+QuillPilot treats typography as part of thinking on the page—not output polish. Professional templates (Baskerville, Garamond, Hoefler Text) give your manuscript submission-quality presentation while you draft.
+""", color: bodyColor))
+        content.append(makeNewline())
+
+        content.append(makeHeading("Integrated Narrative Intelligence", color: headingColor))
+        content.append(makeBody("""
+Your analysis tools don't live in spreadsheets or notebooks—they surface structure automatically:
+
+• Belief shift tracking across character arcs
+• Tension curve visualization over time
+• Relationship evolution mapping
+• Scene-level decision consequence chains
+• Emotional trajectory analysis
+
+QuillPilot replaces the external bookkeeping that serious novelists already maintain, making patterns visible without breaking your writing flow.
+""", color: bodyColor))
+        content.append(makeNewline())
+
+        content.append(makeHeading("Who QuillPilot Is For", color: headingColor))
+        content.append(makeNewline())
+
+        content.append(makeHeading("Choose QuillPilot if you:", color: headingColor))
+        content.append(makeBody("""
+• Write primarily novels or screenplays
+• Already understand story structure
+• Care how the page looks while you write
+• Want insight, not organization
+• Submit to agents or publishers regularly
+• Prefer writing in a finished-looking manuscript
+• Value execution refinement over project management
+""", color: bodyColor))
+        content.append(makeNewline())
+
+        content.append(makeHeading("QuillPilot is NOT trying to:", color: headingColor))
+        content.append(makeBody("""
+• Manage research PDFs or web archives
+• Handle citations or footnotes
+• Compile into multiple output formats
+• Serve as a universal project manager
+• Replace Scrivener's binder system
+
+These are legitimate needs—but they're not what QuillPilot optimizes for.
+""", color: bodyColor))
+        content.append(makeNewline())
+
+        content.append(makeHeading("The Real Comparison", color: headingColor))
+        content.append(makeBody("""
+Many professional fiction writers use:
+• Scrivener for planning, research, and complex projects
+• QuillPilot for drafting and final manuscripts
+
+QuillPilot replaces the moment when you export from project management tools and say: "Okay, now let me make this look and read right."
+
+If that's the moment you care about most, QuillPilot wins.
+""", color: bodyColor))
+        content.append(makeNewline())
+
+        content.append(makeHeading("Writer Seniority Matters", color: headingColor))
+        content.append(makeBody("""
+QuillPilot feels "simpler" because it assumes you already know how to write. It doesn't teach story structure—it helps you execute it precisely and consistently.
+
+Early-stage writers benefit from tools that help them think in chunks and move things around.
+
+Mid-to-late career fiction writers benefit from tools that refine execution, maintain consistency, and reduce cognitive overhead.
+
+QuillPilot is for the latter.
+""", color: bodyColor))
+
+        textView.textStorage?.setAttributedString(content)
+    }
+
+    private func loadStartTab() {
+        guard textViews.count > 1 else { return }
         let textView = textViews[0]
         let theme = ThemeManager.shared.currentTheme
         let titleColor = theme.textColor
@@ -251,8 +355,8 @@ The TOC and Index respect your template's typography and maintain consistent for
     // MARK: - Tab 2: Analysis Tools
 
     private func loadAnalysisTab() {
-        guard textViews.count > 1 else { return }
-        let textView = textViews[1]
+        guard textViews.count > 2 else { return }
+        let textView = textViews[2]
         let theme = ThemeManager.shared.currentTheme
         let titleColor = theme.textColor
         let headingColor = theme.textColor
@@ -345,8 +449,8 @@ Balance - distribution among characters
     // MARK: - Tab 3: Character Features
 
     private func loadCharactersTab() {
-        guard textViews.count > 2 else { return }
-        let textView = textViews[2]
+        guard textViews.count > 3 else { return }
+        let textView = textViews[3]
         let theme = ThemeManager.shared.currentTheme
         let titleColor = theme.textColor
         let headingColor = theme.textColor
@@ -677,8 +781,8 @@ Interactive Features:
     // MARK: - Tab 4: Plot & Structure
 
     private func loadPlotTab() {
-        guard textViews.count > 3 else { return }
-        let textView = textViews[3]
+        guard textViews.count > 4 else { return }
+        let textView = textViews[4]
         let theme = ThemeManager.shared.currentTheme
         let titleColor = theme.textColor
         let headingColor = theme.textColor
@@ -792,8 +896,8 @@ Story Directions (🧭 in Navigator):
     // MARK: - Tab 5: Scenes
 
     private func loadScenesTab() {
-        guard textViews.count > 4 else { return }
-        let textView = textViews[4]
+        guard textViews.count > 5 else { return }
+        let textView = textViews[5]
         let theme = ThemeManager.shared.currentTheme
         let titleColor = theme.textColor
         let headingColor = theme.textColor
@@ -1114,8 +1218,8 @@ A: As many as your story needs. A 80,000-word novel might have 40-80 scenes, but
     // MARK: - Tab 6: Keyboard Shortcuts
 
     private func loadShortcutsTab() {
-        guard textViews.count > 5 else { return }
-        let textView = textViews[5]
+        guard textViews.count > 6 else { return }
+        let textView = textViews[6]
         let theme = ThemeManager.shared.currentTheme
         let titleColor = theme.textColor
         let headingColor = theme.textColor

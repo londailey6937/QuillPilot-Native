@@ -89,10 +89,11 @@ class TOCIndexManager {
             if let font = attrs[.font] as? NSFont {
                 if font.pointSize >= 18 && font.pointSize <= 22 {
                     let text = (textStorage.string as NSString).substring(with: range).trimmingCharacters(in: .whitespacesAndNewlines)
-                    // Skip TOC/Index titles and empty/long text
+                    // Skip TOC/Index titles, single letters (Index Letter style), and empty/long text
                     let lowercasedText = text.lowercased()
-                    let isTOCOrIndex = lowercasedText == "table of contents" || lowercasedText == "index"
-                    if !text.isEmpty && text.count < 100 && !isTOCOrIndex {  // Likely a heading
+                    let isTOCOrIndex = lowercasedText == "table of contents" || lowercasedText == "index" || lowercasedText == "glossary" || lowercasedText == "appendix"
+                    let isSingleLetter = text.count == 1  // Skip single letters used in Index Letter style
+                    if !text.isEmpty && text.count < 100 && !isTOCOrIndex && !isSingleLetter {  // Likely a heading
                         let level = font.pointSize >= 20 ? 1 : 2
                         let pageNumber = estimatePageNumber(for: range.location, in: textStorage, pageHeight: pageHeight)
 
@@ -120,11 +121,15 @@ class TOCIndexManager {
         let lowercased = styleName.lowercased()
         // Exclude Book Title, Part Title, and other non-chapter styles
         if lowercased.contains("book title") || lowercased.contains("part title") ||
-           lowercased.contains("subtitle") || lowercased.contains("author") {
+           lowercased.contains("subtitle") || lowercased.contains("author") ||
+           lowercased.contains("index letter") || lowercased.contains("index entry") ||
+           lowercased.contains("glossary entry") || lowercased.contains("toc entry") {
             return 0  // Don't include in TOC
         }
         if lowercased.contains("chapter") {
             return 1
+        } else if lowercased.contains("index title") || lowercased.contains("glossary title") || lowercased.contains("appendix title") {
+            return 1  // Same level as chapters for document outline
         } else if lowercased.contains("heading 1") {
             return 2
         } else if lowercased.contains("heading 2") {

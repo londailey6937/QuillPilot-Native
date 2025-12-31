@@ -210,6 +210,9 @@ final class StyleCatalog {
         styles["Index Title"] = baseDefinition(font: "Times New Roman", size: 18, bold: true, alignment: .center, lineHeight: 1.2, before: 0, after: 18, headIndent: 0, firstLine: 0)
         styles["Index Letter"] = baseDefinition(font: "Times New Roman", size: 14, bold: true, alignment: .left, lineHeight: 1.4, before: 12, after: 6, headIndent: 0, firstLine: 0)
         styles["Index Entry"] = baseDefinition(font: "Times New Roman", size: 12, alignment: .left, lineHeight: 1.4, before: 0, after: 0, headIndent: 20, firstLine: 20)
+        styles["Glossary Title"] = baseDefinition(font: "Times New Roman", size: 18, bold: true, alignment: .center, lineHeight: 1.2, before: 0, after: 18, headIndent: 0, firstLine: 0)
+        styles["Glossary Entry"] = baseDefinition(font: "Times New Roman", size: 12, alignment: .left, lineHeight: 1.4, before: 0, after: 6, headIndent: 0, firstLine: 0)
+        styles["Appendix Title"] = baseDefinition(font: "Times New Roman", size: 18, bold: true, alignment: .center, lineHeight: 1.2, before: 24, after: 18, headIndent: 0, firstLine: 0)
         return styles
     }
 
@@ -230,6 +233,9 @@ final class StyleCatalog {
         styles["Index Title"] = baseDefinition(font: "Georgia", size: 18, bold: true, alignment: .center, lineHeight: 1.2, before: 0, after: 18, headIndent: 0, firstLine: 0)
         styles["Index Letter"] = baseDefinition(font: "Georgia", size: 14, bold: true, alignment: .left, lineHeight: 1.4, before: 12, after: 6, headIndent: 0, firstLine: 0)
         styles["Index Entry"] = baseDefinition(font: "Georgia", size: 12, alignment: .left, lineHeight: 1.4, before: 0, after: 0, headIndent: 20, firstLine: 20)
+        styles["Glossary Title"] = baseDefinition(font: "Georgia", size: 18, bold: true, alignment: .center, lineHeight: 1.2, before: 0, after: 18, headIndent: 0, firstLine: 0)
+        styles["Glossary Entry"] = baseDefinition(font: "Georgia", size: 12, alignment: .left, lineHeight: 1.4, before: 0, after: 6, headIndent: 0, firstLine: 0)
+        styles["Appendix Title"] = baseDefinition(font: "Georgia", size: 18, bold: true, alignment: .center, lineHeight: 1.2, before: 24, after: 18, headIndent: 0, firstLine: 0)
         return styles
     }
 
@@ -286,6 +292,9 @@ final class StyleCatalog {
         styles["Index Title"] = baseDefinition(font: font, size: 20, bold: true, alignment: .center, lineHeight: 1.2, before: 0, after: 20, headIndent: 0, firstLine: 0)
         styles["Index Letter"] = baseDefinition(font: font, size: 14, bold: true, alignment: .left, lineHeight: 1.5, before: 14, after: 6, headIndent: 0, firstLine: 0)
         styles["Index Entry"] = baseDefinition(font: font, size: 13, alignment: .left, lineHeight: 1.5, before: 0, after: 0, headIndent: 20, firstLine: 20)
+        styles["Glossary Title"] = baseDefinition(font: font, size: 20, bold: true, alignment: .center, lineHeight: 1.2, before: 0, after: 20, headIndent: 0, firstLine: 0)
+        styles["Glossary Entry"] = baseDefinition(font: font, size: 13, alignment: .left, lineHeight: 1.5, before: 0, after: 6, headIndent: 0, firstLine: 0)
+        styles["Appendix Title"] = baseDefinition(font: font, size: 20, bold: true, alignment: .center, lineHeight: 1.2, before: 24, after: 20, headIndent: 0, firstLine: 0)
         return styles
     }
 
@@ -314,6 +323,9 @@ final class StyleCatalog {
         styles["Index Title"] = baseDefinition(font: font, size: 20, bold: true, alignment: .center, lineHeight: 1.2, before: 0, after: 20, headIndent: 0, firstLine: 0)
         styles["Index Letter"] = baseDefinition(font: font, size: 14, bold: true, alignment: .left, lineHeight: 1.5, before: 14, after: 6, headIndent: 0, firstLine: 0)
         styles["Index Entry"] = baseDefinition(font: font, size: 13, alignment: .left, lineHeight: 1.5, before: 0, after: 0, headIndent: 20, firstLine: 20)
+        styles["Glossary Title"] = baseDefinition(font: font, size: 20, bold: true, alignment: .center, lineHeight: 1.2, before: 0, after: 20, headIndent: 0, firstLine: 0)
+        styles["Glossary Entry"] = baseDefinition(font: font, size: 13, alignment: .left, lineHeight: 1.5, before: 0, after: 6, headIndent: 0, firstLine: 0)
+        styles["Appendix Title"] = baseDefinition(font: font, size: 20, bold: true, alignment: .center, lineHeight: 1.2, before: 24, after: 20, headIndent: 0, firstLine: 0)
         return styles
     }
 
@@ -342,6 +354,9 @@ final class StyleCatalog {
         styles["Index Title"] = baseDefinition(font: font, size: 20, bold: true, alignment: .center, lineHeight: 1.2, before: 0, after: 20, headIndent: 0, firstLine: 0)
         styles["Index Letter"] = baseDefinition(font: font, size: 13, bold: true, alignment: .left, lineHeight: 1.5, before: 14, after: 6, headIndent: 0, firstLine: 0)
         styles["Index Entry"] = baseDefinition(font: font, size: 12, alignment: .left, lineHeight: 1.5, before: 0, after: 0, headIndent: 20, firstLine: 20)
+        styles["Glossary Title"] = baseDefinition(font: font, size: 20, bold: true, alignment: .center, lineHeight: 1.2, before: 0, after: 20, headIndent: 0, firstLine: 0)
+        styles["Glossary Entry"] = baseDefinition(font: font, size: 12, alignment: .left, lineHeight: 1.5, before: 0, after: 6, headIndent: 0, firstLine: 0)
+        styles["Appendix Title"] = baseDefinition(font: font, size: 20, bold: true, alignment: .center, lineHeight: 1.2, before: 24, after: 20, headIndent: 0, firstLine: 0)
         return styles
     }
 
@@ -370,6 +385,9 @@ final class StyleCatalog {
         styles["Index Title"] = baseDefinition(font: font, size: 22, bold: true, alignment: .center, lineHeight: 1.2, before: 0, after: 22, headIndent: 0, firstLine: 0)
         styles["Index Letter"] = baseDefinition(font: font, size: 14, bold: true, alignment: .left, lineHeight: 1.5, before: 14, after: 6, headIndent: 0, firstLine: 0)
         styles["Index Entry"] = baseDefinition(font: font, size: 13, alignment: .left, lineHeight: 1.5, before: 0, after: 0, headIndent: 20, firstLine: 20)
+        styles["Glossary Title"] = baseDefinition(font: font, size: 22, bold: true, alignment: .center, lineHeight: 1.2, before: 0, after: 22, headIndent: 0, firstLine: 0)
+        styles["Glossary Entry"] = baseDefinition(font: font, size: 13, alignment: .left, lineHeight: 1.5, before: 0, after: 6, headIndent: 0, firstLine: 0)
+        styles["Appendix Title"] = baseDefinition(font: font, size: 22, bold: true, alignment: .center, lineHeight: 1.2, before: 24, after: 22, headIndent: 0, firstLine: 0)
         return styles
     }
 
@@ -396,6 +414,9 @@ final class StyleCatalog {
         styles["Index Title"] = baseDefinition(font: font, size: 24, bold: true, alignment: .center, lineHeight: 1.2, before: 0, after: 22, headIndent: 0, firstLine: 0)
         styles["Index Letter"] = baseDefinition(font: font, size: 16, bold: true, alignment: .left, lineHeight: 1.5, before: 14, after: 6, headIndent: 0, firstLine: 0)
         styles["Index Entry"] = baseDefinition(font: font, size: 15, alignment: .left, lineHeight: 1.5, before: 0, after: 0, headIndent: 20, firstLine: 20)
+        styles["Glossary Title"] = baseDefinition(font: font, size: 24, bold: true, alignment: .center, lineHeight: 1.2, before: 0, after: 22, headIndent: 0, firstLine: 0)
+        styles["Glossary Entry"] = baseDefinition(font: font, size: 15, alignment: .left, lineHeight: 1.5, before: 0, after: 6, headIndent: 0, firstLine: 0)
+        styles["Appendix Title"] = baseDefinition(font: font, size: 24, bold: true, alignment: .center, lineHeight: 1.2, before: 24, after: 22, headIndent: 0, firstLine: 0)
         return styles
     }
 
@@ -422,6 +443,9 @@ final class StyleCatalog {
         styles["Index Title"] = baseDefinition(font: font, size: 26, bold: true, alignment: .center, lineHeight: 1.2, before: 0, after: 24, headIndent: 0, firstLine: 0)
         styles["Index Letter"] = baseDefinition(font: font, size: 16, bold: true, alignment: .left, lineHeight: 1.5, before: 14, after: 6, headIndent: 0, firstLine: 0)
         styles["Index Entry"] = baseDefinition(font: font, size: 15, alignment: .left, lineHeight: 1.5, before: 0, after: 0, headIndent: 20, firstLine: 20)
+        styles["Glossary Title"] = baseDefinition(font: font, size: 26, bold: true, alignment: .center, lineHeight: 1.2, before: 0, after: 24, headIndent: 0, firstLine: 0)
+        styles["Glossary Entry"] = baseDefinition(font: font, size: 15, alignment: .left, lineHeight: 1.5, before: 0, after: 6, headIndent: 0, firstLine: 0)
+        styles["Appendix Title"] = baseDefinition(font: font, size: 26, bold: true, alignment: .center, lineHeight: 1.2, before: 24, after: 24, headIndent: 0, firstLine: 0)
         return styles
     }
 }

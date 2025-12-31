@@ -2758,7 +2758,10 @@ case "Book Subtitle":
             "Chapter Title": 1,
             "Heading 1": 1,
             "Heading 2": 2,
-            "Heading 3": 3
+            "Heading 3": 3,
+            "Index Title": 1,
+            "Glossary Title": 1,
+            "Appendix Title": 1
         ]
 
         var results: [OutlineEntry] = []
@@ -2940,6 +2943,10 @@ case "Book Subtitle":
     func updatePageCentering() {
         guard let scrollView else { return }
 
+        // Preserve current cursor position and scroll location BEFORE any layout changes
+        let savedSelection = textView.selectedRange()
+        let savedVisibleRect = scrollView.documentVisibleRect
+
         let visibleWidth = scrollView.contentView.bounds.width
         let scaledPageWidth = pageWidth * editorZoom
         let scaledPageHeight = pageHeight * editorZoom
@@ -3078,6 +3085,14 @@ case "Book Subtitle":
         let docWidth = max(visibleWidth, pageX + scaledPageWidth + 20)
         let docHeight = max(totalHeight + 1000, 1650000 * editorZoom)  // Ensure enough space for large documents
         documentView.frame = NSRect(x: 0, y: 0, width: docWidth, height: docHeight)
+
+        // Restore cursor position and scroll location AFTER all layout changes
+        // This prevents the cursor from jumping when the layout is recalculated
+        if savedSelection.location <= textView.string.count {
+            textView.setSelectedRange(savedSelection)
+            // Scroll to make the cursor visible at its current position
+            textView.scrollRangeToVisible(savedSelection)
+        }
     }
 
     private func updateHeadersAndFooters(_ numPages: Int) {

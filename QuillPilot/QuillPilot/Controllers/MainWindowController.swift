@@ -387,7 +387,7 @@ extension MainWindowController: FormattingToolbarDelegate {
         mainContentViewController.applyStyle(styleName)
 
         // Refresh outline if an outline-related style is applied
-        let outlineStyles = ["Part Title", "Chapter Number", "Chapter Title", "Chapter Subtitle", "Heading 1", "Heading 2", "Heading 3"]
+        let outlineStyles = ["Part Title", "Chapter Number", "Chapter Title", "Chapter Subtitle", "Heading 1", "Heading 2", "Heading 3", "Index Title", "Glossary Title", "Appendix Title"]
         if outlineStyles.contains(styleName) {
             // Delay refresh slightly to allow style to be applied first
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
@@ -955,6 +955,20 @@ extension MainWindowController {
                 let data = mainContentViewController.editorPDFData()
                 try data.write(to: url, options: .atomic)
                 NSLog("✅ PDF exported to \(url.path)")
+
+            case .epub:
+                // Export to ePub
+                let content = mainContentViewController.editorExportReadyAttributedContent()
+                let epubData = try self.generateEPub(from: content, url: url)
+                try epubData.write(to: url, options: Data.WritingOptions.atomic)
+                NSLog("✅ ePub exported to \(url.path)")
+
+            case .mobi:
+                // Export to Mobi (Kindle format)
+                let content = mainContentViewController.editorExportReadyAttributedContent()
+                let mobiData = try self.generateMobi(from: content, url: url)
+                try mobiData.write(to: url, options: Data.WritingOptions.atomic)
+                NSLog("✅ Mobi exported to \(url.path)")
             }
             hasUnsavedChanges = false
         } catch {
@@ -1186,6 +1200,16 @@ extension MainWindowController {
         case .docx:
             let stamped = stampImageSizes(in: mainContentViewController.editorExportReadyAttributedContent())
             return try DocxBuilder.makeDocxData(from: stamped)
+        case .epub:
+            let content = mainContentViewController.editorExportReadyAttributedContent()
+            // Use a temporary URL since generateEPub needs one
+            let tempURL = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString).appendingPathExtension("epub")
+            return try self.generateEPub(from: content, url: tempURL)
+        case .mobi:
+            let content = mainContentViewController.editorExportReadyAttributedContent()
+            // Use a temporary URL since generateMobi needs one
+            let tempURL = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString).appendingPathExtension("mobi")
+            return try self.generateMobi(from: content, url: tempURL)
         }
     }
 
@@ -2751,12 +2775,16 @@ private enum ExportFormat: CaseIterable {
     case docx       // Full support (save + open)
     case rtf        // Export only
     case pdf        // Export only
+    case epub       // Export only
+    case mobi       // Export only (Kindle)
 
     var displayName: String {
         switch self {
         case .docx: return "Word Document (.docx)"
         case .rtf: return "Rich Text (.rtf)"
         case .pdf: return "PDF Document (.pdf)"
+        case .epub: return "ePub (.epub)"
+        case .mobi: return "Kindle (.mobi)"
         }
     }
 
@@ -2765,6 +2793,8 @@ private enum ExportFormat: CaseIterable {
         case .docx: return "docx"
         case .rtf: return "rtf"
         case .pdf: return "pdf"
+        case .epub: return "epub"
+        case .mobi: return "mobi"
         }
     }
 
@@ -2783,6 +2813,16 @@ private enum ExportFormat: CaseIterable {
             return [.rtf]
         case .pdf:
             return [.pdf]
+        case .epub:
+            if let epubType = UTType(filenameExtension: "epub", conformingTo: .data) {
+                return [epubType]
+            }
+            return [.data]
+        case .mobi:
+            if let mobiType = UTType(filenameExtension: "mobi", conformingTo: .data) {
+                return [mobiType]
+            }
+            return [.data]
         }
     }
 
@@ -2790,7 +2830,7 @@ private enum ExportFormat: CaseIterable {
     var canOpen: Bool {
         switch self {
         case .docx: return true
-        case .rtf, .pdf: return false
+        case .rtf, .pdf, .epub, .mobi: return false
         }
     }
 }
@@ -4648,6 +4688,16 @@ private extension Data {
         let b3 = UInt32(self[offset + 3])
         return b0 | (b1 << 8) | (b2 << 16) | (b3 << 24)
     }
+
+    mutating func appendUInt16(_ v: UInt16) {
+        var le = v.littleEndian
+        Swift.withUnsafeBytes(of: &le) { append($0.bindMemory(to: UInt8.self)) }
+    }
+
+    mutating func appendUInt32(_ v: UInt32) {
+        var le = v.littleEndian
+        Swift.withUnsafeBytes(of: &le) { append($0.bindMemory(to: UInt8.self)) }
+    }
 }
 
 // MARK: - Tiny ZIP writer (store)
@@ -4732,6 +4782,218 @@ private enum ZipWriter {
             }
             return crc ^ 0xFFFFFFFF
         }
+    }
+}
+
+extension MainWindowController {
+    // MARK: - ePub and Mobi Export
+
+    private func generateEPub(from content: NSAttributedString, url: URL) throws -> Data {
+        // Create a temporary directory for ePub structure
+        let tempDir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+
+        defer {
+            try? FileManager.default.removeItem(at: tempDir)
+        }
+
+        // Create ePub directory structure
+        let metaInfDir = tempDir.appendingPathComponent("META-INF")
+        let oebpsDir = tempDir.appendingPathComponent("OEBPS")
+        try FileManager.default.createDirectory(at: metaInfDir, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: oebpsDir, withIntermediateDirectories: true)
+
+        // Get document title (from filename or "Untitled")
+        let title = url.deletingPathExtension().lastPathComponent
+
+        // Write mimetype (must be first file, uncompressed)
+        let mimetypeURL = tempDir.appendingPathComponent("mimetype")
+        try "application/epub+zip".write(to: mimetypeURL, atomically: true, encoding: .utf8)
+
+        // Write container.xml
+        let containerXML = """
+        <?xml version="1.0" encoding="UTF-8"?>
+        <container version="1.0" xmlns="urn:oasis:names:tc:opendocument:xmlns:container">
+          <rootfiles>
+            <rootfile full-path="OEBPS/content.opf" media-type="application/oebps-package+xml"/>
+          </rootfiles>
+        </container>
+        """
+        try containerXML.write(to: metaInfDir.appendingPathComponent("container.xml"), atomically: true, encoding: .utf8)
+
+        // Convert attributed string to HTML
+        let htmlContent = try convertToHTML(content)
+        let contentHTML = """
+        <?xml version="1.0" encoding="UTF-8"?>
+        <!DOCTYPE html>
+        <html xmlns="http://www.w3.org/1999/xhtml">
+        <head>
+          <title>\(title)</title>
+          <link rel="stylesheet" type="text/css" href="stylesheet.css"/>
+        </head>
+        <body>
+        \(htmlContent)
+        </body>
+        </html>
+        """
+        try contentHTML.write(to: oebpsDir.appendingPathComponent("content.html"), atomically: true, encoding: .utf8)
+
+        // Write stylesheet.css
+        let css = """
+        body { font-family: serif; font-size: 1em; line-height: 1.5; margin: 1em; }
+        h1 { font-size: 1.8em; margin-top: 1em; margin-bottom: 0.5em; }
+        h2 { font-size: 1.5em; margin-top: 0.8em; margin-bottom: 0.4em; }
+        p { margin: 0.5em 0; text-indent: 1.5em; }
+        p:first-child, h1 + p, h2 + p { text-indent: 0; }
+        """
+        try css.write(to: oebpsDir.appendingPathComponent("stylesheet.css"), atomically: true, encoding: .utf8)
+
+        // Write content.opf
+        let contentOPF = """
+        <?xml version="1.0" encoding="UTF-8"?>
+        <package xmlns="http://www.idpf.org/2007/opf" version="3.0" unique-identifier="bookid">
+          <metadata xmlns:dc="http://purl.org/dc/elements/1.1/">
+            <dc:title>\(title)</dc:title>
+            <dc:language>en</dc:language>
+            <dc:identifier id="bookid">urn:uuid:\(UUID().uuidString)</dc:identifier>
+            <meta property="dcterms:modified">\(ISO8601DateFormatter().string(from: Date()))</meta>
+          </metadata>
+          <manifest>
+            <item id="content" href="content.html" media-type="application/xhtml+xml"/>
+            <item id="stylesheet" href="stylesheet.css" media-type="text/css"/>
+            <item id="toc" href="toc.ncx" media-type="application/x-dtbncx+xml"/>
+          </manifest>
+          <spine toc="toc">
+            <itemref idref="content"/>
+          </spine>
+        </package>
+        """
+        try contentOPF.write(to: oebpsDir.appendingPathComponent("content.opf"), atomically: true, encoding: .utf8)
+
+        // Write toc.ncx (navigation)
+        let tocNCX = """
+        <?xml version="1.0" encoding="UTF-8"?>
+        <ncx xmlns="http://www.daisy.org/z3986/2005/ncx/" version="2005-1">
+          <head>
+            <meta name="dtb:uid" content="urn:uuid:\(UUID().uuidString)"/>
+            <meta name="dtb:depth" content="1"/>
+          </head>
+          <docTitle><text>\(title)</text></docTitle>
+          <navMap>
+            <navPoint id="content" playOrder="1">
+              <navLabel><text>\(title)</text></navLabel>
+              <content src="content.html"/>
+            </navPoint>
+          </navMap>
+        </ncx>
+        """
+        try tocNCX.write(to: oebpsDir.appendingPathComponent("toc.ncx"), atomically: true, encoding: .utf8)
+
+        // Create ZIP archive (ePub is a ZIP file)
+        let epubData = try createZipArchive(at: tempDir, mimetypeFirst: true)
+        return epubData
+    }
+
+    private func convertToHTML(_ content: NSAttributedString) throws -> String {
+        var html = ""
+        let fullRange = NSRange(location: 0, length: content.length)
+
+        content.enumerateAttributes(in: fullRange) { attrs, range, _ in
+            let text = (content.string as NSString).substring(with: range)
+            let escapedText = text
+                .replacingOccurrences(of: "&", with: "&amp;")
+                .replacingOccurrences(of: "<", with: "&lt;")
+                .replacingOccurrences(of: ">", with: "&gt;")
+                .replacingOccurrences(of: "\"", with: "&quot;")
+
+            // Check for style/formatting
+            if let font = attrs[.font] as? NSFont {
+                if font.pointSize >= 18 {
+                    html += "<h1>\(escapedText)</h1>\n"
+                } else if font.pointSize >= 14 && font.fontDescriptor.symbolicTraits.contains(.bold) {
+                    html += "<h2>\(escapedText)</h2>\n"
+                } else {
+                    html += "<p>\(escapedText)</p>\n"
+                }
+            } else {
+                html += "<p>\(escapedText)</p>\n"
+            }
+        }
+
+        return html
+    }
+
+    private func createZipArchive(at directory: URL, mimetypeFirst: Bool = false) throws -> Data {
+        // Use the system zip command for reliable compression
+        let zipURL = directory.deletingLastPathComponent().appendingPathComponent("output.epub")
+
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/zip")
+
+        if mimetypeFirst {
+            // ePub spec requires mimetype to be first and uncompressed
+            process.arguments = ["-0", "-X", zipURL.path, "mimetype"]
+            process.currentDirectoryURL = directory
+            try process.run()
+            process.waitUntilExit()
+
+            // Add remaining files with compression
+            let process2 = Process()
+            process2.executableURL = URL(fileURLWithPath: "/usr/bin/zip")
+            process2.arguments = ["-r", "-9", "-X", zipURL.path, "META-INF", "OEBPS"]
+            process2.currentDirectoryURL = directory
+            try process2.run()
+            process2.waitUntilExit()
+        } else {
+            process.arguments = ["-r", zipURL.path, "."]
+            process.currentDirectoryURL = directory
+            try process.run()
+            process.waitUntilExit()
+        }
+
+        let data = try Data(contentsOf: zipURL)
+        try? FileManager.default.removeItem(at: zipURL)
+        return data
+    }
+
+    // MARK: - Mobi Export
+
+    private func generateMobi(from content: NSAttributedString, url: URL) throws -> Data {
+        // Mobi format is complex - we'll generate an HTML file and note that
+        // users need KindleGen or Calibre to convert ePub to Mobi
+
+        // For now, create a basic HTML that can be read by Kindle
+        let title = url.deletingPathExtension().lastPathComponent
+        let htmlContent = try convertToHTML(content)
+
+        let mobiHTML = """
+        <!DOCTYPE html>
+        <html>
+        <head>
+          <meta charset="UTF-8">
+          <title>\(title)</title>
+          <style>
+            body { font-family: serif; line-height: 1.5; margin: 1em; }
+            h1 { page-break-before: always; }
+            p { text-indent: 1.5em; margin: 0.5em 0; }
+          </style>
+        </head>
+        <body>
+          <h1>\(title)</h1>
+          \(htmlContent)
+        </body>
+        </html>
+        """
+
+        // Note: True .mobi generation requires KindleGen tool
+        // This creates an HTML file that can be sent to Kindle via email or converted
+        guard let data = mobiHTML.data(using: .utf8) else {
+            throw NSError(domain: "QuillPilot", code: -1, userInfo: [
+                NSLocalizedDescriptionKey: "Failed to generate Mobi HTML"
+            ])
+        }
+
+        return data
     }
 }
 
@@ -5011,17 +5273,5 @@ class SearchPanelController: NSWindowController {
         updatePageInfo()
         // Make the search field first responder to accept input immediately
         window?.makeFirstResponder(searchField)
-    }
-}
-
-private extension Data {
-    mutating func appendUInt16(_ v: UInt16) {
-        var le = v.littleEndian
-        Swift.withUnsafeBytes(of: &le) { append($0.bindMemory(to: UInt8.self)) }
-    }
-
-    mutating func appendUInt32(_ v: UInt32) {
-        var le = v.littleEndian
-        Swift.withUnsafeBytes(of: &le) { append($0.bindMemory(to: UInt8.self)) }
     }
 }

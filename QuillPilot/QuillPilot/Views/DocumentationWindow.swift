@@ -199,6 +199,51 @@ Buttons:
 
 The replacement preserves your text formatting.
 """, color: bodyColor))
+        content.append(makeNewline())
+
+        content.append(makeHeading("📑 Table of Contents & Index", color: headingColor))
+        content.append(makeBody("""
+Generate professional Tables of Contents and Indexes for your manuscript.
+
+Access: Tools menu → Table of Contents & Index
+
+Table of Contents:
+1. Click "Generate TOC" to scan your document for headings
+   • Detects styled headings (Chapter Title, Heading 1, Heading 2)
+   • Falls back to font size detection (18-22pt)
+   • Excludes Book Title and Part Title from TOC
+
+2. Preview entries in the window with indented hierarchy
+
+3. Configure options:
+   • Page Numbers format:
+     - Arabic (1, 2, 3) - standard pagination
+     - Roman Lowercase (i, ii, iii) - front matter
+     - Roman Uppercase (I, II, III)
+     - Alphabet Lowercase/Uppercase (a, b, c)
+   • Insert page break - adds page break before TOC
+
+4. Click "Insert in Document" to add at cursor position
+
+Updating TOC:
+• Run "Generate TOC" again to rescan updated headings
+• Click "Insert in Document" to replace old TOC
+• Previous TOC is automatically removed
+
+Font Styling:
+• TOC uses your document's template font family
+• Automatically pulls from StyleCatalog (Body Text or TOC Entry styles)
+• Leader dots extend fully to page numbers
+• Page numbers right-aligned
+
+Index:
+1. Add terms manually or use {{index:term}} markers in text
+2. Click "Scan for Markers" to detect all index entries
+3. Configure page number format (same options as TOC)
+4. Click "Insert in Document" to add alphabetized index with sections
+
+The TOC and Index respect your template's typography and maintain consistent formatting throughout.
+""", color: bodyColor))
 
         textView.textStorage?.setAttributedString(content)
     }

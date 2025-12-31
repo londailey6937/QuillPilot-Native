@@ -202,6 +202,14 @@ final class StyleCatalog {
         styles["Figure Caption"] = baseDefinition(font: "Times New Roman", size: 11, alignment: .left, lineHeight: 1.0, before: 6, after: 12, headIndent: 0, firstLine: 0, tailIndent: 0)
         styles["Table Caption"] = styles["Figure Caption"]
         styles["Footnote / Endnote"] = baseDefinition(font: "Times New Roman", size: 10, alignment: .left, lineHeight: 1.0, before: 6, after: 6, headIndent: 0, firstLine: 0, tailIndent: 0)
+        // TOC and Index styles
+        styles["TOC Title"] = baseDefinition(font: "Times New Roman", size: 18, bold: true, alignment: .center, lineHeight: 1.2, before: 0, after: 18, headIndent: 0, firstLine: 0)
+        styles["TOC Entry Level 1"] = baseDefinition(font: "Times New Roman", size: 14, bold: true, alignment: .left, lineHeight: 1.4, before: 0, after: 0, headIndent: 0, firstLine: 0)
+        styles["TOC Entry Level 2"] = baseDefinition(font: "Times New Roman", size: 12, alignment: .left, lineHeight: 1.4, before: 0, after: 0, headIndent: 20, firstLine: 20)
+        styles["TOC Entry Level 3"] = baseDefinition(font: "Times New Roman", size: 11, alignment: .left, lineHeight: 1.4, before: 0, after: 0, headIndent: 40, firstLine: 40)
+        styles["Index Title"] = baseDefinition(font: "Times New Roman", size: 18, bold: true, alignment: .center, lineHeight: 1.2, before: 0, after: 18, headIndent: 0, firstLine: 0)
+        styles["Index Letter"] = baseDefinition(font: "Times New Roman", size: 14, bold: true, alignment: .left, lineHeight: 1.4, before: 12, after: 6, headIndent: 0, firstLine: 0)
+        styles["Index Entry"] = baseDefinition(font: "Times New Roman", size: 12, alignment: .left, lineHeight: 1.4, before: 0, after: 0, headIndent: 20, firstLine: 20)
         return styles
     }
 
@@ -214,6 +222,14 @@ final class StyleCatalog {
         styles["Heading 3"] = baseDefinition(font: "Georgia", size: 12, italic: true, alignment: .left, lineHeight: 1.2, before: 10, after: 4, headIndent: 0, firstLine: 0)
         styles["Sidebar"] = baseDefinition(font: "Georgia", size: 11, alignment: .left, lineHeight: 1.2, before: 10, after: 10, headIndent: 18, firstLine: 18, tailIndent: -18)
         styles["Callout"] = baseDefinition(font: "Georgia", size: 11, italic: true, alignment: .left, lineHeight: 1.1, before: 10, after: 10, headIndent: 18, firstLine: 18, tailIndent: -18)
+        // TOC and Index styles
+        styles["TOC Title"] = baseDefinition(font: "Georgia", size: 18, bold: true, alignment: .center, lineHeight: 1.2, before: 0, after: 18, headIndent: 0, firstLine: 0)
+        styles["TOC Entry Level 1"] = baseDefinition(font: "Georgia", size: 14, bold: true, alignment: .left, lineHeight: 1.4, before: 0, after: 0, headIndent: 0, firstLine: 0)
+        styles["TOC Entry Level 2"] = baseDefinition(font: "Georgia", size: 12, alignment: .left, lineHeight: 1.4, before: 0, after: 0, headIndent: 20, firstLine: 20)
+        styles["TOC Entry Level 3"] = baseDefinition(font: "Georgia", size: 11, alignment: .left, lineHeight: 1.4, before: 0, after: 0, headIndent: 40, firstLine: 40)
+        styles["Index Title"] = baseDefinition(font: "Georgia", size: 18, bold: true, alignment: .center, lineHeight: 1.2, before: 0, after: 18, headIndent: 0, firstLine: 0)
+        styles["Index Letter"] = baseDefinition(font: "Georgia", size: 14, bold: true, alignment: .left, lineHeight: 1.4, before: 12, after: 6, headIndent: 0, firstLine: 0)
+        styles["Index Entry"] = baseDefinition(font: "Georgia", size: 12, alignment: .left, lineHeight: 1.4, before: 0, after: 0, headIndent: 20, firstLine: 20)
         return styles
     }
 
@@ -262,6 +278,14 @@ final class StyleCatalog {
         styles["Block Quote"] = baseDefinition(font: font, size: 13, alignment: .left, lineHeight: 1.6, before: 12, after: 12, headIndent: 36, firstLine: 36, tailIndent: -36)
         styles["Epigraph"] = baseDefinition(font: font, size: 13, italic: true, alignment: .left, lineHeight: 1.6, before: 12, after: 12, headIndent: 36, firstLine: 36, tailIndent: -36)
         styles["Epigraph Attribution"] = baseDefinition(font: font, size: 12, alignment: .right, lineHeight: 1.2, before: 6, after: 18, headIndent: 0, firstLine: 0)
+        // TOC and Index styles
+        styles["TOC Title"] = baseDefinition(font: font, size: 20, bold: true, alignment: .center, lineHeight: 1.2, before: 0, after: 20, headIndent: 0, firstLine: 0)
+        styles["TOC Entry Level 1"] = baseDefinition(font: font, size: 14, bold: true, alignment: .left, lineHeight: 1.5, before: 0, after: 0, headIndent: 0, firstLine: 0)
+        styles["TOC Entry Level 2"] = baseDefinition(font: font, size: 13, alignment: .left, lineHeight: 1.5, before: 0, after: 0, headIndent: 20, firstLine: 20)
+        styles["TOC Entry Level 3"] = baseDefinition(font: font, size: 12, alignment: .left, lineHeight: 1.5, before: 0, after: 0, headIndent: 40, firstLine: 40)
+        styles["Index Title"] = baseDefinition(font: font, size: 20, bold: true, alignment: .center, lineHeight: 1.2, before: 0, after: 20, headIndent: 0, firstLine: 0)
+        styles["Index Letter"] = baseDefinition(font: font, size: 14, bold: true, alignment: .left, lineHeight: 1.5, before: 14, after: 6, headIndent: 0, firstLine: 0)
+        styles["Index Entry"] = baseDefinition(font: font, size: 13, alignment: .left, lineHeight: 1.5, before: 0, after: 0, headIndent: 20, firstLine: 20)
         return styles
     }
 
@@ -282,6 +306,14 @@ final class StyleCatalog {
         styles["Block Quote"] = baseDefinition(font: font, size: 13, alignment: .left, lineHeight: 1.6, before: 12, after: 12, headIndent: 36, firstLine: 36, tailIndent: -36)
         styles["Epigraph"] = baseDefinition(font: font, size: 13, italic: true, alignment: .left, lineHeight: 1.5, before: 12, after: 12, headIndent: 36, firstLine: 36, tailIndent: -36)
         styles["Epigraph Attribution"] = baseDefinition(font: font, size: 12, alignment: .right, lineHeight: 1.2, before: 6, after: 18, headIndent: 0, firstLine: 0)
+        // TOC and Index styles
+        styles["TOC Title"] = baseDefinition(font: font, size: 20, bold: true, alignment: .center, lineHeight: 1.2, before: 0, after: 20, headIndent: 0, firstLine: 0)
+        styles["TOC Entry Level 1"] = baseDefinition(font: font, size: 14, bold: true, alignment: .left, lineHeight: 1.5, before: 0, after: 0, headIndent: 0, firstLine: 0)
+        styles["TOC Entry Level 2"] = baseDefinition(font: font, size: 13, alignment: .left, lineHeight: 1.5, before: 0, after: 0, headIndent: 20, firstLine: 20)
+        styles["TOC Entry Level 3"] = baseDefinition(font: font, size: 12, alignment: .left, lineHeight: 1.5, before: 0, after: 0, headIndent: 40, firstLine: 40)
+        styles["Index Title"] = baseDefinition(font: font, size: 20, bold: true, alignment: .center, lineHeight: 1.2, before: 0, after: 20, headIndent: 0, firstLine: 0)
+        styles["Index Letter"] = baseDefinition(font: font, size: 14, bold: true, alignment: .left, lineHeight: 1.5, before: 14, after: 6, headIndent: 0, firstLine: 0)
+        styles["Index Entry"] = baseDefinition(font: font, size: 13, alignment: .left, lineHeight: 1.5, before: 0, after: 0, headIndent: 20, firstLine: 20)
         return styles
     }
 
@@ -302,6 +334,14 @@ final class StyleCatalog {
         styles["Block Quote"] = baseDefinition(font: font, size: 12, alignment: .left, lineHeight: 1.6, before: 12, after: 12, headIndent: 36, firstLine: 36, tailIndent: -36)
         styles["Epigraph"] = baseDefinition(font: font, size: 12, italic: true, alignment: .left, lineHeight: 1.5, before: 12, after: 12, headIndent: 36, firstLine: 36, tailIndent: -36)
         styles["Epigraph Attribution"] = baseDefinition(font: font, size: 11, alignment: .right, lineHeight: 1.2, before: 6, after: 18, headIndent: 0, firstLine: 0)
+        // TOC and Index styles
+        styles["TOC Title"] = baseDefinition(font: font, size: 20, bold: true, alignment: .center, lineHeight: 1.2, before: 0, after: 20, headIndent: 0, firstLine: 0)
+        styles["TOC Entry Level 1"] = baseDefinition(font: font, size: 13, bold: true, alignment: .left, lineHeight: 1.5, before: 0, after: 0, headIndent: 0, firstLine: 0)
+        styles["TOC Entry Level 2"] = baseDefinition(font: font, size: 12, alignment: .left, lineHeight: 1.5, before: 0, after: 0, headIndent: 20, firstLine: 20)
+        styles["TOC Entry Level 3"] = baseDefinition(font: font, size: 11, alignment: .left, lineHeight: 1.5, before: 0, after: 0, headIndent: 40, firstLine: 40)
+        styles["Index Title"] = baseDefinition(font: font, size: 20, bold: true, alignment: .center, lineHeight: 1.2, before: 0, after: 20, headIndent: 0, firstLine: 0)
+        styles["Index Letter"] = baseDefinition(font: font, size: 13, bold: true, alignment: .left, lineHeight: 1.5, before: 14, after: 6, headIndent: 0, firstLine: 0)
+        styles["Index Entry"] = baseDefinition(font: font, size: 12, alignment: .left, lineHeight: 1.5, before: 0, after: 0, headIndent: 20, firstLine: 20)
         return styles
     }
 
@@ -322,6 +362,14 @@ final class StyleCatalog {
         styles["Block Quote"] = baseDefinition(font: font, size: 13, alignment: .left, lineHeight: 1.6, before: 12, after: 12, headIndent: 36, firstLine: 36, tailIndent: -36)
         styles["Epigraph"] = baseDefinition(font: font, size: 13, italic: true, alignment: .left, lineHeight: 1.5, before: 12, after: 12, headIndent: 36, firstLine: 36, tailIndent: -36)
         styles["Epigraph Attribution"] = baseDefinition(font: font, size: 12, alignment: .right, lineHeight: 1.2, before: 6, after: 18, headIndent: 0, firstLine: 0)
+        // TOC and Index styles
+        styles["TOC Title"] = baseDefinition(font: font, size: 22, bold: true, alignment: .center, lineHeight: 1.2, before: 0, after: 22, headIndent: 0, firstLine: 0)
+        styles["TOC Entry Level 1"] = baseDefinition(font: font, size: 14, bold: true, alignment: .left, lineHeight: 1.5, before: 0, after: 0, headIndent: 0, firstLine: 0)
+        styles["TOC Entry Level 2"] = baseDefinition(font: font, size: 13, alignment: .left, lineHeight: 1.5, before: 0, after: 0, headIndent: 20, firstLine: 20)
+        styles["TOC Entry Level 3"] = baseDefinition(font: font, size: 12, alignment: .left, lineHeight: 1.5, before: 0, after: 0, headIndent: 40, firstLine: 40)
+        styles["Index Title"] = baseDefinition(font: font, size: 22, bold: true, alignment: .center, lineHeight: 1.2, before: 0, after: 22, headIndent: 0, firstLine: 0)
+        styles["Index Letter"] = baseDefinition(font: font, size: 14, bold: true, alignment: .left, lineHeight: 1.5, before: 14, after: 6, headIndent: 0, firstLine: 0)
+        styles["Index Entry"] = baseDefinition(font: font, size: 13, alignment: .left, lineHeight: 1.5, before: 0, after: 0, headIndent: 20, firstLine: 20)
         return styles
     }
 
@@ -340,6 +388,14 @@ final class StyleCatalog {
         styles["Internal Thought"] = baseDefinition(font: font, size: 15, italic: true, lineHeight: 1.8)
         styles["Block Quote"] = baseDefinition(font: font, size: 14, alignment: .left, lineHeight: 1.6, before: 12, after: 12, headIndent: 36, firstLine: 36, tailIndent: -36)
         styles["Epigraph"] = baseDefinition(font: font, size: 14, alignment: .left, lineHeight: 1.5, before: 12, after: 12, headIndent: 36, firstLine: 36, tailIndent: -36)
+        // TOC and Index styles
+        styles["TOC Title"] = baseDefinition(font: font, size: 24, bold: true, alignment: .center, lineHeight: 1.2, before: 0, after: 22, headIndent: 0, firstLine: 0)
+        styles["TOC Entry Level 1"] = baseDefinition(font: font, size: 16, bold: true, alignment: .left, lineHeight: 1.5, before: 0, after: 0, headIndent: 0, firstLine: 0)
+        styles["TOC Entry Level 2"] = baseDefinition(font: font, size: 15, alignment: .left, lineHeight: 1.5, before: 0, after: 0, headIndent: 20, firstLine: 20)
+        styles["TOC Entry Level 3"] = baseDefinition(font: font, size: 14, alignment: .left, lineHeight: 1.5, before: 0, after: 0, headIndent: 40, firstLine: 40)
+        styles["Index Title"] = baseDefinition(font: font, size: 24, bold: true, alignment: .center, lineHeight: 1.2, before: 0, after: 22, headIndent: 0, firstLine: 0)
+        styles["Index Letter"] = baseDefinition(font: font, size: 16, bold: true, alignment: .left, lineHeight: 1.5, before: 14, after: 6, headIndent: 0, firstLine: 0)
+        styles["Index Entry"] = baseDefinition(font: font, size: 15, alignment: .left, lineHeight: 1.5, before: 0, after: 0, headIndent: 20, firstLine: 20)
         return styles
     }
 
@@ -358,6 +414,14 @@ final class StyleCatalog {
         styles["Internal Thought"] = baseDefinition(font: font, size: 15, italic: true, lineHeight: 1.9)
         styles["Block Quote"] = baseDefinition(font: font, size: 14, alignment: .left, lineHeight: 1.7, before: 12, after: 12, headIndent: 36, firstLine: 36, tailIndent: -36)
         styles["Epigraph"] = baseDefinition(font: font, size: 14, alignment: .left, lineHeight: 1.6, before: 12, after: 12, headIndent: 36, firstLine: 36, tailIndent: -36)
+        // TOC and Index styles
+        styles["TOC Title"] = baseDefinition(font: font, size: 26, bold: true, alignment: .center, lineHeight: 1.2, before: 0, after: 24, headIndent: 0, firstLine: 0)
+        styles["TOC Entry Level 1"] = baseDefinition(font: font, size: 16, bold: true, alignment: .left, lineHeight: 1.5, before: 0, after: 0, headIndent: 0, firstLine: 0)
+        styles["TOC Entry Level 2"] = baseDefinition(font: font, size: 15, alignment: .left, lineHeight: 1.5, before: 0, after: 0, headIndent: 20, firstLine: 20)
+        styles["TOC Entry Level 3"] = baseDefinition(font: font, size: 14, alignment: .left, lineHeight: 1.5, before: 0, after: 0, headIndent: 40, firstLine: 40)
+        styles["Index Title"] = baseDefinition(font: font, size: 26, bold: true, alignment: .center, lineHeight: 1.2, before: 0, after: 24, headIndent: 0, firstLine: 0)
+        styles["Index Letter"] = baseDefinition(font: font, size: 16, bold: true, alignment: .left, lineHeight: 1.5, before: 14, after: 6, headIndent: 0, firstLine: 0)
+        styles["Index Entry"] = baseDefinition(font: font, size: 15, alignment: .left, lineHeight: 1.5, before: 0, after: 0, headIndent: 20, firstLine: 20)
         return styles
     }
 }

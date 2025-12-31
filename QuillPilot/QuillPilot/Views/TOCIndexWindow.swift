@@ -52,9 +52,8 @@ class TOCIndexManager {
     private(set) var tocEntries: [TOCEntry] = []
     private(set) var indexEntries: [IndexEntry] = []
 
-    // Styles that indicate TOC-worthy headings
-    let tocStyles = ["Title", "Chapter Title", "Part Title", "Heading 1", "Heading 2", "Heading 3",
-                     "Section", "Subsection", "Chapter Heading"]
+    // Styles that indicate TOC-worthy headings (excludes Book Title, Part Title)
+    let tocStyles = ["Chapter Title", "Chapter Heading", "Heading 1", "Heading 2"]
 
     // Generate TOC from document
     func generateTOC(from textStorage: NSTextStorage, pageWidth: CGFloat = 612, pageHeight: CGFloat = 792) -> [TOCEntry] {
@@ -86,11 +85,15 @@ class TOCIndexManager {
             }
 
             // Also check font size for headings (fallback for unstyled documents)
+            // Only include 18-22pt fonts as chapter headings, skip larger fonts which are likely book titles
             if let font = attrs[.font] as? NSFont {
-                if font.pointSize >= 18 {
+                if font.pointSize >= 18 && font.pointSize <= 22 {
                     let text = (textStorage.string as NSString).substring(with: range).trimmingCharacters(in: .whitespacesAndNewlines)
-                    if !text.isEmpty && text.count < 100 {  // Likely a heading
-                        let level = font.pointSize >= 24 ? 1 : (font.pointSize >= 20 ? 2 : 3)
+                    // Skip TOC/Index titles and empty/long text
+                    let lowercasedText = text.lowercased()
+                    let isTOCOrIndex = lowercasedText == "table of contents" || lowercasedText == "index"
+                    if !text.isEmpty && text.count < 100 && !isTOCOrIndex {  // Likely a heading
+                        let level = font.pointSize >= 20 ? 1 : 2
                         let pageNumber = estimatePageNumber(for: range.location, in: textStorage, pageHeight: pageHeight)
 
                         // Check if we already have this entry
@@ -115,20 +118,44 @@ class TOCIndexManager {
 
     private func levelForStyle(_ styleName: String) -> Int {
         let lowercased = styleName.lowercased()
-        if lowercased.contains("title") || lowercased.contains("chapter") || lowercased.contains("part") {
+        // Exclude Book Title, Part Title, and other non-chapter styles
+        if lowercased.contains("book title") || lowercased.contains("part title") ||
+           lowercased.contains("subtitle") || lowercased.contains("author") {
+            return 0  // Don't include in TOC
+        }
+        if lowercased.contains("chapter") {
             return 1
-        } else if lowercased.contains("heading 1") || lowercased.contains("section") {
+        } else if lowercased.contains("heading 1") {
             return 2
-        } else if lowercased.contains("heading 2") || lowercased.contains("heading 3") || lowercased.contains("subsection") {
+        } else if lowercased.contains("heading 2") {
             return 3
         }
         return 0
     }
 
     private func estimatePageNumber(for location: Int, in textStorage: NSTextStorage, pageHeight: CGFloat) -> Int {
+        // Adjust location to account for excluded TOC/Index sections
+        var adjustedLocation = location
+        let excludedRanges = findExcludedRanges(in: textStorage)
+
+        // Subtract lengths of excluded sections that appear before this location
+        for excludedRange in excludedRanges {
+            if excludedRange.location < location {
+                let endOfExcluded = excludedRange.location + excludedRange.length
+                if endOfExcluded <= location {
+                    // Entire excluded section is before this location
+                    adjustedLocation -= excludedRange.length
+                } else {
+                    // Location is inside excluded section (shouldn't happen, but handle it)
+                    adjustedLocation = excludedRange.location
+                    break
+                }
+            }
+        }
+
         // Rough estimate: ~3000 characters per page
         let charsPerPage = 3000
-        return (location / charsPerPage) + 1
+        return max(1, (adjustedLocation / charsPerPage) + 1)
     }
 
     // Add index entry manually
@@ -189,7 +216,8 @@ class TOCIndexManager {
 
 // MARK: - Helpers for section exclusion/removal
 
-// Finds the range of a section that begins with the given title and continues until the next occurrence of the same title (or document end).
+// Finds the range of a TOC or Index section. Looks for the title and scans forward
+// to find where it ends (next chapter heading, double newline gap, or max ~5000 chars).
 private func findSectionRange(title: String, in storage: NSTextStorage) -> NSRange? {
     let fullString = storage.string as NSString
     let searchRange = NSRange(location: 0, length: fullString.length)
@@ -197,15 +225,36 @@ private func findSectionRange(title: String, in storage: NSTextStorage) -> NSRan
         return nil
     }
 
-    let nextSearchStart = titleRange.location + titleRange.length
-    if nextSearchStart < fullString.length,
-       let nextTitleRange = fullString.range(of: title, options: [.caseInsensitive], range: NSRange(location: nextSearchStart, length: fullString.length - nextSearchStart)).toOptional() {
-        let length = nextTitleRange.location - titleRange.location
-        return NSRange(location: titleRange.location, length: length)
+    // Start from title, scan forward to find the end of the section
+    let startLocation = titleRange.location
+    let maxSectionLength = min(5000, fullString.length - startLocation)  // Cap at 5000 chars
+    var endLocation = startLocation + titleRange.length
+
+    // Scan forward looking for section end markers
+    let scanStart = titleRange.location + titleRange.length
+    let scanEnd = min(fullString.length, scanStart + maxSectionLength)
+
+    if scanStart < scanEnd {
+        let scanRange = NSRange(location: scanStart, length: scanEnd - scanStart)
+        let scanText = fullString.substring(with: scanRange)
+
+        // Look for chapter markers that indicate TOC has ended
+        let endMarkers = ["Chapter ", "CHAPTER ", "Part ", "PART ", "\n\n\n"]
+        var earliestEnd = scanText.count
+
+        for marker in endMarkers {
+            if let range = scanText.range(of: marker) {
+                let distance = scanText.distance(from: scanText.startIndex, to: range.lowerBound)
+                if distance > 50 && distance < earliestEnd {  // Must be at least 50 chars in
+                    earliestEnd = distance
+                }
+            }
+        }
+
+        endLocation = scanStart + earliestEnd
     }
 
-    // No subsequent title found; remove to end of document
-    return NSRange(location: titleRange.location, length: fullString.length - titleRange.location)
+    return NSRange(location: startLocation, length: endLocation - startLocation)
 }
 
 private func findExcludedRanges(in storage: NSTextStorage) -> [NSRange] {
@@ -245,8 +294,81 @@ class TOCIndexWindowController: NSWindowController, NSOutlineViewDataSource, NSO
 
     private let categories = ["General", "People", "Places", "Concepts", "Events", "Terms"]
 
+    // Page numbering format
+    enum PageNumberFormat: String, CaseIterable {
+        case arabic = "Arabic (1, 2, 3)"
+        case romanLower = "Roman Lowercase (i, ii, iii)"
+        case romanUpper = "Roman Uppercase (I, II, III)"
+        case alphabetLower = "Alphabet Lowercase (a, b, c)"
+        case alphabetUpper = "Alphabet Uppercase (A, B, C)"
+
+        func format(_ number: Int) -> String {
+            switch self {
+            case .arabic:
+                return String(number)
+            case .romanLower:
+                return Self.toRoman(number).lowercased()
+            case .romanUpper:
+                return Self.toRoman(number)
+            case .alphabetLower:
+                return Self.toAlphabet(number).lowercased()
+            case .alphabetUpper:
+                return Self.toAlphabet(number)
+            }
+        }
+
+        static func toRoman(_ number: Int) -> String {
+            let values = [(1000, "M"), (900, "CM"), (500, "D"), (400, "CD"),
+                          (100, "C"), (90, "XC"), (50, "L"), (40, "XL"),
+                          (10, "X"), (9, "IX"), (5, "V"), (4, "IV"), (1, "I")]
+            var num = number
+            var result = ""
+            for (value, numeral) in values {
+                while num >= value {
+                    result += numeral
+                    num -= value
+                }
+            }
+            return result
+        }
+
+        static func toAlphabet(_ number: Int) -> String {
+            var num = number
+            var result = ""
+            while num > 0 {
+                num -= 1
+                result = String(UnicodeScalar(65 + (num % 26))!) + result
+                num /= 26
+            }
+            return result
+        }
+    }
+
+    private var currentPageFormat: PageNumberFormat = .arabic
+    private var insertPageBreak: Bool = true
+
     private func resolveDocumentFont(from textView: NSTextView) -> NSFont {
-        // Try to find the most common body text font by sampling the document
+        // FIRST PRIORITY: Query StyleCatalog for TOC Entry or Body Text style
+        // This ensures we use the template's font family
+        if let tocStyle = StyleCatalog.shared.style(named: "TOC Entry Level 1"),
+           let tocFont = NSFont(name: tocStyle.fontName, size: tocStyle.fontSize) {
+            print("DEBUG TOC: Using StyleCatalog TOC Entry font: \(tocStyle.fontName)")
+            return tocFont
+        }
+
+        if let bodyStyle = StyleCatalog.shared.style(named: "Body Text"),
+           let bodyFont = NSFont(name: bodyStyle.fontName, size: bodyStyle.fontSize) {
+            print("DEBUG TOC: Using StyleCatalog Body Text font: \(bodyStyle.fontName)")
+            return bodyFont
+        }
+
+        // SECOND: Try the textView's font property - this reflects current template
+        if let viewFont = textView.font {
+            print("DEBUG TOC: Using textView.font: \(viewFont.fontName)")
+            return viewFont
+        }
+
+        // THIRD: Sample the document to find the most common body text font
         if let storage = textView.textStorage, storage.length > 100 {
             var fontCounts: [String: (font: NSFont, count: Int)] = [:]
             let samplePoints = [
@@ -260,8 +382,8 @@ class TOCIndexWindowController: NSWindowController, NSOutlineViewDataSource, NSO
             for point in samplePoints {
                 let safePoint = min(point, storage.length - 1)
                 if let font = storage.attribute(.font, at: safePoint, effectiveRange: nil) as? NSFont {
-                    // Skip very large fonts (likely headings)
-                    if font.pointSize <= 14 {
+                    // Skip very large fonts (likely headings) and very small fonts
+                    if font.pointSize >= 10 && font.pointSize <= 14 {
                         let key = font.familyName ?? font.fontName
                         if let existing = fontCounts[key] {
                             fontCounts[key] = (font, existing.count + 1)
@@ -274,15 +396,12 @@ class TOCIndexWindowController: NSWindowController, NSOutlineViewDataSource, NSO
 
             // Return most common body font
             if let mostCommon = fontCounts.max(by: { $0.value.count < $1.value.count }) {
+                print("DEBUG TOC: Using sampled document font: \(mostCommon.value.font.fontName)")
                 return mostCommon.value.font
             }
         }
 
-        // Fallback to textView's font property
-        if let viewFont = textView.font {
-            return viewFont
-        }
-
+        print("DEBUG TOC: Falling back to system font")
         return NSFont(name: "Helvetica", size: 12) ?? NSFont.systemFont(ofSize: 12)
     }
 
@@ -353,6 +472,10 @@ class TOCIndexWindowController: NSWindowController, NSOutlineViewDataSource, NSO
         window.contentView = contentView
     }
 
+    // UI elements for options
+    private var pageNumberFormatPopup: NSPopUpButton!
+    private var pageBreakCheckbox: NSButton!
+
     private func createTOCView() -> NSView {
         let theme = ThemeManager.shared.currentTheme
         let container = NSView(frame: NSRect(x: 0, y: 0, width: 430, height: 540))
@@ -366,7 +489,7 @@ class TOCIndexWindowController: NSWindowController, NSOutlineViewDataSource, NSO
         container.addSubview(instructions)
 
         // Scroll view for outline
-        let scrollView = NSScrollView(frame: NSRect(x: 10, y: 50, width: 410, height: 440))
+        let scrollView = NSScrollView(frame: NSRect(x: 10, y: 100, width: 410, height: 390))
         scrollView.hasVerticalScroller = true
         scrollView.hasHorizontalScroller = false
         scrollView.autoresizingMask = [.width, .height]
@@ -388,6 +511,28 @@ class TOCIndexWindowController: NSWindowController, NSOutlineViewDataSource, NSO
         scrollView.documentView = tocOutlineView
         container.addSubview(scrollView)
 
+        // Options row
+        let optionsLabel = NSTextField(labelWithString: "Page Numbers:")
+        optionsLabel.frame = NSRect(x: 10, y: 65, width: 95, height: 20)
+        optionsLabel.textColor = theme.textColor
+        optionsLabel.font = NSFont.systemFont(ofSize: 11)
+        container.addSubview(optionsLabel)
+
+        pageNumberFormatPopup = NSPopUpButton(frame: NSRect(x: 105, y: 62, width: 180, height: 24))
+        for format in PageNumberFormat.allCases {
+            pageNumberFormatPopup.addItem(withTitle: format.rawValue)
+        }
+        pageNumberFormatPopup.target = self
+        pageNumberFormatPopup.action = #selector(pageFormatChanged(_:))
+        container.addSubview(pageNumberFormatPopup)
+
+        // Page break checkbox - hidden for now as NSTextView doesn't support true page breaks
+        pageBreakCheckbox = NSButton(checkboxWithTitle: "Insert page break", target: self, action: #selector(pageBreakToggled(_:)))
+        pageBreakCheckbox.frame = NSRect(x: 295, y: 62, width: 130, height: 24)
+        pageBreakCheckbox.state = .off
+        pageBreakCheckbox.isHidden = true  // Feature doesn't work in NSTextView
+        // container.addSubview(pageBreakCheckbox)  // Disabled
+
         // Buttons
         let generateButton = NSButton(title: "Generate TOC", target: self, action: #selector(generateTOC))
         generateButton.frame = NSRect(x: 10, y: 10, width: 120, height: 30)
@@ -405,6 +550,17 @@ class TOCIndexWindowController: NSWindowController, NSOutlineViewDataSource, NSO
         container.addSubview(goToButton)
 
         return container
+    }
+
+    @objc private func pageFormatChanged(_ sender: NSPopUpButton) {
+        let index = sender.indexOfSelectedItem
+        if index >= 0 && index < PageNumberFormat.allCases.count {
+            currentPageFormat = PageNumberFormat.allCases[index]
+        }
+    }
+
+    @objc private func pageBreakToggled(_ sender: NSButton) {
+        insertPageBreak = sender.state == .on
     }
 
     private func createIndexView() -> NSView {
@@ -520,7 +676,7 @@ class TOCIndexWindowController: NSWindowController, NSOutlineViewDataSource, NSO
 
         let tocString = NSMutableAttributedString()
 
-        // Detect document font (prefer typing attributes or selection)
+        // Detect document font from StyleCatalog or document
         let documentFont = resolveDocumentFont(from: textView)
         print("DEBUG TOC: Resolved document font: \(documentFont.fontName) family: \(documentFont.familyName ?? "nil")")
 
@@ -533,6 +689,14 @@ class TOCIndexWindowController: NSWindowController, NSOutlineViewDataSource, NSO
             let descriptor = baseFont.fontDescriptor.withSymbolicTraits([])
             return NSFont(descriptor: descriptor, size: size) ?? baseFont.withSize(size)
         }
+
+        // Add some blank lines at the start to push TOC below any header
+        let spacerParagraph = NSMutableParagraphStyle()
+        let spacerAttrs: [NSAttributedString.Key: Any] = [
+            .font: fontFromDocument(documentFont, size: 12, bold: false),
+            .paragraphStyle: spacerParagraph
+        ]
+        tocString.append(NSAttributedString(string: "\n\n", attributes: spacerAttrs))
 
         // Title
         let titleFont = fontFromDocument(documentFont, size: 18, bold: true)
@@ -562,32 +726,31 @@ class TOCIndexWindowController: NSWindowController, NSOutlineViewDataSource, NSO
             // Calculate widths to determine how many dots to insert
             let titleAttrsForMeasure: [NSAttributedString.Key: Any] = [.font: entryFont]
             let titleWidth = (entry.title as NSString).size(withAttributes: titleAttrsForMeasure).width
-            let pageNumStr = String(entry.pageNumber)
+            // Format page number according to selected format
+            let pageNumStr = currentPageFormat.format(entry.pageNumber)
             let pageNumWidth = (pageNumStr as NSString).size(withAttributes: titleAttrsForMeasure).width
-            let dotWidth = (".").size(withAttributes: titleAttrsForMeasure).width
-            let spaceWidth = (" ").size(withAttributes: titleAttrsForMeasure).width
+            let dotWidth = (" .").size(withAttributes: titleAttrsForMeasure).width  // space + dot width
 
-            // Calculate dots to fill space between title and page number
-            let contentWidth = actualLineWidth - leftIndent
-            let paddingSpace = spaceWidth * 2  // Just minimal padding around dots
-            let availableForDots = contentWidth - titleWidth - pageNumWidth - paddingSpace
-            let dotCount = max(3, Int(availableForDots / dotWidth))
-            let leaderDots = " " + String(repeating: ".", count: dotCount) + " "
+            // Calculate available space for dots (leave room for margins)
+            let availableWidth = actualLineWidth - leftIndent - titleWidth - pageNumWidth - 20  // 20pt safety margin
+            let dotCount = max(3, Int(availableWidth / dotWidth))
+            let leaderDots = " " + String(repeating: " .", count: dotCount)
 
-            // Create paragraph style with right-aligned tab stop at actual line edge
+            // Create paragraph style - NO tabs, just single line with dots
             let paragraphStyle = NSMutableParagraphStyle()
             paragraphStyle.firstLineHeadIndent = leftIndent
             paragraphStyle.headIndent = leftIndent
+            paragraphStyle.lineBreakMode = .byTruncatingMiddle  // Prevent wrapping
             paragraphStyle.tabStops = []
-            paragraphStyle.tabStops = [NSTextTab(textAlignment: .right, location: actualLineWidth, options: [:])]
 
+            // Build the line: title + dots + page number (no tab)
             let entryAttrs: [NSAttributedString.Key: Any] = [
                 .font: entryFont,
                 .foregroundColor: ThemeManager.shared.currentTheme.textColor,
                 .paragraphStyle: paragraphStyle
             ]
 
-            let line = "\(entry.title)\(leaderDots)\t\(pageNumStr)\n"
+            let line = "\(entry.title)\(leaderDots) \(pageNumStr)\n"
             tocString.append(NSAttributedString(string: line, attributes: entryAttrs))
         }
 
@@ -660,7 +823,7 @@ class TOCIndexWindowController: NSWindowController, NSOutlineViewDataSource, NSO
 
         let indexString = NSMutableAttributedString()
 
-        // Detect document font (prefer typing attributes or selection)
+        // Detect document font from StyleCatalog or document
         let documentFont = resolveDocumentFont(from: textView)
 
         // Get font for this family at different sizes, derived from document font
@@ -708,29 +871,27 @@ class TOCIndexWindowController: NSWindowController, NSOutlineViewDataSource, NSO
                 indexString.append(NSAttributedString(string: "\n\(currentLetter)\n", attributes: letterAttrs))
             }
 
-            let pageList = entry.pageNumbers.map { String($0) }.joined(separator: ", ")
+            // Format page numbers according to selected format
+            let pageList = entry.pageNumbers.map { currentPageFormat.format($0) }.joined(separator: ", ")
 
             // Calculate leader dots
             let termAttrsForMeasure: [NSAttributedString.Key: Any] = [.font: entryFont]
             let termWidth = (entry.term as NSString).size(withAttributes: termAttrsForMeasure).width
             let pageListWidth = (pageList as NSString).size(withAttributes: termAttrsForMeasure).width
-            let dotWidth = (".").size(withAttributes: termAttrsForMeasure).width
-            let spaceWidth = (" ").size(withAttributes: termAttrsForMeasure).width
+            let dotWidth = (" .").size(withAttributes: termAttrsForMeasure).width  // space + dot
             let leftIndent: CGFloat = 20
 
-            // Calculate dots to fill space between term and page numbers
-            let contentWidth = actualLineWidth - leftIndent
-            let paddingSpace = spaceWidth * 2  // Minimal padding around dots
-            let availableForDots = contentWidth - termWidth - pageListWidth - paddingSpace
-            let dotCount = max(3, Int(availableForDots / dotWidth))
-            let leaderDots = " " + String(repeating: ".", count: dotCount) + " "
+            // Calculate available space for dots
+            let availableWidth = actualLineWidth - leftIndent - termWidth - pageListWidth - 20  // 20pt safety margin
+            let dotCount = max(3, Int(availableWidth / dotWidth))
+            let leaderDots = " " + String(repeating: " .", count: dotCount)
 
-            // Create paragraph style with right-aligned tab stop at actual line edge
+            // Create paragraph style - NO tabs
             let paragraphStyle = NSMutableParagraphStyle()
             paragraphStyle.firstLineHeadIndent = leftIndent
             paragraphStyle.headIndent = leftIndent
+            paragraphStyle.lineBreakMode = .byTruncatingMiddle
             paragraphStyle.tabStops = []
-            paragraphStyle.tabStops = [NSTextTab(textAlignment: .right, location: actualLineWidth, options: [:])]
 
             let entryAttrs: [NSAttributedString.Key: Any] = [
                 .font: entryFont,
@@ -738,7 +899,7 @@ class TOCIndexWindowController: NSWindowController, NSOutlineViewDataSource, NSO
                 .paragraphStyle: paragraphStyle
             ]
 
-            let line = "\(entry.term)\(leaderDots)\t\(pageList)\n"
+            let line = "\(entry.term)\(leaderDots) \(pageList)\n"
             indexString.append(NSAttributedString(string: line, attributes: entryAttrs))
         }
 

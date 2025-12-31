@@ -341,8 +341,9 @@ class MainWindowController: NSWindowController {
         if tocIndexWindow == nil {
             tocIndexWindow = TOCIndexWindowController()
         }
-        // Connect the editor text view
+        // Connect the editor text view and controller
         tocIndexWindow?.editorTextView = mainContentViewController?.editorViewController?.textView
+        tocIndexWindow?.editorViewController = mainContentViewController?.editorViewController
         tocIndexWindow?.showWindow(nil)
         tocIndexWindow?.window?.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)

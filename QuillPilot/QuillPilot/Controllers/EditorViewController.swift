@@ -1930,6 +1930,36 @@ class EditorViewController: NSViewController {
         updatePageCentering()
     }
 
+    // MARK: - Efficient Text Insertion
+
+    /// Insert attributed text at the current cursor position while suppressing expensive layout updates
+    /// This is useful for large insertions like TOC/Index that would otherwise cause the app to hang
+    func insertAttributedTextEfficiently(_ attributedString: NSAttributedString) {
+        guard let textStorage = textView.textStorage else { return }
+
+        let insertLocation = textView.selectedRange().location
+
+        // Suppress text change notifications to prevent cascading layout updates
+        suppressTextChangeNotifications = true
+
+        // Perform the insertion
+        textStorage.insert(attributedString, at: insertLocation)
+
+        // Move cursor to end of inserted text
+        let newLocation = insertLocation + attributedString.length
+        textView.setSelectedRange(NSRange(location: newLocation, length: 0))
+
+        // Re-enable notifications
+        suppressTextChangeNotifications = false
+
+        // Now trigger a single layout update manually
+        delegate?.textDidChange()
+        updatePageCentering()
+
+        // Ensure the cursor is visible after insertion
+        textView.scrollRangeToVisible(textView.selectedRange())
+    }
+
     // MARK: - Format Painter
 
     func toggleFormatPainter() {

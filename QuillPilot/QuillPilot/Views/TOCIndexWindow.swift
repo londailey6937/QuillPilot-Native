@@ -296,6 +296,7 @@ class TOCIndexWindowController: NSWindowController, NSOutlineViewDataSource, NSO
     private var addCategoryPopup: NSPopUpButton!
 
     weak var editorTextView: NSTextView?
+    weak var editorViewController: EditorViewController?
 
     private let categories = ["General", "People", "Places", "Concepts", "Events", "Terms"]
 
@@ -765,9 +766,14 @@ class TOCIndexWindowController: NSWindowController, NSOutlineViewDataSource, NSO
 
         tocString.append(NSAttributedString(string: "\n"))
 
-        // Insert at cursor
-        let insertLocation = textView.selectedRange().location
-        textView.textStorage?.insert(tocString, at: insertLocation)
+        // Insert using efficient method to prevent app hang
+        if let editorVC = editorViewController {
+            editorVC.insertAttributedTextEfficiently(tocString)
+        } else {
+            // Fallback to direct insertion if controller not available
+            let insertLocation = textView.selectedRange().location
+            textView.textStorage?.insert(tocString, at: insertLocation)
+        }
 
         showThemedAlert(title: "TOC Inserted", message: "Table of Contents has been inserted at the cursor position.")
     }
@@ -920,9 +926,14 @@ class TOCIndexWindowController: NSWindowController, NSOutlineViewDataSource, NSO
 
         indexString.append(NSAttributedString(string: "\n"))
 
-        // Insert at cursor
-        let insertLocation = textView.selectedRange().location
-        textView.textStorage?.insert(indexString, at: insertLocation)
+        // Insert using efficient method to prevent app hang
+        if let editorVC = editorViewController {
+            editorVC.insertAttributedTextEfficiently(indexString)
+        } else {
+            // Fallback to direct insertion if controller not available
+            let insertLocation = textView.selectedRange().location
+            textView.textStorage?.insert(indexString, at: insertLocation)
+        }
 
         showThemedAlert(title: "Index Inserted", message: "Index has been inserted at the cursor position.")
     }

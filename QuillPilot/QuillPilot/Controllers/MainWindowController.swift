@@ -387,7 +387,7 @@ extension MainWindowController: FormattingToolbarDelegate {
         mainContentViewController.applyStyle(styleName)
 
         // Refresh outline if an outline-related style is applied
-        let outlineStyles = ["Part Title", "Chapter Number", "Chapter Title", "Chapter Subtitle", "Heading 1", "Heading 2", "Heading 3", "Index Title", "Glossary Title", "Appendix Title"]
+        let outlineStyles = ["Part Title", "Chapter Number", "Chapter Title", "Chapter Subtitle", "Heading 1", "Heading 2", "Heading 3", "TOC Title", "Index Title", "Glossary Title", "Appendix Title"]
         if outlineStyles.contains(styleName) {
             // Delay refresh slightly to allow style to be applied first
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {

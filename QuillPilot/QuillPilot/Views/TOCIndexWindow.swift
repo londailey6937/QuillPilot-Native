@@ -128,7 +128,7 @@ class TOCIndexManager {
         }
         if lowercased.contains("chapter") {
             return 1
-        } else if lowercased.contains("index title") || lowercased.contains("glossary title") || lowercased.contains("appendix title") {
+        } else if lowercased.contains("toc title") || lowercased.contains("index title") || lowercased.contains("glossary title") || lowercased.contains("appendix title") {
             return 1  // Same level as chapters for document outline
         } else if lowercased.contains("heading 1") {
             return 2
@@ -680,6 +680,7 @@ class TOCIndexWindowController: NSWindowController, NSOutlineViewDataSource, NSO
         }
 
         let tocString = NSMutableAttributedString()
+        let styleAttributeKey = NSAttributedString.Key("QuillStyleName")
 
         // Detect document font from StyleCatalog or document
         let documentFont = resolveDocumentFont(from: textView)
@@ -699,18 +700,20 @@ class TOCIndexWindowController: NSWindowController, NSOutlineViewDataSource, NSO
         let spacerParagraph = NSMutableParagraphStyle()
         let spacerAttrs: [NSAttributedString.Key: Any] = [
             .font: fontFromDocument(documentFont, size: 12, bold: false),
-            .paragraphStyle: spacerParagraph
+            .paragraphStyle: spacerParagraph,
+            styleAttributeKey: "Body Text"
         ]
         tocString.append(NSAttributedString(string: "\n\n", attributes: spacerAttrs))
 
-        // Title
+        // Title - mark with "TOC Title" style to appear in document outline
         let titleFont = fontFromDocument(documentFont, size: 18, bold: true)
         let titleParagraph = NSMutableParagraphStyle()
         titleParagraph.alignment = .center
         let titleAttrs: [NSAttributedString.Key: Any] = [
             .font: titleFont,
             .foregroundColor: ThemeManager.shared.currentTheme.textColor,
-            .paragraphStyle: titleParagraph
+            .paragraphStyle: titleParagraph,
+            styleAttributeKey: "TOC Title"
         ]
         tocString.append(NSAttributedString(string: "Table of Contents\n\n", attributes: titleAttrs))
 
@@ -748,11 +751,12 @@ class TOCIndexWindowController: NSWindowController, NSOutlineViewDataSource, NSO
             paragraphStyle.lineBreakMode = .byTruncatingMiddle  // Prevent wrapping
             paragraphStyle.tabStops = []
 
-            // Build the line: title + dots + page number (no tab)
+            // Mark entries with "TOC Entry" style to prevent inference as headings
             let entryAttrs: [NSAttributedString.Key: Any] = [
                 .font: entryFont,
                 .foregroundColor: ThemeManager.shared.currentTheme.textColor,
-                .paragraphStyle: paragraphStyle
+                .paragraphStyle: paragraphStyle,
+                styleAttributeKey: "TOC Entry"
             ]
 
             let line = "\(entry.title)\(leaderDots) \(pageNumStr)\n"
@@ -827,6 +831,7 @@ class TOCIndexWindowController: NSWindowController, NSOutlineViewDataSource, NSO
         }
 
         let indexString = NSMutableAttributedString()
+        let styleAttributeKey = NSAttributedString.Key("QuillStyleName")
 
         // Detect document font from StyleCatalog or document
         let documentFont = resolveDocumentFont(from: textView)
@@ -848,23 +853,26 @@ class TOCIndexWindowController: NSWindowController, NSOutlineViewDataSource, NSO
         // Use actual container width for both tab stops and dot calculation
         let actualLineWidth = containerWidth - (lineFragmentPadding * 2)
 
-        // Title
+        // Title - mark with "Index Title" style to appear in document outline
         let titleFont = fontFromDocument(documentFont, size: 18, bold: true)
         let titleParagraph = NSMutableParagraphStyle()
         titleParagraph.alignment = .center
         let titleAttrs: [NSAttributedString.Key: Any] = [
             .font: titleFont,
             .foregroundColor: ThemeManager.shared.currentTheme.textColor,
-            .paragraphStyle: titleParagraph
+            .paragraphStyle: titleParagraph,
+            styleAttributeKey: "Index Title"
         ]
         indexString.append(NSAttributedString(string: "Index\n\n", attributes: titleAttrs))
 
         // Group by first letter
         var currentLetter: Character = " "
         let letterFont = fontFromDocument(documentFont, size: 14, bold: true)
+        // Mark letter headings with "Index Letter" style to prevent inference as headings
         let letterAttrs: [NSAttributedString.Key: Any] = [
             .font: letterFont,
-            .foregroundColor: ThemeManager.shared.currentTheme.textColor
+            .foregroundColor: ThemeManager.shared.currentTheme.textColor,
+            styleAttributeKey: "Index Letter"
         ]
 
         let entryFont = fontFromDocument(documentFont, size: 12, bold: false)
@@ -898,10 +906,12 @@ class TOCIndexWindowController: NSWindowController, NSOutlineViewDataSource, NSO
             paragraphStyle.lineBreakMode = .byTruncatingMiddle
             paragraphStyle.tabStops = []
 
+            // Mark entries with "Index Entry" style to prevent inference as headings
             let entryAttrs: [NSAttributedString.Key: Any] = [
                 .font: entryFont,
                 .foregroundColor: ThemeManager.shared.currentTheme.textColor,
-                .paragraphStyle: paragraphStyle
+                .paragraphStyle: paragraphStyle,
+                styleAttributeKey: "Index Entry"
             ]
 
             let line = "\(entry.term)\(leaderDots) \(pageList)\n"

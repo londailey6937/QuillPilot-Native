@@ -2759,6 +2759,7 @@ case "Book Subtitle":
             "Heading 1": 1,
             "Heading 2": 2,
             "Heading 3": 3,
+            "TOC Title": 1,
             "Index Title": 1,
             "Glossary Title": 1,
             "Appendix Title": 1
@@ -2943,9 +2944,8 @@ case "Book Subtitle":
     func updatePageCentering() {
         guard let scrollView else { return }
 
-        // Preserve current cursor position and scroll location BEFORE any layout changes
+        // Preserve current cursor position BEFORE any layout changes
         let savedSelection = textView.selectedRange()
-        let savedVisibleRect = scrollView.documentVisibleRect
 
         let visibleWidth = scrollView.contentView.bounds.width
         let scaledPageWidth = pageWidth * editorZoom
@@ -2969,9 +2969,9 @@ case "Book Subtitle":
         let isInColumnsOrTables = isCurrentPositionInColumns() || isCurrentPositionInTable()
 
         // Only do expensive full layout calculation if:
-        // - Document is small (< 10 pages estimated)
+        // - Document is very small (< 5 pages estimated)
         // - NOT currently in columns or tables (to avoid layout loops)
-        if numPages < 10 && !isInColumnsOrTables,
+        if numPages < 5 && !isInColumnsOrTables,
            let layoutManager = textView.layoutManager,
            let textContainer = textView.textContainer {
             let activeHeaderHeight = showHeaders ? headerHeight : 0
@@ -3086,12 +3086,10 @@ case "Book Subtitle":
         let docHeight = max(totalHeight + 1000, 1650000 * editorZoom)  // Ensure enough space for large documents
         documentView.frame = NSRect(x: 0, y: 0, width: docWidth, height: docHeight)
 
-        // Restore cursor position and scroll location AFTER all layout changes
-        // This prevents the cursor from jumping when the layout is recalculated
+        // Restore cursor position AFTER layout changes (but don't force scroll during typing)
+        // This prevents cursor jumping without triggering expensive layout recalculations
         if savedSelection.location <= textView.string.count {
             textView.setSelectedRange(savedSelection)
-            // Scroll to make the cursor visible at its current position
-            textView.scrollRangeToVisible(savedSelection)
         }
     }
 
@@ -4136,11 +4134,11 @@ extension EditorViewController: NSTextViewDelegate {
         } else if isInColumns {
             // Columns are lighter - just text flow formatting
             titleDelay = 0.5
-            layoutDelay = 1.0
+            layoutDelay = 1.5
         } else {
-            // Normal text
+            // Normal text - use longer delay to avoid frequent expensive layout recalculations
             titleDelay = 0.3
-            layoutDelay = 0.5
+            layoutDelay = 1.0
         }
 
         perform(#selector(checkAndUpdateTitleDelayed), with: nil, afterDelay: titleDelay)

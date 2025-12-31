@@ -2555,6 +2555,7 @@ class OutlineViewController: NSViewController {
 
     var onSelect: ((EditorViewController.OutlineEntry) -> Void)?
     private var roots: [Node] = []
+    private var isUpdating = false  // Prevent scroll during programmatic updates
 
     private var headerLabel: NSTextField!
     private var outlineView: NSOutlineView!
@@ -2619,9 +2620,12 @@ class OutlineViewController: NSViewController {
     }
 
     func update(with entries: [EditorViewController.OutlineEntry]) {
+        isUpdating = true
+        outlineView.deselectAll(nil)  // Clear selection before reload to prevent scrolling
         roots = buildTree(from: entries)
         outlineView.reloadData()
         outlineView.expandItem(nil, expandChildren: true)
+        isUpdating = false
     }
 
     private func buildTree(from entries: [EditorViewController.OutlineEntry]) -> [Node] {
@@ -2763,6 +2767,9 @@ extension OutlineViewController: NSOutlineViewDataSource, NSOutlineViewDelegate 
     }
 
     func outlineViewSelectionDidChange(_ notification: Notification) {
+        // Don't scroll during programmatic updates (e.g., outline refresh from typing)
+        guard !isUpdating else { return }
+
         let selectedRow = outlineView.selectedRow
         guard selectedRow >= 0, let node = outlineView.item(atRow: selectedRow) as? Node else { return }
         let entry = EditorViewController.OutlineEntry(title: node.title, level: node.level, range: node.range, page: node.page)

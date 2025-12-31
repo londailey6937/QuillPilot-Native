@@ -1508,7 +1508,10 @@ class EditorViewController: NSViewController {
                 let paragraph = (attrs[.paragraphStyle] as? NSParagraphStyle) ?? defaultParagraph
                 let font = (attrs[.font] as? NSFont) ?? defaultFont
 
-                let inferredStyleName = inferStyle(font: font, paragraphStyle: paragraph)
+                // Get paragraph text to help with content-based style detection
+                let paragraphText = fullString.substring(with: paragraphRange).trimmingCharacters(in: .whitespacesAndNewlines)
+
+                let inferredStyleName = inferStyle(font: font, paragraphStyle: paragraph, text: paragraphText)
 
                 if let definition = StyleCatalog.shared.style(named: inferredStyleName) {
                     let para = paragraphStyle(from: definition)
@@ -1759,8 +1762,11 @@ class EditorViewController: NSViewController {
                 continue
             }
 
-            // Infer style based on font and paragraph attributes
-            let styleName = inferStyle(font: font, paragraphStyle: paragraphStyle)
+            // Get paragraph text to help with content-based style detection
+            let paragraphText = fullString.substring(with: paragraphRange).trimmingCharacters(in: .whitespacesAndNewlines)
+
+            // Infer style based on font, paragraph attributes, and text content
+            let styleName = inferStyle(font: font, paragraphStyle: paragraphStyle, text: paragraphText)
 
             if let definition = StyleCatalog.shared.style(named: styleName) {
                 // Tag the paragraph
@@ -1799,19 +1805,59 @@ class EditorViewController: NSViewController {
         return mutable
     }
 
-    private func inferStyle(font: NSFont, paragraphStyle: NSParagraphStyle) -> String {
+    private func inferStyle(font: NSFont, paragraphStyle: NSParagraphStyle, text: String = "") -> String {
         let currentTemplate = StyleCatalog.shared.currentTemplateName
         let styleNames = StyleCatalog.shared.styleNames(for: currentTemplate)
+
+        // Content-based detection for Index/TOC content (takes priority over formatting)
+        let trimmedText = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        let fontTraits = NSFontManager.shared.traits(of: font)
+        let isBold = fontTraits.contains(.boldFontMask)
+
+        // Single uppercase letter with bold formatting -> Index Letter
+        if trimmedText.count == 1 && trimmedText.first?.isUppercase == true && isBold {
+            if font.pointSize >= 13 && font.pointSize <= 16 {
+                return "Index Letter"
+            }
+        }
+
+        // Text with leader dots pattern (term ... page) -> Index Entry or TOC Entry
+        if trimmedText.contains(" . ") || trimmedText.contains("...") || trimmedText.contains(". .") {
+            // Check if ends with a number (page reference)
+            let lastWord = trimmedText.split(separator: " ").last ?? ""
+            if lastWord.allSatisfy({ $0.isNumber || $0 == "," }) {
+                // Has indentation -> likely Index Entry
+                if paragraphStyle.firstLineHeadIndent > 10 || paragraphStyle.headIndent > 10 {
+                    return "Index Entry"
+                }
+                // No indent or small indent -> likely TOC Entry
+                return "TOC Entry"
+            }
+        }
+
+        // "Index" or "Table of Contents" title detection
+        let lowercased = trimmedText.lowercased()
+        if (lowercased == "index" || lowercased == "index\n" || lowercased == "index\n\n") &&
+           isBold && paragraphStyle.alignment == .center && font.pointSize >= 16 {
+            return "Index Title"
+        }
+        if (lowercased.contains("table of contents") || lowercased == "contents") &&
+           isBold && paragraphStyle.alignment == .center && font.pointSize >= 16 {
+            return "TOC Title"
+        }
 
         var bestMatch: String = "Body Text"
         var bestScore: Int = -100
 
-        let fontTraits = NSFontManager.shared.traits(of: font)
-        let isBold = fontTraits.contains(.boldFontMask)
         let isItalic = fontTraits.contains(.italicFontMask)
 
         for name in styleNames {
             guard let style = StyleCatalog.shared.style(named: name) else { continue }
+
+            // Skip Index/TOC styles in general matching - they should only be matched by content detection above
+            let skipStyles = ["Index Letter", "Index Entry", "Index Title", "TOC Entry", "TOC Title",
+                              "TOC Entry Level 1", "TOC Entry Level 2", "TOC Entry Level 3"]
+            if skipStyles.contains(name) { continue }
 
             var score = 0
 
@@ -2944,8 +2990,9 @@ case "Book Subtitle":
     func updatePageCentering() {
         guard let scrollView else { return }
 
-        // Preserve current cursor position BEFORE any layout changes
+        // Preserve current cursor position AND scroll position BEFORE any layout changes
         let savedSelection = textView.selectedRange()
+        let savedScrollPosition = scrollView.contentView.bounds.origin
 
         let visibleWidth = scrollView.contentView.bounds.width
         let scaledPageWidth = pageWidth * editorZoom
@@ -3086,11 +3133,18 @@ case "Book Subtitle":
         let docHeight = max(totalHeight + 1000, 1650000 * editorZoom)  // Ensure enough space for large documents
         documentView.frame = NSRect(x: 0, y: 0, width: docWidth, height: docHeight)
 
-        // Restore cursor position AFTER layout changes (but don't force scroll during typing)
-        // This prevents cursor jumping without triggering expensive layout recalculations
+        // Restore cursor position AFTER layout changes
         if savedSelection.location <= textView.string.count {
             textView.setSelectedRange(savedSelection)
         }
+
+        // Restore scroll position to prevent view jumping during layout updates,
+        // but then ensure cursor is visible (which will scroll if needed)
+        scrollView.contentView.scroll(to: savedScrollPosition)
+
+        // Ensure the cursor is visible after layout - this allows natural scrolling
+        // when typing at the end of the document without jumping back up
+        textView.scrollRangeToVisible(textView.selectedRange())
     }
 
     private func updateHeadersAndFooters(_ numPages: Int) {

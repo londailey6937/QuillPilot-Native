@@ -2059,9 +2059,10 @@ class EditorViewController: NSViewController {
         for char in invisibleChars {
             var searchRange = NSRange(location: 0, length: text.count)
             while searchRange.location < text.count {
-                if let range = (text as NSString).range(of: char, options: [], range: searchRange).toOptional() {
-                    ranges.append(range)
-                    searchRange.location = range.location + range.length
+                let foundRange = (text as NSString).range(of: char, options: [], range: searchRange)
+                if foundRange.location != NSNotFound {
+                    ranges.append(foundRange)
+                    searchRange.location = foundRange.location + foundRange.length
                     searchRange.length = text.count - searchRange.location
                 } else {
                     break

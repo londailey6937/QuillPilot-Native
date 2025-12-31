@@ -324,6 +324,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         findItem.target = self
         editMenu.addItem(findItem)
 
+        editMenu.addItem(.separator())
+
+        let findInvisibleItem = NSMenuItem(title: "Find Invisible Characters…", action: #selector(findInvisibleCharacters(_:)), keyEquivalent: "")
+        findInvisibleItem.target = self
+        editMenu.addItem(findInvisibleItem)
+
+        let cleanItem = NSMenuItem(title: "Remove Invisible Characters", action: #selector(cleanInvisibleCharacters(_:)), keyEquivalent: "")
+        cleanItem.target = self
+        editMenu.addItem(cleanItem)
+
         // Format Menu
         let formatMenuItem = NSMenuItem()
         mainMenu.addItem(formatMenuItem)
@@ -404,6 +414,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc private func showTOCIndex(_ sender: Any?) {
         mainWindowController?.showTOCIndex()
+    }
+
+    @objc private func findInvisibleCharacters(_ sender: Any?) {
+        mainWindowController?.mainContentViewController.editorViewController.highlightInvisibleCharacters()
+    }
+
+    @objc private func cleanInvisibleCharacters(_ sender: Any?) {
+        mainWindowController?.mainContentViewController.editorViewController.removeInvisibleCharacters()
     }
 
     @objc private func showDocumentation(_ sender: Any?) {

@@ -1661,10 +1661,6 @@ class FormattingToolbar: NSView {
         tableBtn.target = self
         tableBtn.action = #selector(tableTapped)
         tableBtn.toolTip = "Table Operations"
-        let clearBtn = createToolbarButton("⌧") // Clear icon
-        clearBtn.target = self
-        clearBtn.action = #selector(clearAllTapped)
-        clearBtn.toolTip = "Clear All"
 
         // Search & Replace
         let searchBtn = createToolbarButton("🔍", fontSize: 16)
@@ -1695,7 +1691,7 @@ class FormattingToolbar: NSView {
             imageButton,
             columnsBtn, tableBtn,
             outdentBtn, indentBtn,
-            searchBtn, clearBtn, sidebarBtn
+            searchBtn, sidebarBtn
         ])
         toolbarStack.orientation = .horizontal
         toolbarStack.spacing = 8
@@ -2053,10 +2049,6 @@ class FormattingToolbar: NSView {
 
     @objc private func tableTapped() {
         delegate?.formattingToolbarDidInsertTable(self)
-    }
-
-    @objc private func clearAllTapped() {
-        delegate?.formattingToolbarDidClearAll(self)
     }
 
     @objc private func sidebarToggleTapped() {

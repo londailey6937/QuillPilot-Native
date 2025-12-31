@@ -1960,6 +1960,176 @@ class EditorViewController: NSViewController {
         textView.scrollRangeToVisible(textView.selectedRange())
     }
 
+    /// Remove invisible characters that can cause cursor flashing issues in imported documents
+    /// This includes zero-width spaces, zero-width joiners, and other problematic Unicode characters
+    func removeInvisibleCharacters() {
+        guard let textStorage = textView.textStorage else { return }
+
+        let text = textStorage.string
+
+        // Common invisible/problematic characters that can cause cursor issues
+        let invisibleChars: [(char: String, name: String)] = [
+            ("\u{200B}", "Zero Width Space"),
+            ("\u{200C}", "Zero Width Non-Joiner"),
+            ("\u{200D}", "Zero Width Joiner"),
+            ("\u{FEFF}", "Zero Width No-Break Space (BOM)"),
+            ("\u{2060}", "Word Joiner"),
+            ("\u{180E}", "Mongolian Vowel Separator"),
+            ("\u{034F}", "Combining Grapheme Joiner"),
+            ("\u{00A0}", "Non-Breaking Space"),
+            ("\u{202F}", "Narrow No-Break Space"),
+        ]
+
+        var cleanedText = text
+        var foundChars: [String: Int] = [:]
+
+        for (char, name) in invisibleChars {
+            let count = text.components(separatedBy: char).count - 1
+            if count > 0 {
+                foundChars[name] = count
+                cleanedText = cleanedText.replacingOccurrences(of: char, with: "")
+            }
+        }
+
+        // Only update if we actually found and removed characters
+        if cleanedText != text {
+            let savedSelection = textView.selectedRange()
+
+            suppressTextChangeNotifications = true
+
+            // Preserve all attributes while replacing the string
+            let mutableStorage = NSMutableAttributedString(attributedString: textStorage)
+            mutableStorage.mutableString.setString(cleanedText)
+
+            textStorage.beginEditing()
+            textStorage.setAttributedString(mutableStorage)
+            textStorage.endEditing()
+
+            // Restore selection (adjust if necessary)
+            let newLocation = min(savedSelection.location, textStorage.length)
+            textView.setSelectedRange(NSRange(location: newLocation, length: 0))
+
+            suppressTextChangeNotifications = false
+
+            delegate?.textDidChange()
+            updatePageCentering()
+
+            // Show detailed report
+            let totalRemoved = text.count - cleanedText.count
+            var report = "Removed \(totalRemoved) invisible character(s):\n\n"
+            for (name, count) in foundChars.sorted(by: { $0.value > $1.value }) {
+                report += "• \(count) \(name)\n"
+            }
+
+            DispatchQueue.main.async { [weak self] in
+                guard let window = self?.view.window else { return }
+                let alert = NSAlert()
+                alert.messageText = "Invisible Characters Removed"
+                alert.informativeText = report
+                alert.alertStyle = .informational
+                alert.addButton(withTitle: "OK")
+                alert.beginSheetModal(for: window)
+            }
+        } else {
+            DispatchQueue.main.async { [weak self] in
+                guard let window = self?.view.window else { return }
+                let alert = NSAlert()
+                alert.messageText = "Document Clean"
+                alert.informativeText = "No invisible characters found in document."
+                alert.alertStyle = .informational
+                alert.addButton(withTitle: "OK")
+                alert.beginSheetModal(for: window)
+            }
+        }
+    }
+
+    /// Highlight invisible characters in the document to identify problematic areas
+    func highlightInvisibleCharacters() {
+        guard let textStorage = textView.textStorage else { return }
+
+        let text = textStorage.string
+        let invisibleChars: [String] = [
+            "\u{200B}", "\u{200C}", "\u{200D}", "\u{FEFF}",
+            "\u{2060}", "\u{180E}", "\u{034F}", "\u{00A0}", "\u{202F}"
+        ]
+
+        var ranges: [NSRange] = []
+
+        // Find all occurrences of invisible characters
+        for char in invisibleChars {
+            var searchRange = NSRange(location: 0, length: text.count)
+            while searchRange.location < text.count {
+                if let range = (text as NSString).range(of: char, options: [], range: searchRange).toOptional() {
+                    ranges.append(range)
+                    searchRange.location = range.location + range.length
+                    searchRange.length = text.count - searchRange.location
+                } else {
+                    break
+                }
+            }
+        }
+
+        if ranges.isEmpty {
+            DispatchQueue.main.async { [weak self] in
+                guard let window = self?.view.window else { return }
+                let alert = NSAlert()
+                alert.messageText = "No Invisible Characters"
+                alert.informativeText = "No invisible characters were found in the document."
+                alert.alertStyle = .informational
+                alert.addButton(withTitle: "OK")
+                alert.beginSheetModal(for: window)
+            }
+            return
+        }
+
+        // Temporarily highlight the ranges
+        textStorage.beginEditing()
+        for range in ranges {
+            textStorage.addAttribute(.backgroundColor, value: NSColor.systemYellow.withAlphaComponent(0.5), range: range)
+            textStorage.addAttribute(.underlineStyle, value: NSUnderlineStyle.thick.rawValue, range: range)
+            textStorage.addAttribute(.underlineColor, value: NSColor.systemRed, range: range)
+        }
+        textStorage.endEditing()
+
+        // Show dialog with option to remove
+        DispatchQueue.main.async { [weak self] in
+            guard let self = self, let window = self.view.window else { return }
+            let alert = NSAlert()
+            alert.messageText = "Found \(ranges.count) Invisible Character(s)"
+            alert.informativeText = "These characters have been highlighted in yellow with red underlines. They may cause cursor flashing or other display issues.\n\nWould you like to remove them?"
+            alert.alertStyle = .warning
+            alert.addButton(withTitle: "Remove All")
+            alert.addButton(withTitle: "Keep Highlighting")
+            alert.addButton(withTitle: "Cancel")
+
+            alert.beginSheetModal(for: window) { response in
+                if response == .alertFirstButtonReturn {
+                    // Remove highlights first
+                    textStorage.beginEditing()
+                    for range in ranges {
+                        textStorage.removeAttribute(.backgroundColor, range: range)
+                        textStorage.removeAttribute(.underlineStyle, range: range)
+                        textStorage.removeAttribute(.underlineColor, range: range)
+                    }
+                    textStorage.endEditing()
+
+                    // Then remove the characters
+                    self.removeInvisibleCharacters()
+                } else if response == .alertThirdButtonReturn {
+                    // Cancel - remove highlights
+                    textStorage.beginEditing()
+                    for range in ranges {
+                        textStorage.removeAttribute(.backgroundColor, range: range)
+                        textStorage.removeAttribute(.underlineStyle, range: range)
+                        textStorage.removeAttribute(.underlineColor, range: range)
+                    }
+                    textStorage.endEditing()
+                }
+                // If "Keep Highlighting" is selected, do nothing - leave highlights in place
+            }
+        }
+    }
+
     // MARK: - Format Painter
 
     func toggleFormatPainter() {

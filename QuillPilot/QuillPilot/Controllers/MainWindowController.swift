@@ -113,7 +113,9 @@ class MainWindowController: NSWindowController {
 
         // Create ruler - 30px tall
         rulerView = EnhancedRulerView()
-        rulerView.pageWidth = 857 // Match page container width
+        // Store page width in points (8.5" = 612pt). The ruler view itself is sized to the
+        // scaled width so the marks/handles align with the on-screen page at the editor zoom.
+        rulerView.pageWidth = 612
         rulerView.translatesAutoresizingMaskIntoConstraints = false
         containerView.addSubview(rulerView)
 
@@ -174,7 +176,7 @@ class MainWindowController: NSWindowController {
             // Keep the ruler aligned to the editor page (not the full 3-column content area).
             let editorCenter = mainContentViewController.editorCenterXAnchor ?? contentView.centerXAnchor
             constraints.append(rulerView.centerXAnchor.constraint(equalTo: editorCenter))
-            constraints.append(rulerView.widthAnchor.constraint(equalToConstant: rulerView.pageWidth))
+            constraints.append(rulerView.widthAnchor.constraint(equalToConstant: rulerView.scaledPageWidth))
             constraints.append(rulerView.leadingAnchor.constraint(greaterThanOrEqualTo: editorLeading))
             constraints.append(rulerView.trailingAnchor.constraint(lessThanOrEqualTo: editorTrailing))
         } else {
@@ -344,6 +346,15 @@ class MainWindowController: NSWindowController {
         // Connect the editor text view and controller
         tocIndexWindow?.editorTextView = mainContentViewController?.editorViewController?.textView
         tocIndexWindow?.editorViewController = mainContentViewController?.editorViewController
+
+        // Auto-scan document for {{index:term}} markers when opening
+        if let textStorage = mainContentViewController?.editorViewController?.textView?.textStorage {
+            _ = TOCIndexManager.shared.generateIndexFromMarkers(in: textStorage)
+        }
+
+        // Refresh the table views to show current state
+        tocIndexWindow?.reloadTables()
+
         tocIndexWindow?.showWindow(nil)
         tocIndexWindow?.window?.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
@@ -1175,6 +1186,14 @@ extension MainWindowController {
         NSLog("🆕 NEW DOCUMENT: Clearing analysis")
         mainContentViewController.clearAnalysis()
 
+        // Clear TOC and Index entries for new document
+        NSLog("🆕 NEW DOCUMENT: Clearing TOC and Index")
+        TOCIndexManager.shared.clearTOC()
+        TOCIndexManager.shared.clearIndex()
+
+        // Clear search panel fields
+        searchPanel?.clearFields()
+
         // Clear Character Library for the new document
         NSLog("🆕 NEW DOCUMENT: Starting fresh character library")
         CharacterLibrary.shared.loadCharacters(for: nil)
@@ -1218,6 +1237,14 @@ extension MainWindowController {
         NSLog("=== importFile called with: \(url.path) ===")
         let ext = url.pathExtension.lowercased()
         NSLog("File extension: \(ext)")
+
+        // Clear TOC and Index entries before loading new document
+        NSLog("📂 OPENING DOCUMENT: Clearing TOC and Index")
+        TOCIndexManager.shared.clearTOC()
+        TOCIndexManager.shared.clearIndex()
+
+        // Clear search panel fields
+        searchPanel?.clearFields()
 
         // Load characters for this document
         NSLog("📂 OPENING DOCUMENT: Loading characters for document")
@@ -1277,6 +1304,11 @@ extension MainWindowController {
 
                         // Apply current theme to ensure text colors are correct (especially in dark mode)
                         self.mainContentViewController.editorViewController.applyTheme(ThemeManager.shared.currentTheme)
+
+                        // Scan for {{index:term}} markers and hide them visually
+                        if let textStorage = self.mainContentViewController.editorViewController.textView?.textStorage {
+                            _ = TOCIndexManager.shared.generateIndexFromMarkers(in: textStorage)
+                        }
 
                         // Update stats panel with the loaded document text
                         if let text = self.mainContentViewController.editorViewController.textView?.string {
@@ -2424,6 +2456,27 @@ class ContentViewController: NSViewController {
         editorViewController.setFirstLineIndent(ruler.firstLineIndent)
     }
 
+    private var pendingRulerLeftMargin: CGFloat?
+    private var pendingRulerRightMargin: CGFloat?
+    private var pendingRulerFirstLineIndent: CGFloat?
+
+    @objc private func applyRulerToEditorDeferred() {
+        let left = pendingRulerLeftMargin ?? 72
+        let right = pendingRulerRightMargin ?? 72
+        let indent = pendingRulerFirstLineIndent ?? 36
+        editorViewController.setPageMargins(left: left, right: right)
+        editorViewController.setFirstLineIndent(indent)
+    }
+
+    private func scheduleApplyRulerToEditor(_ ruler: EnhancedRulerView) {
+        pendingRulerLeftMargin = ruler.leftMargin
+        pendingRulerRightMargin = ruler.rightMargin
+        pendingRulerFirstLineIndent = ruler.firstLineIndent
+
+        NSObject.cancelPreviousPerformRequests(withTarget: self, selector: #selector(applyRulerToEditorDeferred), object: nil)
+        perform(#selector(applyRulerToEditorDeferred), with: nil, afterDelay: 0.03)
+    }
+
     private var isAnalyzing = false
 
     func performAnalysis() {
@@ -2516,15 +2569,15 @@ class ContentViewController: NSViewController {
 
 extension ContentViewController: RulerViewDelegate {
     func rulerView(_ ruler: EnhancedRulerView, didChangeLeftMargin: CGFloat) {
-        applyRulerToEditor(ruler)
+        scheduleApplyRulerToEditor(ruler)
     }
 
     func rulerView(_ ruler: EnhancedRulerView, didChangeRightMargin: CGFloat) {
-        applyRulerToEditor(ruler)
+        scheduleApplyRulerToEditor(ruler)
     }
 
     func rulerView(_ ruler: EnhancedRulerView, didChangeFirstLineIndent: CGFloat) {
-        applyRulerToEditor(ruler)
+        scheduleApplyRulerToEditor(ruler)
     }
 }
 
@@ -5266,6 +5319,12 @@ class SearchPanelController: NSWindowController {
 
     func updatePageInfoBeforeShow() {
         updatePageInfo()
+    }
+
+    func clearFields() {
+        searchField.stringValue = ""
+        replaceField.stringValue = ""
+        statusLabel.stringValue = ""
     }
 
     override func showWindow(_ sender: Any?) {

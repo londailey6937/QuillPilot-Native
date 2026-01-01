@@ -181,13 +181,15 @@ class TOCIndexManager {
         indexEntries.sort { $0.term.lowercased() < $1.term.lowercased() }
     }
 
-    // Auto-generate index from marked text
-    func generateIndexFromMarkers(in textStorage: NSTextStorage) -> [IndexEntry] {
-        let entries: [IndexEntry] = []
+    // Auto-generate index from marked text and hide markers visually
+    func generateIndexFromMarkers(in textStorage: NSTextStorage, pageNumberForLocation: ((Int) -> Int)? = nil) -> [IndexEntry] {
+        // Clear existing entries first to avoid duplicates
+        indexEntries.removeAll()
+
         let pattern = "\\{\\{index:([^}]+)\\}\\}"
 
         guard let regex = try? NSRegularExpression(pattern: pattern, options: []) else {
-            return entries
+            return indexEntries
         }
 
         let fullRange = NSRange(location: 0, length: textStorage.length)
@@ -197,12 +199,39 @@ class TOCIndexManager {
             if match.numberOfRanges >= 2 {
                 let termRange = match.range(at: 1)
                 let term = (textStorage.string as NSString).substring(with: termRange)
-                let pageNumber = estimatePageNumber(for: match.range.location, in: textStorage, pageHeight: 792)
+                let pageNumber = pageNumberForLocation?(match.range.location)
+                    ?? estimatePageNumber(for: match.range.location, in: textStorage, pageHeight: 792)
                 addIndexEntry(term: term, range: match.range, pageNumber: pageNumber)
+
+                // Hide the marker visually by setting font size to 0.1pt and text color to clear
+                textStorage.addAttribute(.font, value: NSFont.systemFont(ofSize: 0.1), range: match.range)
+                textStorage.addAttribute(.foregroundColor, value: NSColor.clear, range: match.range)
             }
         }
 
         return indexEntries
+    }
+
+    // Unhide all index markers (restore visibility for editing)
+    func unhideIndexMarkers(in textStorage: NSTextStorage) {
+        let pattern = "\\{\\{index:([^}]+)\\}\\}"
+
+        guard let regex = try? NSRegularExpression(pattern: pattern, options: []) else {
+            return
+        }
+
+        let fullRange = NSRange(location: 0, length: textStorage.length)
+        let matches = regex.matches(in: textStorage.string, options: [], range: fullRange)
+
+        let defaultFont = NSFont(name: "Times New Roman", size: 12) ?? NSFont.systemFont(ofSize: 12)
+        let highlightColor = NSColor.systemYellow.withAlphaComponent(0.3)
+
+        for match in matches {
+            // Restore to visible font with highlight to show it's a marker
+            textStorage.addAttribute(.font, value: defaultFont, range: match.range)
+            textStorage.addAttribute(.foregroundColor, value: NSColor.gray, range: match.range)
+            textStorage.addAttribute(.backgroundColor, value: highlightColor, range: match.range)
+        }
     }
 
     func clearTOC() {
@@ -213,6 +242,11 @@ class TOCIndexManager {
         indexEntries.removeAll()
     }
 
+    // Public page number estimation for use when adding index entries
+    func estimatePageNumberPublic(for location: Int, in textStorage: NSTextStorage) -> Int {
+        return estimatePageNumber(for: location, in: textStorage, pageHeight: 792)
+    }
+
     func removeIndexEntry(at index: Int) {
         guard index < indexEntries.count else { return }
         indexEntries.remove(at: index)
@@ -221,45 +255,68 @@ class TOCIndexManager {
 
 // MARK: - Helpers for section exclusion/removal
 
-// Finds the range of a TOC or Index section. Looks for the title and scans forward
+// Finds the range of a TOC or Index section. Looks for the title on its own line and scans forward
 // to find where it ends (next chapter heading, double newline gap, or max ~5000 chars).
 private func findSectionRange(title: String, in storage: NSTextStorage) -> NSRange? {
     let fullString = storage.string as NSString
-    let searchRange = NSRange(location: 0, length: fullString.length)
-    guard let titleRange = fullString.range(of: title, options: [.caseInsensitive], range: searchRange).toOptional() else {
-        return nil
-    }
+    var searchStart = 0
 
-    // Start from title, scan forward to find the end of the section
-    let startLocation = titleRange.location
-    let maxSectionLength = min(5000, fullString.length - startLocation)  // Cap at 5000 chars
-    var endLocation = startLocation + titleRange.length
-
-    // Scan forward looking for section end markers
-    let scanStart = titleRange.location + titleRange.length
-    let scanEnd = min(fullString.length, scanStart + maxSectionLength)
-
-    if scanStart < scanEnd {
-        let scanRange = NSRange(location: scanStart, length: scanEnd - scanStart)
-        let scanText = fullString.substring(with: scanRange)
-
-        // Look for chapter markers that indicate TOC has ended
-        let endMarkers = ["Chapter ", "CHAPTER ", "Part ", "PART ", "\n\n\n"]
-        var earliestEnd = scanText.count
-
-        for marker in endMarkers {
-            if let range = scanText.range(of: marker) {
-                let distance = scanText.distance(from: scanText.startIndex, to: range.lowerBound)
-                if distance > 50 && distance < earliestEnd {  // Must be at least 50 chars in
-                    earliestEnd = distance
-                }
-            }
+    // Search for the title that appears at the start of a line (not inside {{index:...}})
+    while searchStart < fullString.length {
+        let searchRange = NSRange(location: searchStart, length: fullString.length - searchStart)
+        guard let titleRange = fullString.range(of: title, options: [.caseInsensitive], range: searchRange).toOptional() else {
+            return nil
         }
 
-        endLocation = scanStart + earliestEnd
+        // Check if this is a standalone title (not part of a marker)
+        // Must be at start of document, or preceded by newline
+        let isAtLineStart = titleRange.location == 0 ||
+            fullString.substring(with: NSRange(location: titleRange.location - 1, length: 1)) == "\n"
+
+        // Must NOT be preceded by "{{index:" pattern
+        let markerCheckStart = max(0, titleRange.location - 10)
+        let markerCheckRange = NSRange(location: markerCheckStart, length: titleRange.location - markerCheckStart)
+        let precedingText = fullString.substring(with: markerCheckRange)
+        let isInsideMarker = precedingText.contains("{{index:") || precedingText.contains("{{")
+
+        if isAtLineStart && !isInsideMarker {
+            // Found a valid standalone title
+            let startLocation = titleRange.location
+            let maxSectionLength = min(5000, fullString.length - startLocation)
+            var endLocation = startLocation + titleRange.length
+
+            // Scan forward looking for section end markers
+            let scanStart = titleRange.location + titleRange.length
+            let scanEnd = min(fullString.length, scanStart + maxSectionLength)
+
+            if scanStart < scanEnd {
+                let scanRange = NSRange(location: scanStart, length: scanEnd - scanStart)
+                let scanText = fullString.substring(with: scanRange)
+
+                // Look for chapter markers that indicate section has ended
+                let endMarkers = ["Chapter ", "CHAPTER ", "Part ", "PART ", "\n\n\n"]
+                var earliestEnd = scanText.count
+
+                for marker in endMarkers {
+                    if let range = scanText.range(of: marker) {
+                        let distance = scanText.distance(from: scanText.startIndex, to: range.lowerBound)
+                        if distance > 50 && distance < earliestEnd {
+                            earliestEnd = distance
+                        }
+                    }
+                }
+
+                endLocation = scanStart + earliestEnd
+            }
+
+            return NSRange(location: startLocation, length: endLocation - startLocation)
+        }
+
+        // Not a valid title, continue searching after this occurrence
+        searchStart = titleRange.location + titleRange.length
     }
 
-    return NSRange(location: startLocation, length: endLocation - startLocation)
+    return nil
 }
 
 private func findExcludedRanges(in storage: NSTextStorage) -> [NSRange] {
@@ -476,6 +533,12 @@ class TOCIndexWindowController: NSWindowController, NSOutlineViewDataSource, NSO
 
         contentView.addSubview(tabView)
         window.contentView = contentView
+    }
+
+    // Reload both table views to reflect current state
+    func reloadTables() {
+        tocOutlineView?.reloadData()
+        indexTableView?.reloadData()
     }
 
     // UI elements for options
@@ -725,32 +788,23 @@ class TOCIndexWindowController: NSWindowController, NSOutlineViewDataSource, NSO
         // Use actual container width for both tab stops and dot calculation
         let actualLineWidth = containerWidth - (lineFragmentPadding * 2)
 
-        // Entries with leader dots
+        // Entries with leader dots - page numbers align right via padding
         for entry in entries {
             let fontSize: CGFloat = entry.level == 1 ? 14 : (entry.level == 2 ? 12 : 11)
             let isBold = entry.level == 1
             let entryFont = fontFromDocument(documentFont, size: fontSize, bold: isBold)
             let leftIndent = CGFloat(entry.level - 1) * 20
 
-            // Calculate widths to determine how many dots to insert
-            let titleAttrsForMeasure: [NSAttributedString.Key: Any] = [.font: entryFont]
-            let titleWidth = (entry.title as NSString).size(withAttributes: titleAttrsForMeasure).width
             // Format page number according to selected format
             let pageNumStr = currentPageFormat.format(entry.pageNumber)
-            let pageNumWidth = (pageNumStr as NSString).size(withAttributes: titleAttrsForMeasure).width
-            let dotWidth = (" .").size(withAttributes: titleAttrsForMeasure).width  // space + dot width
 
-            // Calculate available space for dots (leave room for margins)
-            let availableWidth = actualLineWidth - leftIndent - titleWidth - pageNumWidth - 20  // 20pt safety margin
-            let dotCount = max(3, Int(availableWidth / dotWidth))
-            let leaderDots = " " + String(repeating: " .", count: dotCount)
-
-            // Create paragraph style - NO tabs, just single line with dots
+            // Create paragraph style - right-aligned for the whole line
             let paragraphStyle = NSMutableParagraphStyle()
             paragraphStyle.firstLineHeadIndent = leftIndent
             paragraphStyle.headIndent = leftIndent
-            paragraphStyle.lineBreakMode = .byTruncatingMiddle  // Prevent wrapping
-            paragraphStyle.tabStops = []
+            paragraphStyle.alignment = .left
+            paragraphStyle.lineBreakMode = .byClipping
+            paragraphStyle.tabStops = []  // No tabs - we'll pad manually
 
             // Mark entries with "TOC Entry" style to prevent inference as headings
             let entryAttrs: [NSAttributedString.Key: Any] = [
@@ -760,7 +814,22 @@ class TOCIndexWindowController: NSWindowController, NSOutlineViewDataSource, NSO
                 styleAttributeKey: "TOC Entry"
             ]
 
-            let line = "\(entry.title)\(leaderDots) \(pageNumStr)\n"
+            // Calculate how much space we have for dots
+            let titleAttrsForMeasure: [NSAttributedString.Key: Any] = [.font: entryFont]
+            let titleWidth = (entry.title as NSString).size(withAttributes: titleAttrsForMeasure).width
+            let pageNumWidth = (pageNumStr as NSString).size(withAttributes: titleAttrsForMeasure).width
+            let spaceWidth = (" ").size(withAttributes: titleAttrsForMeasure).width
+            let dotWidth = (".").size(withAttributes: titleAttrsForMeasure).width
+
+            // Calculate available width for leader dots (leave margin on right)
+            let rightMargin: CGFloat = 10
+            let availableForDots = actualLineWidth - leftIndent - titleWidth - pageNumWidth - rightMargin - (spaceWidth * 2)
+            let dotSpaceWidth = dotWidth + spaceWidth  // ". " pattern
+            let dotCount = max(3, Int(availableForDots / dotSpaceWidth))
+            let leaderDots = " " + String(repeating: ". ", count: dotCount)
+
+            // Simple format: title + dots + page number (NO tab)
+            let line = "\(entry.title)\(leaderDots)\(pageNumStr)\n"
             tocString.append(NSAttributedString(string: line, attributes: entryAttrs))
         }
 
@@ -794,21 +863,51 @@ class TOCIndexWindowController: NSWindowController, NSOutlineViewDataSource, NSO
         guard !term.isEmpty else { return }
 
         guard let textView = editorTextView,
-                let _ = textView.textStorage else { return }
+                let textStorage = textView.textStorage else { return }
 
-        let selectedRange = textView.selectedRange()
-        let pageNumber = (selectedRange.location / 3000) + 1
+        let insertLocation = textView.selectedRange().location
         let category = addCategoryPopup.titleOfSelectedItem ?? "General"
 
-        TOCIndexManager.shared.addIndexEntry(term: term, range: selectedRange, pageNumber: pageNumber, category: category)
+        // Create the marker string {{index:term}} and insert it already hidden.
+        let markerText = "{{index:\(term)}}"
+        let markerAttrs: [NSAttributedString.Key: Any] = [
+            .font: NSFont.systemFont(ofSize: 0.1),
+            .foregroundColor: NSColor.clear
+        ]
+
+        // Insert the marker at cursor position
+        textStorage.insert(NSAttributedString(string: markerText, attributes: markerAttrs), at: insertLocation)
+
+        // Calculate the range of the inserted marker
+        let markerRange = NSRange(location: insertLocation, length: markerText.count)
+
+        // Re-apply hidden attributes in case other attributes were inherited.
+        textStorage.addAttribute(.font, value: NSFont.systemFont(ofSize: 0.1), range: markerRange)
+        textStorage.addAttribute(.foregroundColor, value: NSColor.clear, range: markerRange)
+
+        // Calculate page number based on position using the live layout when available.
+        let pageNumber = editorViewController?.getPageNumber(forCharacterPosition: insertLocation)
+            ?? TOCIndexManager.shared.estimatePageNumberPublic(for: insertLocation, in: textStorage)
+
+        // Add to index entries
+        TOCIndexManager.shared.addIndexEntry(term: term, range: markerRange, pageNumber: pageNumber, category: category)
         indexTableView.reloadData()
         addTermField.stringValue = ""
+
+        // Move cursor past the hidden marker
+        textView.setSelectedRange(NSRange(location: insertLocation + markerText.count, length: 0))
     }
 
     @objc private func scanIndexMarkers() {
         guard let textView = editorTextView, let textStorage = textView.textStorage else { return }
 
-        let entries = TOCIndexManager.shared.generateIndexFromMarkers(in: textStorage)
+        let entries = TOCIndexManager.shared.generateIndexFromMarkers(
+            in: textStorage,
+            pageNumberForLocation: { [weak self] location in
+                self?.editorViewController?.getPageNumber(forCharacterPosition: location)
+                    ?? TOCIndexManager.shared.estimatePageNumberPublic(for: location, in: textStorage)
+            }
+        )
         indexTableView.reloadData()
 
         showThemedAlert(title: "Index Scan Complete", message: "Found \(entries.count) indexed terms. Use {{index:term}} markers in your text to add index entries.")
@@ -893,15 +992,18 @@ class TOCIndexWindowController: NSWindowController, NSOutlineViewDataSource, NSO
             // Format page numbers according to selected format
             let pageList = entry.pageNumbers.map { currentPageFormat.format($0) }.joined(separator: ", ")
 
-            // Calculate leader dots
+            // Right-align the page list using a tab stop.
+            let leftIndent: CGFloat = 20
+            let rightPadding: CGFloat = 20
+            let rightTab = max(leftIndent + 100, actualLineWidth - rightPadding)
+
+            // Calculate leader dots (fill up to the tab stop)
             let termAttrsForMeasure: [NSAttributedString.Key: Any] = [.font: entryFont]
             let termWidth = (entry.term as NSString).size(withAttributes: termAttrsForMeasure).width
-            let pageListWidth = (pageList as NSString).size(withAttributes: termAttrsForMeasure).width
             let dotWidth = (" .").size(withAttributes: termAttrsForMeasure).width  // space + dot
-            let leftIndent: CGFloat = 20
 
             // Calculate available space for dots
-            let availableWidth = actualLineWidth - leftIndent - termWidth - pageListWidth - 20  // 20pt safety margin
+            let availableWidth = rightTab - leftIndent - termWidth - 10
             let dotCount = max(3, Int(availableWidth / dotWidth))
             let leaderDots = " " + String(repeating: " .", count: dotCount)
 
@@ -910,7 +1012,7 @@ class TOCIndexWindowController: NSWindowController, NSOutlineViewDataSource, NSO
             paragraphStyle.firstLineHeadIndent = leftIndent
             paragraphStyle.headIndent = leftIndent
             paragraphStyle.lineBreakMode = .byTruncatingMiddle
-            paragraphStyle.tabStops = []
+            paragraphStyle.tabStops = [NSTextTab(textAlignment: .right, location: rightTab, options: [:])]
 
             // Mark entries with "Index Entry" style to prevent inference as headings
             let entryAttrs: [NSAttributedString.Key: Any] = [
@@ -920,7 +1022,7 @@ class TOCIndexWindowController: NSWindowController, NSOutlineViewDataSource, NSO
                 styleAttributeKey: "Index Entry"
             ]
 
-            let line = "\(entry.term)\(leaderDots) \(pageList)\n"
+            let line = "\(entry.term)\(leaderDots)\t\(pageList)\n"
             indexString.append(NSAttributedString(string: line, attributes: entryAttrs))
         }
 

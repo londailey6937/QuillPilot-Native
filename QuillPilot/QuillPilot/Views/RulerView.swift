@@ -17,7 +17,13 @@ protocol RulerViewDelegate: AnyObject {
 class EnhancedRulerView: NSView {
 
     weak var delegate: RulerViewDelegate?
-    private let rulerZoom: CGFloat = 1.4  // Match editor zoom
+    // Visual scale factor. Margins and pageWidth are stored in unscaled points (72pt = 1 inch).
+    // This zoom should match the editor's zoom so ruler markings align with the rendered page.
+    let rulerZoom: CGFloat = 1.4
+
+    var scaledPageWidth: CGFloat {
+        pageWidth * rulerZoom
+    }
 
     private var leftMarginHandle: MarginHandle!
     private var rightMarginHandle: MarginHandle!
@@ -71,17 +77,32 @@ class EnhancedRulerView: NSView {
 
     private func updateHandlePositions() {
         let rulerHeight = bounds.height
-        let centerOffset = (bounds.width - pageWidth) / 2
+        let centerOffset = (bounds.width - scaledPageWidth) / 2
 
         // Left margin handle at bottom
-        leftMarginHandle.frame = NSRect(x: centerOffset + leftMargin - 6, y: rulerHeight - 12, width: 12, height: 10)
+        leftMarginHandle.frame = NSRect(
+            x: centerOffset + (leftMargin * rulerZoom) - 6,
+            y: rulerHeight - 12,
+            width: 12,
+            height: 10
+        )
 
         // Right margin handle at bottom
-        let rightX = centerOffset + pageWidth - rightMargin
-        rightMarginHandle.frame = NSRect(x: rightX - 6, y: rulerHeight - 12, width: 12, height: 10)
+        let rightX = centerOffset + ((pageWidth - rightMargin) * rulerZoom)
+        rightMarginHandle.frame = NSRect(
+            x: rightX - 6,
+            y: rulerHeight - 12,
+            width: 12,
+            height: 10
+        )
 
         // First-line indent handle at top
-        firstLineIndentHandle.frame = NSRect(x: centerOffset + leftMargin + firstLineIndent - 6, y: 2, width: 12, height: 10)
+        firstLineIndentHandle.frame = NSRect(
+            x: centerOffset + ((leftMargin + firstLineIndent) * rulerZoom) - 6,
+            y: 2,
+            width: 12,
+            height: 10
+        )
     }
 
     override func draw(_ dirtyRect: NSRect) {
@@ -91,11 +112,11 @@ class EnhancedRulerView: NSView {
         let fontSize: CGFloat = 9
 
         // Center the ruler markings to align with page
-        let centerOffset = (bounds.width - pageWidth) / 2
+        let centerOffset = (bounds.width - scaledPageWidth) / 2
 
         markingsColor.set()
 
-        // Draw tick marks every 0.5 inch (36 points * zoom)
+        // Draw tick marks every 0.5 inch
         for i in 0...17 {
             let x = CGFloat(i) * 36 * rulerZoom
             let tickHeight: CGFloat = (i % 2 == 0) ? 8 : 4
@@ -231,21 +252,22 @@ class MarginHandle: NSView {
 
         let currentLocation = event.locationInWindow
         let deltaX = currentLocation.x - dragStartLocation.x
+        let deltaPoints = deltaX / ruler.rulerZoom
 
         switch type {
         case .leftMargin:
-            let newMargin = max(0, min(ruler.pageWidth - ruler.rightMargin - 36, dragStartMargin + deltaX))
+            let newMargin = max(0, min(ruler.pageWidth - ruler.rightMargin - 36, dragStartMargin + deltaPoints))
             ruler.leftMargin = newMargin
             ruler.delegate?.rulerView(ruler, didChangeLeftMargin: newMargin)
 
         case .rightMargin:
-            let newMargin = max(0, min(ruler.pageWidth - ruler.leftMargin - 36, dragStartMargin - deltaX))
+            let newMargin = max(0, min(ruler.pageWidth - ruler.leftMargin - 36, dragStartMargin - deltaPoints))
             ruler.rightMargin = newMargin
             ruler.delegate?.rulerView(ruler, didChangeRightMargin: newMargin)
 
         case .firstLineIndent:
             let maxIndent = ruler.pageWidth - ruler.leftMargin - ruler.rightMargin - 36
-            let newIndent = max(-ruler.leftMargin, min(maxIndent, dragStartMargin + deltaX))
+            let newIndent = max(-ruler.leftMargin, min(maxIndent, dragStartMargin + deltaPoints))
             ruler.firstLineIndent = newIndent
             ruler.delegate?.rulerView(ruler, didChangeFirstLineIndent: newIndent)
         }

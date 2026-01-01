@@ -9,6 +9,42 @@
 import Cocoa
 import UniformTypeIdentifiers
 
+fileprivate let quillIndexMarkerRegex: NSRegularExpression? = {
+    try? NSRegularExpression(pattern: "\\{\\{index:[^}]+\\}\\}", options: [])
+}()
+
+fileprivate func indexMarkerRanges(in targetRange: NSRange, storage: NSTextStorage) -> [NSRange] {
+    guard let regex = quillIndexMarkerRegex else { return [] }
+    let safeRange = NSIntersectionRange(targetRange, NSRange(location: 0, length: storage.length))
+    guard safeRange.length > 0 else { return [] }
+    return regex.matches(in: storage.string, options: [], range: safeRange).map { $0.range }
+}
+
+fileprivate func subrangesExcluding(_ excluded: [NSRange], from range: NSRange) -> [NSRange] {
+    guard range.length > 0 else { return [] }
+    if excluded.isEmpty { return [range] }
+    let sorted = excluded.sorted { $0.location < $1.location }
+    var result: [NSRange] = []
+    var cursor = range.location
+    let end = range.location + range.length
+
+    for ex in sorted {
+        let exStart = max(range.location, ex.location)
+        let exEnd = min(end, ex.location + ex.length)
+        if exEnd <= cursor { continue }
+        if exStart > cursor {
+            result.append(NSRange(location: cursor, length: exStart - cursor))
+        }
+        cursor = max(cursor, exEnd)
+        if cursor >= end { break }
+    }
+
+    if cursor < end {
+        result.append(NSRange(location: cursor, length: end - cursor))
+    }
+    return result.filter { $0.length > 0 }
+}
+
 // Flipped view so y=0 is at the top (standard for scroll views)
 class FlippedView: NSView {
     override var isFlipped: Bool { return true }
@@ -40,6 +76,10 @@ class EditorViewController: NSViewController {
     private let standardMargin: CGFloat = 72
     private let standardIndentStep: CGFloat = 36
     var editorZoom: CGFloat = 1.4  // 140% zoom for better readability on large displays
+
+    // Horizontal page margins in points (72pt = 1"). These must drive layout in updatePageCentering.
+    private var leftPageMargin: CGFloat = 72
+    private var rightPageMargin: CGFloat = 72
 
     // Page dimensions (US Letter)
     private let pageWidth: CGFloat = 612  // 8.5 inches
@@ -201,6 +241,8 @@ class EditorViewController: NSViewController {
         textView.autoresizingMask = []  // Remove autoresizing to prevent constraint conflicts
         textView.textContainer?.containerSize = NSSize(width: textFrame.width, height: CGFloat.greatestFiniteMagnitude)
         textView.textContainer?.widthTracksTextView = true
+        // Remove the default internal padding so ruler marks match actual text position.
+        textView.textContainer?.lineFragmentPadding = 0
         textView.isRichText = true
         textView.importsGraphics = true
         textView.allowsUndo = true
@@ -224,6 +266,7 @@ class EditorViewController: NSViewController {
         let paragraphStyle = NSMutableParagraphStyle()
         paragraphStyle.lineHeightMultiple = 2.0
         paragraphStyle.paragraphSpacing = 12
+        paragraphStyle.headIndent = 0
         paragraphStyle.firstLineHeadIndent = standardIndentStep
         textView.defaultParagraphStyle = paragraphStyle.copy() as? NSParagraphStyle
 
@@ -287,6 +330,8 @@ class EditorViewController: NSViewController {
         )
         textView.frame = textFrame
         textView.textContainer?.containerSize = NSSize(width: textFrame.width, height: CGFloat.greatestFiniteMagnitude)
+        // Keep internal padding consistent when resizing.
+        textView.textContainer?.lineFragmentPadding = 0
 
         documentView.frame = NSRect(x: 0, y: 0, width: containerWidth, height: totalHeight)
         pageContainer.needsDisplay = true
@@ -1365,9 +1410,11 @@ class EditorViewController: NSViewController {
         let glyphRange = NSRange(location: glyphIndex, length: 1)
         let bounds = layoutManager.boundingRect(forGlyphRange: glyphRange, in: textContainer)
 
-        // Calculate page based on Y position
+        // Calculate page based on Y position. The text view spans multiple pages with gaps.
         let scaledPageHeight = pageHeight * editorZoom
-        let pageIndex = max(0, Int(floor(bounds.midY / scaledPageHeight)))
+        let pageGap: CGFloat = 20
+        let pageStride = scaledPageHeight + pageGap
+        let pageIndex = max(0, Int(floor(bounds.midY / pageStride)))
 
         return pageIndex + 1
     }
@@ -1384,22 +1431,13 @@ class EditorViewController: NSViewController {
         let leftMargin = max(0, left)
         let rightMargin = max(0, right)
 
-        let availableWidth = max(36, pageContainer.bounds.width - leftMargin - rightMargin)
-        let availableHeight = max(36, pageContainer.bounds.height - (standardMargin * 2 * editorZoom))
+        // Keep at least a small printable area.
+        let maxMargin = max(0, pageWidth - 36)
+        leftPageMargin = min(leftMargin, maxMargin)
+        rightPageMargin = min(rightMargin, maxMargin)
 
-        let newFrame = NSRect(
-            x: leftMargin,
-            y: standardMargin * editorZoom,
-            width: availableWidth,
-            height: availableHeight
-        )
-
-        textView.frame = newFrame
-        textView.minSize = NSSize(width: newFrame.width, height: newFrame.height)
-        textView.maxSize = NSSize(width: newFrame.width, height: .greatestFiniteMagnitude)
-        textView.textContainer?.containerSize = NSSize(width: newFrame.width, height: .greatestFiniteMagnitude)
-        textView.textContainer?.widthTracksTextView = true
-        updatePageCentering()
+        // Re-layout using the new margins; avoid forced scroll-to-caret during interactive drags.
+        updatePageCentering(ensureSelectionVisible: false)
     }
 
     func setFirstLineIndent(_ indent: CGFloat) {
@@ -1654,7 +1692,7 @@ class EditorViewController: NSViewController {
         delegate?.resumeAnalysisAfterLayout()
     }
 
-    /// Fast content setter for imported documents - skips expensive style processing
+    /// Fast content setter for imported documents - runs style inference for outline detection
     func setAttributedContentDirect(_ attributed: NSAttributedString) {
         delegate?.suspendAnalysisForLayout()
 
@@ -1666,7 +1704,9 @@ class EditorViewController: NSViewController {
             textView.layoutManager?.backgroundLayoutEnabled = false
         }
 
-        textView.textStorage?.setAttributedString(attributed)
+        // Run style detection to ensure TOC Title, Index Title, etc. appear in document outline
+        let retagged = detectAndRetagStyles(in: attributed)
+        textView.textStorage?.setAttributedString(retagged)
 
         // Don't reset typing attributes - let them inherit from document content
         // This preserves the Body Text style and other attributes when typing
@@ -2209,20 +2249,28 @@ class EditorViewController: NSViewController {
         }
         textStorage.endEditing()
 
-        // Show dialog with option to remove
+        // Show dialog with option to remove or navigate
         DispatchQueue.main.async { [weak self] in
             guard let self = self, let window = self.view.window else { return }
             let alert = NSAlert()
             alert.messageText = "Found \(ranges.count) Invisible Character(s)"
-            alert.informativeText = "These characters have been highlighted in yellow with red underlines. They may cause cursor flashing or other display issues.\n\nWould you like to remove them?"
+            alert.informativeText = "These characters have been highlighted in yellow with red underlines. They may cause cursor flashing or other display issues.\n\nYou can navigate to see them or remove them."
             alert.alertStyle = .warning
+            alert.addButton(withTitle: "Go to First")
             alert.addButton(withTitle: "Remove All")
             alert.addButton(withTitle: "Keep Highlighting")
             alert.addButton(withTitle: "Cancel")
 
             alert.beginSheetModal(for: window) { response in
                 if response == .alertFirstButtonReturn {
-                    // Remove highlights first
+                    // Go to First - scroll to first invisible character
+                    if let firstRange = ranges.first {
+                        self.textView.setSelectedRange(firstRange)
+                        self.textView.scrollRangeToVisible(firstRange)
+                        self.textView.window?.makeFirstResponder(self.textView)
+                    }
+                } else if response == .alertSecondButtonReturn {
+                    // Remove All - remove highlights first
                     textStorage.beginEditing()
                     for range in ranges {
                         textStorage.removeAttribute(.backgroundColor, range: range)
@@ -2233,8 +2281,8 @@ class EditorViewController: NSViewController {
 
                     // Then remove the characters
                     self.removeInvisibleCharacters()
-                } else if response == .alertThirdButtonReturn {
-                    // Cancel - remove highlights
+                } else if response == NSApplication.ModalResponse(rawValue: 1003) {
+                    // Cancel (4th button) - remove highlights
                     textStorage.beginEditing()
                     for range in ranges {
                         textStorage.removeAttribute(.backgroundColor, range: range)
@@ -2243,7 +2291,7 @@ class EditorViewController: NSViewController {
                     }
                     textStorage.endEditing()
                 }
-                // If "Keep Highlighting" is selected, do nothing - leave highlights in place
+                // If "Keep Highlighting" (3rd button) is selected, do nothing - leave highlights in place
             }
         }
     }
@@ -2917,16 +2965,21 @@ case "Book Subtitle":
         }
 
         // Apply font and color changes without overriding the paragraph style
-        // (which was already applied with textBlocks preserved)
+        // (which was already applied with textBlocks preserved). Also avoid touching
+        // {{index:...}} marker ranges so they remain invisible.
         if let storage = textView.textStorage {
             let selection = textView.selectedRange()
             let range = selection.length == 0 ? (textView.string as NSString).paragraphRange(for: selection) : selection
-            storage.addAttribute(.font, value: font, range: range)
-            storage.addAttribute(.foregroundColor, value: textColor, range: range)
-            if let backgroundColor {
-                storage.addAttribute(.backgroundColor, value: backgroundColor, range: range)
-            } else {
-                storage.removeAttribute(.backgroundColor, range: range)
+            let markerRanges = indexMarkerRanges(in: range, storage: storage)
+
+            for subrange in subrangesExcluding(markerRanges, from: range) {
+                storage.addAttribute(.font, value: font, range: subrange)
+                storage.addAttribute(.foregroundColor, value: textColor, range: subrange)
+                if let backgroundColor {
+                    storage.addAttribute(.backgroundColor, value: backgroundColor, range: subrange)
+                } else {
+                    storage.removeAttribute(.backgroundColor, range: subrange)
+                }
             }
         }
 
@@ -3305,7 +3358,7 @@ case "Book Subtitle":
         }
     }
 
-    func updatePageCentering() {
+    func updatePageCentering(ensureSelectionVisible: Bool = true) {
         guard let scrollView else { return }
 
         // Preserve current cursor position AND scroll position BEFORE any layout changes
@@ -3342,7 +3395,7 @@ case "Book Subtitle":
             let activeHeaderHeight = showHeaders ? headerHeight : 0
             let activeFooterHeight = showFooters ? footerHeight : 0
             let pageTextHeight = scaledPageHeight - (standardMargin * 2 + activeHeaderHeight + activeFooterHeight) * editorZoom
-            let textWidth = scaledPageWidth - (standardMargin * 2) * editorZoom
+            let textWidth = max(36, scaledPageWidth - (leftPageMargin + rightPageMargin) * editorZoom)
 
             // Preserve current state
             let oldSize = textContainer.size
@@ -3385,16 +3438,20 @@ case "Book Subtitle":
         let activeFooterHeight = showFooters ? footerHeight : 0
         let textInsetTop = (standardMargin + activeHeaderHeight) * editorZoom
         let textInsetBottom = (standardMargin + activeFooterHeight) * editorZoom
-        let textInsetH = standardMargin * editorZoom
+        let textInsetLeft = leftPageMargin * editorZoom
+        let textInsetRight = rightPageMargin * editorZoom
         textView.frame = NSRect(
-            x: textInsetH,
+            x: textInsetLeft,
             y: textInsetBottom,
-            width: scaledPageWidth - (textInsetH * 2),
+            width: max(36, scaledPageWidth - textInsetLeft - textInsetRight),
             height: totalHeight - textInsetTop - textInsetBottom
         )
 
         // Set text container inset to keep text within safe area
         textView.textContainerInset = NSSize(width: 0, height: 0)
+
+        // Ensure ruler/paragraph indents map cleanly to rendered text.
+        textView.textContainer?.lineFragmentPadding = 0
 
         // Create exclusion paths for header/footer areas on each page
         if let textContainer = textView.textContainer {
@@ -3460,9 +3517,11 @@ case "Book Subtitle":
         // but then ensure cursor is visible (which will scroll if needed)
         scrollView.contentView.scroll(to: savedScrollPosition)
 
-        // Ensure the cursor is visible after layout - this allows natural scrolling
-        // when typing at the end of the document without jumping back up
-        textView.scrollRangeToVisible(textView.selectedRange())
+        if ensureSelectionVisible {
+            // Ensure the cursor is visible after layout - this allows natural scrolling
+            // when typing at the end of the document without jumping back up
+            textView.scrollRangeToVisible(textView.selectedRange())
+        }
     }
 
     private func updateHeadersAndFooters(_ numPages: Int) {
@@ -3478,7 +3537,10 @@ case "Book Subtitle":
         let scaledPageHeight = pageHeight * editorZoom
         let scaledHeaderHeight = headerHeight * editorZoom
         let scaledFooterHeight = footerHeight * editorZoom
-        let margin = standardMargin * editorZoom
+        let marginY = standardMargin * editorZoom
+        let marginXLeft = leftPageMargin * editorZoom
+        let marginXRight = rightPageMargin * editorZoom
+        let contentWidth = max(36, scaledPageWidth - marginXLeft - marginXRight)
 
         for pageNum in 1...numPages {
             let pageY = CGFloat(pageNum - 1) * (scaledPageHeight + 20) // 20pt gap between pages
@@ -3498,9 +3560,9 @@ case "Book Subtitle":
                 headerField.textColor = currentTheme.textColor.withAlphaComponent(0.5)
                 headerField.alignment = .left
                 headerField.frame = NSRect(
-                    x: margin,
-                    y: pageY + margin / 2,
-                    width: scaledPageWidth - margin * 2,
+                    x: marginXLeft,
+                    y: pageY + marginY / 2,
+                    width: contentWidth,
                     height: scaledHeaderHeight
                 )
                 pageContainer.addSubview(headerField)
@@ -3508,9 +3570,9 @@ case "Book Subtitle":
 
                 // Separator under header
                 let headerLine = NSView(frame: NSRect(
-                    x: margin,
-                    y: pageY + margin / 2 + scaledHeaderHeight + 2,
-                    width: scaledPageWidth - margin * 2,
+                    x: marginXLeft,
+                    y: pageY + marginY / 2 + scaledHeaderHeight + 2,
+                    width: contentWidth,
                     height: 1
                 ))
                 headerLine.wantsLayer = true
@@ -3537,9 +3599,9 @@ case "Book Subtitle":
                 footerField.textColor = currentTheme.textColor.withAlphaComponent(0.5)
                 footerField.alignment = .right
                 footerField.frame = NSRect(
-                    x: margin,
-                    y: pageY + scaledPageHeight - margin / 2 - scaledFooterHeight,
-                    width: scaledPageWidth - margin * 2,
+                    x: marginXLeft,
+                    y: pageY + scaledPageHeight - marginY / 2 - scaledFooterHeight,
+                    width: contentWidth,
                     height: scaledFooterHeight
                 )
                 pageContainer.addSubview(footerField)
@@ -3547,9 +3609,9 @@ case "Book Subtitle":
 
                 // Separator above footer
                 let footerLine = NSView(frame: NSRect(
-                    x: margin,
-                    y: pageY + scaledPageHeight - margin / 2 - scaledFooterHeight - 2,
-                    width: scaledPageWidth - margin * 2,
+                    x: marginXLeft,
+                    y: pageY + scaledPageHeight - marginY / 2 - scaledFooterHeight - 2,
+                    width: contentWidth,
                     height: 1
                 ))
                 footerLine.wantsLayer = true
@@ -4391,11 +4453,16 @@ case "Book Subtitle":
         let fullText = (textStorage.string as NSString)
         let targetRange = selectedRange.length == 0 ? fullText.paragraphRange(for: selectedRange) : selectedRange
 
+        let markerRanges = indexMarkerRanges(in: targetRange, storage: textStorage)
+
         textStorage.beginEditing()
         textStorage.enumerateAttribute(.font, in: targetRange, options: []) { value, range, _ in
             let current = (value as? NSFont) ?? baseFont
             let newFont = transform(current)
-            textStorage.addAttribute(.font, value: newFont, range: range)
+
+            for subrange in subrangesExcluding(markerRanges, from: range) {
+                textStorage.addAttribute(.font, value: newFont, range: subrange)
+            }
         }
         textStorage.endEditing()
 

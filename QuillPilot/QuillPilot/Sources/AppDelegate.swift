@@ -330,10 +330,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         findInvisibleItem.target = self
         editMenu.addItem(findInvisibleItem)
 
-        let cleanItem = NSMenuItem(title: "Remove Invisible Characters", action: #selector(cleanInvisibleCharacters(_:)), keyEquivalent: "")
-        cleanItem.target = self
-        editMenu.addItem(cleanItem)
-
         let removeBlankLinesItem = NSMenuItem(title: "Remove Extra Blank Lines", action: #selector(removeExtraBlankLines(_:)), keyEquivalent: "")
         removeBlankLinesItem.target = self
         editMenu.addItem(removeBlankLinesItem)

@@ -2063,32 +2063,61 @@ class EditorViewController: NSViewController {
         let text = textStorage.string
         var rangesToDelete: [NSRange] = []
 
-        // Pattern to match lines that are blank (newline followed by optional whitespace and another newline)
-        // This captures: \n followed by (whitespace-only lines) followed by \n
-        // We want to reduce multiple blank lines to just one
-        let pattern = "(\n[ \\t]*){3,}"  // 3 or more newlines with optional spaces/tabs between them
-        guard let regex = try? NSRegularExpression(pattern: pattern) else { return }
+        // Debug: Count different line break types
+        let newlineCount = text.components(separatedBy: "\n").count - 1
+        let crCount = text.components(separatedBy: "\r").count - 1
+        let paragraphSepCount = text.components(separatedBy: "\u{2029}").count - 1
+        let lineSepCount = text.components(separatedBy: "\u{2028}").count - 1
 
-        let matches = regex.matches(in: text, range: NSRange(location: 0, length: text.count))
+        print("DEBUG: Document has \(newlineCount) newlines, \(crCount) carriage returns, \(paragraphSepCount) paragraph separators, \(lineSepCount) line separators")
 
-        for match in matches {
-            // Keep only 2 newlines (one blank line), delete the rest
-            // Replace the entire match with just \n\n
-            let matchLength = match.range.length
-            if matchLength > 2 {
-                // Delete everything except the first 2 characters (\n\n)
-                let deleteStart = match.range.location + 2
-                let deleteLength = matchLength - 2
-                rangesToDelete.append(NSRange(location: deleteStart, length: deleteLength))
+        // Try multiple patterns to catch different types of blank lines
+        // Pattern 1: Standard newlines with optional whitespace
+        // Pattern 2: Carriage returns
+        // Pattern 3: Unicode paragraph/line separators
+        let patterns = [
+            "(\\n[ \\t]*){2,}",           // 2+ newlines with optional whitespace (reduce to 1)
+            "(\\r\\n?[ \\t]*){2,}",       // 2+ carriage returns with optional whitespace
+            "(\\u2029[ \\t]*){2,}",       // 2+ paragraph separators
+            "(\\u2028[ \\t]*){2,}",       // 2+ line separators
+            "\\n([ \\t]*\\n)+",           // newline followed by blank lines
+        ]
+
+        for pattern in patterns {
+            guard let regex = try? NSRegularExpression(pattern: pattern) else { continue }
+            let matches = regex.matches(in: text, range: NSRange(location: 0, length: text.count))
+            print("DEBUG: Pattern '\(pattern)' found \(matches.count) matches")
+
+            for match in matches {
+                // Keep only 1 line break, delete the rest
+                if match.range.length > 1 {
+                    let deleteStart = match.range.location + 1
+                    let deleteLength = match.range.length - 1
+                    // Avoid duplicate ranges
+                    let newRange = NSRange(location: deleteStart, length: deleteLength)
+                    if !rangesToDelete.contains(where: { NSIntersectionRange($0, newRange).length > 0 }) {
+                        rangesToDelete.append(newRange)
+                    }
+                }
             }
         }
 
+        print("DEBUG: Total ranges to delete: \(rangesToDelete.count)")
+
         if rangesToDelete.isEmpty {
+            // Show what characters are around visible blank areas
+            var debugInfo = "Document analysis:\n"
+            debugInfo += "• \(newlineCount) newlines (\\n)\n"
+            debugInfo += "• \(crCount) carriage returns (\\r)\n"
+            debugInfo += "• \(paragraphSepCount) paragraph separators\n"
+            debugInfo += "• \(lineSepCount) line separators\n\n"
+            debugInfo += "The blank space may be caused by paragraph styling (spacing before/after paragraphs) rather than actual blank lines."
+
             DispatchQueue.main.async { [weak self] in
                 guard let window = self?.view.window else { return }
                 let alert = NSAlert()
-                alert.messageText = "No Extra Blank Lines"
-                alert.informativeText = "No excessive blank lines found in document."
+                alert.messageText = "No Extra Blank Lines Found"
+                alert.informativeText = debugInfo
                 alert.alertStyle = .informational
                 alert.addButton(withTitle: "OK")
                 alert.beginSheetModal(for: window)

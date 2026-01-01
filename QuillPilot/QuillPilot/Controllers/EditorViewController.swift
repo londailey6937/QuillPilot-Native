@@ -1980,57 +1980,24 @@ class EditorViewController: NSViewController {
             ("\u{202F}", "Narrow No-Break Space"),
         ]
 
-        var cleanedText = text
-        var foundChars: [String: Int] = [:]
+        // Find all ranges of invisible characters
+        var allRanges: [(range: NSRange, name: String)] = []
 
         for (char, name) in invisibleChars {
-            let count = text.components(separatedBy: char).count - 1
-            if count > 0 {
-                foundChars[name] = count
-                cleanedText = cleanedText.replacingOccurrences(of: char, with: "")
+            var searchRange = NSRange(location: 0, length: text.count)
+            while searchRange.location < text.count {
+                let foundRange = (text as NSString).range(of: char, options: [], range: searchRange)
+                if foundRange.location != NSNotFound {
+                    allRanges.append((foundRange, name))
+                    searchRange.location = foundRange.location + foundRange.length
+                    searchRange.length = text.count - searchRange.location
+                } else {
+                    break
+                }
             }
         }
 
-        // Only update if we actually found and removed characters
-        if cleanedText != text {
-            let savedSelection = textView.selectedRange()
-
-            suppressTextChangeNotifications = true
-
-            // Preserve all attributes while replacing the string
-            let mutableStorage = NSMutableAttributedString(attributedString: textStorage)
-            mutableStorage.mutableString.setString(cleanedText)
-
-            textStorage.beginEditing()
-            textStorage.setAttributedString(mutableStorage)
-            textStorage.endEditing()
-
-            // Restore selection (adjust if necessary)
-            let newLocation = min(savedSelection.location, textStorage.length)
-            textView.setSelectedRange(NSRange(location: newLocation, length: 0))
-
-            suppressTextChangeNotifications = false
-
-            delegate?.textDidChange()
-            updatePageCentering()
-
-            // Show detailed report
-            let totalRemoved = text.count - cleanedText.count
-            var report = "Removed \(totalRemoved) invisible character(s):\n\n"
-            for (name, count) in foundChars.sorted(by: { $0.value > $1.value }) {
-                report += "• \(count) \(name)\n"
-            }
-
-            DispatchQueue.main.async { [weak self] in
-                guard let window = self?.view.window else { return }
-                let alert = NSAlert()
-                alert.messageText = "Invisible Characters Removed"
-                alert.informativeText = report
-                alert.alertStyle = .informational
-                alert.addButton(withTitle: "OK")
-                alert.beginSheetModal(for: window)
-            }
-        } else {
+        if allRanges.isEmpty {
             DispatchQueue.main.async { [weak self] in
                 guard let window = self?.view.window else { return }
                 let alert = NSAlert()
@@ -2040,6 +2007,122 @@ class EditorViewController: NSViewController {
                 alert.addButton(withTitle: "OK")
                 alert.beginSheetModal(for: window)
             }
+            return
+        }
+
+        // Sort ranges from back to front so we can delete without invalidating indices
+        allRanges.sort { $0.range.location > $1.range.location }
+
+        // Count by type for the report
+        var foundChars: [String: Int] = [:]
+        for (_, name) in allRanges {
+            foundChars[name, default: 0] += 1
+        }
+
+        let savedSelection = textView.selectedRange()
+        suppressTextChangeNotifications = true
+
+        // Remove characters one at a time from back to front - this preserves all formatting
+        textStorage.beginEditing()
+        for (range, _) in allRanges {
+            textStorage.deleteCharacters(in: range)
+        }
+        textStorage.endEditing()
+
+        // Restore selection (adjust if necessary)
+        let newLocation = min(savedSelection.location, textStorage.length)
+        textView.setSelectedRange(NSRange(location: newLocation, length: 0))
+
+        suppressTextChangeNotifications = false
+
+        delegate?.textDidChange()
+        updatePageCentering()
+
+        // Show detailed report
+        let totalRemoved = allRanges.count
+        var report = "Removed \(totalRemoved) invisible character(s):\n\n"
+        for (name, count) in foundChars.sorted(by: { $0.value > $1.value }) {
+            report += "• \(count) \(name)\n"
+        }
+
+        DispatchQueue.main.async { [weak self] in
+            guard let window = self?.view.window else { return }
+            let alert = NSAlert()
+            alert.messageText = "Invisible Characters Removed"
+            alert.informativeText = report
+            alert.alertStyle = .informational
+            alert.addButton(withTitle: "OK")
+            alert.beginSheetModal(for: window)
+        }
+    }
+
+    /// Remove extra blank lines between paragraphs
+    func removeExtraBlankLines() {
+        guard let textStorage = textView.textStorage else { return }
+
+        let text = textStorage.string
+        var rangesToDelete: [NSRange] = []
+
+        // Look for 3 or more consecutive newlines using regex
+        let pattern = "\n\n\n+"
+        guard let regex = try? NSRegularExpression(pattern: pattern) else { return }
+
+        let matches = regex.matches(in: text, range: NSRange(location: 0, length: text.count))
+
+        for match in matches {
+            // Keep only 2 newlines (single blank line), delete the rest
+            let deleteStart = match.range.location + 2
+            let deleteLength = match.range.length - 2
+            if deleteLength > 0 {
+                rangesToDelete.append(NSRange(location: deleteStart, length: deleteLength))
+            }
+        }
+
+        if rangesToDelete.isEmpty {
+            DispatchQueue.main.async { [weak self] in
+                guard let window = self?.view.window else { return }
+                let alert = NSAlert()
+                alert.messageText = "No Extra Blank Lines"
+                alert.informativeText = "No excessive blank lines found in document."
+                alert.alertStyle = .informational
+                alert.addButton(withTitle: "OK")
+                alert.beginSheetModal(for: window)
+            }
+            return
+        }
+
+        // Sort ranges from back to front so indices remain valid
+        rangesToDelete.sort { $0.location > $1.location }
+
+        let savedSelection = textView.selectedRange()
+        suppressTextChangeNotifications = true
+
+        // Delete extra newlines from back to front to preserve formatting
+        textStorage.beginEditing()
+        for range in rangesToDelete {
+            textStorage.deleteCharacters(in: range)
+        }
+        textStorage.endEditing()
+
+        // Restore selection
+        let newLocation = min(savedSelection.location, textStorage.length)
+        textView.setSelectedRange(NSRange(location: newLocation, length: 0))
+
+        suppressTextChangeNotifications = false
+
+        delegate?.textDidChange()
+        updatePageCentering()
+
+        let totalRemoved = rangesToDelete.reduce(0) { $0 + $1.length }
+
+        DispatchQueue.main.async { [weak self] in
+            guard let window = self?.view.window else { return }
+            let alert = NSAlert()
+            alert.messageText = "Extra Blank Lines Removed"
+            alert.informativeText = "Removed \(totalRemoved) extra line break(s), reducing excessive spacing between paragraphs."
+            alert.alertStyle = .informational
+            alert.addButton(withTitle: "OK")
+            alert.beginSheetModal(for: window)
         }
     }
 

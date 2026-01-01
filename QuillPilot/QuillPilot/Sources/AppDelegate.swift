@@ -334,6 +334,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         cleanItem.target = self
         editMenu.addItem(cleanItem)
 
+        let removeBlankLinesItem = NSMenuItem(title: "Remove Extra Blank Lines", action: #selector(removeExtraBlankLines(_:)), keyEquivalent: "")
+        removeBlankLinesItem.target = self
+        editMenu.addItem(removeBlankLinesItem)
+
         // Format Menu
         let formatMenuItem = NSMenuItem()
         mainMenu.addItem(formatMenuItem)
@@ -422,6 +426,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc private func cleanInvisibleCharacters(_ sender: Any?) {
         mainWindowController?.mainContentViewController.editorViewController.removeInvisibleCharacters()
+    }
+
+    @objc private func removeExtraBlankLines(_ sender: Any?) {
+        mainWindowController?.mainContentViewController.editorViewController.removeExtraBlankLines()
     }
 
     @objc private func showDocumentation(_ sender: Any?) {

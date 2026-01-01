@@ -2063,17 +2063,22 @@ class EditorViewController: NSViewController {
         let text = textStorage.string
         var rangesToDelete: [NSRange] = []
 
-        // Look for 3 or more consecutive newlines using regex
-        let pattern = "\n\n\n+"
+        // Pattern to match lines that are blank (newline followed by optional whitespace and another newline)
+        // This captures: \n followed by (whitespace-only lines) followed by \n
+        // We want to reduce multiple blank lines to just one
+        let pattern = "(\n[ \\t]*){3,}"  // 3 or more newlines with optional spaces/tabs between them
         guard let regex = try? NSRegularExpression(pattern: pattern) else { return }
 
         let matches = regex.matches(in: text, range: NSRange(location: 0, length: text.count))
 
         for match in matches {
-            // Keep only 2 newlines (single blank line), delete the rest
-            let deleteStart = match.range.location + 2
-            let deleteLength = match.range.length - 2
-            if deleteLength > 0 {
+            // Keep only 2 newlines (one blank line), delete the rest
+            // Replace the entire match with just \n\n
+            let matchLength = match.range.length
+            if matchLength > 2 {
+                // Delete everything except the first 2 characters (\n\n)
+                let deleteStart = match.range.location + 2
+                let deleteLength = matchLength - 2
                 rangesToDelete.append(NSRange(location: deleteStart, length: deleteLength))
             }
         }

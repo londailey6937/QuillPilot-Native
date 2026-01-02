@@ -781,30 +781,35 @@ class TOCIndexWindowController: NSWindowController, NSOutlineViewDataSource, NSO
         ]
         tocString.append(NSAttributedString(string: "Table of Contents\n\n", attributes: titleAttrs))
 
-        // Calculate usable width inside the text container (respect padding)
+        // Calculate right edge inside the text container (respect padding)
         let textContainer = textView.textContainer!
         let containerWidth = textContainer.containerSize.width
         let lineFragmentPadding = textContainer.lineFragmentPadding
-        // Use actual container width for both tab stops and dot calculation
-        let actualLineWidth = containerWidth - (lineFragmentPadding * 2)
 
-        // Entries with leader dots - page numbers align right via padding
+        // Entries with leader dots - page numbers align right via a tab stop
         for entry in entries {
             let fontSize: CGFloat = entry.level == 1 ? 14 : (entry.level == 2 ? 12 : 11)
             let isBold = entry.level == 1
             let entryFont = fontFromDocument(documentFont, size: fontSize, bold: isBold)
             let leftIndent = CGFloat(entry.level - 1) * 20
 
+            // Right-align page numbers close to the right edge (inside the text container).
+            // Tab stop locations are in the text container's coordinate space, so the right
+            // edge is `containerWidth - lineFragmentPadding`.
+            let rightPadding: CGFloat = 2
+            let rightEdge = max(0, containerWidth - lineFragmentPadding)
+            let rightTab = max(leftIndent + 120, rightEdge - rightPadding)
+
             // Format page number according to selected format
             let pageNumStr = currentPageFormat.format(entry.pageNumber)
 
-            // Create paragraph style - right-aligned for the whole line
+            // Create paragraph style - use a right tab stop for the page number column
             let paragraphStyle = NSMutableParagraphStyle()
             paragraphStyle.firstLineHeadIndent = leftIndent
             paragraphStyle.headIndent = leftIndent
             paragraphStyle.alignment = .left
             paragraphStyle.lineBreakMode = .byClipping
-            paragraphStyle.tabStops = []  // No tabs - we'll pad manually
+            paragraphStyle.tabStops = [NSTextTab(textAlignment: .right, location: rightTab, options: [:])]
 
             // Mark entries with "TOC Entry" style to prevent inference as headings
             let entryAttrs: [NSAttributedString.Key: Any] = [
@@ -817,19 +822,19 @@ class TOCIndexWindowController: NSWindowController, NSOutlineViewDataSource, NSO
             // Calculate how much space we have for dots
             let titleAttrsForMeasure: [NSAttributedString.Key: Any] = [.font: entryFont]
             let titleWidth = (entry.title as NSString).size(withAttributes: titleAttrsForMeasure).width
-            let pageNumWidth = (pageNumStr as NSString).size(withAttributes: titleAttrsForMeasure).width
             let spaceWidth = (" ").size(withAttributes: titleAttrsForMeasure).width
             let dotWidth = (".").size(withAttributes: titleAttrsForMeasure).width
 
-            // Calculate available width for leader dots (leave margin on right)
-            let rightMargin: CGFloat = 10
-            let availableForDots = actualLineWidth - leftIndent - titleWidth - pageNumWidth - rightMargin - (spaceWidth * 2)
+            // Calculate available width for leader dots up to the tab stop.
+            let availableForDots = max(0, rightTab - leftIndent - titleWidth - (spaceWidth * 2))
             let dotSpaceWidth = dotWidth + spaceWidth  // ". " pattern
-            let dotCount = max(3, Int(availableForDots / dotSpaceWidth))
+            let maxDots = Int(floor(availableForDots / dotSpaceWidth))
+            // Use at least a few dots when there is room, but never overshoot the tab stop.
+            let dotCount = maxDots >= 3 ? maxDots : max(0, maxDots)
             let leaderDots = " " + String(repeating: ". ", count: dotCount)
 
-            // Simple format: title + dots + page number (NO tab)
-            let line = "\(entry.title)\(leaderDots)\(pageNumStr)\n"
+            // Format: title + dots + TAB + right-aligned page number
+            let line = "\(entry.title)\(leaderDots)\t\(pageNumStr)\n"
             tocString.append(NSAttributedString(string: line, attributes: entryAttrs))
         }
 
@@ -951,12 +956,10 @@ class TOCIndexWindowController: NSWindowController, NSOutlineViewDataSource, NSO
             return NSFont(descriptor: descriptor, size: size) ?? baseFont.withSize(size)
         }
 
-        // Calculate usable width inside the text container (respect padding)
+        // Calculate right edge inside the text container (respect padding)
         let textContainer = textView.textContainer!
         let containerWidth = textContainer.containerSize.width
         let lineFragmentPadding = textContainer.lineFragmentPadding
-        // Use actual container width for both tab stops and dot calculation
-        let actualLineWidth = containerWidth - (lineFragmentPadding * 2)
 
         // Title - mark with "Index Title" style to appear in document outline
         let titleFont = fontFromDocument(documentFont, size: 18, bold: true)
@@ -994,8 +997,9 @@ class TOCIndexWindowController: NSWindowController, NSOutlineViewDataSource, NSO
 
             // Right-align the page list using a tab stop.
             let leftIndent: CGFloat = 20
-            let rightPadding: CGFloat = 20
-            let rightTab = max(leftIndent + 100, actualLineWidth - rightPadding)
+            let rightPadding: CGFloat = 2
+            let rightEdge = max(0, containerWidth - lineFragmentPadding)
+            let rightTab = max(leftIndent + 100, rightEdge - rightPadding)
 
             // Calculate leader dots (fill up to the tab stop)
             let termAttrsForMeasure: [NSAttributedString.Key: Any] = [.font: entryFont]
@@ -1003,8 +1007,10 @@ class TOCIndexWindowController: NSWindowController, NSOutlineViewDataSource, NSO
             let dotWidth = (" .").size(withAttributes: termAttrsForMeasure).width  // space + dot
 
             // Calculate available space for dots
-            let availableWidth = rightTab - leftIndent - termWidth - 10
-            let dotCount = max(3, Int(availableWidth / dotWidth))
+            let availableWidth = max(0, rightTab - leftIndent - termWidth - 10)
+            let maxDots = Int(floor(availableWidth / dotWidth))
+            // Use at least a few dots when there is room, but never overshoot the tab stop.
+            let dotCount = maxDots >= 3 ? maxDots : max(0, maxDots)
             let leaderDots = " " + String(repeating: " .", count: dotCount)
 
             // Create paragraph style - NO tabs

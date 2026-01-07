@@ -18,7 +18,7 @@ let package = Package(
             dependencies: [],
             path: "QuillPilot/QuillPilot",
             exclude: [
-                "Assets.xcassets"
+                "Extensions/NSImage+QuillPilotAssets.swift"
             ],
             sources: [
                 "Sources/AppDelegate.swift",
@@ -38,6 +38,7 @@ let package = Package(
                 "Utilities/ThemeManager.swift",
                 "Utilities/StyleCatalog.swift",
                 "Extensions/NSColor+Hex.swift",
+                "Extensions/NSAlert+Themed.swift",
                 "Views/DocumentInfoPanel.swift",
                 "Views/RulerView.swift",
                 "Views/HeaderFooterSettingsWindow.swift",
@@ -66,7 +67,11 @@ let package = Package(
                 "Views/ThematicResonanceMapView.swift",
                 "Views/FailurePatternChartView.swift",
                 "Views/DecisionBeliefLoopView.swift",
-                "Views/CharacterPresenceView.swift"
+                "Views/CharacterPresenceView.swift",
+                "Views/TOCIndexWindow.swift"
+            ],
+            resources: [
+                .process("Assets.xcassets")
             ]
         )
     ]

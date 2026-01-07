@@ -1,5 +1,25 @@
 import Cocoa
 
+extension NSImage {
+    static func quillPilotFeatherImage() -> NSImage? {
+        if let image = NSImage(named: NSImage.Name("feather")) {
+            return image
+        }
+
+        if let image = Bundle.main.image(forResource: "feather") {
+            return image
+        }
+
+        #if SWIFT_PACKAGE
+        if let image = Bundle.module.image(forResource: "feather") {
+            return image
+        }
+        #endif
+
+        return nil
+    }
+}
+
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private var mainWindowController: MainWindowController?
@@ -63,15 +83,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NSBezierPath(roundedRect: NSRect(origin: .zero, size: size), xRadius: 64, yRadius: 64).fill()
 
         // Try to load and draw feather.png
-        let featherImage: NSImage?
-        if let bundleImage = NSImage(named: "feather") {
-            featherImage = bundleImage
-        } else if let bundleImage = Bundle.main.image(forResource: "feather") {
-            featherImage = bundleImage
-        } else {
-            let path = "/Users/londailey/QuillPilot_Native/QuillPilot/QuillPilot/Assets.xcassets/feather.imageset/feather.png"
-            featherImage = NSImage(contentsOfFile: path)
-        }
+        let featherImage = NSImage.quillPilotFeatherImage()
 
         if let feather = featherImage {
             // Make black transparent

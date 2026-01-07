@@ -901,8 +901,8 @@ extension MainWindowController {
         let popup = NSPopUpButton(frame: .zero, pullsDown: false)
         ExportFormat.allCases.forEach { popup.addItem(withTitle: $0.displayName) }
 
-        // Default to .docx format
-        let defaultFormat: ExportFormat = .docx
+        // Default to the document's current format
+        let defaultFormat: ExportFormat = currentDocumentFormat
         let defaultIndex = ExportFormat.allCases.firstIndex(of: defaultFormat) ?? 0
         popup.selectItem(at: defaultIndex)
 
@@ -961,6 +961,32 @@ extension MainWindowController {
                 let data = try content.data(from: fullRange, documentAttributes: [.documentType: NSAttributedString.DocumentType.rtf])
                 try data.write(to: url, options: .atomic)
                 NSLog("✅ RTF exported to \(url.path)")
+
+            case .rtfd:
+                // Export to RTFD (includes attachments/images)
+                let data = try mainContentViewController.editorViewController.rtfdData()
+                try data.write(to: url, options: .atomic)
+                NSLog("✅ RTFD exported to \(url.path)")
+
+            case .txt:
+                // Export to plain text
+                let text = mainContentViewController.editorViewController.plainTextContent()
+                try text.write(to: url, atomically: true, encoding: .utf8)
+                NSLog("✅ TXT exported to \(url.path)")
+
+            case .markdown:
+                // Export to Markdown (currently plain-text export)
+                let text = mainContentViewController.editorViewController.plainTextContent()
+                try text.write(to: url, atomically: true, encoding: .utf8)
+                NSLog("✅ Markdown exported to \(url.path)")
+
+            case .html:
+                // Export to HTML
+                let content = mainContentViewController.editorExportReadyAttributedContent()
+                let fullRange = NSRange(location: 0, length: content.length)
+                let data = try content.data(from: fullRange, documentAttributes: [.documentType: NSAttributedString.DocumentType.html])
+                try data.write(to: url, options: .atomic)
+                NSLog("✅ HTML exported to \(url.path)")
 
             case .pdf:
                 // Export to PDF
@@ -1129,6 +1155,19 @@ extension MainWindowController {
             allowedTypes.append(docxType)
         }
 
+        // Add common rich/text formats
+        allowedTypes.append(.rtf)
+        allowedTypes.append(.rtfd)
+        allowedTypes.append(.plainText)
+        allowedTypes.append(.html)
+
+        // Markdown is not a built-in UTType on every macOS SDK; fall back to extension.
+        if let mdType = UTType("net.daringfireball.markdown") {
+            allowedTypes.append(mdType)
+        } else if let mdType = UTType(filenameExtension: "md", conformingTo: .text) {
+            allowedTypes.append(mdType)
+        }
+
         // If we have types, use them; otherwise allow all
         if !allowedTypes.isEmpty {
             panel.allowedContentTypes = allowedTypes
@@ -1215,6 +1254,16 @@ extension MainWindowController {
             let content = mainContentViewController.editorExportReadyAttributedContent()
             let fullRange = NSRange(location: 0, length: content.length)
             return try content.data(from: fullRange, documentAttributes: [.documentType: NSAttributedString.DocumentType.rtf])
+        case .rtfd:
+            return try mainContentViewController.editorViewController.rtfdData()
+        case .txt:
+            return Data(mainContentViewController.editorViewController.plainTextContent().utf8)
+        case .markdown:
+            return Data(mainContentViewController.editorViewController.plainTextContent().utf8)
+        case .html:
+            let content = mainContentViewController.editorExportReadyAttributedContent()
+            let fullRange = NSRange(location: 0, length: content.length)
+            return try content.data(from: fullRange, documentAttributes: [.documentType: NSAttributedString.DocumentType.html])
         case .pdf:
             return mainContentViewController.editorPDFData()
         case .docx:
@@ -1253,14 +1302,16 @@ extension MainWindowController {
         NSLog("📂 OPENING DOCUMENT: Clearing analysis")
         mainContentViewController.clearAnalysis()
 
-        // Support .docx Word documents
+        // Support multiple formats
         switch ext {
         case "docx":
             // Import Word document
             let filename = url.deletingPathExtension().lastPathComponent
             headerView.setDocumentTitle(filename)
-            currentDocumentURL = url
-            currentDocumentFormat = .docx
+            // We'll treat DOCX import as a conversion to editable rich text by default.
+            // Keep the original file untouched by clearing the URL; Save will prompt.
+            currentDocumentURL = nil
+            currentDocumentFormat = .rtfd
             hasUnsavedChanges = false
             mainContentViewController.editorViewController.headerText = ""
             mainContentViewController.editorViewController.footerText = ""
@@ -1271,12 +1322,32 @@ extension MainWindowController {
             // Show placeholder text immediately so user sees the app is working
             mainContentViewController.editorViewController.textView?.string = "Loading document..."
 
-            // Get file size for logging
-            let fileSize = (try? FileManager.default.attributesOfItem(atPath: url.path)[.size] as? Int) ?? 0
-            NSLog("📄 File size: \(fileSize) bytes (\(fileSize / 1024 / 1024) MB)")
-
-            // Parse in background, set content directly on main thread
+            // First try macOS's native Office Open XML importer (no Mammoth / custom XML parsing).
+            // This is generally faster and preserves more formatting when supported.
             DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+                do {
+                    let attributed = try NSAttributedString(
+                        url: url,
+                        options: [.documentType: NSAttributedString.DocumentType.officeOpenXML],
+                        documentAttributes: nil
+                    )
+
+                    DispatchQueue.main.async {
+                        guard let self else { return }
+                        self.applyImportedContent(attributed, url: url)
+                        // Choose default save format based on whether the native import produced attachments.
+                        self.currentDocumentFormat = self.mainContentViewController.editorViewController.hasAttachments() ? .rtfd : .rtf
+                    }
+                    return
+                } catch {
+                    // Fall through to the existing DOCX extractor below.
+                }
+
+                // Get file size for logging
+                let fileSize = (try? FileManager.default.attributesOfItem(atPath: url.path)[.size] as? Int) ?? 0
+                NSLog("📄 File size: \(fileSize) bytes (\(fileSize / 1024 / 1024) MB)")
+
+                // Parse in background, set content directly on main thread
                 NSLog("📄 Starting DOCX extraction for: \(url.lastPathComponent)")
                 let startTime = CFAbsoluteTimeGetCurrent()
                 do {
@@ -1299,28 +1370,9 @@ extension MainWindowController {
                         guard let self = self else { return }
                         NSLog("📄 Setting content on main thread, length: \(restored.length)")
                         let setStart = CFAbsoluteTimeGetCurrent()
-                        self.mainContentViewController.editorViewController.setAttributedContentDirect(restored)
+                        self.applyImportedContent(restored, url: url)
+                        self.currentDocumentFormat = self.mainContentViewController.editorViewController.hasAttachments() ? .rtfd : .rtf
                         NSLog("📄 Content set complete in \(CFAbsoluteTimeGetCurrent() - setStart)s")
-
-                        // Apply current theme to ensure text colors are correct (especially in dark mode)
-                        self.mainContentViewController.editorViewController.applyTheme(ThemeManager.shared.currentTheme)
-
-                        // Scan for {{index:term}} markers and hide them visually
-                        if let textStorage = self.mainContentViewController.editorViewController.textView?.textStorage {
-                            _ = TOCIndexManager.shared.generateIndexFromMarkers(in: textStorage)
-                        }
-
-                        // Update stats panel with the loaded document text
-                        if let text = self.mainContentViewController.editorViewController.textView?.string {
-                            self.headerView.specsPanel.updateStats(text: text)
-                        }
-
-                        // Trigger analysis after document loads
-                        NSLog("📊 Triggering initial analysis after document import")
-                        self.mainContentViewController.performAnalysis()
-
-                        // Refresh outline after document loads
-                        NotificationCenter.default.post(name: Notification.Name("QuillPilotOutlineRefresh"), object: nil)
                     }
                 } catch {
                     NSLog("📄 DOCX extraction failed: \(error)")
@@ -1329,11 +1381,73 @@ extension MainWindowController {
                     }
                 }
             }
+            return
+
+        case "rtf", "rtfd", "txt", "md", "markdown", "html", "htm":
+            let filename = url.deletingPathExtension().lastPathComponent
+            headerView.setDocumentTitle(filename)
+            currentDocumentURL = url
+            hasUnsavedChanges = false
+            mainContentViewController.editorViewController.headerText = ""
+            mainContentViewController.editorViewController.footerText = ""
+
+            // Determine best default save format based on input
+            switch ext {
+            case "rtf": currentDocumentFormat = .rtf
+            case "rtfd": currentDocumentFormat = .rtfd
+            case "txt": currentDocumentFormat = .txt
+            case "md", "markdown": currentDocumentFormat = .markdown
+            case "html", "htm": currentDocumentFormat = .html
+            default: currentDocumentFormat = .docx
+            }
+
+            mainContentViewController.documentDidChange(url: url)
+            mainContentViewController.editorViewController.textView?.string = "Loading document..."
+
+            DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+                do {
+                    let attributed: NSAttributedString
+                    switch ext {
+                    case "rtf":
+                        attributed = try NSAttributedString(
+                            url: url,
+                            options: [.documentType: NSAttributedString.DocumentType.rtf],
+                            documentAttributes: nil
+                        )
+                    case "rtfd":
+                        attributed = try NSAttributedString(
+                            url: url,
+                            options: [.documentType: NSAttributedString.DocumentType.rtfd],
+                            documentAttributes: nil
+                        )
+                    case "html", "htm":
+                        attributed = try NSAttributedString(
+                            url: url,
+                            options: [.documentType: NSAttributedString.DocumentType.html],
+                            documentAttributes: nil
+                        )
+                    case "txt", "md", "markdown":
+                        let text = try String(contentsOf: url)
+                        attributed = NSAttributedString(string: text)
+                    default:
+                        let text = try String(contentsOf: url)
+                        attributed = NSAttributedString(string: text)
+                    }
+
+                    DispatchQueue.main.async {
+                        self?.applyImportedContent(attributed, url: url)
+                    }
+                } catch {
+                    DispatchQueue.main.async {
+                        self?.presentErrorAlert(message: "Failed to open document", details: error.localizedDescription)
+                    }
+                }
+            }
 
         default:
             presentErrorAlert(
                 message: "Unsupported format",
-                details: "QuillPilot opens .docx documents.\n\nUse Export to save as .rtf or .pdf."
+                details: "QuillPilot opens .docx, .rtf, .rtfd, .txt, .md, and .html documents.\n\nUse Export to save as Word, RTF/RTFD, PDF, ePub, Kindle, HTML, or Text."
             )
             return
         }
@@ -1346,6 +1460,23 @@ extension MainWindowController {
         alert.messageText = message
         alert.informativeText = details
         alert.beginSheetModal(for: window)
+    }
+
+    @MainActor
+    private func applyImportedContent(_ attributed: NSAttributedString, url: URL) {
+        mainContentViewController.editorViewController.setAttributedContentDirect(attributed)
+        mainContentViewController.editorViewController.applyTheme(ThemeManager.shared.currentTheme)
+
+        if let textStorage = mainContentViewController.editorViewController.textView?.textStorage {
+            _ = TOCIndexManager.shared.generateIndexFromMarkers(in: textStorage)
+        }
+
+        if let text = mainContentViewController.editorViewController.textView?.string {
+            headerView.specsPanel.updateStats(text: text)
+        }
+
+        mainContentViewController.performAnalysis()
+        NotificationCenter.default.post(name: Notification.Name("QuillPilotOutlineRefresh"), object: nil)
     }
 
     private enum AssociatedKeys {
@@ -2827,6 +2958,10 @@ extension OutlineViewController: NSOutlineViewDataSource, NSOutlineViewDelegate 
 private enum ExportFormat: CaseIterable {
     case docx       // Full support (save + open)
     case rtf        // Export only
+    case rtfd       // Export + open
+    case txt        // Export + open
+    case markdown   // Export + open
+    case html       // Export + open
     case pdf        // Export only
     case epub       // Export only
     case mobi       // Export only (Kindle)
@@ -2835,6 +2970,10 @@ private enum ExportFormat: CaseIterable {
         switch self {
         case .docx: return "Word Document (.docx)"
         case .rtf: return "Rich Text (.rtf)"
+        case .rtfd: return "Rich Text with Attachments (.rtfd)"
+        case .txt: return "Plain Text (.txt)"
+        case .markdown: return "Markdown (.md)"
+        case .html: return "Web Page (.html)"
         case .pdf: return "PDF Document (.pdf)"
         case .epub: return "ePub (.epub)"
         case .mobi: return "Kindle (.mobi)"
@@ -2845,6 +2984,10 @@ private enum ExportFormat: CaseIterable {
         switch self {
         case .docx: return "docx"
         case .rtf: return "rtf"
+        case .rtfd: return "rtfd"
+        case .txt: return "txt"
+        case .markdown: return "md"
+        case .html: return "html"
         case .pdf: return "pdf"
         case .epub: return "epub"
         case .mobi: return "mobi"
@@ -2864,6 +3007,20 @@ private enum ExportFormat: CaseIterable {
             return [.data]
         case .rtf:
             return [.rtf]
+        case .rtfd:
+            return [.rtfd]
+        case .txt:
+            return [.plainText]
+        case .markdown:
+            if let mdType = UTType("net.daringfireball.markdown") {
+                return [mdType]
+            }
+            if let mdType = UTType(filenameExtension: "md", conformingTo: .text) {
+                return [mdType]
+            }
+            return [.text]
+        case .html:
+            return [.html]
         case .pdf:
             return [.pdf]
         case .epub:
@@ -2882,8 +3039,8 @@ private enum ExportFormat: CaseIterable {
     /// Whether this format can be opened (not just exported)
     var canOpen: Bool {
         switch self {
-        case .docx: return true
-        case .rtf, .pdf, .epub, .mobi: return false
+        case .docx, .rtf, .rtfd, .txt, .markdown, .html: return true
+        case .pdf, .epub, .mobi: return false
         }
     }
 }

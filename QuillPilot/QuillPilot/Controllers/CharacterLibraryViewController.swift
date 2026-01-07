@@ -648,7 +648,7 @@ class CharacterLibraryViewController: NSViewController {
         // Logo image
         let logoSize: CGFloat = 48
         let logoView = NSImageView(frame: NSRect(x: 20, y: contentView.bounds.height - logoSize - 20, width: logoSize, height: logoSize))
-        if let feather = NSImage(named: "feather") ?? Bundle.main.image(forResource: "feather") {
+        if let feather = NSImage.quillPilotFeatherImage() {
             logoView.image = feather
         } else {
             logoView.image = NSApp.applicationIconImage
@@ -723,7 +723,7 @@ class CharacterLibraryViewController: NSViewController {
         // Logo image
         let logoSize: CGFloat = 48
         let logoView = NSImageView(frame: NSRect(x: 20, y: contentView.bounds.height - logoSize - 20, width: logoSize, height: logoSize))
-        if let feather = NSImage(named: "feather") ?? Bundle.main.image(forResource: "feather") {
+        if let feather = NSImage.quillPilotFeatherImage() {
             logoView.image = feather
         } else {
             logoView.image = NSApp.applicationIconImage

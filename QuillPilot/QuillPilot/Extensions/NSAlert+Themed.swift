@@ -13,10 +13,8 @@ extension NSAlert {
     /// Gets the QuillPilot feather icon for alerts
     private static func getQuillPilotIcon() -> NSImage? {
         // Try to get the feather image
-        if let featherImage = NSImage(named: "feather") {
+        if let featherImage = NSImage.quillPilotFeatherImage() {
             return featherImage
-        } else if let bundleImage = Bundle.main.image(forResource: "feather") {
-            return bundleImage
         } else if let appIcon = NSApp.applicationIconImage {
             return appIcon
         }

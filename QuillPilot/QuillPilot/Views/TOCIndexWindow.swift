@@ -64,22 +64,32 @@ class TOCIndexManager {
         // Exclude any existing TOC/Index sections so we don't re-ingest previously inserted lists
         let excludedRanges = findExcludedRanges(in: textStorage)
 
+        NSLog("🔍 TOC Generation: Scanning document of length \(textStorage.length)")
+
         textStorage.enumerateAttributes(in: fullRange, options: []) { attrs, range, _ in
             if rangeIntersectsExcluded(range, excludedRanges) { return }
+
+            let text = (textStorage.string as NSString).substring(with: range).trimmingCharacters(in: .whitespacesAndNewlines)
+
             // Check for QuillStyleName attribute
             if let styleName = attrs[styleAttributeKey] as? String {
                 let level = levelForStyle(styleName)
                 if level > 0 {
-                    let text = (textStorage.string as NSString).substring(with: range).trimmingCharacters(in: .whitespacesAndNewlines)
                     if !text.isEmpty {
                         let pageNumber = estimatePageNumber(for: range.location, in: textStorage, pageHeight: pageHeight)
-                        entries.append(TOCEntry(
-                            title: text,
-                            level: level,
-                            pageNumber: pageNumber,
-                            range: range,
-                            styleName: styleName
-                        ))
+
+                        // Check for duplicates by title text, not just location
+                        let isDuplicate = entries.contains { $0.title == text }
+                        if !isDuplicate {
+                            NSLog("📖 TOC: Found styled entry '\(text)' at \(range.location) with style '\(styleName)'")
+                            entries.append(TOCEntry(
+                                title: text,
+                                level: level,
+                                pageNumber: pageNumber,
+                                range: range,
+                                styleName: styleName
+                            ))
+                        }
                     }
                 }
             }
@@ -88,7 +98,6 @@ class TOCIndexManager {
             // Only include 18-22pt fonts as chapter headings, skip larger fonts which are likely book titles
             if let font = attrs[.font] as? NSFont {
                 if font.pointSize >= 18 && font.pointSize <= 22 {
-                    let text = (textStorage.string as NSString).substring(with: range).trimmingCharacters(in: .whitespacesAndNewlines)
                     // Skip TOC/Index titles, single letters (Index Letter style), and empty/long text
                     let lowercasedText = text.lowercased()
                     let isTOCOrIndex = lowercasedText == "table of contents" || lowercasedText == "index" || lowercasedText == "glossary" || lowercasedText == "appendix"
@@ -97,9 +106,10 @@ class TOCIndexManager {
                         let level = font.pointSize >= 20 ? 1 : 2
                         let pageNumber = estimatePageNumber(for: range.location, in: textStorage, pageHeight: pageHeight)
 
-                        // Check if we already have this entry
-                        let isDuplicate = entries.contains { $0.range.location == range.location }
+                        // Check for duplicates by title text
+                        let isDuplicate = entries.contains { $0.title == text }
                         if !isDuplicate {
+                            NSLog("📖 TOC: Found font-based entry '\(text)' at \(range.location) with font size \(font.pointSize)")
                             entries.append(TOCEntry(
                                 title: text,
                                 level: level,
@@ -114,6 +124,10 @@ class TOCIndexManager {
         }
 
         tocEntries = entries.sorted { $0.range.location < $1.range.location }
+        NSLog("📊 TOC Generation complete: Found \(tocEntries.count) entries")
+        for (i, entry) in tocEntries.enumerated() {
+            NSLog("  \(i+1). '\(entry.title)' page \(entry.pageNumber)")
+        }
         return tocEntries
     }
 
@@ -242,6 +256,11 @@ class TOCIndexManager {
         indexEntries.removeAll()
     }
 
+    // Set TOC entries directly (used when sourcing from Document Outline)
+    func setTOCEntries(_ entries: [TOCEntry]) {
+        tocEntries = entries
+    }
+
     // Public page number estimation for use when adding index entries
     func estimatePageNumberPublic(for location: Int, in textStorage: NSTextStorage) -> Int {
         return estimatePageNumber(for: location, in: textStorage, pageHeight: 792)
@@ -294,7 +313,8 @@ private func findSectionRange(title: String, in storage: NSTextStorage) -> NSRan
                 let scanText = fullString.substring(with: scanRange)
 
                 // Look for chapter markers that indicate section has ended
-                let endMarkers = ["Chapter ", "CHAPTER ", "Part ", "PART ", "\n\n\n"]
+                // Include common abbreviations and patterns for chapter headings
+                let endMarkers = ["Chapter ", "CHAPTER ", "Part ", "PART ", "Ch ", "CH ", "Ch. ", "CH. ", "\n\n\n"]
                 var earliestEnd = scanText.count
 
                 for marker in endMarkers {
@@ -413,14 +433,14 @@ class TOCIndexWindowController: NSWindowController, NSOutlineViewDataSource, NSO
     private func resolveDocumentFont(from textView: NSTextView) -> NSFont {
         // FIRST PRIORITY: Query StyleCatalog for TOC Entry or Body Text style
         // This ensures we use the template's font family
-        if let tocStyle = StyleCatalog.shared.style(named: "TOC Entry Level 1"),
-           let tocFont = NSFont(name: tocStyle.fontName, size: tocStyle.fontSize) {
+          if let tocStyle = StyleCatalog.shared.style(named: "TOC Entry Level 1"),
+              let tocFont = NSFont.quillPilotResolve(nameOrFamily: tocStyle.fontName, size: tocStyle.fontSize) {
             print("DEBUG TOC: Using StyleCatalog TOC Entry font: \(tocStyle.fontName)")
             return tocFont
         }
 
-        if let bodyStyle = StyleCatalog.shared.style(named: "Body Text"),
-           let bodyFont = NSFont(name: bodyStyle.fontName, size: bodyStyle.fontSize) {
+          if let bodyStyle = StyleCatalog.shared.style(named: "Body Text"),
+              let bodyFont = NSFont.quillPilotResolve(nameOrFamily: bodyStyle.fontName, size: bodyStyle.fontSize) {
             print("DEBUG TOC: Using StyleCatalog Body Text font: \(bodyStyle.fontName)")
             return bodyFont
         }
@@ -714,18 +734,42 @@ class TOCIndexWindowController: NSWindowController, NSOutlineViewDataSource, NSO
     // MARK: - Actions
 
     @objc private func generateTOC() {
-        guard let textView = editorTextView, let textStorage = textView.textStorage else {
+        guard let editorVC = editorViewController else {
             showThemedAlert(title: "No Document", message: "Please open a document first.")
             return
         }
 
-        let entries = TOCIndexManager.shared.generateTOC(from: textStorage)
+        // Use the same outline entries that populate the Document Outline
+        let outlineEntries = editorVC.buildOutlineEntries()
+
+        // Filter to only include chapter-level entries (level 1) and convert to TOCEntry format
+        // Also exclude TOC/Index/Glossary titles from the TOC itself
+        let excludedTitles = ["table of contents", "index", "glossary", "appendix"]
+        var tocEntries: [TOCEntry] = []
+
+        for entry in outlineEntries {
+            let lowercasedTitle = entry.title.lowercased()
+            let isExcluded = excludedTitles.contains(where: { lowercasedTitle == $0 })
+
+            if !isExcluded {
+                tocEntries.append(TOCEntry(
+                    title: entry.title,
+                    level: entry.level,
+                    pageNumber: entry.page ?? 1,
+                    range: entry.range,
+                    styleName: ""
+                ))
+            }
+        }
+
+        // Update the shared manager with these entries
+        TOCIndexManager.shared.setTOCEntries(tocEntries)
         tocOutlineView.reloadData()
 
-        if entries.isEmpty {
-            showThemedAlert(title: "No Headings Found", message: "No chapter titles or headings were detected. Use styles like 'Chapter Title', 'Heading 1', etc., or use larger font sizes (18pt+) for headings.")
+        if tocEntries.isEmpty {
+            showThemedAlert(title: "No Headings Found", message: "No chapter titles or headings were detected. Use styles like 'Chapter Title', 'Heading 1', etc.")
         } else {
-            showThemedAlert(title: "TOC Generated", message: "Found \(entries.count) entries.")
+            showThemedAlert(title: "TOC Generated", message: "Found \(tocEntries.count) entries.")
         }
     }
 
@@ -781,24 +825,22 @@ class TOCIndexWindowController: NSWindowController, NSOutlineViewDataSource, NSO
         ]
         tocString.append(NSAttributedString(string: "Table of Contents\n\n", attributes: titleAttrs))
 
-        // Calculate right edge inside the text container (respect padding)
-        let textContainer = textView.textContainer!
-        let containerWidth = textContainer.containerSize.width
-        let lineFragmentPadding = textContainer.lineFragmentPadding
+        // Use the actual text container width from the editor for accurate tab positioning
+        // Fall back to standard Letter page text width (612pt - 1" margins each side)
+        let pageTextWidth: CGFloat = textView.textContainer?.size.width ?? (612 - (72 * 2))
+        NSLog("📐 TOC Insert: pageTextWidth = \(pageTextWidth)")
 
         // Entries with leader dots - page numbers align right via a tab stop
-        for entry in entries {
+        NSLog("📝 TOC Insert: Processing \(entries.count) entries")
+        for (index, entry) in entries.enumerated() {
             let fontSize: CGFloat = entry.level == 1 ? 14 : (entry.level == 2 ? 12 : 11)
             let isBold = entry.level == 1
             let entryFont = fontFromDocument(documentFont, size: fontSize, bold: isBold)
             let leftIndent = CGFloat(entry.level - 1) * 20
 
-            // Right-align page numbers close to the right edge (inside the text container).
-            // Tab stop locations are in the text container's coordinate space, so the right
-            // edge is `containerWidth - lineFragmentPadding`.
-            let rightPadding: CGFloat = 2
-            let rightEdge = max(0, containerWidth - lineFragmentPadding)
-            let rightTab = max(leftIndent + 120, rightEdge - rightPadding)
+            // Right-align page numbers close to the printable right edge (stable across zoom/export)
+            let rightPadding: CGFloat = 10
+            let rightTab = pageTextWidth - rightPadding
 
             // Format page number according to selected format
             let pageNumStr = currentPageFormat.format(entry.pageNumber)
@@ -822,19 +864,20 @@ class TOCIndexWindowController: NSWindowController, NSOutlineViewDataSource, NSO
             // Calculate how much space we have for dots
             let titleAttrsForMeasure: [NSAttributedString.Key: Any] = [.font: entryFont]
             let titleWidth = (entry.title as NSString).size(withAttributes: titleAttrsForMeasure).width
+            let pageNumWidth = (pageNumStr as NSString).size(withAttributes: titleAttrsForMeasure).width
             let spaceWidth = (" ").size(withAttributes: titleAttrsForMeasure).width
             let dotWidth = (".").size(withAttributes: titleAttrsForMeasure).width
 
-            // Calculate available width for leader dots up to the tab stop.
-            let availableForDots = max(0, rightTab - leftIndent - titleWidth - (spaceWidth * 2))
+            // Calculate available width for leader dots between title and page number
+            // Leave room for: title + space + dots + space + page number
+            let availableForDots = max(0, rightTab - leftIndent - titleWidth - pageNumWidth - (spaceWidth * 4))
             let dotSpaceWidth = dotWidth + spaceWidth  // ". " pattern
-            let maxDots = Int(floor(availableForDots / dotSpaceWidth))
-            // Use at least a few dots when there is room, but never overshoot the tab stop.
-            let dotCount = maxDots >= 3 ? maxDots : max(0, maxDots)
-            let leaderDots = " " + String(repeating: ". ", count: dotCount)
+            let maxDots = max(3, Int(floor(availableForDots / dotSpaceWidth)))
+            let leaderDots = " " + String(repeating: ". ", count: maxDots)
 
             // Format: title + dots + TAB + right-aligned page number
             let line = "\(entry.title)\(leaderDots)\t\(pageNumStr)\n"
+            NSLog("📝 TOC Entry \(index+1): '\(entry.title)' -> \(maxDots) dots, page \(pageNumStr)")
             tocString.append(NSAttributedString(string: line, attributes: entryAttrs))
         }
 
@@ -957,9 +1000,8 @@ class TOCIndexWindowController: NSWindowController, NSOutlineViewDataSource, NSO
         }
 
         // Calculate right edge inside the text container (respect padding)
-        let textContainer = textView.textContainer!
-        let containerWidth = textContainer.containerSize.width
-        let lineFragmentPadding = textContainer.lineFragmentPadding
+        // Use the actual text container width from the editor for accurate tab positioning
+        let pageTextWidth: CGFloat = textView.textContainer?.size.width ?? (612 - (72 * 2))
 
         // Title - mark with "Index Title" style to appear in document outline
         let titleFont = fontFromDocument(documentFont, size: 18, bold: true)
@@ -997,27 +1039,25 @@ class TOCIndexWindowController: NSWindowController, NSOutlineViewDataSource, NSO
 
             // Right-align the page list using a tab stop.
             let leftIndent: CGFloat = 20
-            let rightPadding: CGFloat = 2
-            let rightEdge = max(0, containerWidth - lineFragmentPadding)
-            let rightTab = max(leftIndent + 100, rightEdge - rightPadding)
+            let rightPadding: CGFloat = 10
+            let rightTab = pageTextWidth - rightPadding
 
             // Calculate leader dots (fill up to the tab stop)
             let termAttrsForMeasure: [NSAttributedString.Key: Any] = [.font: entryFont]
             let termWidth = (entry.term as NSString).size(withAttributes: termAttrsForMeasure).width
+            let pageListWidth = (pageList as NSString).size(withAttributes: termAttrsForMeasure).width
             let dotWidth = (" .").size(withAttributes: termAttrsForMeasure).width  // space + dot
 
-            // Calculate available space for dots
-            let availableWidth = max(0, rightTab - leftIndent - termWidth - 10)
-            let maxDots = Int(floor(availableWidth / dotWidth))
-            // Use at least a few dots when there is room, but never overshoot the tab stop.
-            let dotCount = maxDots >= 3 ? maxDots : max(0, maxDots)
-            let leaderDots = " " + String(repeating: " .", count: dotCount)
+            // Calculate available space for dots - account for term, page list, and spacing
+            let availableWidth = max(0, rightTab - leftIndent - termWidth - pageListWidth - 20)
+            let maxDots = max(3, Int(floor(availableWidth / dotWidth)))
+            let leaderDots = " " + String(repeating: " .", count: maxDots)
 
             // Create paragraph style - NO tabs
             let paragraphStyle = NSMutableParagraphStyle()
             paragraphStyle.firstLineHeadIndent = leftIndent
             paragraphStyle.headIndent = leftIndent
-            paragraphStyle.lineBreakMode = .byTruncatingMiddle
+            paragraphStyle.lineBreakMode = .byClipping
             paragraphStyle.tabStops = [NSTextTab(textAlignment: .right, location: rightTab, options: [:])]
 
             // Mark entries with "Index Entry" style to prevent inference as headings
@@ -1058,27 +1098,6 @@ class TOCIndexWindowController: NSWindowController, NSOutlineViewDataSource, NSO
             textView.window?.makeFirstResponder(textView)
         }
     }
-
-    // MARK: - Utilities
-
-// Finds the range of a section that begins with the given title and continues until the next occurrence of the same title (or document end).
-private func findSectionRange(title: String, in storage: NSTextStorage) -> NSRange? {
-    let fullString = storage.string as NSString
-    let searchRange = NSRange(location: 0, length: fullString.length)
-    guard let titleRange = fullString.range(of: title, options: [.caseInsensitive], range: searchRange).toOptional() else {
-        return nil
-    }
-
-    let nextSearchStart = titleRange.location + titleRange.length
-    if nextSearchStart < fullString.length,
-       let nextTitleRange = fullString.range(of: title, options: [.caseInsensitive], range: NSRange(location: nextSearchStart, length: fullString.length - nextSearchStart)).toOptional() {
-        let length = nextTitleRange.location - titleRange.location
-        return NSRange(location: titleRange.location, length: length)
-    }
-
-    // No subsequent title found; remove to end of document
-    return NSRange(location: titleRange.location, length: fullString.length - titleRange.location)
-}
 
     // MARK: - NSOutlineViewDataSource
 

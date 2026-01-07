@@ -17,9 +17,6 @@ let package = Package(
             name: "QuillPilot",
             dependencies: [],
             path: "QuillPilot/QuillPilot",
-            exclude: [
-                "Extensions/NSImage+QuillPilotAssets.swift"
-            ],
             sources: [
                 "Sources/AppDelegate.swift",
                 "Controllers/MainWindowController.swift",

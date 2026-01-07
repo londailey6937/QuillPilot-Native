@@ -345,7 +345,7 @@ final class SceneInspectorWindowController: NSWindowController {
             paragraphStyle.tailIndent = bodyStyle.tailIndent
             paragraphStyle.lineBreakMode = .byWordWrapping
 
-            var font = NSFont(name: bodyStyle.fontName, size: bodyStyle.fontSize) ?? NSFont.systemFont(ofSize: bodyStyle.fontSize)
+            var font = NSFont.quillPilotResolve(nameOrFamily: bodyStyle.fontName, size: bodyStyle.fontSize) ?? NSFont.systemFont(ofSize: bodyStyle.fontSize)
             if bodyStyle.isBold {
                 font = NSFontManager.shared.convert(font, toHaveTrait: .boldFontMask)
             }

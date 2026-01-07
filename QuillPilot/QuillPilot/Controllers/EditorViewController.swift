@@ -645,8 +645,30 @@ class EditorViewController: NSViewController {
 
     func setFontFamily(_ family: String) {
         applyFontChange { current in
-            NSFontManager.shared.convert(current, toFamily: family)
+            NSFontManager.shared.convert(current, toFamily: resolveInstalledFontFamilyName(family))
         }
+    }
+
+    private func resolveInstalledFontFamilyName(_ requested: String) -> String {
+        let families = NSFontManager.shared.availableFontFamilies
+        if families.contains(requested) {
+            return requested
+        }
+
+        let requestedLower = requested.lowercased()
+        let requestedCompact = requestedLower.replacingOccurrences(of: " ", with: "")
+
+        // Try substring match first ("Garamond" -> "Garamond Premier Pro")
+        if let match = families.first(where: { $0.lowercased().contains(requestedLower) }) {
+            return match
+        }
+
+        // Try compact match ignoring spaces ("Source Sans Pro" -> "SourceSans3")
+        if let match = families.first(where: { $0.lowercased().replacingOccurrences(of: " ", with: "").contains(requestedCompact) }) {
+            return match
+        }
+
+        return requested
     }
 
     func setFontSize(_ size: CGFloat) {
@@ -3000,7 +3022,8 @@ case "Book Subtitle":
     }
 
     private func font(from definition: StyleDefinition) -> NSFont {
-        var font = NSFont(name: definition.fontName, size: definition.fontSize) ?? NSFont.systemFont(ofSize: definition.fontSize)
+        var font = NSFont.quillPilotResolve(nameOrFamily: definition.fontName, size: definition.fontSize)
+            ?? NSFont.systemFont(ofSize: definition.fontSize)
         if definition.isBold {
             font = NSFontManager.shared.convert(font, toHaveTrait: .boldFontMask)
         }
@@ -3144,6 +3167,25 @@ case "Book Subtitle":
         // CRITICAL: Preserve textBlocks (columns and tables) from existing style
         if !existing.textBlocks.isEmpty {
             mutable.textBlocks = existing.textBlocks
+        }
+
+        // Preserve custom tab stops (used for TOC/Index leader + page-number alignment,
+        // and also for hanging indents in lists).
+        if !existing.tabStops.isEmpty {
+            mutable.tabStops = existing.tabStops
+            mutable.defaultTabInterval = existing.defaultTabInterval
+        }
+
+        // Preserve explicit indents if they differ from the style defaults.
+        // This matters for TOC nesting and other programmatic formatting.
+        if existing.headIndent != style.headIndent {
+            mutable.headIndent = existing.headIndent
+        }
+        if existing.firstLineHeadIndent != style.firstLineHeadIndent {
+            mutable.firstLineHeadIndent = existing.firstLineHeadIndent
+        }
+        if existing.tailIndent != style.tailIndent {
+            mutable.tailIndent = existing.tailIndent
         }
 
         return mutable.copy() as! NSParagraphStyle
@@ -3392,9 +3434,8 @@ case "Book Subtitle":
         if numPages < 5 && !isInColumnsOrTables,
            let layoutManager = textView.layoutManager,
            let textContainer = textView.textContainer {
-            let activeHeaderHeight = showHeaders ? headerHeight : 0
-            let activeFooterHeight = showFooters ? footerHeight : 0
-            let pageTextHeight = scaledPageHeight - (standardMargin * 2 + activeHeaderHeight + activeFooterHeight) * editorZoom
+            // Headers/footers render inside the standard margins and do not reduce the text area.
+            let pageTextHeight = scaledPageHeight - (standardMargin * 2) * editorZoom
             let textWidth = max(36, scaledPageWidth - (leftPageMargin + rightPageMargin) * editorZoom)
 
             // Preserve current state
@@ -3433,11 +3474,10 @@ case "Book Subtitle":
             pageContainerView.setNeedsDisplay(pageContainerView.bounds)
         }
 
-        // Text view spans all pages with proper margins for header/footer
-        let activeHeaderHeight = showHeaders ? headerHeight : 0
-        let activeFooterHeight = showFooters ? footerHeight : 0
-        let textInsetTop = (standardMargin + activeHeaderHeight) * editorZoom
-        let textInsetBottom = (standardMargin + activeFooterHeight) * editorZoom
+        // Text view spans all pages with standard margins.
+        // Headers/footers are drawn inside those margins, so they don't reserve extra layout space.
+        let textInsetTop = standardMargin * editorZoom
+        let textInsetBottom = standardMargin * editorZoom
         let textInsetLeft = leftPageMargin * editorZoom
         let textInsetRight = rightPageMargin * editorZoom
         textView.frame = NSRect(
@@ -3461,29 +3501,25 @@ case "Book Subtitle":
             for pageNum in 0..<numPages {
                 let pageYInContainer = CGFloat(pageNum) * (scaledPageHeight + pageGap)
 
-                // Exclude header area at top of each page
-                if showHeaders {
-                    let headerY = pageYInContainer - textInsetBottom
-                    let headerRect = NSRect(
-                        x: 0,
-                        y: headerY,
-                        width: textView.frame.width,
-                        height: textInsetTop
-                    )
-                    exclusionPaths.append(NSBezierPath(rect: headerRect))
-                }
+                // Exclude the standard top margin at the top of each page
+                let headerY = pageYInContainer - textInsetBottom
+                let headerRect = NSRect(
+                    x: 0,
+                    y: headerY,
+                    width: textView.frame.width,
+                    height: textInsetTop
+                )
+                exclusionPaths.append(NSBezierPath(rect: headerRect))
 
-                // Exclude footer area at bottom of each page
-                if showFooters {
-                    let footerY = pageYInContainer + scaledPageHeight - textInsetBottom - textInsetTop
-                    let footerRect = NSRect(
-                        x: 0,
-                        y: footerY,
-                        width: textView.frame.width,
-                        height: textInsetBottom
-                    )
-                    exclusionPaths.append(NSBezierPath(rect: footerRect))
-                }
+                // Exclude the standard bottom margin at the bottom of each page
+                let footerY = pageYInContainer + scaledPageHeight - textInsetBottom - textInsetTop
+                let footerRect = NSRect(
+                    x: 0,
+                    y: footerY,
+                    width: textView.frame.width,
+                    height: textInsetBottom
+                )
+                exclusionPaths.append(NSBezierPath(rect: footerRect))
 
                 // Exclude the gaps between pages
                 if pageNum < numPages - 1 {

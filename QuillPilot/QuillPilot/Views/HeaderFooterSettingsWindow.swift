@@ -87,7 +87,7 @@ class HeaderFooterSettingsWindow: NSWindowController {
         contentView.addSubview(showPageNumbersCheckbox)
 
         // Info label
-        let infoLabel = NSTextField(labelWithString: "Headers and footers occupy 0.5\" (36pt) each at top and bottom of page.")
+        let infoLabel = NSTextField(labelWithString: "Headers and footers are drawn inside the standard page margins.")
         infoLabel.font = NSFont.systemFont(ofSize: 10)
         infoLabel.textColor = .secondaryLabelColor
         infoLabel.translatesAutoresizingMaskIntoConstraints = false

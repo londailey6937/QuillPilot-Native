@@ -1585,11 +1585,12 @@ class FormattingToolbar: NSView {
 
     private var themedControls: [NSControl] = []
 
-    private var fontPopup: NSPopUpButton!
+    private var templatePopup: NSPopUpButton!
     private var stylePopup: NSPopUpButton!
     private var sizePopup: NSPopUpButton!
     private var editStylesButton: NSButton!
     private var imageButton: NSButton!
+    private var currentTemplate: String = "Novel"
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
@@ -1630,7 +1631,7 @@ class FormattingToolbar: NSView {
             if let styleDefinition = StyleCatalog.shared.style(named: title) {
                 let fontName = styleDefinition.fontName
                 let fontSize: CGFloat = min(styleDefinition.fontSize, 13) // Cap at 13pt for menu
-                let font = NSFont(name: fontName, size: fontSize) ?? NSFont.systemFont(ofSize: fontSize)
+                let font = NSFont.quillPilotResolve(nameOrFamily: fontName, size: fontSize) ?? NSFont.systemFont(ofSize: fontSize)
 
                 let attributes: [NSAttributedString.Key: Any] = [
                     .font: font,
@@ -1711,17 +1712,6 @@ class FormattingToolbar: NSView {
             stylesMenu.addItem(.separator())
         }
 
-        // Add template switcher submenu
-        addHeader("Switch Template")
-        for templateName in StyleCatalog.shared.availableTemplates() {
-            let switchItem = NSMenuItem(title: templateName, action: #selector(switchTemplate(_:)), keyEquivalent: "")
-            switchItem.target = self
-            if templateName == StyleCatalog.shared.currentTemplateName {
-                switchItem.state = .on
-            }
-            stylesMenu.addItem(switchItem)
-        }
-
         stylePopup.menu = stylesMenu
         // Restore last selected style from UserDefaults, default to "Body Text"
         let lastStyle = UserDefaults.standard.string(forKey: "LastSelectedStyle") ?? "Body Text"
@@ -1746,13 +1736,14 @@ class FormattingToolbar: NSView {
         formatPainterBtn.action = #selector(formatPainterTapped)
         formatPainterBtn.toolTip = "Format Painter (Copy Style)"
 
-        // Font family popup
-        fontPopup = registerControl(NSPopUpButton(frame: .zero, pullsDown: false))
-        fontPopup.addItems(withTitles: ["Inter", "Georgia", "Times New Roman", "Garamond", "Minion Pro", "Helvetica", "Calibri", "Source Sans Pro", "Arial", "Courier New"])
-        fontPopup.translatesAutoresizingMaskIntoConstraints = false
-        fontPopup.target = self
-        fontPopup.action = #selector(fontFamilyChanged(_:))
-        fontPopup.toolTip = "Font Family"
+        // Template popup
+        templatePopup = registerControl(NSPopUpButton(frame: .zero, pullsDown: false))
+        templatePopup.addItems(withTitles: StyleCatalog.shared.availableTemplates())
+        templatePopup.selectItem(withTitle: StyleCatalog.shared.currentTemplateName)
+        templatePopup.translatesAutoresizingMaskIntoConstraints = false
+        templatePopup.target = self
+        templatePopup.action = #selector(templateChanged(_:))
+        templatePopup.toolTip = "Template"
 
         // Font size controls
         let decreaseSizeBtn = registerControl(NSButton(title: "−", target: self, action: #selector(decreaseFontSizeTapped)))
@@ -1847,7 +1838,7 @@ class FormattingToolbar: NSView {
 
         // Add all to stack view (all aligned left)
         let toolbarStack = NSStackView(views: [
-            stylePopup, editStylesButton, formatPainterBtn, fontPopup, decreaseSizeBtn, sizePopup, increaseSizeBtn,
+            stylePopup, editStylesButton, formatPainterBtn, templatePopup, decreaseSizeBtn, sizePopup, increaseSizeBtn,
             boldBtn, italicBtn, underlineBtn,
             alignLeftBtn, alignCenterBtn, alignRightBtn, justifyBtn,
             bulletsBtn, numberingBtn,
@@ -2014,21 +2005,7 @@ class FormattingToolbar: NSView {
         sender.synchronizeTitleAndSelectedItem()
     }
 
-    @objc private func switchTemplate(_ sender: NSMenuItem) {
-        let templateName = sender.title
-        StyleCatalog.shared.setCurrentTemplate(templateName)
-
-        // Rebuild the styles menu with new template
-        rebuildStylesMenu()
-
-        // Show themed confirmation
-        guard let window = self.window else { return }
-        let alert = NSAlert.themedInformational(
-            title: "Template Changed",
-            message: "Switched to \(templateName) template. New styles are now available in the dropdown."
-        )
-        alert.runThemedSheet(for: window)
-    }
+    // switchTemplate method removed - templates now in dedicated dropdown in toolbar
 
     private func rebuildStylesMenu() {
         // Clear and rebuild only the styles popup menu
@@ -2051,7 +2028,7 @@ class FormattingToolbar: NSView {
             if let styleDefinition = StyleCatalog.shared.style(named: title) {
                 let fontName = styleDefinition.fontName
                 let fontSize: CGFloat = min(styleDefinition.fontSize, 13)
-                let font = NSFont(name: fontName, size: fontSize) ?? NSFont.systemFont(ofSize: fontSize)
+                let font = NSFont.quillPilotResolve(nameOrFamily: fontName, size: fontSize) ?? NSFont.systemFont(ofSize: fontSize)
                 let attributes: [NSAttributedString.Key: Any] = [
                     .font: font,
                     .foregroundColor: currentTheme.textColor
@@ -2125,17 +2102,6 @@ class FormattingToolbar: NSView {
             addHeader("Screenplay")
             screenplayStyles.forEach(addStyle)
             stylesMenu.addItem(.separator())
-        }
-
-        // Add template switcher
-        addHeader("Switch Template")
-        for templateName in StyleCatalog.shared.availableTemplates() {
-            let switchItem = NSMenuItem(title: templateName, action: #selector(switchTemplate(_:)), keyEquivalent: "")
-            switchItem.target = self
-            if templateName == StyleCatalog.shared.currentTemplateName {
-                switchItem.state = .on
-            }
-            stylesMenu.addItem(switchItem)
         }
 
         // Update the popup's menu
@@ -2225,17 +2191,18 @@ class FormattingToolbar: NSView {
         NotificationCenter.default.post(name: NSNotification.Name("ShowSearchPanel"), object: nil)
     }
 
-    @objc private func fontFamilyChanged(_ sender: NSPopUpButton) {
-        guard let family = sender.titleOfSelectedItem, !family.isEmpty else { return }
-        delegate?.formattingToolbar(self, didChangeFontFamily: family)
 
-        // Update the displayed title with theme color
+    @objc private func templateChanged(_ sender: NSPopUpButton) {
+        guard let templateName = sender.titleOfSelectedItem, !templateName.isEmpty else { return }
+        currentTemplate = templateName
+        StyleCatalog.shared.setCurrentTemplate(templateName)
+        rebuildStylesMenu()
         let theme = ThemeManager.shared.currentTheme
         let attrs: [NSAttributedString.Key: Any] = [
             .foregroundColor: theme.textColor,
             .font: sender.font ?? NSFont.systemFont(ofSize: 13)
         ]
-        sender.attributedTitle = NSAttributedString(string: family, attributes: attrs)
+        sender.attributedTitle = NSAttributedString(string: templateName, attributes: attrs)
         sender.synchronizeTitleAndSelectedItem()
     }
 

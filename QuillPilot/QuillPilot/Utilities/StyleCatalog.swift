@@ -1,5 +1,27 @@
 import Cocoa
 
+extension NSFont {
+    /// Resolves either a PostScript font name (e.g. "TimesNewRomanPSMT") or a font family name
+    /// (e.g. "Times New Roman", "Inter") into a concrete font at the given size.
+    ///
+    /// Many UI pickers use family names, while `NSFont(name:size:)` expects a PostScript name.
+    static func quillPilotResolve(nameOrFamily: String, size: CGFloat) -> NSFont? {
+        if let exact = NSFont(name: nameOrFamily, size: size) {
+            return exact
+        }
+
+        let familyDescriptor = NSFontDescriptor(fontAttributes: [.family: nameOrFamily])
+        if let byFamily = NSFont(descriptor: familyDescriptor, size: size) {
+            return byFamily
+        }
+
+        // As a last resort, ask NSFontManager to convert a base font.
+        // If the family doesn't exist, this generally returns the input font unchanged.
+        let base = NSFont.systemFont(ofSize: size)
+        return NSFontManager.shared.convert(base, toFamily: nameOrFamily)
+    }
+}
+
 struct StyleDefinition: Codable {
     var fontName: String
     var fontSize: CGFloat

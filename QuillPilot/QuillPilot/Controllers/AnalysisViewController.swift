@@ -3352,9 +3352,21 @@ extension AnalysisViewController {
         menu.popUp(positioning: nil, at: NSPoint(x: 0, y: sender.bounds.height), in: sender)
     }
 
+    private func showMissingCharactersAlert() {
+        guard let window = view.window else { return }
+        let alert = NSAlert.themedWarning(
+            title: "No Characters Detected",
+            message: "Run Character Analysis or add characters before opening these popouts."
+        )
+        alert.runThemedSheet(for: window)
+    }
+
     @objc private func showDecisionBeliefLoops() {
         // Don't show if Character Library is empty
-        guard !CharacterLibrary.shared.characters.isEmpty else { return }
+        guard !CharacterLibrary.shared.characters.isEmpty else {
+            showMissingCharactersAlert()
+            return
+        }
 
         if let results = latestAnalysisResults {
             openDecisionBeliefPopout(loops: results.decisionBeliefLoops)
@@ -3370,7 +3382,10 @@ extension AnalysisViewController {
 
     @objc private func showBeliefShiftMatrix() {
         // Don't show if Character Library is empty
-        guard !CharacterLibrary.shared.characters.isEmpty else { return }
+        guard !CharacterLibrary.shared.characters.isEmpty else {
+            showMissingCharactersAlert()
+            return
+        }
 
         if let results = latestAnalysisResults {
             openBeliefShiftMatrixPopout(matrices: results.beliefShiftMatrices)
@@ -3386,7 +3401,10 @@ extension AnalysisViewController {
 
     @objc private func showDecisionConsequenceChains() {
         // Don't show if Character Library is empty
-        guard !CharacterLibrary.shared.characters.isEmpty else { return }
+        guard !CharacterLibrary.shared.characters.isEmpty else {
+            showMissingCharactersAlert()
+            return
+        }
 
         if let results = latestAnalysisResults {
             openDecisionConsequenceChainsPopout(chains: results.decisionConsequenceChains)
@@ -3402,7 +3420,10 @@ extension AnalysisViewController {
 
     @objc private func showInteractions() {
         // Don't show if Character Library is empty
-        guard !CharacterLibrary.shared.characters.isEmpty else { return }
+        guard !CharacterLibrary.shared.characters.isEmpty else {
+            showMissingCharactersAlert()
+            return
+        }
 
         if let results = latestAnalysisResults {
             openInteractionsPopout(interactions: results.characterInteractions)
@@ -3421,6 +3442,7 @@ extension AnalysisViewController {
         // Don't show if Character Library is empty
         guard !CharacterLibrary.shared.characters.isEmpty else {
             NSLog("⚠️ Character Library is empty, not showing presence")
+            showMissingCharactersAlert()
             return
         }
 
@@ -3440,7 +3462,10 @@ extension AnalysisViewController {
 
     @objc private func showRelationshipEvolutionMaps() {
         // Don't show if Character Library is empty
-        guard !CharacterLibrary.shared.characters.isEmpty else { return }
+        guard !CharacterLibrary.shared.characters.isEmpty else {
+            showMissingCharactersAlert()
+            return
+        }
 
         if let results = latestAnalysisResults {
             openRelationshipEvolutionMapPopout(evolutionData: results.relationshipEvolutionData)
@@ -3456,7 +3481,10 @@ extension AnalysisViewController {
 
     @objc private func showInternalExternalAlignment() {
         // Don't show if Character Library is empty
-        guard !CharacterLibrary.shared.characters.isEmpty else { return }
+        guard !CharacterLibrary.shared.characters.isEmpty else {
+            showMissingCharactersAlert()
+            return
+        }
 
         if let results = latestAnalysisResults {
             openInternalExternalAlignmentPopout(alignmentData: results.internalExternalAlignment)
@@ -3472,7 +3500,10 @@ extension AnalysisViewController {
 
     @objc private func showLanguageDriftAnalysis() {
         // Don't show if Character Library is empty
-        guard !CharacterLibrary.shared.characters.isEmpty else { return }
+        guard !CharacterLibrary.shared.characters.isEmpty else {
+            showMissingCharactersAlert()
+            return
+        }
 
         if let results = latestAnalysisResults {
             openLanguageDriftPopout(driftData: results.languageDriftData)
@@ -3488,7 +3519,10 @@ extension AnalysisViewController {
 
     @objc private func showThematicResonanceMap() {
         // Don't show if Character Library is empty
-        guard !CharacterLibrary.shared.characters.isEmpty else { return }
+        guard !CharacterLibrary.shared.characters.isEmpty else {
+            showMissingCharactersAlert()
+            return
+        }
 
         // Generate data asynchronously to avoid blocking UI
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
@@ -3500,14 +3534,20 @@ extension AnalysisViewController {
 
     @objc private func showFailurePatternCharts() {
         // Don't show if Character Library is empty
-        guard !CharacterLibrary.shared.characters.isEmpty else { return }
+        guard !CharacterLibrary.shared.characters.isEmpty else {
+            showMissingCharactersAlert()
+            return
+        }
 
         openFailurePatternChartsPopout()
     }
 
     @objc private func showEmotionalTrajectory() {
         // Don't show if Character Library is empty
-        guard !CharacterLibrary.shared.characters.isEmpty else { return }
+        guard !CharacterLibrary.shared.characters.isEmpty else {
+            showMissingCharactersAlert()
+            return
+        }
 
         if let results = latestAnalysisResults {
             openEmotionalTrajectoryPopout(results: results)

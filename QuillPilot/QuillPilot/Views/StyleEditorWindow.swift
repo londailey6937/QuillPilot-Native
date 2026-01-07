@@ -239,7 +239,7 @@ final class StyleEditorViewController: NSViewController {
         paragraph.firstLineHeadIndent = def.firstLineIndent
         paragraph.tailIndent = def.tailIndent
 
-        var font = NSFont(name: def.fontName, size: def.fontSize) ?? NSFont.systemFont(ofSize: def.fontSize)
+        var font = NSFont.quillPilotResolve(nameOrFamily: def.fontName, size: def.fontSize) ?? NSFont.systemFont(ofSize: def.fontSize)
         if def.isBold {
             font = NSFontManager.shared.convert(font, toHaveTrait: .boldFontMask)
         }

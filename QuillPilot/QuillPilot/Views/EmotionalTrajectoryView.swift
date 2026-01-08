@@ -28,6 +28,7 @@ class EmotionalTrajectoryView: NSView {
     private var trajectories: [CharacterTrajectory] = []
     private var selectedMetric: EmotionalMetric = .confidence
     private var showOverlay: Bool = false
+    private var chapterCount: Int = 0
 
     enum EmotionalMetric: String, CaseIterable {
         case confidence = "Confidence"
@@ -64,6 +65,11 @@ class EmotionalTrajectoryView: NSView {
     func setTrajectories(_ trajectories: [CharacterTrajectory], metric: EmotionalMetric = .confidence) {
         self.trajectories = trajectories
         self.selectedMetric = metric
+        self.needsDisplay = true
+    }
+
+    func setChapterCount(_ count: Int) {
+        self.chapterCount = max(0, count)
         self.needsDisplay = true
     }
 
@@ -146,11 +152,22 @@ class EmotionalTrajectoryView: NSView {
             gridPath.line(to: NSPoint(x: chartRect.maxX, y: y))
         }
 
-        // Vertical grid lines (10 lines for 0%, 10%, 20%...100%)
-        for i in 0...10 {
-            let x = chartRect.minX + (chartRect.width / 10) * CGFloat(i)
-            gridPath.move(to: NSPoint(x: x, y: chartRect.minY))
-            gridPath.line(to: NSPoint(x: x, y: chartRect.maxY))
+        // Vertical grid lines
+        if chapterCount > 1 {
+            // Use up to 10 chapter-based divisions to avoid overcrowding
+            let divisions = min(10, chapterCount - 1)
+            for i in 0...divisions {
+                let x = chartRect.minX + (chartRect.width * CGFloat(i) / CGFloat(divisions))
+                gridPath.move(to: NSPoint(x: x, y: chartRect.minY))
+                gridPath.line(to: NSPoint(x: x, y: chartRect.maxY))
+            }
+        } else {
+            // Fallback: 0..100% divisions
+            for i in 0...10 {
+                let x = chartRect.minX + (chartRect.width / 10) * CGFloat(i)
+                gridPath.move(to: NSPoint(x: x, y: chartRect.minY))
+                gridPath.line(to: NSPoint(x: x, y: chartRect.maxY))
+            }
         }
 
         gridPath.stroke()
@@ -174,14 +191,36 @@ class EmotionalTrajectoryView: NSView {
         }
 
         // X-axis label
-        let xLabel = NSAttributedString(string: "Document Progress →", attributes: labelAttributes)
-        xLabel.draw(at: NSPoint(x: chartRect.midX - 60, y: chartRect.minY - 40))
+        let xAxisTitle = (chapterCount > 1) ? "Chapters →" : "Document Progress →"
+        let xLabel = NSAttributedString(string: xAxisTitle, attributes: labelAttributes)
+        xLabel.draw(at: NSPoint(x: chartRect.midX - 50, y: chartRect.minY - 40))
 
-        // X-axis percentage markers
-        for i in stride(from: 0, through: 100, by: 20) {
-            let x = chartRect.minX + (chartRect.width * CGFloat(i)) / 100 - 10
-            let percentLabel = NSAttributedString(string: "\(i)%", attributes: labelAttributes)
-            percentLabel.draw(at: NSPoint(x: x, y: chartRect.minY - 25))
+        if chapterCount > 1 {
+            // X-axis chapter markers (use a reduced set of ticks to avoid clutter)
+            let maxTicks = 8
+            let step = max(1, Int(ceil(Double(chapterCount - 1) / Double(maxTicks - 1))))
+            var ticks: [Int] = []
+            var ch = 1
+            while ch <= chapterCount {
+                ticks.append(ch)
+                ch += step
+            }
+            if ticks.last != chapterCount { ticks.append(chapterCount) }
+
+            for ch in ticks {
+                let denom = max(1, chapterCount - 1)
+                let position = Double(ch - 1) / Double(denom)
+                let x = chartRect.minX + chartRect.width * CGFloat(position) - 10
+                let label = NSAttributedString(string: "Ch \(ch)", attributes: labelAttributes)
+                label.draw(at: NSPoint(x: x, y: chartRect.minY - 25))
+            }
+        } else {
+            // Fallback: percentage markers
+            for i in stride(from: 0, through: 100, by: 20) {
+                let x = chartRect.minX + (chartRect.width * CGFloat(i)) / 100 - 10
+                let percentLabel = NSAttributedString(string: "\(i)%", attributes: labelAttributes)
+                percentLabel.draw(at: NSPoint(x: x, y: chartRect.minY - 25))
+            }
         }
     }
 

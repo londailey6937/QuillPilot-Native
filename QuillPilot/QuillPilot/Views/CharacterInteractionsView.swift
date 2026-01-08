@@ -38,19 +38,21 @@ class CharacterInteractionsView: NSView {
         let theme = ThemeManager.shared.currentTheme
         let backgroundColor = theme.pageAround
         let textColor = theme.textColor
-        let gridColor = theme.textColor.withAlphaComponent(0.1)
 
         // Fill background
         backgroundColor.setFill()
         dirtyRect.fill()
 
-        let padding: CGFloat = 60
-        let topPadding: CGFloat = 100
-        let bottomPadding: CGFloat = 120  // Increased for character names
-        let chartWidth = bounds.width - (padding * 2)
-        let chartHeight = bounds.height - topPadding - bottomPadding
+        let padding: CGFloat = 36
+        let topPadding: CGFloat = 80
+        let bottomPadding: CGFloat = 60
 
-        let maxValue = interactions.map { $0.coAppearances }.max() ?? 1
+        let chartRect = NSRect(
+            x: padding,
+            y: bottomPadding,
+            width: bounds.width - padding * 2,
+            height: bounds.height - topPadding - bottomPadding
+        )
 
         // Draw title
         let titleAttributes: [NSAttributedString.Key: Any] = [
@@ -82,145 +84,166 @@ class CharacterInteractionsView: NSView {
         )
         subtitle.draw(in: subtitleRect, withAttributes: subtitleAttributes)
 
-        // Draw horizontal grid lines and labels
-        let gridLineCount = 5
-        for i in 0...gridLineCount {
-            let y = bottomPadding + (chartHeight * CGFloat(i) / CGFloat(gridLineCount))
-            let value = maxValue * i / gridLineCount  // Low values at bottom, high at top
-
-            // Draw grid line
-            gridColor.setStroke()
-            let gridPath = NSBezierPath()
-            gridPath.move(to: NSPoint(x: padding, y: y))
-            gridPath.line(to: NSPoint(x: padding + chartWidth, y: y))
-            gridPath.lineWidth = 1
-            gridPath.stroke()
-
-            // Draw value label
-            let valueStr = "\(value)"
-            let labelAttributes: [NSAttributedString.Key: Any] = [
-                .font: NSFont.systemFont(ofSize: 10),
-                .foregroundColor: textColor.withAlphaComponent(0.6)
-            ]
-            let labelSize = valueStr.size(withAttributes: labelAttributes)
-            let labelRect = NSRect(
-                x: padding - labelSize.width - 8,
-                y: y - labelSize.height / 2,
-                width: labelSize.width,
-                height: labelSize.height
-            )
-            valueStr.draw(in: labelRect, withAttributes: labelAttributes)
+        // Draw a simple network diagram: characters as nodes, interactions as edges.
+        let allNames = Set(interactions.flatMap { [$0.character1, $0.character2] })
+        let names = Array(allNames).sorted()
+        if names.isEmpty {
+            drawEmptyState()
+            return
         }
 
-        // Draw bars
-        let barCount = CGFloat(interactions.count)
-        let barSpacing: CGFloat = 12
-        let totalSpacing = barSpacing * (barCount + 1)
-        let barWidth = (chartWidth - totalSpacing) / barCount
+        let nodeCount = names.count
+        let center = NSPoint(x: chartRect.midX, y: chartRect.midY)
+        let radius = max(40, min(chartRect.width, chartRect.height) * 0.35)
 
-        let colors: [NSColor] = [
-            NSColor(calibratedRed: 0.12, green: 0.47, blue: 0.71, alpha: 1.0), // blue
-            NSColor(calibratedRed: 0.84, green: 0.15, blue: 0.16, alpha: 1.0), // red
-            NSColor(calibratedRed: 0.17, green: 0.63, blue: 0.17, alpha: 1.0), // green
-            NSColor(calibratedRed: 1.00, green: 0.50, blue: 0.05, alpha: 1.0), // orange
-            NSColor(calibratedRed: 0.55, green: 0.34, blue: 0.76, alpha: 1.0), // purple
-            NSColor(calibratedRed: 0.60, green: 0.31, blue: 0.21, alpha: 1.0), // brown
-            NSColor(calibratedRed: 0.90, green: 0.47, blue: 0.76, alpha: 1.0), // pink
-            NSColor(calibratedRed: 0.50, green: 0.50, blue: 0.50, alpha: 1.0), // gray
-            NSColor(calibratedRed: 0.74, green: 0.74, blue: 0.13, alpha: 1.0), // olive
-            NSColor(calibratedRed: 0.09, green: 0.75, blue: 0.81, alpha: 1.0), // cyan
-            NSColor(calibratedRed: 0.11, green: 0.62, blue: 0.52, alpha: 1.0), // teal
-            NSColor(calibratedRed: 0.90, green: 0.67, blue: 0.00, alpha: 1.0), // gold
-            NSColor(calibratedRed: 0.30, green: 0.43, blue: 0.96, alpha: 1.0), // navy
-            NSColor(calibratedRed: 0.84, green: 0.12, blue: 0.55, alpha: 1.0), // magenta
-            NSColor(calibratedRed: 0.40, green: 0.76, blue: 0.65, alpha: 1.0)  // seafoam
+        // Place nodes on a circle for stability/readability
+        var nodePositions: [String: NSPoint] = [:]
+        for (i, name) in names.enumerated() {
+            let angle = (2.0 * Double.pi * Double(i)) / Double(max(1, nodeCount))
+            let x = center.x + CGFloat(cos(angle)) * radius
+            let y = center.y + CGFloat(sin(angle)) * radius
+            nodePositions[name] = NSPoint(x: x, y: y)
+        }
+
+        let maxCo = max(1, interactions.map { $0.coAppearances }.max() ?? 1)
+
+        func edgeColor(for strength: Double) -> NSColor {
+            if strength >= 0.66 { return NSColor.systemGreen.withAlphaComponent(0.7) }
+            if strength >= 0.33 { return NSColor.systemOrange.withAlphaComponent(0.65) }
+            return textColor.withAlphaComponent(0.25)
+        }
+
+        // Draw edges first
+        for interaction in interactions {
+            guard let p1 = nodePositions[interaction.character1], let p2 = nodePositions[interaction.character2] else { continue }
+            let t = CGFloat(interaction.coAppearances) / CGFloat(maxCo)
+            let width = 1.0 + 5.0 * t
+
+            let path = NSBezierPath()
+            path.move(to: p1)
+            path.line(to: p2)
+            path.lineWidth = width
+
+            edgeColor(for: interaction.relationshipStrength).setStroke()
+            path.stroke()
+        }
+
+        // Node styling
+        let nodeFill = theme.pageBackground
+        let nodeStroke = textColor.withAlphaComponent(0.35)
+        let labelBG = theme.pageAround.withAlphaComponent(0.92)
+
+        let nodeRadius: CGFloat = 12
+        let labelFont = NSFont.systemFont(ofSize: nodeCount >= 18 ? 10 : 11, weight: .medium)
+        let labelAttrs: [NSAttributedString.Key: Any] = [
+            .font: labelFont,
+            .foregroundColor: textColor
         ]
 
-        for (index, interaction) in interactions.enumerated() {
-            let x = padding + barSpacing + (CGFloat(index) * (barWidth + barSpacing))
-            let barHeight = chartHeight * CGFloat(interaction.coAppearances) / CGFloat(maxValue)
-            let y = bottomPadding  // Bars start from bottom
-
-            // Draw bar with gradient
-            let barRect = NSRect(x: x, y: y, width: barWidth, height: barHeight)
-            let color = colors[index % colors.count]
-
-            // Convert to RGB for gradient
-            guard let rgbColor = color.usingColorSpace(.deviceRGB) else { continue }
-            let lightColor = NSColor(
-                red: min(rgbColor.redComponent + 0.2, 1.0),
-                green: min(rgbColor.greenComponent + 0.2, 1.0),
-                blue: min(rgbColor.blueComponent + 0.2, 1.0),
-                alpha: 1.0
-            )
-
-            let gradient = NSGradient(starting: lightColor, ending: color)
-            gradient?.draw(in: barRect, angle: 90)
-
-            // Draw bar outline
-            color.setStroke()
-            let barPath = NSBezierPath(rect: barRect)
-            barPath.lineWidth = 1.5
-            barPath.stroke()
-
-            // Draw value on top of bar
-            let valueStr = "\(interaction.coAppearances)"
-            let valueAttributes: [NSAttributedString.Key: Any] = [
-                .font: NSFont.boldSystemFont(ofSize: 11),
-                .foregroundColor: textColor
-            ]
-            let valueSize = valueStr.size(withAttributes: valueAttributes)
-            let valueRect = NSRect(
-                x: x + (barWidth - valueSize.width) / 2,
-                y: y + barHeight + 4,
-                width: valueSize.width,
-                height: valueSize.height
-            )
-            valueStr.draw(in: valueRect, withAttributes: valueAttributes)
-
-            // Draw relationship strength indicator (small circle below x-axis near names)
-            let strengthSize: CGFloat = 8 + (CGFloat(interaction.relationshipStrength) * 8)
-            let strengthX = x + (barWidth - strengthSize) / 2
-            let strengthY = bottomPadding - 35  // Position below x-axis, above character names
-            let strengthRect = NSRect(x: strengthX, y: strengthY, width: strengthSize, height: strengthSize)
-            let strengthPath = NSBezierPath(ovalIn: strengthRect)
-
-            let strengthColor = NSColor(
-                red: 1.0 - CGFloat(interaction.relationshipStrength),
-                green: CGFloat(interaction.relationshipStrength),
-                blue: 0.3,
-                alpha: 0.8
-            )
-            strengthColor.setFill()
-            strengthPath.fill()
-
-            // Draw character names below axis
-            let labelStr = "\(interaction.character1)\n↔\n\(interaction.character2)"
-
-            let paragraphStyle = NSMutableParagraphStyle()
-            paragraphStyle.alignment = .center
-            paragraphStyle.lineSpacing = 2
-
-            let fullLabelAttributes: [NSAttributedString.Key: Any] = [
-                .font: NSFont.systemFont(ofSize: 9),
-                .foregroundColor: textColor.withAlphaComponent(0.8),
-                .paragraphStyle: paragraphStyle
-            ]
-
-            let labelHeight: CGFloat = 45
-            let labelRect = NSRect(
-                x: x - 10,
-                y: bottomPadding - labelHeight - 50,  // Position below strength circles
-                width: barWidth + 20,
-                height: labelHeight
-            )
-            labelStr.draw(in: labelRect, withAttributes: fullLabelAttributes)
+        func clampRectToChart(_ rect: NSRect) -> NSRect {
+            var r = rect
+            r.origin.x = min(max(r.origin.x, chartRect.minX), chartRect.maxX - r.width)
+            r.origin.y = min(max(r.origin.y, chartRect.minY), chartRect.maxY - r.height)
+            return r
         }
 
-        // Draw legend for relationship strength
-        let legendX: CGFloat = bounds.width - 180
-        let legendY: CGFloat = bounds.height - 80
+        func unitVector(from: NSPoint, to: NSPoint) -> NSPoint {
+            let dx = to.x - from.x
+            let dy = to.y - from.y
+            let len = max(0.0001, sqrt(dx * dx + dy * dy))
+            return NSPoint(x: dx / len, y: dy / len)
+        }
 
+        // Pre-place labels with simple collision avoidance.
+        // Strategy: place each label radially outward from the center (so labels sit outside the network),
+        // then nudge outward if the chip overlaps a previously-placed chip.
+        var placedLabelRects: [NSRect] = []
+        var finalLabelRects: [String: NSRect] = [:]
+
+        for name in names {
+            guard let p = nodePositions[name] else { continue }
+
+            let label = name
+            let labelSize = label.size(withAttributes: labelAttrs)
+            let padX: CGFloat = nodeCount >= 18 ? 5 : 6
+            let padY: CGFloat = nodeCount >= 18 ? 2 : 3
+
+            let direction = unitVector(from: center, to: p)
+            let baseDistance = nodeRadius + 8 + (labelSize.height / 2) + padY
+
+            var chosenRect: NSRect? = nil
+            let maxAttempts = 18
+
+            for attempt in 0..<maxAttempts {
+                // Push outward more each attempt. Add a tiny alternating tangential component to break ties.
+                let extra = CGFloat(attempt) * (nodeCount >= 18 ? 10 : 12)
+                let tangent = NSPoint(x: -direction.y, y: direction.x)
+                let wiggle = CGFloat((attempt % 2 == 0) ? 1 : -1) * CGFloat(attempt / 3) * 6
+
+                let anchor = NSPoint(
+                    x: p.x + direction.x * (baseDistance + extra) + tangent.x * wiggle,
+                    y: p.y + direction.y * (baseDistance + extra) + tangent.y * wiggle
+                )
+
+                var rect = NSRect(
+                    x: anchor.x - (labelSize.width / 2) - padX,
+                    y: anchor.y - (labelSize.height / 2) - padY,
+                    width: labelSize.width + padX * 2,
+                    height: labelSize.height + padY * 2
+                )
+                rect = clampRectToChart(rect)
+
+                let overlaps = placedLabelRects.contains { $0.intersects(rect) }
+                if !overlaps {
+                    chosenRect = rect
+                    break
+                }
+
+                // On final attempt, accept a clamped rect even if overlapping.
+                if attempt == maxAttempts - 1 {
+                    chosenRect = rect
+                }
+            }
+
+            if let rect = chosenRect {
+                finalLabelRects[name] = rect
+                placedLabelRects.append(rect)
+            }
+        }
+
+        // Draw nodes
+        for name in names {
+            guard let p = nodePositions[name] else { continue }
+
+            let nodeRect = NSRect(x: p.x - nodeRadius, y: p.y - nodeRadius, width: nodeRadius * 2, height: nodeRadius * 2)
+            let nodePath = NSBezierPath(ovalIn: nodeRect)
+            nodeFill.setFill()
+            nodePath.fill()
+            nodeStroke.setStroke()
+            nodePath.lineWidth = 2
+            nodePath.stroke()
+        }
+
+        // Draw labels last so they sit above edges/nodes
+        for name in names {
+            guard let labelRect = finalLabelRects[name] else { continue }
+            let label = name
+            let padX: CGFloat = nodeCount >= 18 ? 5 : 6
+            let padY: CGFloat = nodeCount >= 18 ? 2 : 3
+
+            let bgPath = NSBezierPath(roundedRect: labelRect, xRadius: 6, yRadius: 6)
+            labelBG.setFill()
+            bgPath.fill()
+            nodeStroke.setStroke()
+            bgPath.lineWidth = 1
+            bgPath.stroke()
+
+            label.draw(at: NSPoint(x: labelRect.minX + padX, y: labelRect.minY + padY), withAttributes: labelAttrs)
+        }
+
+        // Legend
+        let legendX: CGFloat = chartRect.maxX - 190
+        let legendY: CGFloat = bounds.height - 80
         let legendTitle = "Relationship Strength:"
         let legendTitleAttributes: [NSAttributedString.Key: Any] = [
             .font: NSFont.systemFont(ofSize: 10, weight: .medium),
@@ -228,32 +251,24 @@ class CharacterInteractionsView: NSView {
         ]
         legendTitle.draw(at: NSPoint(x: legendX, y: legendY), withAttributes: legendTitleAttributes)
 
-        // Draw strength indicators
         let strengthLabels = ["Weak", "Medium", "Strong"]
-        let strengthValues: [Double] = [0.3, 0.6, 0.9]
-
+        let strengthValues: [Double] = [0.2, 0.5, 0.85]
         for (i, label) in strengthLabels.enumerated() {
-            let y = legendY - CGFloat(i + 1) * 20
-            let strength = strengthValues[i]
-            let size: CGFloat = 8 + (CGFloat(strength) * 8)
-
-            let circleRect = NSRect(x: legendX, y: y, width: size, height: size)
-            let circlePath = NSBezierPath(ovalIn: circleRect)
-
-            let strengthColor = NSColor(
-                red: 1.0 - CGFloat(strength),
-                green: CGFloat(strength),
-                blue: 0.3,
-                alpha: 0.8
-            )
-            strengthColor.setFill()
-            circlePath.fill()
+            let y = legendY - CGFloat(i + 1) * 18
+            let p1 = NSPoint(x: legendX, y: y + 6)
+            let p2 = NSPoint(x: legendX + 26, y: y + 6)
+            let line = NSBezierPath()
+            line.move(to: p1)
+            line.line(to: p2)
+            line.lineWidth = 3
+            edgeColor(for: strengthValues[i]).setStroke()
+            line.stroke()
 
             let labelAttributes: [NSAttributedString.Key: Any] = [
                 .font: NSFont.systemFont(ofSize: 9),
                 .foregroundColor: textColor.withAlphaComponent(0.7)
             ]
-            label.draw(at: NSPoint(x: legendX + 22, y: y - 2), withAttributes: labelAttributes)
+            label.draw(at: NSPoint(x: legendX + 32, y: y), withAttributes: labelAttributes)
         }
     }
 

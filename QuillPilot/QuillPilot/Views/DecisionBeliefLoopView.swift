@@ -253,7 +253,7 @@ class DecisionBeliefLoopView: NSView {
         let tableHeaderHeight: CGFloat = 30
         let rowHeight: CGFloat = 60
         let entriesHeight = CGFloat(loop.entries.count) * rowHeight
-        let timelineHeight: CGFloat = 180
+        let timelineHeight: CGFloat = 196
         let diagnosticHeight: CGFloat = 120
 
         height = headerHeight + tableHeaderHeight + entriesHeight + timelineHeight + diagnosticHeight + 60
@@ -352,18 +352,22 @@ class DecisionBeliefLoopView: NSView {
         timelineSubLabel.frame = NSRect(x: 15, y: yPos - 38, width: width - 30, height: 16)
         container.addSubview(timelineSubLabel)
 
-        // Timeline legend (node color meaning)
-        let legend = createLabel(
-            text: "Legend: Reinforced (blue) • Weakened (orange) • Reframed (purple) • Contradicted (red) • Other shift (green) • No shift detected (gray)",
-            font: NSFont.systemFont(ofSize: 10),
-            textColor: textColor.withAlphaComponent(0.7)
-        )
-        legend.frame = NSRect(x: 15, y: yPos - 56, width: width - 30, height: 16)
-        container.addSubview(legend)
+        // Timeline legend (dot colors)
+        let legendItems: [(String, NSColor)] = [
+            ("Reinforced", beliefShiftColor("reinforced")),
+            ("Weakened", beliefShiftColor("weakened")),
+            ("Reframed", beliefShiftColor("reframed")),
+            ("Contradicted", beliefShiftColor("contradicted")),
+            ("Other shift", beliefShiftColor("other shift")),
+            ("No shift", beliefShiftColor(""))
+        ]
+        let legendView = TimelineLegendView(items: legendItems, textColor: textColor.withAlphaComponent(0.7))
+        legendView.frame = NSRect(x: 15, y: yPos - 72, width: width - 30, height: 32)
+        container.addSubview(legendView)
 
         // Simple timeline visualization
         let timelineView = createTimelineView(entries: loop.entries, width: width - 40, textColor: textColor)
-        timelineView.frame.origin = NSPoint(x: 20, y: yPos - 145)
+        timelineView.frame.origin = NSPoint(x: 20, y: yPos - 161)
         container.addSubview(timelineView)
 
         return container
@@ -449,6 +453,59 @@ class DecisionBeliefLoopView: NSView {
         super.layout()
         scrollView.frame = bounds
         updateContent()
+    }
+}
+
+private final class TimelineLegendView: NSView {
+    let items: [(String, NSColor)]
+    let textColor: NSColor
+
+    init(items: [(String, NSColor)], textColor: NSColor) {
+        self.items = items
+        self.textColor = textColor
+        super.init(frame: .zero)
+        wantsLayer = true
+        layer?.backgroundColor = .clear
+    }
+
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    override func draw(_ dirtyRect: NSRect) {
+        super.draw(dirtyRect)
+
+        let font = NSFont.systemFont(ofSize: 10)
+        let attrs: [NSAttributedString.Key: Any] = [
+            .font: font,
+            .foregroundColor: textColor
+        ]
+
+        let dotDiameter: CGFloat = 7
+        let dotYOffset: CGFloat = 2
+        let gapAfterDot: CGFloat = 5
+        let itemGap: CGFloat = 12
+
+        var x: CGFloat = 0
+        var y: CGFloat = bounds.height - 14
+
+        for (label, color) in items {
+            let labelSize = label.size(withAttributes: attrs)
+            let neededWidth = dotDiameter + gapAfterDot + labelSize.width + itemGap
+
+            if x + neededWidth > bounds.width, x > 0 {
+                x = 0
+                y -= 14
+            }
+
+            let dotRect = NSRect(x: x, y: y + dotYOffset, width: dotDiameter, height: dotDiameter)
+            let dotPath = NSBezierPath(ovalIn: dotRect)
+            color.withAlphaComponent(0.9).setFill()
+            dotPath.fill()
+
+            label.draw(at: NSPoint(x: x + dotDiameter + gapAfterDot, y: y), withAttributes: attrs)
+            x += dotDiameter + gapAfterDot + labelSize.width + itemGap
+        }
     }
 }
 // MARK: - Timeline Drawing View

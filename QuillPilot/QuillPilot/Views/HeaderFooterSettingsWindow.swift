@@ -16,16 +16,18 @@ class HeaderFooterSettingsWindow: NSWindowController {
     private var hideFirstPageNumberCheckbox: NSButton!
     private var pageNumberPositionLabel: NSTextField!
     private var pageNumberPositionControl: NSSegmentedControl!
-    private var headerTextField: NSTextField!
-    private var footerTextField: NSTextField!
+    private var headerLeftTextField: NSTextField!
+    private var headerRightTextField: NSTextField!
+    private var footerLeftTextField: NSTextField!
+    private var footerRightTextField: NSTextField!
 
-    /// onApply(showHeaders, showFooters, showPageNumbers, hideFirstPageNumber, centerPageNumbers, headerText, footerText)
-    var onApply: ((Bool, Bool, Bool, Bool, Bool, String, String) -> Void)?
+    /// onApply(showHeaders, showFooters, showPageNumbers, hideFirstPageNumber, centerPageNumbers, headerLeftText, headerRightText, footerLeftText, footerRightText)
+    var onApply: ((Bool, Bool, Bool, Bool, Bool, String, String, String, String) -> Void)?
     var onCancel: (() -> Void)?
 
     convenience init() {
         let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 450, height: 340),
+            contentRect: NSRect(x: 0, y: 0, width: 520, height: 410),
             styleMask: [.titled, .closable],
             backing: .buffered,
             defer: false
@@ -58,15 +60,24 @@ class HeaderFooterSettingsWindow: NSWindowController {
         showHeadersCheckbox.translatesAutoresizingMaskIntoConstraints = false
         contentView.addSubview(showHeadersCheckbox)
 
-        // Header text field
-        let headerLabel = NSTextField(labelWithString: "Header Text:")
-        headerLabel.translatesAutoresizingMaskIntoConstraints = false
-        contentView.addSubview(headerLabel)
+        // Header text fields
+        let headerLeftLabel = NSTextField(labelWithString: "Header Left:")
+        headerLeftLabel.translatesAutoresizingMaskIntoConstraints = false
+        contentView.addSubview(headerLeftLabel)
 
-        headerTextField = NSTextField()
-        headerTextField.placeholderString = "Header text (optional)"
-        headerTextField.translatesAutoresizingMaskIntoConstraints = false
-        contentView.addSubview(headerTextField)
+        headerLeftTextField = NSTextField()
+        headerLeftTextField.placeholderString = "Left header text (optional)"
+        headerLeftTextField.translatesAutoresizingMaskIntoConstraints = false
+        contentView.addSubview(headerLeftTextField)
+
+        let headerRightLabel = NSTextField(labelWithString: "Header Right:")
+        headerRightLabel.translatesAutoresizingMaskIntoConstraints = false
+        contentView.addSubview(headerRightLabel)
+
+        headerRightTextField = NSTextField()
+        headerRightTextField.placeholderString = "Right header text (optional)"
+        headerRightTextField.translatesAutoresizingMaskIntoConstraints = false
+        contentView.addSubview(headerRightTextField)
 
         // Show Footers checkbox
         showFootersCheckbox = NSButton(checkboxWithTitle: "Show Footers", target: self, action: #selector(checkboxChanged))
@@ -74,15 +85,24 @@ class HeaderFooterSettingsWindow: NSWindowController {
         showFootersCheckbox.translatesAutoresizingMaskIntoConstraints = false
         contentView.addSubview(showFootersCheckbox)
 
-        // Footer text field
-        let footerLabel = NSTextField(labelWithString: "Footer Text:")
-        footerLabel.translatesAutoresizingMaskIntoConstraints = false
-        contentView.addSubview(footerLabel)
+        // Footer text fields
+        let footerLeftLabel = NSTextField(labelWithString: "Footer Left:")
+        footerLeftLabel.translatesAutoresizingMaskIntoConstraints = false
+        contentView.addSubview(footerLeftLabel)
 
-        footerTextField = NSTextField()
-        footerTextField.placeholderString = "Footer text (optional)"
-        footerTextField.translatesAutoresizingMaskIntoConstraints = false
-        contentView.addSubview(footerTextField)
+        footerLeftTextField = NSTextField()
+        footerLeftTextField.placeholderString = "Left footer text (optional)"
+        footerLeftTextField.translatesAutoresizingMaskIntoConstraints = false
+        contentView.addSubview(footerLeftTextField)
+
+        let footerRightLabel = NSTextField(labelWithString: "Footer Right:")
+        footerRightLabel.translatesAutoresizingMaskIntoConstraints = false
+        contentView.addSubview(footerRightLabel)
+
+        footerRightTextField = NSTextField()
+        footerRightTextField.placeholderString = "Right footer text (optional)"
+        footerRightTextField.translatesAutoresizingMaskIntoConstraints = false
+        contentView.addSubview(footerRightTextField)
 
         // Show Page Numbers checkbox
         showPageNumbersCheckbox = NSButton(checkboxWithTitle: "Show Page Numbers", target: self, action: #selector(checkboxChanged))
@@ -137,26 +157,42 @@ class HeaderFooterSettingsWindow: NSWindowController {
             showHeadersCheckbox.topAnchor.constraint(equalTo: contentView.topAnchor, constant: 20),
             showHeadersCheckbox.leadingAnchor.constraint(equalTo: contentView.leadingAnchor, constant: 20),
 
-            headerLabel.topAnchor.constraint(equalTo: showHeadersCheckbox.bottomAnchor, constant: 12),
-            headerLabel.leadingAnchor.constraint(equalTo: contentView.leadingAnchor, constant: 40),
+            headerLeftLabel.topAnchor.constraint(equalTo: showHeadersCheckbox.bottomAnchor, constant: 12),
+            headerLeftLabel.leadingAnchor.constraint(equalTo: contentView.leadingAnchor, constant: 40),
 
-            headerTextField.centerYAnchor.constraint(equalTo: headerLabel.centerYAnchor),
-            headerTextField.leadingAnchor.constraint(equalTo: headerLabel.trailingAnchor, constant: 8),
-            headerTextField.trailingAnchor.constraint(equalTo: contentView.trailingAnchor, constant: -20),
-            headerTextField.widthAnchor.constraint(greaterThanOrEqualToConstant: 250),
+            headerLeftTextField.centerYAnchor.constraint(equalTo: headerLeftLabel.centerYAnchor),
+            headerLeftTextField.leadingAnchor.constraint(equalTo: headerLeftLabel.trailingAnchor, constant: 8),
+            headerLeftTextField.trailingAnchor.constraint(equalTo: contentView.trailingAnchor, constant: -20),
+            headerLeftTextField.widthAnchor.constraint(greaterThanOrEqualToConstant: 320),
 
-            showFootersCheckbox.topAnchor.constraint(equalTo: headerTextField.bottomAnchor, constant: 20),
+            headerRightLabel.topAnchor.constraint(equalTo: headerLeftLabel.bottomAnchor, constant: 10),
+            headerRightLabel.leadingAnchor.constraint(equalTo: contentView.leadingAnchor, constant: 40),
+
+            headerRightTextField.centerYAnchor.constraint(equalTo: headerRightLabel.centerYAnchor),
+            headerRightTextField.leadingAnchor.constraint(equalTo: headerRightLabel.trailingAnchor, constant: 8),
+            headerRightTextField.trailingAnchor.constraint(equalTo: contentView.trailingAnchor, constant: -20),
+            headerRightTextField.widthAnchor.constraint(greaterThanOrEqualToConstant: 320),
+
+            showFootersCheckbox.topAnchor.constraint(equalTo: headerRightTextField.bottomAnchor, constant: 20),
             showFootersCheckbox.leadingAnchor.constraint(equalTo: contentView.leadingAnchor, constant: 20),
 
-            footerLabel.topAnchor.constraint(equalTo: showFootersCheckbox.bottomAnchor, constant: 12),
-            footerLabel.leadingAnchor.constraint(equalTo: contentView.leadingAnchor, constant: 40),
+            footerLeftLabel.topAnchor.constraint(equalTo: showFootersCheckbox.bottomAnchor, constant: 12),
+            footerLeftLabel.leadingAnchor.constraint(equalTo: contentView.leadingAnchor, constant: 40),
 
-            footerTextField.centerYAnchor.constraint(equalTo: footerLabel.centerYAnchor),
-            footerTextField.leadingAnchor.constraint(equalTo: footerLabel.trailingAnchor, constant: 8),
-            footerTextField.trailingAnchor.constraint(equalTo: contentView.trailingAnchor, constant: -20),
-            footerTextField.widthAnchor.constraint(greaterThanOrEqualToConstant: 250),
+            footerLeftTextField.centerYAnchor.constraint(equalTo: footerLeftLabel.centerYAnchor),
+            footerLeftTextField.leadingAnchor.constraint(equalTo: footerLeftLabel.trailingAnchor, constant: 8),
+            footerLeftTextField.trailingAnchor.constraint(equalTo: contentView.trailingAnchor, constant: -20),
+            footerLeftTextField.widthAnchor.constraint(greaterThanOrEqualToConstant: 320),
 
-            showPageNumbersCheckbox.topAnchor.constraint(equalTo: footerTextField.bottomAnchor, constant: 20),
+            footerRightLabel.topAnchor.constraint(equalTo: footerLeftLabel.bottomAnchor, constant: 10),
+            footerRightLabel.leadingAnchor.constraint(equalTo: contentView.leadingAnchor, constant: 40),
+
+            footerRightTextField.centerYAnchor.constraint(equalTo: footerRightLabel.centerYAnchor),
+            footerRightTextField.leadingAnchor.constraint(equalTo: footerRightLabel.trailingAnchor, constant: 8),
+            footerRightTextField.trailingAnchor.constraint(equalTo: contentView.trailingAnchor, constant: -20),
+            footerRightTextField.widthAnchor.constraint(greaterThanOrEqualToConstant: 320),
+
+            showPageNumbersCheckbox.topAnchor.constraint(equalTo: footerRightTextField.bottomAnchor, constant: 20),
             showPageNumbersCheckbox.leadingAnchor.constraint(equalTo: contentView.leadingAnchor, constant: 20),
 
             hideFirstPageNumberCheckbox.topAnchor.constraint(equalTo: showPageNumbersCheckbox.bottomAnchor, constant: 10),
@@ -184,20 +220,24 @@ class HeaderFooterSettingsWindow: NSWindowController {
         checkboxChanged()
     }
 
-    func setCurrentSettings(showHeaders: Bool, showFooters: Bool, showPageNumbers: Bool, hideFirstPageNumber: Bool, centerPageNumbers: Bool, headerText: String, footerText: String) {
+    func setCurrentSettings(showHeaders: Bool, showFooters: Bool, showPageNumbers: Bool, hideFirstPageNumber: Bool, centerPageNumbers: Bool, headerLeftText: String, headerRightText: String, footerLeftText: String, footerRightText: String) {
         showHeadersCheckbox.state = showHeaders ? .on : .off
         showFootersCheckbox.state = showFooters ? .on : .off
         showPageNumbersCheckbox.state = showPageNumbers ? .on : .off
         hideFirstPageNumberCheckbox.state = hideFirstPageNumber ? .on : .off
         pageNumberPositionControl.selectedSegment = centerPageNumbers ? 1 : 0
-        headerTextField.stringValue = headerText
-        footerTextField.stringValue = footerText
+        headerLeftTextField.stringValue = headerLeftText
+        headerRightTextField.stringValue = headerRightText
+        footerLeftTextField.stringValue = footerLeftText
+        footerRightTextField.stringValue = footerRightText
         checkboxChanged()
     }
 
     @objc private func checkboxChanged() {
-        headerTextField.isEnabled = showHeadersCheckbox.state == .on
-        footerTextField.isEnabled = showFootersCheckbox.state == .on
+        headerLeftTextField.isEnabled = showHeadersCheckbox.state == .on
+        headerRightTextField.isEnabled = showHeadersCheckbox.state == .on
+        footerLeftTextField.isEnabled = showFootersCheckbox.state == .on
+        footerRightTextField.isEnabled = showFootersCheckbox.state == .on
 
         let footerEnabled = showFootersCheckbox.state == .on
         showPageNumbersCheckbox.isEnabled = footerEnabled
@@ -214,8 +254,10 @@ class HeaderFooterSettingsWindow: NSWindowController {
             showPageNumbersCheckbox.state == .on,
             hideFirstPageNumberCheckbox.state == .on,
             pageNumberPositionControl.selectedSegment == 1,
-            headerTextField.stringValue,
-            footerTextField.stringValue
+            headerLeftTextField.stringValue,
+            headerRightTextField.stringValue,
+            footerLeftTextField.stringValue,
+            footerRightTextField.stringValue
         )
         window?.close()
     }

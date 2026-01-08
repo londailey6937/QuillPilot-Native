@@ -223,7 +223,7 @@ final class StyleCatalog {
         styles["Part Title"] = baseDefinition(font: "Times New Roman", size: 20, alignment: .center, before: 24, after: 18, headIndent: 0, firstLine: 0)
         styles["Part Subtitle"] = baseDefinition(font: "Times New Roman", size: 14, alignment: .center, before: 0, after: 18, headIndent: 0, firstLine: 0)
         styles["Chapter Number"] = baseDefinition(font: "Times New Roman", size: 14, alignment: .center, before: 24, after: 12, headIndent: 0, firstLine: 0)
-        styles["Chapter Title"] = baseDefinition(font: "Times New Roman", size: 18, alignment: .center, before: 0, after: 0, headIndent: 0, firstLine: 0)
+        styles["Chapter Title"] = baseDefinition(font: "Times New Roman", size: 18, alignment: .center, before: 60, after: 24, headIndent: 0, firstLine: 0)
         styles["Chapter Subtitle"] = baseDefinition(font: "Times New Roman", size: 14, alignment: .center, before: 0, after: 18, headIndent: 0, firstLine: 0)
         styles["Heading 1"] = baseDefinition(font: "Times New Roman", size: 14, bold: true, alignment: .left, before: 24, after: 12, headIndent: 0, firstLine: 0)
         styles["Heading 2"] = baseDefinition(font: "Times New Roman", size: 13, bold: true, alignment: .left, before: 18, after: 6, headIndent: 0, firstLine: 0)
@@ -319,7 +319,7 @@ final class StyleCatalog {
         styles["Book Subtitle"] = baseDefinition(font: font, size: 18, alignment: .center, lineHeight: 1.2, before: 0, after: 18, headIndent: 0, firstLine: 0)
         styles["Author Name"] = baseDefinition(font: font, size: 14, alignment: .center, lineHeight: 1.2, before: 0, after: 12, headIndent: 0, firstLine: 0)
         styles["Chapter Number"] = baseDefinition(font: font, size: 16, alignment: .center, lineHeight: 1.2, before: 36, after: 12, headIndent: 0, firstLine: 0)
-        styles["Chapter Title"] = baseDefinition(font: font, size: 22, alignment: .center, lineHeight: 1.2, before: 0, after: 24, headIndent: 0, firstLine: 0)
+        styles["Chapter Title"] = baseDefinition(font: font, size: 18, alignment: .center, lineHeight: 1.2, before: 60, after: 24, headIndent: 0, firstLine: 0)
         styles["Chapter Subtitle"] = baseDefinition(font: font, size: 16, italic: true, alignment: .center, lineHeight: 1.2, before: 0, after: 18, headIndent: 0, firstLine: 0)
         styles["Scene Break"] = baseDefinition(font: font, size: 14, alignment: .center, lineHeight: 1.2, before: 18, after: 18, headIndent: 0, firstLine: 0)
         styles["Dialogue"] = styles["Body Text"]
@@ -351,7 +351,7 @@ final class StyleCatalog {
         styles["Book Subtitle"] = baseDefinition(font: font, size: 17, italic: true, alignment: .center, lineHeight: 1.2, before: 0, after: 16, headIndent: 0, firstLine: 0)
         styles["Author Name"] = baseDefinition(font: font, size: 14, alignment: .center, lineHeight: 1.2, before: 0, after: 12, headIndent: 0, firstLine: 0)
         styles["Chapter Number"] = baseDefinition(font: font, size: 14, alignment: .center, lineHeight: 1.2, before: 30, after: 10, headIndent: 0, firstLine: 0)
-        styles["Chapter Title"] = baseDefinition(font: font, size: 20, alignment: .center, lineHeight: 1.2, before: 0, after: 20, headIndent: 0, firstLine: 0)
+        styles["Chapter Title"] = baseDefinition(font: font, size: 18, alignment: .center, lineHeight: 1.2, before: 60, after: 24, headIndent: 0, firstLine: 0)
         styles["Chapter Subtitle"] = baseDefinition(font: font, size: 15, italic: true, alignment: .center, lineHeight: 1.2, before: 0, after: 16, headIndent: 0, firstLine: 0)
         styles["Scene Break"] = baseDefinition(font: font, size: 14, alignment: .center, lineHeight: 1.2, before: 16, after: 16, headIndent: 0, firstLine: 0)
         styles["Dialogue"] = styles["Body Text"]
@@ -383,7 +383,7 @@ final class StyleCatalog {
         styles["Book Subtitle"] = baseDefinition(font: font, size: 17, alignment: .center, lineHeight: 1.2, before: 0, after: 16, headIndent: 0, firstLine: 0)
         styles["Author Name"] = baseDefinition(font: font, size: 14, alignment: .center, lineHeight: 1.2, before: 0, after: 12, headIndent: 0, firstLine: 0)
         styles["Chapter Number"] = baseDefinition(font: font, size: 15, alignment: .center, lineHeight: 1.2, before: 32, after: 12, headIndent: 0, firstLine: 0)
-        styles["Chapter Title"] = baseDefinition(font: font, size: 21, bold: true, alignment: .center, lineHeight: 1.2, before: 0, after: 22, headIndent: 0, firstLine: 0)
+        styles["Chapter Title"] = baseDefinition(font: font, size: 18, bold: true, alignment: .center, lineHeight: 1.2, before: 60, after: 24, headIndent: 0, firstLine: 0)
         styles["Chapter Subtitle"] = baseDefinition(font: font, size: 15, italic: true, alignment: .center, lineHeight: 1.2, before: 0, after: 16, headIndent: 0, firstLine: 0)
         styles["Scene Break"] = baseDefinition(font: font, size: 13, alignment: .center, lineHeight: 1.2, before: 16, after: 16, headIndent: 0, firstLine: 0)
         styles["Dialogue"] = styles["Body Text"]
@@ -415,7 +415,7 @@ final class StyleCatalog {
         styles["Book Subtitle"] = baseDefinition(font: font, size: 18, italic: true, alignment: .center, lineHeight: 1.2, before: 0, after: 18, headIndent: 0, firstLine: 0)
         styles["Author Name"] = baseDefinition(font: font, size: 15, alignment: .center, lineHeight: 1.2, before: 0, after: 12, headIndent: 0, firstLine: 0)
         styles["Chapter Number"] = baseDefinition(font: font, size: 16, alignment: .center, lineHeight: 1.2, before: 36, after: 14, headIndent: 0, firstLine: 0)
-        styles["Chapter Title"] = baseDefinition(font: font, size: 24, bold: true, alignment: .center, lineHeight: 1.2, before: 0, after: 24, headIndent: 0, firstLine: 0)
+        styles["Chapter Title"] = baseDefinition(font: font, size: 18, bold: true, alignment: .center, lineHeight: 1.2, before: 60, after: 24, headIndent: 0, firstLine: 0)
         styles["Chapter Subtitle"] = baseDefinition(font: font, size: 16, italic: true, alignment: .center, lineHeight: 1.2, before: 0, after: 18, headIndent: 0, firstLine: 0)
         styles["Scene Break"] = baseDefinition(font: font, size: 14, alignment: .center, lineHeight: 1.2, before: 18, after: 18, headIndent: 0, firstLine: 0)
         styles["Dialogue"] = styles["Body Text"]
@@ -447,7 +447,7 @@ final class StyleCatalog {
         styles["Book Subtitle"] = baseDefinition(font: font, size: 20, alignment: .center, lineHeight: 1.2, before: 0, after: 18, headIndent: 0, firstLine: 0)
         styles["Author Name"] = baseDefinition(font: font, size: 16, alignment: .center, lineHeight: 1.2, before: 0, after: 12, headIndent: 0, firstLine: 0)
         styles["Chapter Number"] = baseDefinition(font: font, size: 18, alignment: .center, lineHeight: 1.2, before: 36, after: 12, headIndent: 0, firstLine: 0)
-        styles["Chapter Title"] = baseDefinition(font: font, size: 26, bold: true, alignment: .center, lineHeight: 1.2, before: 0, after: 24, headIndent: 0, firstLine: 0)
+        styles["Chapter Title"] = baseDefinition(font: font, size: 18, bold: true, alignment: .center, lineHeight: 1.2, before: 60, after: 24, headIndent: 0, firstLine: 0)
         styles["Scene Break"] = baseDefinition(font: font, size: 16, alignment: .center, lineHeight: 1.2, before: 18, after: 18, headIndent: 0, firstLine: 0)
         styles["Dialogue"] = styles["Body Text"]
         styles["Internal Thought"] = baseDefinition(font: font, size: 15, italic: true, lineHeight: 1.8)
@@ -477,7 +477,7 @@ final class StyleCatalog {
         styles["Book Subtitle"] = baseDefinition(font: font, size: 22, alignment: .center, lineHeight: 1.2, before: 0, after: 20, headIndent: 0, firstLine: 0)
         styles["Author Name"] = baseDefinition(font: font, size: 17, alignment: .center, lineHeight: 1.2, before: 0, after: 14, headIndent: 0, firstLine: 0)
         styles["Chapter Number"] = baseDefinition(font: font, size: 19, alignment: .center, lineHeight: 1.2, before: 38, after: 14, headIndent: 0, firstLine: 0)
-        styles["Chapter Title"] = baseDefinition(font: font, size: 28, bold: true, alignment: .center, lineHeight: 1.2, before: 0, after: 26, headIndent: 0, firstLine: 0)
+        styles["Chapter Title"] = baseDefinition(font: font, size: 18, bold: true, alignment: .center, lineHeight: 1.2, before: 60, after: 24, headIndent: 0, firstLine: 0)
         styles["Scene Break"] = baseDefinition(font: font, size: 16, alignment: .center, lineHeight: 1.2, before: 20, after: 20, headIndent: 0, firstLine: 0)
         styles["Dialogue"] = styles["Body Text"]
         styles["Internal Thought"] = baseDefinition(font: font, size: 15, italic: true, lineHeight: 1.9)

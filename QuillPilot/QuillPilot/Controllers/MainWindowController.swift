@@ -93,6 +93,9 @@ class MainWindowController: NSWindowController {
     private func setupUI() {
         guard let window = window else { return }
 
+        // Handle close warnings for unsaved (not-yet-auto-saved) changes
+        window.delegate = self
+
         // Create main container view sized to the current content rect
         let initialBounds = window.contentView?.bounds ?? NSRect(origin: .zero, size: window.contentLayoutRect.size)
         let containerView = NSView(frame: initialBounds)
@@ -319,18 +322,22 @@ class MainWindowController: NSWindowController {
             showPageNumbers: editorVC.showPageNumbers,
             hideFirstPageNumber: editorVC.hidePageNumberOnFirstPage,
             centerPageNumbers: editorVC.centerPageNumbers,
-            headerText: editorVC.headerText,
-            footerText: editorVC.footerText
+            headerLeftText: editorVC.headerText,
+            headerRightText: editorVC.headerTextRight,
+            footerLeftText: editorVC.footerText,
+            footerRightText: editorVC.footerTextRight
         )
 
-        settingsWindow.onApply = { [weak self, weak editorVC] showHeaders, showFooters, showPageNumbers, hideFirstPageNumber, centerPageNumbers, headerText, footerText in
+        settingsWindow.onApply = { [weak self, weak editorVC] showHeaders, showFooters, showPageNumbers, hideFirstPageNumber, centerPageNumbers, headerLeftText, headerRightText, footerLeftText, footerRightText in
             editorVC?.showHeaders = showHeaders
             editorVC?.showFooters = showFooters
             editorVC?.showPageNumbers = showPageNumbers
             editorVC?.hidePageNumberOnFirstPage = hideFirstPageNumber
             editorVC?.centerPageNumbers = centerPageNumbers
-            editorVC?.headerText = headerText
-            editorVC?.footerText = footerText
+            editorVC?.headerText = headerLeftText
+            editorVC?.headerTextRight = headerRightText
+            editorVC?.footerText = footerLeftText
+            editorVC?.footerTextRight = footerRightText
             editorVC?.updatePageCentering()
             self?.headerFooterSettingsWindow = nil
         }
@@ -497,17 +504,17 @@ extension MainWindowController: FormattingToolbarDelegate {
         deleteBtn.contentTintColor = theme.headerBackground
         stackView.addArrangedSubview(deleteBtn)
 
-        // Done Button
-        let doneBtn = NSButton(title: "Done", target: nil, action: nil)
-        doneBtn.bezelStyle = .rounded
-        doneBtn.contentTintColor = theme.headerBackground
-        doneBtn.translatesAutoresizingMaskIntoConstraints = false
-        containerView.addSubview(doneBtn)
+        // Cancel Button
+        let cancelBtn = NSButton(title: "Cancel", target: nil, action: nil)
+        cancelBtn.bezelStyle = .rounded
+        cancelBtn.contentTintColor = theme.headerBackground
+        cancelBtn.translatesAutoresizingMaskIntoConstraints = false
+        containerView.addSubview(cancelBtn)
 
         NSLayoutConstraint.activate([
-            doneBtn.bottomAnchor.constraint(equalTo: containerView.bottomAnchor, constant: -20),
-            doneBtn.trailingAnchor.constraint(equalTo: containerView.trailingAnchor, constant: -20),
-            doneBtn.widthAnchor.constraint(equalToConstant: 80)
+            cancelBtn.bottomAnchor.constraint(equalTo: containerView.bottomAnchor, constant: -20),
+            cancelBtn.trailingAnchor.constraint(equalTo: containerView.trailingAnchor, constant: -20),
+            cancelBtn.widthAnchor.constraint(equalToConstant: 80)
         ])
 
         // Hook up actions
@@ -518,10 +525,10 @@ extension MainWindowController: FormattingToolbarDelegate {
         insertBtn.action = #selector(handleInsertColumnFromSheet)
 
         deleteBtn.target = self
-        deleteBtn.action = #selector(handleDeleteColumnFromDialog)
+        deleteBtn.action = #selector(handleDeleteColumnFromSheet(_:))
 
-        doneBtn.target = self
-        doneBtn.action = #selector(handleCloseColumnsSheet(_:))
+        cancelBtn.target = self
+        cancelBtn.action = #selector(handleCloseColumnsSheet(_:))
 
         // Store field reference
         self.columnsSheetField = columnsField
@@ -761,6 +768,7 @@ extension MainWindowController: FormattingToolbarDelegate {
         // Close sheet first, then insert after window becomes key
         if let window = sender.window {
             self.window?.endSheet(window)
+            self.columnsSheetField = nil
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [weak self] in
                 self?.mainContentViewController.editorViewController.setColumnCount(clamped)
             }
@@ -773,6 +781,7 @@ extension MainWindowController: FormattingToolbarDelegate {
         // Close sheet first, then add column after window becomes key
         if let window = self.window?.attachedSheet {
             self.window?.endSheet(window)
+            self.columnsSheetField = nil
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [weak self] in
                 if current >= 2 && current < 4 {
                     // Already in a column layout - add one more column
@@ -786,16 +795,20 @@ extension MainWindowController: FormattingToolbarDelegate {
         }
     }
 
+    @objc private func handleDeleteColumnFromSheet(_ sender: NSButton) {
+        if let window = sender.window {
+            self.window?.endSheet(window)
+            self.columnsSheetField = nil
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [weak self] in
+                self?.mainContentViewController.editorViewController.deleteColumnAtCursor()
+            }
+        }
+    }
+
     @objc private func handleCloseColumnsSheet(_ sender: NSButton) {
         guard let window = sender.window else { return }
-        let clamped = max(2, min(4, Int(self.columnsSheetField?.stringValue ?? "2") ?? 2))
-        debugLog("handleCloseColumnsSheet: field value='\(self.columnsSheetField?.stringValue ?? "nil")' clamped=\(clamped)")
-
         self.window?.endSheet(window)
         self.columnsSheetField = nil
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [weak self] in
-            self?.mainContentViewController.editorViewController.setColumnCount(clamped)
-        }
     }
 
     @objc private func handleInsertTableFromSheet(_ sender: NSButton) {
@@ -907,7 +920,6 @@ extension MainWindowController {
         // If we have a current document URL, save directly without showing panel
         if let url = currentDocumentURL {
             saveToURL(url, format: currentDocumentFormat)
-            hasUnsavedChanges = false
             return
         }
 
@@ -1033,6 +1045,9 @@ extension MainWindowController {
                 try mobiData.write(to: url, options: Data.WritingOptions.atomic)
                 debugLog("✅ Mobi exported to \(url.path)")
             }
+
+            // Ensure Welcome recents are populated (this app is not NSDocument-based).
+            NSDocumentController.shared.noteNewRecentDocumentURL(url)
             hasUnsavedChanges = false
         } catch {
             debugLog("❌ Save failed: \(error.localizedDescription)")
@@ -1338,7 +1353,9 @@ extension MainWindowController {
             currentDocumentFormat = .docx
             hasUnsavedChanges = false
             mainContentViewController.editorViewController.headerText = ""
+            mainContentViewController.editorViewController.headerTextRight = ""
             mainContentViewController.editorViewController.footerText = ""
+            mainContentViewController.editorViewController.footerTextRight = ""
 
             // Notify Navigator that document changed
             mainContentViewController.documentDidChange(url: url)
@@ -1346,9 +1363,40 @@ extension MainWindowController {
             // Show placeholder text immediately so user sees the app is working
             mainContentViewController.editorViewController.textView?.string = "Loading document..."
 
-            // First try macOS's native Office Open XML importer (no Mammoth / custom XML parsing).
-            // This is generally faster and preserves more formatting when supported.
             DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+                // Read once; we may use either the system importer or our custom parser.
+                let data: Data
+                do {
+                    data = try Data(contentsOf: url)
+                } catch {
+                    DispatchQueue.main.async {
+                        self?.presentErrorAlert(message: "Failed to open Word document", details: error.localizedDescription)
+                    }
+                    return
+                }
+
+                // If this DOCX looks like it was generated by QuillPilot, prefer the custom extractor.
+                // The system OfficeOpenXML importer can drop paragraph indents and style identity,
+                // which causes Body Text to reopen as "Body Text – No Indent".
+                let preferCustomExtractor = DocxTextExtractor.seemsQuillPilotGenerated(docxData: data)
+
+                if preferCustomExtractor {
+                    do {
+                        let attributedString = try DocxTextExtractor.extractAttributedString(fromDocxData: data)
+                        let restored = self?.restoreImageSizes(in: attributedString) ?? attributedString
+                        DispatchQueue.main.async {
+                            guard let self else { return }
+                            self.applyImportedContent(restored, url: url)
+                            self.currentDocumentFormat = .docx
+                        }
+                        return
+                    } catch {
+                        // If our parser fails, fall back to the system importer below.
+                    }
+                }
+
+                // First try macOS's native Office Open XML importer (no Mammoth / custom XML parsing).
+                // This is generally faster and preserves more formatting when supported.
                 do {
                     let attributed = try NSAttributedString(
                         url: url,
@@ -1375,8 +1423,6 @@ extension MainWindowController {
                 self?.debugLog("📄 Starting DOCX extraction for: \(url.lastPathComponent)")
                 let startTime = CFAbsoluteTimeGetCurrent()
                 do {
-                    self?.debugLog("📄 Reading file data...")
-                    let data = try Data(contentsOf: url)
                     self?.debugLog("📄 File data read: \(data.count) bytes in \(CFAbsoluteTimeGetCurrent() - startTime)s")
 
                     let parseStart = CFAbsoluteTimeGetCurrent()
@@ -1413,7 +1459,9 @@ extension MainWindowController {
             currentDocumentURL = url
             hasUnsavedChanges = false
             mainContentViewController.editorViewController.headerText = ""
+            mainContentViewController.editorViewController.headerTextRight = ""
             mainContentViewController.editorViewController.footerText = ""
+            mainContentViewController.editorViewController.footerTextRight = ""
 
             // Determine best default save format based on input
             switch ext {
@@ -1507,10 +1555,50 @@ extension MainWindowController {
 
         mainContentViewController.performAnalysis()
         NotificationCenter.default.post(name: Notification.Name("QuillPilotOutlineRefresh"), object: nil)
+
+        // Ensure Welcome recents are populated (this app is not NSDocument-based).
+        NSDocumentController.shared.noteNewRecentDocumentURL(url)
     }
 
     private enum AssociatedKeys {
         static var savePanelKey: UInt8 = 0
+    }
+}
+
+// MARK: - NSWindowDelegate (close warning)
+extension MainWindowController: NSWindowDelegate {
+    func windowShouldClose(_ sender: NSWindow) -> Bool {
+        guard hasUnsavedChanges else { return true }
+
+        let alert = NSAlert()
+        alert.alertStyle = .warning
+        alert.messageText = "Save changes before closing?"
+        alert.informativeText = "This document has changes that haven't been auto-saved yet."
+        alert.addButton(withTitle: "Save")
+        alert.addButton(withTitle: "Don't Save")
+        alert.addButton(withTitle: "Cancel")
+
+        let response = alert.runThemedModal()
+        switch response {
+        case .alertFirstButtonReturn:
+            // If we have a URL, save synchronously and allow close only on success.
+            if let url = currentDocumentURL {
+                saveToURL(url, format: currentDocumentFormat)
+                return !hasUnsavedChanges
+            }
+
+            // New/unsaved document: show Save As sheet and keep the window open.
+            performSaveAs(nil)
+            return false
+
+        case .alertSecondButtonReturn:
+            // Discard changes
+            hasUnsavedChanges = false
+            return true
+
+        default:
+            return false
+        }
     }
 }
 
@@ -3776,6 +3864,29 @@ private enum DocxBuilder {
 
 // MARK: - Minimal DOCX text extractor (plain text)
 private enum DocxTextExtractor {
+    static func seemsQuillPilotGenerated(docxData data: Data) -> Bool {
+        guard let docXml = try? ZipReader.extractFile(named: "word/document.xml", fromZipData: data) else { return false }
+        guard let xml = String(data: docXml, encoding: .utf8) else { return false }
+
+        // QuillPilot emits a small, predictable set of paragraph style IDs.
+        // If present, prefer the custom extractor to preserve indents and style identity.
+        let markers = [
+            "w:pStyle w:val=\"BodyText\"",
+            "w:pStyle w:val=\"BodyTextNoIndent\"",
+            "w:pStyle w:val=\"Dialogue\"",
+            "w:pStyle w:val=\"TOCEntry\"",
+            "w:pStyle w:val=\"TOCEntryLevel1\"",
+            "w:pStyle w:val=\"TOCEntryLevel2\"",
+            "w:pStyle w:val=\"TOCEntryLevel3\"",
+            "w:pStyle w:val=\"IndexEntry\"",
+            "w:pStyle w:val=\"IndexLetter\"",
+            "w:pStyle w:val=\"IndexTitle\"",
+            "w:pStyle w:val=\"ChapterTitle\"",
+            "w:pStyle w:val=\"ChapterNumber\""
+        ]
+        return markers.contains { xml.contains($0) }
+    }
+
     static func extractAttributedString(fromDocxFileURL url: URL) throws -> NSAttributedString {
         let data = try Data(contentsOf: url)
         return try extractAttributedString(fromDocxData: data)

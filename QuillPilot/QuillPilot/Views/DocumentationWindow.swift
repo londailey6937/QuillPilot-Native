@@ -221,6 +221,19 @@ Click "Analyze Document" in the toolbar to generate real-time feedback on your w
 """, color: bodyColor))
         content.append(makeNewline())
 
+        content.append(makeHeading("Built-in macOS Writing Tools (Apple)", color: headingColor))
+        content.append(makeBody("""
+Some Macs include system-provided Writing Tools (sometimes shown as Proofread, Rewrite, Summarize, etc.). If you see this panel while editing, it’s provided by macOS — not by QuillPilot.
+
+How to use it:
+• Select text in the editor
+• Control-click (or right-click) the selection
+• Choose Writing Tools, then pick an option (Proofread, Rewrite, Summarize, etc.)
+
+Availability depends on your macOS version, device support, language/region, and whether the feature is enabled in System Settings.
+""", color: bodyColor))
+        content.append(makeNewline())
+
         content.append(makeHeading("📊 Basic Metrics", color: headingColor))
         content.append(makeBody("""
 • Word Count - Total words in your document

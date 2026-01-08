@@ -3622,7 +3622,7 @@ extension AnalysisViewController {
         containerView.addSubview(toolbar)
 
         // Interpretation guide (shown inside the dialog)
-        let guideLabel = NSTextField(wrappingLabelWithString: "How to read: X-axis is document progress; Y-axis is the selected metric (top = higher, bottom = lower). Solid lines show surface behavior; dashed lines show subtext/internal state. Focus on rises/drops and crossovers more than exact values.")
+        let guideLabel = NSTextField(wrappingLabelWithString: "How to read: X-axis is chapters; Y-axis is the selected metric (top = higher, bottom = lower). Solid lines show surface behavior; dashed lines show subtext/internal state. Focus on rises/drops and crossovers more than exact values.")
         guideLabel.font = NSFont.systemFont(ofSize: 11)
         guideLabel.textColor = currentTheme.textColor.withAlphaComponent(0.75)
         guideLabel.maximumNumberOfLines = 3
@@ -3634,8 +3634,11 @@ extension AnalysisViewController {
         let trajectoryView = EmotionalTrajectoryView(frame: NSRect(x: 20, y: 20, width: window.contentView!.bounds.width - 40, height: window.contentView!.bounds.height - 125))
         trajectoryView.autoresizingMask = [.width, .height]
 
+        let chapterCount = determineChapterCount(for: results)
+        trajectoryView.setChapterCount(chapterCount)
+
         // Generate sample trajectory data from analysis results
-        let trajectories = generateEmotionalTrajectories(from: results)
+        let trajectories = generateEmotionalTrajectories(from: results, chapterCount: chapterCount)
         trajectoryView.setTrajectories(trajectories)
 
         containerView.addSubview(trajectoryView)
@@ -3662,6 +3665,27 @@ extension AnalysisViewController {
     }
 
     private func generateEmotionalTrajectories(from results: AnalysisResults) -> [EmotionalTrajectoryView.CharacterTrajectory] {
+        generateEmotionalTrajectories(from: results, chapterCount: determineChapterCount(for: results))
+    }
+
+    private func determineChapterCount(for results: AnalysisResults) -> Int {
+        // Prefer chapter keys from presence results
+        let chapterKeys = results.characterPresence.flatMap { Array($0.chapterPresence.keys) }
+        if let maxChapter = chapterKeys.max(), maxChapter > 0 {
+            return maxChapter
+        }
+
+        // Fallback: use outline headings as a proxy
+        if let outlineEntries = getOutlineEntriesCallback?() {
+            let filtered = outlineEntries.filter { $0.level == 1 }
+            if filtered.count >= 2 { return filtered.count }
+            if filtered.count == 1 { return 1 }
+        }
+
+        return 10
+    }
+
+    private func generateEmotionalTrajectories(from results: AnalysisResults, chapterCount: Int) -> [EmotionalTrajectoryView.CharacterTrajectory] {
         var trajectories: [EmotionalTrajectoryView.CharacterTrajectory] = []
 
         // Get character names from Character Library (all characters)
@@ -3685,9 +3709,15 @@ extension AnalysisViewController {
             // Generate emotional states based on character presence and arc
             var states: [EmotionalTrajectoryView.EmotionalState] = []
 
-            // Create states at 10% intervals
-            for i in 0...10 {
-                let position = Double(i) / 10.0
+            // Create one state per chapter (fallback to 10 steps if chapter count is unknown)
+            let steps = max(1, chapterCount)
+            for chapterIndex in 0..<steps {
+                let position: Double
+                if steps == 1 {
+                    position = 0.0
+                } else {
+                    position = Double(chapterIndex) / Double(steps - 1)
+                }
 
                 // Generate emotional values with some variation
                 // This is simplified - in a real implementation, you'd analyze actual text

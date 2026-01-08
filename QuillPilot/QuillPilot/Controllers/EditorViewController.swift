@@ -102,6 +102,9 @@ class EditorViewController: NSViewController {
     // Flag to suppress text change notifications during programmatic edits
     private var suppressTextChangeNotifications: Bool = false
 
+    // Work items to hide temporary column outlines (keyed by table identity)
+    private var columnOutlineHideWorkItems: [ObjectIdentifier: DispatchWorkItem] = [:]
+
     func repairTOCAndIndexFormattingAfterImport() {
         guard let storage = textView.textStorage, storage.length > 0 else { return }
 
@@ -279,7 +282,9 @@ class EditorViewController: NSViewController {
     var hidePageNumberOnFirstPage: Bool = true
     var centerPageNumbers: Bool = false
     var headerText: String = "" // Empty means use author/title
+    var headerTextRight: String = "" // Optional right-side header text
     var footerText: String = "" // Optional footer text
+    var footerTextRight: String = "" // Optional right-side footer text
 
     weak var delegate: EditorViewControllerDelegate?
 
@@ -1624,6 +1629,38 @@ class EditorViewController: NSViewController {
         let defaultFont = textView.font ?? NSFont.systemFont(ofSize: 12)
         let defaultColor = currentTheme.textColor
 
+        func enforceBodyIndentIfNeeded(
+            styleName: String,
+            merged: NSParagraphStyle,
+            existing: NSParagraphStyle?,
+            catalog: NSParagraphStyle
+        ) -> NSParagraphStyle {
+            let enforceNames: Set<String> = ["Body Text", "Body Text – No Indent", "Dialogue"]
+            guard enforceNames.contains(styleName) else { return merged }
+            guard let mutable = merged.mutableCopy() as? NSMutableParagraphStyle else { return merged }
+
+            let existingFirst = (existing ?? merged).firstLineHeadIndent
+            let catalogFirst = catalog.firstLineHeadIndent
+
+            if styleName == "Body Text" || styleName == "Dialogue" {
+                // If existing lost the indent (≈0) but the catalog expects one, enforce the catalog indents.
+                if existingFirst <= 0.5 && catalogFirst > 0.5 {
+                    mutable.headIndent = catalog.headIndent
+                    mutable.firstLineHeadIndent = catalog.firstLineHeadIndent
+                    mutable.tailIndent = catalog.tailIndent
+                }
+            } else if styleName == "Body Text – No Indent" {
+                // If existing incorrectly has an indent but the catalog expects none, enforce the catalog indents.
+                if existingFirst > 0.5 && catalogFirst <= 0.5 {
+                    mutable.headIndent = catalog.headIndent
+                    mutable.firstLineHeadIndent = catalog.firstLineHeadIndent
+                    mutable.tailIndent = catalog.tailIndent
+                }
+            }
+
+            return mutable.copy() as! NSParagraphStyle
+        }
+
         // Reapply catalog-defined paragraph and font attributes based on stored style name
         var location = 0
         while location < fullString.length {
@@ -1637,7 +1674,8 @@ class EditorViewController: NSViewController {
 
                 // Get existing paragraph style to preserve textBlocks (columns/tables)
                 let existingParagraph = normalized.attribute(.paragraphStyle, at: paragraphRange.location, effectiveRange: nil) as? NSParagraphStyle
-                let finalParagraph = mergedParagraphStyle(existing: existingParagraph, style: catalogParagraph)
+                let mergedParagraph = mergedParagraphStyle(existing: existingParagraph, style: catalogParagraph)
+                let finalParagraph = enforceBodyIndentIfNeeded(styleName: styleName, merged: mergedParagraph, existing: existingParagraph, catalog: catalogParagraph)
 
                 // Apply paragraph style at paragraph level
                 normalized.addAttribute(.paragraphStyle, value: finalParagraph, range: paragraphRange)
@@ -1677,7 +1715,8 @@ class EditorViewController: NSViewController {
                     normalized.addAttribute(styleAttributeKey, value: inferredStyleName, range: paragraphRange)
 
                     // Merge paragraph style to preserve manual alignment overrides
-                    let finalParagraph = mergedParagraphStyle(existing: paragraph, style: para)
+                    let mergedParagraph = mergedParagraphStyle(existing: paragraph, style: para)
+                    let finalParagraph = enforceBodyIndentIfNeeded(styleName: inferredStyleName, merged: mergedParagraph, existing: paragraph, catalog: para)
                     normalized.addAttribute(.paragraphStyle, value: finalParagraph, range: paragraphRange)
 
                     // Apply font and colors per run to preserve inline formatting
@@ -1802,6 +1841,10 @@ class EditorViewController: NSViewController {
         // Apply style retagging to infer paragraph styles
         let retagged = detectAndRetagStyles(in: attributed)
         textView.textStorage?.setAttributedString(retagged)
+        textView.setSelectedRange(NSRange(location: 0, length: 0))
+
+        repairBodyTextIndentAfterLoadIfNeeded()
+
         applyDefaultTypingAttributes()
         updatePageLayout()
         scrollToTop()
@@ -1824,6 +1867,9 @@ class EditorViewController: NSViewController {
         // Run style detection to ensure TOC Title, Index Title, etc. appear in document outline
         let retagged = detectAndRetagStyles(in: attributed)
         textView.textStorage?.setAttributedString(retagged)
+        textView.setSelectedRange(NSRange(location: 0, length: 0))
+
+        repairBodyTextIndentAfterLoadIfNeeded()
 
         // Don't reset typing attributes - let them inherit from document content
         // This preserves the Body Text style and other attributes when typing
@@ -1856,8 +1902,19 @@ class EditorViewController: NSViewController {
             return
         }
 
-        // Get attributes from the start of the document
-        let attrs = textStorage.attributes(at: 0, effectiveRange: nil)
+        // Prefer inheriting typing attributes from the first "Body Text" paragraph.
+        // This avoids imported documents where the first paragraph is a title/heading (often no-indent)
+        // from forcing the editor default into "Body Text – No Indent".
+        let fullRange = NSRange(location: 0, length: textStorage.length)
+        var preferredLocation: Int? = nil
+        textStorage.enumerateAttribute(styleAttributeKey, in: fullRange, options: []) { value, range, stop in
+            if let styleName = value as? String, styleName == "Body Text" {
+                preferredLocation = range.location
+                stop.pointee = true
+            }
+        }
+
+        let attrs = textStorage.attributes(at: preferredLocation ?? 0, effectiveRange: nil)
 
         // Start with those attributes for typing
         var newTypingAttributes = attrs
@@ -1885,6 +1942,105 @@ class EditorViewController: NSViewController {
         }
 
         textView.typingAttributes = newTypingAttributes
+    }
+
+    private func repairBodyTextIndentAfterLoadIfNeeded() {
+        guard let storage = textView.textStorage, storage.length > 0 else { return }
+        let bodyNames: [String] = ["Body Text", "Body Text – No Indent", "Dialogue"]
+        let definitions = Dictionary(uniqueKeysWithValues: bodyNames.compactMap { name in
+            StyleCatalog.shared.style(named: name).map { (name, $0) }
+        })
+        guard !definitions.isEmpty else { return }
+        let fullString = storage.string as NSString
+
+        storage.beginEditing()
+        defer { storage.endEditing() }
+
+        var location = 0
+        while location < fullString.length {
+            let paragraphRange = fullString.paragraphRange(for: NSRange(location: location, length: 0))
+            let attrs = storage.attributes(at: paragraphRange.location, effectiveRange: nil)
+            let existingPara = (attrs[.paragraphStyle] as? NSParagraphStyle) ?? (textView.defaultParagraphStyle ?? NSParagraphStyle.default)
+            let existingFont = (attrs[.font] as? NSFont) ?? (textView.font ?? NSFont.systemFont(ofSize: 12))
+            let paragraphText = fullString.substring(with: paragraphRange).trimmingCharacters(in: .whitespacesAndNewlines)
+
+            let currentStyleName = (attrs[styleAttributeKey] as? String)
+                ?? inferStyle(font: existingFont, paragraphStyle: existingPara, text: paragraphText)
+
+            // Only enforce for Body Text / No Indent / Dialogue.
+            if let def = definitions[currentStyleName] {
+                let catalogPara = paragraphStyle(from: def)
+
+                let expectsIndent = catalogPara.firstLineHeadIndent > 0.5
+                let hasIndent = existingPara.firstLineHeadIndent > 0.5
+
+                var shouldEnforce = false
+                if currentStyleName == "Body Text" || currentStyleName == "Dialogue" {
+                    shouldEnforce = (!hasIndent && expectsIndent)
+                } else if currentStyleName == "Body Text – No Indent" {
+                    shouldEnforce = (hasIndent && !expectsIndent)
+                }
+
+                if shouldEnforce {
+                    // Preserve alignment/textBlocks/tabStops via mergedParagraphStyle, but force indents to catalog.
+                    let merged = mergedParagraphStyle(existing: existingPara, style: catalogPara)
+                    if let mutable = merged.mutableCopy() as? NSMutableParagraphStyle {
+                        mutable.headIndent = catalogPara.headIndent
+                        mutable.firstLineHeadIndent = catalogPara.firstLineHeadIndent
+                        mutable.tailIndent = catalogPara.tailIndent
+                        storage.addAttribute(.paragraphStyle, value: mutable.copy() as! NSParagraphStyle, range: paragraphRange)
+                        storage.addAttribute(styleAttributeKey, value: currentStyleName, range: paragraphRange)
+                    }
+                } else if currentStyleName == "Body Text" || currentStyleName == "Body Text – No Indent" || currentStyleName == "Dialogue" {
+                    // Ensure the tag exists so DOCX export can preserve it via w:pStyle.
+                    storage.addAttribute(styleAttributeKey, value: currentStyleName, range: paragraphRange)
+                }
+            }
+
+            location = NSMaxRange(paragraphRange)
+        }
+    }
+
+    private func setColumnOutlineVisible(_ visible: Bool, for table: NSTextTable, in range: NSRange) {
+        guard let layoutManager = textView.layoutManager else { return }
+        let outlineColor: NSColor = visible ? currentTheme.textColor.withAlphaComponent(0.15) : .clear
+        let outlineWidth: CGFloat = visible ? 0.5 : 0.0
+
+        layoutManager.ensureLayout(forCharacterRange: range)
+
+        textView.textStorage?.enumerateAttribute(.paragraphStyle, in: range, options: []) { value, _, _ in
+            guard let style = value as? NSParagraphStyle,
+                  let blocks = style.textBlocks as? [NSTextTableBlock] else { return }
+            for block in blocks where block.table === table {
+                block.setBorderColor(outlineColor, for: .minX)
+                block.setBorderColor(outlineColor, for: .maxX)
+                block.setBorderColor(outlineColor, for: .minY)
+                block.setBorderColor(outlineColor, for: .maxY)
+                block.setWidth(outlineWidth, type: .absoluteValueType, for: .border, edge: .minX)
+                block.setWidth(outlineWidth, type: .absoluteValueType, for: .border, edge: .maxX)
+                block.setWidth(outlineWidth, type: .absoluteValueType, for: .border, edge: .minY)
+                block.setWidth(outlineWidth, type: .absoluteValueType, for: .border, edge: .maxY)
+            }
+        }
+
+        layoutManager.invalidateLayout(forCharacterRange: range, actualCharacterRange: nil)
+        layoutManager.invalidateDisplay(forCharacterRange: range)
+        textView.needsDisplay = true
+    }
+
+    private func flashColumnOutline(for table: NSTextTable, in range: NSRange, duration: TimeInterval = 2.0) {
+        let key = ObjectIdentifier(table)
+        columnOutlineHideWorkItems[key]?.cancel()
+        columnOutlineHideWorkItems[key] = nil
+
+        setColumnOutlineVisible(true, for: table, in: range)
+
+        let hide = DispatchWorkItem { [weak self] in
+            self?.setColumnOutlineVisible(false, for: table, in: range)
+            self?.columnOutlineHideWorkItems[key] = nil
+        }
+        columnOutlineHideWorkItems[key] = hide
+        DispatchQueue.main.asyncAfter(deadline: .now() + duration, execute: hide)
     }
 
     private func applyDefaultTypingAttributes() {
@@ -2048,6 +2204,24 @@ class EditorViewController: NSViewController {
 
             var score = 0
 
+            // Indentation match (helps disambiguate styles with identical fonts, e.g. Body Text vs Body Text – No Indent)
+            let expectedHeadIndent = style.headIndent
+            let expectedFirstLineHeadIndent = style.headIndent + style.firstLineIndent
+            let expectedTailIndent = style.tailIndent
+            if abs(paragraphStyle.headIndent - expectedHeadIndent) < 0.5 {
+                score += 12
+            } else {
+                score -= 4
+            }
+            if abs(paragraphStyle.firstLineHeadIndent - expectedFirstLineHeadIndent) < 0.5 {
+                score += 12
+            } else {
+                score -= 4
+            }
+            if abs(paragraphStyle.tailIndent - expectedTailIndent) < 0.5 {
+                score += 4
+            }
+
             // Alignment match
             if style.alignmentRawValue == paragraphStyle.alignment.rawValue {
                 score += 10
@@ -2115,6 +2289,12 @@ class EditorViewController: NSViewController {
 
         delegate?.textDidChange()
         updatePageCentering()
+
+        // Ensure the new document starts at the top.
+        textView.setSelectedRange(NSRange(location: 0, length: 0))
+        DispatchQueue.main.async { [weak self] in
+            self?.scrollToTop()
+        }
     }
 
     // MARK: - Efficient Text Insertion
@@ -3716,23 +3896,49 @@ case "Book Subtitle":
 
             // Header (top band)
             if showHeaders {
-                let headerContent = headerText
-                let headerField = NSTextField(labelWithString: headerContent)
-                headerField.isEditable = false
-                headerField.isSelectable = false
-                headerField.isBordered = false
-                headerField.backgroundColor = .clear
-                headerField.font = NSFont(name: "Courier", size: 11) ?? NSFont.monospacedSystemFont(ofSize: 11, weight: .regular)
-                headerField.textColor = currentTheme.textColor.withAlphaComponent(0.5)
-                headerField.alignment = .left
-                headerField.frame = NSRect(
-                    x: marginXLeft,
-                    y: pageY + marginY / 2,
-                    width: contentWidth,
-                    height: scaledHeaderHeight
-                )
-                pageContainer.addSubview(headerField)
-                headerViews.append(headerField)
+                let headerFont = NSFont(name: "Courier", size: 11) ?? NSFont.monospacedSystemFont(ofSize: 11, weight: .regular)
+                let headerColor = currentTheme.textColor.withAlphaComponent(0.5)
+                let half = max(36, (contentWidth / 2) - 8)
+
+                // Left
+                if !headerText.isEmpty {
+                    let headerLeftField = NSTextField(labelWithString: headerText)
+                    headerLeftField.isEditable = false
+                    headerLeftField.isSelectable = false
+                    headerLeftField.isBordered = false
+                    headerLeftField.backgroundColor = .clear
+                    headerLeftField.font = headerFont
+                    headerLeftField.textColor = headerColor
+                    headerLeftField.alignment = .left
+                    headerLeftField.frame = NSRect(
+                        x: marginXLeft,
+                        y: pageY + marginY / 2,
+                        width: half,
+                        height: scaledHeaderHeight
+                    )
+                    pageContainer.addSubview(headerLeftField)
+                    headerViews.append(headerLeftField)
+                }
+
+                // Right
+                if !headerTextRight.isEmpty {
+                    let headerRightField = NSTextField(labelWithString: headerTextRight)
+                    headerRightField.isEditable = false
+                    headerRightField.isSelectable = false
+                    headerRightField.isBordered = false
+                    headerRightField.backgroundColor = .clear
+                    headerRightField.font = headerFont
+                    headerRightField.textColor = headerColor
+                    headerRightField.alignment = .right
+                    headerRightField.frame = NSRect(
+                        x: marginXLeft + contentWidth - half,
+                        y: pageY + marginY / 2,
+                        width: half,
+                        height: scaledHeaderHeight
+                    )
+                    pageContainer.addSubview(headerRightField)
+                    headerViews.append(headerRightField)
+                }
 
                 // Separator under header
                 let headerLine = NSView(frame: NSRect(
@@ -3751,6 +3957,13 @@ case "Book Subtitle":
             if showFooters {
                 let footerY = pageY + scaledPageHeight - marginY / 2 - scaledFooterHeight
 
+                let footerFont = NSFont(name: "Courier", size: 11) ?? NSFont.monospacedSystemFont(ofSize: 11, weight: .regular)
+                let footerColor = currentTheme.textColor.withAlphaComponent(0.5)
+
+                let shouldShowPageNumber = showPageNumbers && (!hidePageNumberOnFirstPage || pageNum > 1)
+                let reservedForPageNumber: CGFloat = shouldShowPageNumber && !centerPageNumbers ? 72 : 0
+                let halfWidth = max(36, (contentWidth - reservedForPageNumber) / 2)
+
                 // Footer text (left)
                 if !footerText.isEmpty {
                     let footerField = NSTextField(labelWithString: footerText)
@@ -3758,31 +3971,60 @@ case "Book Subtitle":
                     footerField.isSelectable = false
                     footerField.isBordered = false
                     footerField.backgroundColor = .clear
-                    footerField.font = NSFont(name: "Courier", size: 11) ?? NSFont.monospacedSystemFont(ofSize: 11, weight: .regular)
-                    footerField.textColor = currentTheme.textColor.withAlphaComponent(0.5)
+                    footerField.font = footerFont
+                    footerField.textColor = footerColor
                     footerField.alignment = .left
-
-                    let reservedForPageNumber: CGFloat = centerPageNumbers ? (contentWidth * 0.5) : 72
                     footerField.frame = NSRect(
                         x: marginXLeft,
                         y: footerY,
-                        width: max(36, contentWidth - reservedForPageNumber),
+                        width: centerPageNumbers ? halfWidth : max(36, contentWidth - reservedForPageNumber - halfWidth),
                         height: scaledFooterHeight
                     )
                     pageContainer.addSubview(footerField)
                     footerViews.append(footerField)
                 }
 
+                // Footer right text
+                if !footerTextRight.isEmpty {
+                    let rightField = NSTextField(labelWithString: footerTextRight)
+                    rightField.isEditable = false
+                    rightField.isSelectable = false
+                    rightField.isBordered = false
+                    rightField.backgroundColor = .clear
+                    rightField.font = footerFont
+                    rightField.textColor = footerColor
+                    rightField.alignment = .right
+
+                    let rightX: CGFloat
+                    let rightW: CGFloat
+                    if centerPageNumbers {
+                        rightX = marginXLeft + contentWidth - halfWidth
+                        rightW = halfWidth
+                    } else {
+                        // Leave room for page number at far right (if any)
+                        rightX = marginXLeft + contentWidth - reservedForPageNumber - halfWidth
+                        rightW = halfWidth
+                    }
+
+                    rightField.frame = NSRect(
+                        x: rightX,
+                        y: footerY,
+                        width: max(36, rightW),
+                        height: scaledFooterHeight
+                    )
+                    pageContainer.addSubview(rightField)
+                    footerViews.append(rightField)
+                }
+
                 // Page number (right or center), hidden on first page if configured
-                let shouldShowPageNumber = showPageNumbers && (!hidePageNumberOnFirstPage || pageNum > 1)
                 if shouldShowPageNumber {
                     let pageField = NSTextField(labelWithString: "\(pageNum)")
                     pageField.isEditable = false
                     pageField.isSelectable = false
                     pageField.isBordered = false
                     pageField.backgroundColor = .clear
-                    pageField.font = NSFont(name: "Courier", size: 11) ?? NSFont.monospacedSystemFont(ofSize: 11, weight: .regular)
-                    pageField.textColor = currentTheme.textColor.withAlphaComponent(0.5)
+                    pageField.font = footerFont
+                    pageField.textColor = footerColor
                     pageField.alignment = centerPageNumbers ? .center : .right
                     pageField.frame = NSRect(
                         x: marginXLeft,
@@ -3918,6 +4160,8 @@ case "Book Subtitle":
         let finalNewline = NSAttributedString(string: "\n", attributes: textView.typingAttributes)
         result.append(finalNewline)
 
+        let insertedRange = NSRange(location: currentRange.location, length: result.length)
+
         // Wrap insertion in beginEditing/endEditing to batch all text notifications
         textStorage.beginEditing()
         textStorage.insert(result, at: currentRange.location)
@@ -3933,6 +4177,9 @@ case "Book Subtitle":
 
         // Manually trigger a single text change notification now that insertion is complete
         delegate?.textDidChange()
+
+        // Briefly show a faint outline where the columns are.
+        flashColumnOutline(for: textTable, in: insertedRange)
 
         DebugLog.log("setColumnCount: columns inserted successfully")
     }
@@ -4064,9 +4311,12 @@ case "Book Subtitle":
         let finalNewline = NSAttributedString(string: "\n", attributes: textView.typingAttributes)
         result.append(finalNewline)
 
+        let newColumnRange = NSRange(location: startLocation, length: result.length)
+
         // Replace the old column layout with the new one
         textStorage.replaceCharacters(in: columnRange, with: result)
         textView.setSelectedRange(NSRange(location: startLocation + 1, length: 0))
+        flashColumnOutline(for: newTable, in: newColumnRange)
         DebugLog.log("addColumnToExisting: expanded from \(currentColumns) to \(newColumnCount) columns")
     }
 

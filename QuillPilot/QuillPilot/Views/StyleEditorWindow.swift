@@ -65,7 +65,17 @@ final class StyleEditorViewController: NSViewController {
         stylePopup.action = #selector(styleChanged)
 
         fontPopup = NSPopUpButton()
-        fontPopup.addItems(withTitles: ["Times New Roman", "Georgia", "Inter", "Helvetica", "Courier New", "SF Pro"])
+        fontPopup.addItems(withTitles: [
+            "Minion Pro",
+            "Arial",
+            "Times New Roman",
+            "Calibre",
+            "Inter",
+            "Helvetica",
+            "Georgia",
+            "Courier New",
+            "SF Pro"
+        ])
 
         sizeField = NSTextField(string: "12")
         sizeField.controlSize = .small

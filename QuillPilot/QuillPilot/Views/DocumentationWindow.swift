@@ -44,7 +44,6 @@ class DocumentationWindowController: NSWindowController {
 
         // Create tabs
         createTab(title: "� Why QuillPilot?", identifier: "why")
-        createTab(title: "�📝 Getting Started", identifier: "start")
         createTab(title: "📊 Analysis Tools", identifier: "analysis")
         createTab(title: "👥 Character Features", identifier: "characters")
         createTab(title: "📖 Plot & Structure", identifier: "plot")
@@ -93,7 +92,6 @@ class DocumentationWindowController: NSWindowController {
 
     private func loadDocumentation() {
         loadWhyTab()
-        loadStartTab()
         loadAnalysisTab()
         loadCharactersTab()
         loadPlotTab()
@@ -101,7 +99,7 @@ class DocumentationWindowController: NSWindowController {
         loadShortcutsTab()
     }
 
-    // MARK: - Tab 1: Getting Started
+        // MARK: - Tab: Why QuillPilot?
 
     private func loadWhyTab() {
         guard textViews.count > 0 else { return }
@@ -205,158 +203,11 @@ QuillPilot is for the latter.
         textView.textStorage?.setAttributedString(content)
     }
 
-    private func loadStartTab() {
-        guard textViews.count > 1 else { return }
-        let textView = textViews[0]
-        let theme = ThemeManager.shared.currentTheme
-        let titleColor = theme.textColor
-        let headingColor = theme.textColor
-        let bodyColor = theme.textColor
-
-        let content = NSMutableAttributedString()
-
-        content.append(makeTitle("Welcome to QuillPilot", color: titleColor))
-        content.append(makeBody("""
-QuillPilot is a professional writing application designed for novelists, screenwriters, and authors. It combines powerful editing tools with advanced manuscript analysis.
-""", color: bodyColor))
-        content.append(makeNewline())
-
-        content.append(makeHeading("💾 Auto-Save", color: headingColor))
-        content.append(makeBody("""
-QuillPilot automatically saves your work every 30 seconds to protect against data loss.
-
-How it works:
-• Auto-save runs silently in the background
-• Only saves when changes are detected
-• Only saves documents that have been saved at least once
-• New documents require manual save (⌘S) before auto-save activates
-
-Manual saving:
-• ⌘S - Quick save to current location
-• ⌘⇧S - Save As (choose new location/format)
-
-You can continue writing without interruption - auto-save handles everything in the background.
-""", color: bodyColor))
-        content.append(makeNewline())
-
-        content.append(makeHeading("🎨 Format Painter", color: headingColor))
-        content.append(makeBody("""
-Copy formatting from one text selection and apply it to another.
-
-How to use:
-1. Select text with the formatting you want to copy
-2. Click the Format Painter button (🖌️) in the toolbar
-3. The cursor changes to indicate Format Painter is active
-4. Click or drag to select the text where you want to apply the formatting
-5. The formatting is applied automatically
-
-What it copies:
-• Font family and size
-• Bold, italic, underline
-• Text color
-• Paragraph alignment
-• Line spacing and indentation
-""", color: bodyColor))
-        content.append(makeNewline())
-
-        content.append(makeHeading("✍️ Paragraph Styles", color: headingColor))
-        content.append(makeBody("""
-QuillPilot uses a powerful template-based style system. Each template contains a complete set of professionally-formatted paragraph styles.
-
-Using Styles:
-1. Click the Styles dropdown in the toolbar
-2. The current template appears at top (📚 PALATINO)
-3. Select any style to apply it to selected text or current paragraph
-4. Styles are grouped by category: Titles, Headings, Body, Special, Screenplay
-
-Switching Templates:
-1. Open the Styles dropdown
-2. Scroll to "SWITCH TEMPLATE" at the bottom
-3. Choose from 9 templates:
-   • Baskerville Classic, Garamond Elegant, Hoefler Text, Palatino
-   • Bradley Hand (Script), Snell Roundhand (Script)
-   • Fiction Manuscript (Times New Roman)
-   • Non-Fiction (Georgia)
-   • Screenplay (Courier New)
-
-Each template includes styles like Body Text, Chapter Title, Dialogue, Epigraphs, Block Quotes, and more—all optimized for that typeface.
-
-All styles display in their actual fonts in the dropdown, and each template's styles appear automatically when you switch.
-""", color: bodyColor))
-        content.append(makeNewline())
-
-        content.append(makeHeading("🔍 Find & Replace", color: headingColor))
-        content.append(makeBody("""
-Quickly find and replace text throughout your document.
-
-1. Click the 🔍 button in the toolbar
-2. Enter text to find
-3. (Optional) Enter replacement text
-4. Choose options:
-   • Case sensitive
-   • Whole words only
-
-Buttons:
-• Previous/Next - Navigate through matches
-• Replace - Replace current selection
-• Replace All - Replace all at once
-
-The replacement preserves your text formatting.
-""", color: bodyColor))
-        content.append(makeNewline())
-
-        content.append(makeHeading("📑 Table of Contents & Index", color: headingColor))
-        content.append(makeBody("""
-Generate professional Tables of Contents and Indexes for your manuscript.
-
-Access: Tools menu → Table of Contents & Index
-
-Table of Contents:
-1. Click "Generate TOC" to scan your document for headings
-   • Detects styled headings (Chapter Title, Heading 1, Heading 2)
-   • Falls back to font size detection (18-22pt)
-   • Excludes Book Title and Part Title from TOC
-
-2. Preview entries in the window with indented hierarchy
-
-3. Configure options:
-   • Page Numbers format:
-     - Arabic (1, 2, 3) - standard pagination
-     - Roman Lowercase (i, ii, iii) - front matter
-     - Roman Uppercase (I, II, III)
-     - Alphabet Lowercase/Uppercase (a, b, c)
-   • Insert page break - adds page break before TOC
-
-4. Click "Insert in Document" to add at cursor position
-
-Updating TOC:
-• Run "Generate TOC" again to rescan updated headings
-• Click "Insert in Document" to replace old TOC
-• Previous TOC is automatically removed
-
-Font Styling:
-• TOC uses your document's template font family
-• Automatically pulls from StyleCatalog (Body Text or TOC Entry styles)
-• Leader dots extend fully to page numbers
-• Page numbers right-aligned
-
-Index:
-1. Add terms manually or use {{index:term}} markers in text
-2. Click "Scan for Markers" to detect all index entries
-3. Configure page number format (same options as TOC)
-4. Click "Insert in Document" to add alphabetized index with sections
-
-The TOC and Index respect your template's typography and maintain consistent formatting throughout.
-""", color: bodyColor))
-
-        textView.textStorage?.setAttributedString(content)
-    }
-
     // MARK: - Tab 2: Analysis Tools
 
     private func loadAnalysisTab() {
-        guard textViews.count > 2 else { return }
-        let textView = textViews[2]
+                guard textViews.count > 1 else { return }
+                let textView = textViews[1]
         let theme = ThemeManager.shared.currentTheme
         let titleColor = theme.textColor
         let headingColor = theme.textColor
@@ -449,8 +300,8 @@ Balance - distribution among characters
     // MARK: - Tab 3: Character Features
 
     private func loadCharactersTab() {
-        guard textViews.count > 3 else { return }
-        let textView = textViews[3]
+                guard textViews.count > 2 else { return }
+                let textView = textViews[2]
         let theme = ThemeManager.shared.currentTheme
         let titleColor = theme.textColor
         let headingColor = theme.textColor
@@ -781,8 +632,8 @@ Interactive Features:
     // MARK: - Tab 4: Plot & Structure
 
     private func loadPlotTab() {
-        guard textViews.count > 4 else { return }
-        let textView = textViews[4]
+                guard textViews.count > 3 else { return }
+                let textView = textViews[3]
         let theme = ThemeManager.shared.currentTheme
         let titleColor = theme.textColor
         let headingColor = theme.textColor
@@ -896,8 +747,8 @@ Story Directions (🧭 in Navigator):
     // MARK: - Tab 5: Scenes
 
     private func loadScenesTab() {
-        guard textViews.count > 5 else { return }
-        let textView = textViews[5]
+                guard textViews.count > 4 else { return }
+                let textView = textViews[4]
         let theme = ThemeManager.shared.currentTheme
         let titleColor = theme.textColor
         let headingColor = theme.textColor
@@ -1218,8 +1069,8 @@ A: As many as your story needs. A 80,000-word novel might have 40-80 scenes, but
     // MARK: - Tab 6: Keyboard Shortcuts
 
     private func loadShortcutsTab() {
-        guard textViews.count > 6 else { return }
-        let textView = textViews[6]
+                guard textViews.count > 5 else { return }
+                let textView = textViews[5]
         let theme = ThemeManager.shared.currentTheme
         let titleColor = theme.textColor
         let headingColor = theme.textColor
@@ -1290,31 +1141,31 @@ These features work best with professional fonts like Times New Roman, Georgia, 
 
         content.append(makeHeading("📚 Style Templates", color: headingColor))
         content.append(makeBody("""
-QuillPilot includes 9 professionally-designed style templates, each with a complete set of paragraph styles optimized for that typeface:
+Templates in QuillPilot are complete style sets (Body Text, headings, chapter formats, TOC/Index styles, etc.) tuned around a specific typeface.
 
-Accessing Templates:
-1. Click the Styles dropdown in the toolbar
-2. The current template name appears at the top (📚 PALATINO)
-3. Scroll to the bottom and select "SWITCH TEMPLATE"
-4. Choose from:
-   • Baskerville Classic - Elegant 18th-century serif
-   • Bradley Hand (Script) - Casual handwritten style
-   • Fiction Manuscript - Standard Times New Roman
-   • Garamond Elegant - Renaissance typeface
-   • Hoefler Text - Contemporary readable serif
-   • Non-Fiction - Georgia with optimized spacing
-   • Palatino - Calligraphic serif (default)
-   • Screenplay - Courier New with proper formatting
-   • Snell Roundhand (Script) - Formal calligraphy
+Current templates:
+• Minion Pro
+• Arial
+• Times New Roman
+• Calibre
+• Inter
+• Helvetica
+• Screenplay
+• Baskerville Classic
+• Garamond Elegant
+• Palatino
+• Hoefler Text
+• Bradley Hand (Script)
+• Snell Roundhand (Script)
 
-Each Template Includes:
-• Body Text styles (with/without indent)
-• Title pages (Book Title, Subtitle, Author)
-• Chapter formatting (Number, Title, Subtitle)
-• Special elements (Epigraphs, Block Quotes, Dialogue)
-• Scene breaks and transitions
+How to switch templates:
+1. Use the Template dropdown in the toolbar
+2. Your selection is saved automatically
+3. Style names and previews update instantly for the selected template
 
-Your template selection is saved automatically.
+Notes:
+• Switching templates changes which style definitions are available; it doesn’t automatically rewrite existing paragraphs unless you apply styles.
+• TOC/Index insertion uses your current template’s typography.
 """, color: bodyColor))
         content.append(makeNewline())
 

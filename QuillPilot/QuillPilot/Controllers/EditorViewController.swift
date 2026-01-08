@@ -266,6 +266,7 @@ class EditorViewController: NSViewController {
 
     private var headerViews: [NSTextField] = []
     private var footerViews: [NSTextField] = []
+    private var headerFooterDecorationViews: [NSView] = []
 
     // Manuscript metadata
     var manuscriptTitle: String = "Untitled"
@@ -275,8 +276,10 @@ class EditorViewController: NSViewController {
     var showHeaders: Bool = true
     var showFooters: Bool = true
     var showPageNumbers: Bool = true
+    var hidePageNumberOnFirstPage: Bool = true
+    var centerPageNumbers: Bool = false
     var headerText: String = "" // Empty means use author/title
-    var footerText: String = "" // Empty means use page number
+    var footerText: String = "" // Optional footer text
 
     weak var delegate: EditorViewControllerDelegate?
 
@@ -354,6 +357,13 @@ class EditorViewController: NSViewController {
         paragraphStyle.headIndent = 0
         paragraphStyle.firstLineHeadIndent = standardIndentStep
         textView.defaultParagraphStyle = paragraphStyle.copy() as? NSParagraphStyle
+
+        // Ensure undo works predictably (one step per Cmd-Z)
+        textView.allowsUndo = true
+        if let um = textView.undoManager {
+            um.groupsByEvent = true
+            um.levelsOfUndo = 10000
+        }
 
         // Add text view directly to page (text scrolls via outer scroll view)
         pageContainer.addSubview(textView)
@@ -3590,9 +3600,12 @@ case "Book Subtitle":
         }
 
         // Text view spans all pages with standard margins.
-        // Headers/footers are drawn inside those margins, so they don't reserve extra layout space.
-        let textInsetTop = standardMargin * editorZoom
-        let textInsetBottom = standardMargin * editorZoom
+        // Add a small extra clearance so body text isn't flush against header/footer bands.
+        let headerClearance = showHeaders ? (headerHeight * editorZoom * 0.25) : 0
+        let footerClearance = showFooters ? (footerHeight * editorZoom * 0.5) : 0
+
+        let textInsetTop = (standardMargin * editorZoom) + headerClearance
+        let textInsetBottom = (standardMargin * editorZoom) + footerClearance
         let textInsetLeft = leftPageMargin * editorZoom
         let textInsetRight = rightPageMargin * editorZoom
         textView.frame = NSRect(
@@ -3679,9 +3692,11 @@ case "Book Subtitle":
         // Clear existing
         headerViews.forEach { $0.removeFromSuperview() }
         footerViews.forEach { $0.removeFromSuperview() }
+        headerFooterDecorationViews.forEach { $0.removeFromSuperview() }
         pages.forEach { $0.removeFromSuperview() }
         headerViews.removeAll()
         footerViews.removeAll()
+        headerFooterDecorationViews.removeAll()
         pages.removeAll()
 
         let scaledPageWidth = pageWidth * editorZoom
@@ -3729,34 +3744,55 @@ case "Book Subtitle":
                 headerLine.wantsLayer = true
                 headerLine.layer?.backgroundColor = currentTheme.textColor.withAlphaComponent(0.2).cgColor
                 pageContainer.addSubview(headerLine)
+                headerFooterDecorationViews.append(headerLine)
             }
 
             // Footer (bottom band)
             if showFooters {
-                let footerContent: String
+                let footerY = pageY + scaledPageHeight - marginY / 2 - scaledFooterHeight
+
+                // Footer text (left)
                 if !footerText.isEmpty {
-                    footerContent = footerText
-                } else if showPageNumbers {
-                    footerContent = pageNum > 1 ? "\(pageNum)" : ""
-                } else {
-                    footerContent = ""
+                    let footerField = NSTextField(labelWithString: footerText)
+                    footerField.isEditable = false
+                    footerField.isSelectable = false
+                    footerField.isBordered = false
+                    footerField.backgroundColor = .clear
+                    footerField.font = NSFont(name: "Courier", size: 11) ?? NSFont.monospacedSystemFont(ofSize: 11, weight: .regular)
+                    footerField.textColor = currentTheme.textColor.withAlphaComponent(0.5)
+                    footerField.alignment = .left
+
+                    let reservedForPageNumber: CGFloat = centerPageNumbers ? (contentWidth * 0.5) : 72
+                    footerField.frame = NSRect(
+                        x: marginXLeft,
+                        y: footerY,
+                        width: max(36, contentWidth - reservedForPageNumber),
+                        height: scaledFooterHeight
+                    )
+                    pageContainer.addSubview(footerField)
+                    footerViews.append(footerField)
                 }
-                let footerField = NSTextField(labelWithString: footerContent)
-                footerField.isEditable = false
-                footerField.isSelectable = false
-                footerField.isBordered = false
-                footerField.backgroundColor = .clear
-                footerField.font = NSFont(name: "Courier", size: 11) ?? NSFont.monospacedSystemFont(ofSize: 11, weight: .regular)
-                footerField.textColor = currentTheme.textColor.withAlphaComponent(0.5)
-                footerField.alignment = .right
-                footerField.frame = NSRect(
-                    x: marginXLeft,
-                    y: pageY + scaledPageHeight - marginY / 2 - scaledFooterHeight,
-                    width: contentWidth,
-                    height: scaledFooterHeight
-                )
-                pageContainer.addSubview(footerField)
-                footerViews.append(footerField)
+
+                // Page number (right or center), hidden on first page if configured
+                let shouldShowPageNumber = showPageNumbers && (!hidePageNumberOnFirstPage || pageNum > 1)
+                if shouldShowPageNumber {
+                    let pageField = NSTextField(labelWithString: "\(pageNum)")
+                    pageField.isEditable = false
+                    pageField.isSelectable = false
+                    pageField.isBordered = false
+                    pageField.backgroundColor = .clear
+                    pageField.font = NSFont(name: "Courier", size: 11) ?? NSFont.monospacedSystemFont(ofSize: 11, weight: .regular)
+                    pageField.textColor = currentTheme.textColor.withAlphaComponent(0.5)
+                    pageField.alignment = centerPageNumbers ? .center : .right
+                    pageField.frame = NSRect(
+                        x: marginXLeft,
+                        y: footerY,
+                        width: contentWidth,
+                        height: scaledFooterHeight
+                    )
+                    pageContainer.addSubview(pageField)
+                    footerViews.append(pageField)
+                }
 
                 // Separator above footer
                 let footerLine = NSView(frame: NSRect(
@@ -3768,6 +3804,7 @@ case "Book Subtitle":
                 footerLine.wantsLayer = true
                 footerLine.layer?.backgroundColor = currentTheme.textColor.withAlphaComponent(0.2).cgColor
                 pageContainer.addSubview(footerLine)
+                headerFooterDecorationViews.append(footerLine)
             }
         }
     }
@@ -4703,6 +4740,9 @@ extension EditorViewController: NSTextViewDelegate {
     func textDidChange(_ notification: Notification) {
         // Skip notification if we're suppressing changes (e.g., during column insertion)
         guard !suppressTextChangeNotifications else { return }
+
+        // Make undo granular: stop the text system from coalescing many edits into one undo step.
+        textView.breakUndoCoalescing()
 
         delegate?.textDidChange()
 

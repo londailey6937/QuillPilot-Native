@@ -317,14 +317,18 @@ class MainWindowController: NSWindowController {
             showHeaders: editorVC.showHeaders,
             showFooters: editorVC.showFooters,
             showPageNumbers: editorVC.showPageNumbers,
+            hideFirstPageNumber: editorVC.hidePageNumberOnFirstPage,
+            centerPageNumbers: editorVC.centerPageNumbers,
             headerText: editorVC.headerText,
             footerText: editorVC.footerText
         )
 
-        settingsWindow.onApply = { [weak self, weak editorVC] showHeaders, showFooters, showPageNumbers, headerText, footerText in
+        settingsWindow.onApply = { [weak self, weak editorVC] showHeaders, showFooters, showPageNumbers, hideFirstPageNumber, centerPageNumbers, headerText, footerText in
             editorVC?.showHeaders = showHeaders
             editorVC?.showFooters = showFooters
             editorVC?.showPageNumbers = showPageNumbers
+            editorVC?.hidePageNumberOnFirstPage = hideFirstPageNumber
+            editorVC?.centerPageNumbers = centerPageNumbers
             editorVC?.headerText = headerText
             editorVC?.footerText = footerText
             editorVC?.updatePageCentering()
@@ -1506,6 +1510,7 @@ class HeaderView: NSView {
 
     private var logoView: LogoView!
     private var titleLabel: NSTextField!
+    private var taglineLabel: NSTextField!
     var specsPanel: DocumentInfoPanel!
     private var themeToggle: NSButton!
 
@@ -1527,11 +1532,20 @@ class HeaderView: NSView {
         addSubview(logoView)
 
         // Title
-        titleLabel = NSTextField(labelWithString: "QuillPilot")
+        titleLabel = NSTextField(labelWithString: "Quill Pilot")
         titleLabel.font = NSFont.systemFont(ofSize: 20, weight: .medium)
         titleLabel.textColor = ThemeManager.shared.currentTheme.headerText
         titleLabel.translatesAutoresizingMaskIntoConstraints = false
         addSubview(titleLabel)
+
+        // Tagline (two lines) next to title
+        taglineLabel = NSTextField(labelWithString: "AI-Powered Writing and Analysis\nFor Fiction • Nonfiction • Poetry • Screenplays")
+        taglineLabel.font = NSFont.systemFont(ofSize: 11, weight: .regular)
+        taglineLabel.textColor = ThemeManager.shared.currentTheme.headerText.withAlphaComponent(0.75)
+        taglineLabel.lineBreakMode = .byWordWrapping
+        taglineLabel.maximumNumberOfLines = 2
+        taglineLabel.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(taglineLabel)
 
         // Specs panel (word count, page count, etc.)
         specsPanel = DocumentInfoPanel()
@@ -1555,6 +1569,11 @@ class HeaderView: NSView {
             titleLabel.leadingAnchor.constraint(equalTo: logoView.trailingAnchor, constant: 12),
             titleLabel.centerYAnchor.constraint(equalTo: centerYAnchor),
 
+            // Tagline next to title
+            taglineLabel.leadingAnchor.constraint(equalTo: titleLabel.trailingAnchor, constant: 12),
+            taglineLabel.centerYAnchor.constraint(equalTo: titleLabel.centerYAnchor),
+            taglineLabel.trailingAnchor.constraint(lessThanOrEqualTo: specsPanel.leadingAnchor, constant: -12),
+
             // Specs panel centered in header
             specsPanel.centerXAnchor.constraint(equalTo: centerXAnchor),
             specsPanel.centerYAnchor.constraint(equalTo: centerYAnchor),
@@ -1576,6 +1595,7 @@ class HeaderView: NSView {
         wantsLayer = true
         layer?.backgroundColor = theme.headerBackground.cgColor
         titleLabel.textColor = theme.headerText
+        taglineLabel.textColor = theme.headerText.withAlphaComponent(0.75)
         themeToggle.title = theme == .day ? "☀️" : "🌙"
         themeToggle.contentTintColor = theme.headerText
         let toggleAttributes: [NSAttributedString.Key: Any] = [

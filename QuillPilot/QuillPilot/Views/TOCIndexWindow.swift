@@ -963,15 +963,53 @@ class TOCIndexWindowController: NSWindowController, NSOutlineViewDataSource, NSO
 
     @objc private func removeIndexEntry() {
         let selectedRow = indexTableView.selectedRow
-        guard selectedRow >= 0 else { return }
+        guard selectedRow >= 0,
+              selectedRow < TOCIndexManager.shared.indexEntries.count,
+              let textView = editorTextView,
+              let textStorage = textView.textStorage else { return }
 
-        TOCIndexManager.shared.removeIndexEntry(at: selectedRow)
+        let entry = TOCIndexManager.shared.indexEntries[selectedRow]
+
+        // Remove all scan markers for this term from the document.
+        // (Removing the UI entry alone isn't enough; the markers will be re-scanned next time.)
+        let escapedTerm = NSRegularExpression.escapedPattern(for: entry.term)
+        let pattern = "\\{\\{index:\\s*\(escapedTerm)\\s*\\}\\}"
+        if let regex = try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive]) {
+            let fullRange = NSRange(location: 0, length: textStorage.length)
+            let matches = regex.matches(in: textStorage.string, options: [], range: fullRange)
+            if !matches.isEmpty {
+                textStorage.beginEditing()
+                for m in matches.reversed() {
+                    textView.shouldChangeText(in: m.range, replacementString: "")
+                    textStorage.replaceCharacters(in: m.range, with: "")
+                }
+                textStorage.endEditing()
+                textView.didChangeText()
+            }
+        }
+
+        // Re-scan so the table reflects the updated marker set + fresh page numbers.
+        _ = TOCIndexManager.shared.generateIndexFromMarkers(
+            in: textStorage,
+            pageNumberForLocation: { [weak self] location in
+                self?.editorViewController?.getPageNumber(forCharacterPosition: location)
+                    ?? TOCIndexManager.shared.estimatePageNumberPublic(for: location, in: textStorage)
+            }
+        )
         indexTableView.reloadData()
     }
 
     @objc private func insertIndex() {
-        guard let textView = editorTextView else { return }
-        let entries = TOCIndexManager.shared.indexEntries
+        guard let textView = editorTextView, let textStorage = textView.textStorage else { return }
+
+        // Re-scan markers right before insertion so the inserted Index matches the window's page numbers.
+        let entries = TOCIndexManager.shared.generateIndexFromMarkers(
+            in: textStorage,
+            pageNumberForLocation: { [weak self] location in
+                self?.editorViewController?.getPageNumber(forCharacterPosition: location)
+                    ?? TOCIndexManager.shared.estimatePageNumberPublic(for: location, in: textStorage)
+            }
+        )
 
         if entries.isEmpty {
             showThemedAlert(title: "No Index Entries", message: "Add some index terms first.")
@@ -1013,7 +1051,7 @@ class TOCIndexWindowController: NSWindowController, NSOutlineViewDataSource, NSO
             .paragraphStyle: titleParagraph,
             styleAttributeKey: "Index Title"
         ]
-        indexString.append(NSAttributedString(string: "Index\n\n", attributes: titleAttrs))
+        indexString.append(NSAttributedString(string: "Index\n", attributes: titleAttrs))
 
         // Group by first letter
         var currentLetter: Character = " "
@@ -1031,7 +1069,12 @@ class TOCIndexWindowController: NSWindowController, NSOutlineViewDataSource, NSO
             let firstLetter = entry.term.first?.uppercased().first ?? "?"
             if firstLetter != currentLetter {
                 currentLetter = firstLetter
-                indexString.append(NSAttributedString(string: "\n\(currentLetter)\n", attributes: letterAttrs))
+                // Avoid inserting a leading blank line before the first letter section.
+                if indexString.string.hasSuffix("Index\n") {
+                    indexString.append(NSAttributedString(string: "\(currentLetter)\n", attributes: letterAttrs))
+                } else {
+                    indexString.append(NSAttributedString(string: "\n\(currentLetter)\n", attributes: letterAttrs))
+                }
             }
 
             // Format page numbers according to selected format

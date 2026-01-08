@@ -120,14 +120,29 @@ final class StyleCatalog {
     }
 
     private static func buildTemplates() -> [StyleTemplate] {
-        let fiction = StyleTemplate(
-            name: "Fiction Manuscript",
-            styles: fictionStyles()
-        )
-        let nonfiction = StyleTemplate(
-            name: "Non-Fiction",
-            styles: nonfictionStyles()
-        )
+        func rebaseFonts(_ styles: [String: StyleDefinition], fontFamily: String) -> [String: StyleDefinition] {
+            var rebased: [String: StyleDefinition] = [:]
+            rebased.reserveCapacity(styles.count)
+            for (key, def) in styles {
+                var updated = def
+                updated.fontName = fontFamily
+                rebased[key] = updated
+            }
+            return rebased
+        }
+
+        // Base style set for font-family templates.
+        // We intentionally reuse the manuscript-oriented structure from the former "Fiction Manuscript" template,
+        // but allow users to pick a font family directly via templates.
+        let baseManuscript = fictionStyles()
+
+        let minionPro = StyleTemplate(name: "Minion Pro", styles: rebaseFonts(baseManuscript, fontFamily: "Minion Pro"))
+        let arial = StyleTemplate(name: "Arial", styles: rebaseFonts(baseManuscript, fontFamily: "Arial"))
+        let timesNewRoman = StyleTemplate(name: "Times New Roman", styles: rebaseFonts(baseManuscript, fontFamily: "Times New Roman"))
+        let calibre = StyleTemplate(name: "Calibre", styles: rebaseFonts(baseManuscript, fontFamily: "Calibre"))
+        let inter = StyleTemplate(name: "Inter", styles: rebaseFonts(baseManuscript, fontFamily: "Inter"))
+        let helvetica = StyleTemplate(name: "Helvetica", styles: rebaseFonts(baseManuscript, fontFamily: "Helvetica"))
+
         let screenplay = StyleTemplate(
             name: "Screenplay",
             styles: screenplayStyles()
@@ -156,7 +171,11 @@ final class StyleCatalog {
             name: "Snell Roundhand (Script)",
             styles: snellRoundhandStyles()
         )
-        return [fiction, nonfiction, screenplay, baskerville, garamond, palatino, hoefler, bradley, snell]
+
+        return [
+            minionPro, arial, timesNewRoman, calibre, inter, helvetica,
+            screenplay, baskerville, garamond, palatino, hoefler, bradley, snell
+        ]
     }
 
     private static func baseDefinition(

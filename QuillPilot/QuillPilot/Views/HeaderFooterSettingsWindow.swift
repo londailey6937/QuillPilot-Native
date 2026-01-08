@@ -13,15 +13,19 @@ class HeaderFooterSettingsWindow: NSWindowController {
     private var showHeadersCheckbox: NSButton!
     private var showFootersCheckbox: NSButton!
     private var showPageNumbersCheckbox: NSButton!
+    private var hideFirstPageNumberCheckbox: NSButton!
+    private var pageNumberPositionLabel: NSTextField!
+    private var pageNumberPositionControl: NSSegmentedControl!
     private var headerTextField: NSTextField!
     private var footerTextField: NSTextField!
 
-    var onApply: ((Bool, Bool, Bool, String, String) -> Void)?
+    /// onApply(showHeaders, showFooters, showPageNumbers, hideFirstPageNumber, centerPageNumbers, headerText, footerText)
+    var onApply: ((Bool, Bool, Bool, Bool, Bool, String, String) -> Void)?
     var onCancel: (() -> Void)?
 
     convenience init() {
         let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 450, height: 280),
+            contentRect: NSRect(x: 0, y: 0, width: 450, height: 340),
             styleMask: [.titled, .closable],
             backing: .buffered,
             defer: false
@@ -76,15 +80,31 @@ class HeaderFooterSettingsWindow: NSWindowController {
         contentView.addSubview(footerLabel)
 
         footerTextField = NSTextField()
-        footerTextField.placeholderString = "Leave empty for page numbers"
+        footerTextField.placeholderString = "Footer text (optional)"
         footerTextField.translatesAutoresizingMaskIntoConstraints = false
         contentView.addSubview(footerTextField)
 
         // Show Page Numbers checkbox
-        showPageNumbersCheckbox = NSButton(checkboxWithTitle: "Show Page Numbers (when footer text is empty)", target: nil, action: nil)
+        showPageNumbersCheckbox = NSButton(checkboxWithTitle: "Show Page Numbers", target: self, action: #selector(checkboxChanged))
         showPageNumbersCheckbox.state = .on
         showPageNumbersCheckbox.translatesAutoresizingMaskIntoConstraints = false
         contentView.addSubview(showPageNumbersCheckbox)
+
+        // Hide page number on first page
+        hideFirstPageNumberCheckbox = NSButton(checkboxWithTitle: "Hide Page Number on First Page", target: self, action: #selector(checkboxChanged))
+        hideFirstPageNumberCheckbox.state = .on
+        hideFirstPageNumberCheckbox.translatesAutoresizingMaskIntoConstraints = false
+        contentView.addSubview(hideFirstPageNumberCheckbox)
+
+        // Page number position
+        pageNumberPositionLabel = NSTextField(labelWithString: "Page Number Position:")
+        pageNumberPositionLabel.translatesAutoresizingMaskIntoConstraints = false
+        contentView.addSubview(pageNumberPositionLabel)
+
+        pageNumberPositionControl = NSSegmentedControl(labels: ["Right", "Center"], trackingMode: .selectOne, target: self, action: #selector(checkboxChanged))
+        pageNumberPositionControl.selectedSegment = 0
+        pageNumberPositionControl.translatesAutoresizingMaskIntoConstraints = false
+        contentView.addSubview(pageNumberPositionControl)
 
         // Info label
         let infoLabel = NSTextField(labelWithString: "Headers and footers are drawn inside the standard page margins.")
@@ -139,7 +159,16 @@ class HeaderFooterSettingsWindow: NSWindowController {
             showPageNumbersCheckbox.topAnchor.constraint(equalTo: footerTextField.bottomAnchor, constant: 20),
             showPageNumbersCheckbox.leadingAnchor.constraint(equalTo: contentView.leadingAnchor, constant: 20),
 
-            infoLabel.topAnchor.constraint(equalTo: showPageNumbersCheckbox.bottomAnchor, constant: 15),
+            hideFirstPageNumberCheckbox.topAnchor.constraint(equalTo: showPageNumbersCheckbox.bottomAnchor, constant: 10),
+            hideFirstPageNumberCheckbox.leadingAnchor.constraint(equalTo: contentView.leadingAnchor, constant: 40),
+
+            pageNumberPositionLabel.topAnchor.constraint(equalTo: hideFirstPageNumberCheckbox.bottomAnchor, constant: 12),
+            pageNumberPositionLabel.leadingAnchor.constraint(equalTo: contentView.leadingAnchor, constant: 40),
+
+            pageNumberPositionControl.centerYAnchor.constraint(equalTo: pageNumberPositionLabel.centerYAnchor),
+            pageNumberPositionControl.leadingAnchor.constraint(equalTo: pageNumberPositionLabel.trailingAnchor, constant: 8),
+
+            infoLabel.topAnchor.constraint(equalTo: pageNumberPositionControl.bottomAnchor, constant: 15),
             infoLabel.leadingAnchor.constraint(equalTo: contentView.leadingAnchor, constant: 20),
             infoLabel.trailingAnchor.constraint(equalTo: contentView.trailingAnchor, constant: -20),
 
@@ -151,12 +180,16 @@ class HeaderFooterSettingsWindow: NSWindowController {
             applyButton.trailingAnchor.constraint(equalTo: cancelButton.leadingAnchor, constant: -12),
             applyButton.widthAnchor.constraint(equalToConstant: 80)
         ])
+
+        checkboxChanged()
     }
 
-    func setCurrentSettings(showHeaders: Bool, showFooters: Bool, showPageNumbers: Bool, headerText: String, footerText: String) {
+    func setCurrentSettings(showHeaders: Bool, showFooters: Bool, showPageNumbers: Bool, hideFirstPageNumber: Bool, centerPageNumbers: Bool, headerText: String, footerText: String) {
         showHeadersCheckbox.state = showHeaders ? .on : .off
         showFootersCheckbox.state = showFooters ? .on : .off
         showPageNumbersCheckbox.state = showPageNumbers ? .on : .off
+        hideFirstPageNumberCheckbox.state = hideFirstPageNumber ? .on : .off
+        pageNumberPositionControl.selectedSegment = centerPageNumbers ? 1 : 0
         headerTextField.stringValue = headerText
         footerTextField.stringValue = footerText
         checkboxChanged()
@@ -165,6 +198,13 @@ class HeaderFooterSettingsWindow: NSWindowController {
     @objc private func checkboxChanged() {
         headerTextField.isEnabled = showHeadersCheckbox.state == .on
         footerTextField.isEnabled = showFootersCheckbox.state == .on
+
+        let footerEnabled = showFootersCheckbox.state == .on
+        showPageNumbersCheckbox.isEnabled = footerEnabled
+        let pageNumbersEnabled = footerEnabled && (showPageNumbersCheckbox.state == .on)
+        hideFirstPageNumberCheckbox.isEnabled = pageNumbersEnabled
+        pageNumberPositionLabel.isEnabled = pageNumbersEnabled
+        pageNumberPositionControl.isEnabled = pageNumbersEnabled
     }
 
     @objc private func applySettings() {
@@ -172,6 +212,8 @@ class HeaderFooterSettingsWindow: NSWindowController {
             showHeadersCheckbox.state == .on,
             showFootersCheckbox.state == .on,
             showPageNumbersCheckbox.state == .on,
+            hideFirstPageNumberCheckbox.state == .on,
+            pageNumberPositionControl.selectedSegment == 1,
             headerTextField.stringValue,
             footerTextField.stringValue
         )

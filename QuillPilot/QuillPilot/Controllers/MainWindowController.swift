@@ -877,6 +877,18 @@ extension MainWindowController: StyleEditorPresenter {
 
 // MARK: - Save / Open
 extension MainWindowController {
+    private func closeAndClearTOCIndexWindowForDocumentChange() {
+        // Clear shared state
+        TOCIndexManager.shared.clearTOC()
+        TOCIndexManager.shared.clearIndex()
+
+        // Close the window so stale rows/selection don't carry across documents
+        if tocIndexWindow != nil {
+            tocIndexWindow?.close()
+            tocIndexWindow = nil
+        }
+    }
+
     @MainActor
     func performSaveDocument(_ sender: Any?) {
         // If we have a current document URL, save directly without showing panel
@@ -901,8 +913,8 @@ extension MainWindowController {
         let popup = NSPopUpButton(frame: .zero, pullsDown: false)
         ExportFormat.allCases.forEach { popup.addItem(withTitle: $0.displayName) }
 
-        // Default to the document's current format
-        let defaultFormat: ExportFormat = currentDocumentFormat
+        // Default new documents to DOCX. Existing documents keep their current format.
+        let defaultFormat: ExportFormat = (currentDocumentURL == nil) ? .docx : currentDocumentFormat
         let defaultIndex = ExportFormat.allCases.firstIndex(of: defaultFormat) ?? 0
         popup.selectItem(at: defaultIndex)
 
@@ -1218,6 +1230,8 @@ extension MainWindowController {
 
     private func clearDocumentAndAnalysis() {
 
+        closeAndClearTOCIndexWindowForDocumentChange()
+
         // Clear the document and analysis
         NSLog("🆕 NEW DOCUMENT: Clearing editor content")
         mainContentViewController.editorViewController.clearAll()
@@ -1227,8 +1241,6 @@ extension MainWindowController {
 
         // Clear TOC and Index entries for new document
         NSLog("🆕 NEW DOCUMENT: Clearing TOC and Index")
-        TOCIndexManager.shared.clearTOC()
-        TOCIndexManager.shared.clearIndex()
 
         // Clear search panel fields
         searchPanel?.clearFields()
@@ -1287,10 +1299,10 @@ extension MainWindowController {
         let ext = url.pathExtension.lowercased()
         NSLog("File extension: \(ext)")
 
+        closeAndClearTOCIndexWindowForDocumentChange()
+
         // Clear TOC and Index entries before loading new document
         NSLog("📂 OPENING DOCUMENT: Clearing TOC and Index")
-        TOCIndexManager.shared.clearTOC()
-        TOCIndexManager.shared.clearIndex()
 
         // Clear search panel fields
         searchPanel?.clearFields()
@@ -1308,10 +1320,9 @@ extension MainWindowController {
             // Import Word document
             let filename = url.deletingPathExtension().lastPathComponent
             headerView.setDocumentTitle(filename)
-            // We'll treat DOCX import as a conversion to editable rich text by default.
             // Keep the original file untouched by clearing the URL; Save will prompt.
             currentDocumentURL = nil
-            currentDocumentFormat = .rtfd
+            currentDocumentFormat = .docx
             hasUnsavedChanges = false
             mainContentViewController.editorViewController.headerText = ""
             mainContentViewController.editorViewController.footerText = ""
@@ -1335,8 +1346,8 @@ extension MainWindowController {
                     DispatchQueue.main.async {
                         guard let self else { return }
                         self.applyImportedContent(attributed, url: url)
-                        // Choose default save format based on whether the native import produced attachments.
-                        self.currentDocumentFormat = self.mainContentViewController.editorViewController.hasAttachments() ? .rtfd : .rtf
+                        // Default to DOCX when saving after opening a DOCX.
+                        self.currentDocumentFormat = .docx
                     }
                     return
                 } catch {
@@ -1371,7 +1382,7 @@ extension MainWindowController {
                         NSLog("📄 Setting content on main thread, length: \(restored.length)")
                         let setStart = CFAbsoluteTimeGetCurrent()
                         self.applyImportedContent(restored, url: url)
-                        self.currentDocumentFormat = self.mainContentViewController.editorViewController.hasAttachments() ? .rtfd : .rtf
+                        self.currentDocumentFormat = .docx
                         NSLog("📄 Content set complete in \(CFAbsoluteTimeGetCurrent() - setStart)s")
                     }
                 } catch {
@@ -1466,6 +1477,12 @@ extension MainWindowController {
     private func applyImportedContent(_ attributed: NSAttributedString, url: URL) {
         mainContentViewController.editorViewController.setAttributedContentDirect(attributed)
         mainContentViewController.editorViewController.applyTheme(ThemeManager.shared.currentTheme)
+
+        // Ensure TOC/Index paragraphs keep right-tab alignment after DOCX/RTF imports.
+        // Some importers drop paragraph tab stops; we repair based on QuillStyleName.
+        DispatchQueue.main.async { [weak self] in
+            self?.mainContentViewController.editorViewController.repairTOCAndIndexFormattingAfterImport()
+        }
 
         if let textStorage = mainContentViewController.editorViewController.textView?.textStorage {
             _ = TOCIndexManager.shared.generateIndexFromMarkers(in: textStorage)
@@ -3624,6 +3641,30 @@ private enum DocxBuilder {
             if !indentAttrs.isEmpty {
                 components.append("<w:ind \(indentAttrs.joined(separator: " "))/>")
             }
+
+            // Export tab stops for TOC/Index leader dots and page number alignment
+            if !style.tabStops.isEmpty {
+                var tabXml: [String] = []
+                for tab in style.tabStops {
+                    // Convert points to twentieths of a point (twips)
+                    let posTwips = Int(round(tab.location * 20))
+                    let tabType: String
+                    switch tab.alignment {
+                    case .right: tabType = "right"
+                    case .center: tabType = "center"
+                    default: tabType = "left"
+                    }
+                    // Add leader dots for right-aligned tabs (used in TOC/Index)
+                    if tab.alignment == .right {
+                        tabXml.append("<w:tab w:val=\"\(tabType)\" w:pos=\"\(posTwips)\" w:leader=\"dot\"/>")
+                    } else {
+                        tabXml.append("<w:tab w:val=\"\(tabType)\" w:pos=\"\(posTwips)\"/>")
+                    }
+                }
+                if !tabXml.isEmpty {
+                    components.append("<w:tabs>\(tabXml.joined())</w:tabs>")
+                }
+            }
         }
 
         guard !components.isEmpty else { return "" }
@@ -3855,6 +3896,7 @@ private enum DocxTextExtractor {
         private var runAttributes = RunAttributes()
         private var currentText: String = ""
         private var inText = false
+        private var inTabStopsDefinition = false
         private var docxData: Data?
         private var inDrawing = false
         private var currentImageRId: String?
@@ -4051,6 +4093,7 @@ private enum DocxTextExtractor {
                 paragraphStyle = ParagraphStyleProps()
                 hasActiveParagraph = true
                 currentParagraphHasImage = false
+                inTabStopsDefinition = false
 
                 // If we're in a table cell, add the text block
                 if inTableCell, let table = currentTable {
@@ -4122,6 +4165,14 @@ private enum DocxTextExtractor {
                     case "BlockQuote": mappedName = "Block Quote"
                     case "Epigraph": mappedName = "Epigraph"
                     case "Dialogue": mappedName = "Dialogue"
+                    case "TOCTitle": mappedName = "TOC Title"
+                    case "TOCEntry": mappedName = "TOC Entry"
+                    case "TOCEntryLevel1": mappedName = "TOC Entry Level 1"
+                    case "TOCEntryLevel2": mappedName = "TOC Entry Level 2"
+                    case "TOCEntryLevel3": mappedName = "TOC Entry Level 3"
+                    case "IndexTitle": mappedName = "Index Title"
+                    case "IndexEntry": mappedName = "Index Entry"
+                    case "IndexLetter": mappedName = "Index Letter"
                     default: mappedName = val
                     }
                     // Only set styleName and log if it's not empty (filters out Scene Break)
@@ -4164,6 +4215,10 @@ private enum DocxTextExtractor {
                 if let rightStr = attributeDict["w:right"] ?? attributeDict["right"] ?? attributeDict["w:end"] ?? attributeDict["end"], let twips = Double(rightStr) {
                     paragraphStyle.tailIndent = CGFloat(twips / 20.0)
                 }
+
+            case "w:tabs", "tabs":
+                // Tab-stop definitions live inside <w:pPr><w:tabs> ... </w:tabs>
+                inTabStopsDefinition = true
 
             case "w:r", "r":
                 finalizeRun()
@@ -4216,7 +4271,25 @@ private enum DocxTextExtractor {
                 inText = true
 
             case "w:tab", "tab":
-                currentText.append("\t")
+                if inTabStopsDefinition {
+                    // This is a tab STOP definition (not a tab character).
+                    if let posStr = attributeDict["w:pos"] ?? attributeDict["pos"], let twips = Double(posStr) {
+                        let position = CGFloat(twips / 20.0)
+                        let valStr = attributeDict["w:val"] ?? attributeDict["val"] ?? "left"
+                        let alignment: NSTextAlignment
+                        switch valStr.lowercased() {
+                        case "right": alignment = .right
+                        case "center": alignment = .center
+                        case "decimal": alignment = .right
+                        default: alignment = .left
+                        }
+                        let tabStop = NSTextTab(textAlignment: alignment, location: position, options: [:])
+                        paragraphStyle.tabStops.append(tabStop)
+                    }
+                } else {
+                    // This is a tab CHARACTER within the text flow.
+                    currentText.append("\t")
+                }
 
             case "w:br", "br":
                 currentText.append("\n")
@@ -4260,6 +4333,8 @@ private enum DocxTextExtractor {
             switch name {
             case "w:t", "t":
                 inText = false
+            case "w:tabs", "tabs":
+                inTabStopsDefinition = false
             case "w:r", "r":
                 finalizeRun()
             case "w:p", "p":
@@ -4522,7 +4597,20 @@ private enum DocxTextExtractor {
 
                     // Update paragraph style with style definition properties
                     let updatedParagraphStyle = makeParagraphStyle(from: styleDefinition)
-                    paragraphBuffer.addAttribute(.paragraphStyle, value: updatedParagraphStyle, range: NSRange(location: 0, length: paragraphBuffer.length))
+                    if let merged = updatedParagraphStyle.mutableCopy() as? NSMutableParagraphStyle {
+                        // Preserve imported tab stops for TOC/Index leader-dot formatting.
+                        if !paragraph.tabStops.isEmpty {
+                            merged.tabStops = paragraph.tabStops
+                            merged.defaultTabInterval = paragraph.defaultTabInterval
+                        }
+                        // Preserve non-wrapping behavior for TOC/Index lines.
+                        if paragraph.lineBreakMode == .byClipping {
+                            merged.lineBreakMode = .byClipping
+                        }
+                        paragraphBuffer.addAttribute(.paragraphStyle, value: merged.copy() as! NSParagraphStyle, range: NSRange(location: 0, length: paragraphBuffer.length))
+                    } else {
+                        paragraphBuffer.addAttribute(.paragraphStyle, value: updatedParagraphStyle, range: NSRange(location: 0, length: paragraphBuffer.length))
+                    }
                 } else {
                     NSLog("⚠️ Style '\(styleName)' not found in StyleCatalog")
                 }
@@ -4611,6 +4699,7 @@ private enum DocxTextExtractor {
             var tailIndent: CGFloat = 0
             var styleName: String? = "Body Text"  // Default to Body Text for imported paragraphs
             var textBlock: NSTextTableBlock? = nil
+            var tabStops: [NSTextTab] = []
 
             func makeParagraphStyle() -> NSParagraphStyle {
                 let style = NSMutableParagraphStyle()
@@ -4621,11 +4710,20 @@ private enum DocxTextExtractor {
                 style.headIndent = headIndent
                 style.firstLineHeadIndent = headIndent + firstLineIndent
                 style.tailIndent = tailIndent
-                style.lineBreakMode = .byWordWrapping
+                if !tabStops.isEmpty || (styleName?.hasPrefix("TOC") == true) || (styleName?.hasPrefix("Index") == true) {
+                    style.lineBreakMode = .byClipping
+                } else {
+                    style.lineBreakMode = .byWordWrapping
+                }
 
                 // Add text block if this paragraph is part of a table
                 if let block = textBlock {
                     style.textBlocks = [block]
+                }
+
+                // Add tab stops (for TOC/Index formatting)
+                if !tabStops.isEmpty {
+                    style.tabStops = tabStops
                 }
 
                 return style.copy() as! NSParagraphStyle

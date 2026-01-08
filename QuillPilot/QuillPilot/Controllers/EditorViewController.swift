@@ -102,6 +102,91 @@ class EditorViewController: NSViewController {
     // Flag to suppress text change notifications during programmatic edits
     private var suppressTextChangeNotifications: Bool = false
 
+    func repairTOCAndIndexFormattingAfterImport() {
+        guard let storage = textView.textStorage, storage.length > 0 else { return }
+
+        // Match the insertion logic in TOCIndexWindowController.
+        let pageTextWidth: CGFloat = textView.textContainer?.size.width ?? (612 - (72 * 2))
+        let rightPadding: CGFloat = 10
+        let rightTab = pageTextWidth - rightPadding
+
+        let stylesNeedingRightTab: Set<String> = [
+            "TOC Entry",
+            "TOC Entry Level 1",
+            "TOC Entry Level 2",
+            "TOC Entry Level 3",
+            "Index Entry"
+        ]
+
+        // Heuristic: some imports (or retagging) can misclassify TOC/Index entries as other styles
+        // (commonly "Author Name"). Detect by structure: leader dots + tab + trailing page number.
+        let tocLineRegex: NSRegularExpression? = {
+            // Examples:
+            // "Chapter One...............\t12"
+            // "Chapter One\t12" (no leaders)
+            // Keep it conservative: require a TAB and a trailing integer (optionally multiple pages).
+            try? NSRegularExpression(pattern: "\\t\\s*\\d+(?:\\s*,\\s*\\d+)*\\s*$", options: [])
+        }()
+
+        func classifyTOCOrIndex(from paragraph: String, paragraphStyle: NSParagraphStyle) -> String? {
+            let trimmed = paragraph.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard trimmed.contains("\t") else { return nil }
+            guard let regex = tocLineRegex else { return nil }
+            let range = NSRange(location: 0, length: (trimmed as NSString).length)
+            guard regex.firstMatch(in: trimmed, options: [], range: range) != nil else { return nil }
+
+            // Index entries are usually indented; prefer that signal over TOC.
+            let isIndented = (paragraphStyle.headIndent > 10) || (paragraphStyle.firstLineHeadIndent > 10)
+            if isIndented {
+                return "Index Entry"
+            }
+
+            // If it looks like multiple page refs, treat as Index Entry; otherwise TOC Entry.
+            if let last = trimmed.split(separator: "\t").last, last.contains(",") {
+                return "Index Entry"
+            }
+            return "TOC Entry"
+        }
+
+        suppressTextChangeNotifications = true
+        defer { suppressTextChangeNotifications = false }
+
+        let fullString = storage.string as NSString
+        var location = 0
+        storage.beginEditing()
+        defer { storage.endEditing() }
+
+        while location < fullString.length {
+            let paragraphRange = fullString.paragraphRange(for: NSRange(location: location, length: 0))
+            guard paragraphRange.length > 0 else { break }
+
+            let existingStyleName = storage.attribute(styleAttributeKey, at: paragraphRange.location, effectiveRange: nil) as? String
+            let paragraphText = fullString.substring(with: paragraphRange)
+            let existingParagraphStyle = (storage.attribute(.paragraphStyle, at: paragraphRange.location, effectiveRange: nil) as? NSParagraphStyle) ?? NSParagraphStyle.default
+
+            let inferredTOCStyle = classifyTOCOrIndex(from: paragraphText, paragraphStyle: existingParagraphStyle)
+            let shouldRepair = (existingStyleName != nil && stylesNeedingRightTab.contains(existingStyleName!)) || inferredTOCStyle != nil
+
+            if shouldRepair {
+                let existing = (storage.attribute(.paragraphStyle, at: paragraphRange.location, effectiveRange: nil) as? NSParagraphStyle) ?? NSParagraphStyle.default
+                let merged = (existing.mutableCopy() as? NSMutableParagraphStyle) ?? NSMutableParagraphStyle()
+
+                merged.lineBreakMode = .byClipping
+                merged.tabStops = [NSTextTab(textAlignment: .right, location: rightTab, options: [:])]
+
+                storage.addAttribute(.paragraphStyle, value: merged.copy() as! NSParagraphStyle, range: paragraphRange)
+
+                // If this paragraph was mis-tagged (e.g., as "Author Name"), fix the tag so the UI
+                // and later operations treat it as TOC/Index content.
+                if let inferredTOCStyle {
+                    storage.addAttribute(styleAttributeKey, value: inferredTOCStyle, range: paragraphRange)
+                }
+            }
+
+            location = NSMaxRange(paragraphRange)
+        }
+    }
+
     // Helper to register undo/redo and notify text system
     private func replaceCharacters(in range: NSRange, with attributed: NSAttributedString, undoPlaceholder: String) {
         guard let storage = textView.textStorage else { return }
@@ -1830,10 +1915,20 @@ class EditorViewController: NSViewController {
             // Infer style based on font, paragraph attributes, and text content
             let styleName = inferStyle(font: font, paragraphStyle: paragraphStyle, text: paragraphText)
 
-            if let definition = StyleCatalog.shared.style(named: styleName) {
-                // Tag the paragraph
-                mutable.addAttribute(styleAttributeKey, value: styleName, range: paragraphRange)
+            // Tag the paragraph with the style name
+            mutable.addAttribute(styleAttributeKey, value: styleName, range: paragraphRange)
 
+            // For TOC/Index entries, preserve ALL existing formatting (especially tab stops)
+            // These have custom formatting that shouldn't be overwritten by catalog styles
+            let preserveFormattingStyles = ["TOC Entry", "TOC Entry Level 1", "TOC Entry Level 2", "TOC Entry Level 3",
+                                           "Index Entry", "Index Letter"]
+            if preserveFormattingStyles.contains(styleName) {
+                // Just tag it, don't modify any attributes
+                location = NSMaxRange(paragraphRange)
+                continue
+            }
+
+            if let definition = StyleCatalog.shared.style(named: styleName) {
                 // Apply catalog style colors and formatting to make them visible immediately
                 let catalogParagraph = self.paragraphStyle(from: definition)
                 let catalogFont = self.font(from: definition)
@@ -1875,6 +1970,26 @@ class EditorViewController: NSViewController {
         let trimmedText = text.trimmingCharacters(in: .whitespacesAndNewlines)
         let fontTraits = NSFontManager.shared.traits(of: font)
         let isBold = fontTraits.contains(.boldFontMask)
+
+        // Tab + trailing page number(s) -> TOC or Index entry.
+        // This is more reliable than font-based matching after DOCX round-trips.
+        if trimmedText.contains("\t") {
+            let parts = trimmedText.split(separator: "\t", omittingEmptySubsequences: false)
+            if parts.count >= 2 {
+                let lastPart = parts.last.map { String($0).trimmingCharacters(in: .whitespacesAndNewlines) } ?? ""
+                let digitsAndCommas = CharacterSet(charactersIn: "0123456789, ")
+                if !lastPart.isEmpty && lastPart.unicodeScalars.allSatisfy({ digitsAndCommas.contains($0) }) {
+                    // Prefer indentation as an Index indicator.
+                    if paragraphStyle.firstLineHeadIndent > 10 || paragraphStyle.headIndent > 10 {
+                        return "Index Entry"
+                    }
+                    if lastPart.contains(",") {
+                        return "Index Entry"
+                    }
+                    return "TOC Entry"
+                }
+            }
+        }
 
         // Single uppercase letter with bold formatting -> Index Letter
         if trimmedText.count == 1 && trimmedText.first?.isUppercase == true && isBold {

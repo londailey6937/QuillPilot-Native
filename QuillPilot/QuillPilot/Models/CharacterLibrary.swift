@@ -123,7 +123,7 @@ class CharacterLibrary {
     /// Load characters for a specific document
     func loadCharacters(for documentURL: URL?) {
         guard let documentURL = documentURL else {
-            NSLog("📚 No document URL provided, starting with empty library")
+            DebugLog.log("📚 No document URL provided, starting with empty library")
             characters = []
             currentDocumentURL = nil
             NotificationCenter.default.post(name: .characterLibraryDidChange, object: nil)
@@ -137,10 +137,10 @@ class CharacterLibrary {
             let data = try Data(contentsOf: charactersFile)
             let decoded = try JSONDecoder().decode([CharacterProfile].self, from: data)
             characters = decoded
-            NSLog("📚 Loaded \(characters.count) characters from \(charactersFile.lastPathComponent)")
+            DebugLog.log("📚 Loaded \(characters.count) characters from \(charactersFile.lastPathComponent)")
         } catch {
             // If no saved characters for this document, start with empty library
-            NSLog("📚 No existing characters file for document, starting fresh")
+            DebugLog.log("📚 No existing characters file for document, starting fresh")
             characters = []
         }
 
@@ -150,7 +150,7 @@ class CharacterLibrary {
     /// Save characters for the current document
     func saveCharacters() {
         guard let documentURL = currentDocumentURL else {
-            NSLog("⚠️ Cannot save characters - no document URL set")
+            DebugLog.log("⚠️ Cannot save characters - no document URL set")
             return
         }
 
@@ -159,9 +159,9 @@ class CharacterLibrary {
         do {
             let data = try JSONEncoder().encode(characters)
             try data.write(to: charactersFile, options: .atomic)
-            NSLog("📚 Saved \(characters.count) characters to \(charactersFile.lastPathComponent)")
+            DebugLog.log("📚 Saved \(characters.count) characters to \(charactersFile.lastPathComponent)")
         } catch {
-            NSLog("❌ Error saving characters: \(error.localizedDescription)")
+            DebugLog.log("❌ Error saving characters: \(error.localizedDescription)")
         }
     }
 
@@ -169,7 +169,7 @@ class CharacterLibrary {
     func setDocumentURL(_ url: URL?) {
         currentDocumentURL = url
         if let url = url {
-            NSLog("📚 Document URL updated to \(url.lastPathComponent)")
+            DebugLog.log("📚 Document URL updated to \(url.lastPathComponent)")
         }
     }
 
@@ -203,7 +203,7 @@ class CharacterLibrary {
 
     /// Clear all characters for a new document (for backward compatibility)
     func clearForNewDocument() {
-        NSLog("📚 CharacterLibrary: Clearing characters for new document")
+        DebugLog.log("📚 CharacterLibrary: Clearing characters for new document")
         loadCharacters(for: nil)
     }
 }

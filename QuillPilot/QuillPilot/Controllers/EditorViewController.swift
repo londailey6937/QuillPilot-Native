@@ -2256,7 +2256,7 @@ class EditorViewController: NSViewController {
         let paragraphSepCount = text.components(separatedBy: "\u{2029}").count - 1
         let lineSepCount = text.components(separatedBy: "\u{2028}").count - 1
 
-        print("DEBUG: Document has \(newlineCount) newlines, \(crCount) carriage returns, \(paragraphSepCount) paragraph separators, \(lineSepCount) line separators")
+        DebugLog.log("DEBUG: Document has \(newlineCount) newlines, \(crCount) carriage returns, \(paragraphSepCount) paragraph separators, \(lineSepCount) line separators")
 
         // Try multiple patterns to catch different types of blank lines
         // Pattern 1: Standard newlines with optional whitespace
@@ -2273,7 +2273,7 @@ class EditorViewController: NSViewController {
         for pattern in patterns {
             guard let regex = try? NSRegularExpression(pattern: pattern) else { continue }
             let matches = regex.matches(in: text, range: NSRange(location: 0, length: text.count))
-            print("DEBUG: Pattern '\(pattern)' found \(matches.count) matches")
+            DebugLog.log("DEBUG: Pattern '\(pattern)' found \(matches.count) matches")
 
             for match in matches {
                 // Keep only 1 line break, delete the rest
@@ -2289,7 +2289,7 @@ class EditorViewController: NSViewController {
             }
         }
 
-        print("DEBUG: Total ranges to delete: \(rangesToDelete.count)")
+        DebugLog.log("DEBUG: Total ranges to delete: \(rangesToDelete.count)")
 
         if rangesToDelete.isEmpty {
             // Show what characters are around visible blank areas
@@ -2460,7 +2460,7 @@ class EditorViewController: NSViewController {
                 // Change cursor to indicate format painter is active
                 NSCursor.crosshair.push()
 
-                NSLog("Format Painter activated - copied formatting")
+                DebugLog.log("Format Painter activated - copied formatting")
             } else {
                 // No selection, show alert
                 showThemedAlert(title: "Format Painter", message: "Select text with the formatting you want to copy first.")
@@ -2475,7 +2475,7 @@ class EditorViewController: NSViewController {
         formatPainterActive = false
         copiedAttributes = nil
         NSCursor.pop()
-        NSLog("Format Painter deactivated")
+        DebugLog.log("Format Painter deactivated")
     }
 
     private func applyFormatPainterToSelection() {
@@ -2496,7 +2496,7 @@ class EditorViewController: NSViewController {
 
         textStorage.endEditing()
 
-        NSLog("Format Painter applied to selection")
+        DebugLog.log("Format Painter applied to selection")
 
         // Deactivate after one use
         deactivateFormatPainter()
@@ -3329,12 +3329,12 @@ case "Book Subtitle":
 
     func buildOutlineEntries() -> [OutlineEntry] {
         guard let storage = textView.textStorage, let layoutManager = textView.layoutManager, let textContainer = textView.textContainer else {
-            NSLog("📋🔍 buildOutlineEntries: Missing required components")
+            DebugLog.log("📋🔍 buildOutlineEntries: Missing required components")
             return []
         }
 
-        NSLog("📋🔍 buildOutlineEntries: Starting scan of \(storage.length) characters")
-        NSLog("📋🔍 styleAttributeKey: \(styleAttributeKey)")
+        DebugLog.log("📋🔍 buildOutlineEntries: Starting scan of \(storage.length) characters")
+        DebugLog.log("📋🔍 styleAttributeKey: \(styleAttributeKey)")
 
         let levels: [String: Int] = [
             "Part Title": 0,
@@ -3373,7 +3373,7 @@ case "Book Subtitle":
                         let pageIndex = max(0, Int(floor(bounds.midY / (scaledPageHeight + pageGap)))) + 1
                         results.append(OutlineEntry(title: rawTitle, level: level, range: paragraphRange, page: pageIndex))
                         if results.count <= 3 {
-                            NSLog("📋✅ Found: '\(rawTitle)' style='\(styleName)' level=\(level)")
+                            DebugLog.log("📋✅ Found: '\(rawTitle)' style='\(styleName)' level=\(level)")
                         }
                     }
                 }
@@ -3382,9 +3382,9 @@ case "Book Subtitle":
             location = NSMaxRange(paragraphRange)
         }
 
-        NSLog("📋🔍 Scanned \(paragraphCount) paragraphs, found \(stylesFound.count) unique styles")
-        NSLog("📋🔍 Styles present: \(stylesFound.sorted())")
-        NSLog("📋🔍 Outline entries found: \(results.count)")
+        DebugLog.log("📋🔍 Scanned \(paragraphCount) paragraphs, found \(stylesFound.count) unique styles")
+        DebugLog.log("📋🔍 Styles present: \(stylesFound.sorted())")
+        DebugLog.log("📋🔍 Outline entries found: \(results.count)")
 
         return results
     }
@@ -3394,7 +3394,7 @@ case "Book Subtitle":
         guard let storage = textView.textStorage,
               let layoutManager = textView.layoutManager,
               let textContainer = textView.textContainer else {
-            NSLog("📄 buildPageMapping: Missing text storage/layout manager")
+                        DebugLog.log("📄 buildPageMapping: Missing text storage/layout manager")
             return []
         }
 
@@ -3402,14 +3402,14 @@ case "Book Subtitle":
         let totalLength = storage.length
 
         guard totalLength > 0 else {
-            NSLog("📄 buildPageMapping: Empty document")
+            DebugLog.log("📄 buildPageMapping: Empty document")
             return []
         }
 
         // Force layout to complete before we try to get page numbers
-        NSLog("📄 buildPageMapping: Forcing layout for \(totalLength) characters...")
+        DebugLog.log("📄 buildPageMapping: Forcing layout for \(totalLength) characters...")
         layoutManager.ensureLayout(for: textContainer)
-        NSLog("📄 buildPageMapping: Layout complete, starting sampling...")
+        DebugLog.log("📄 buildPageMapping: Layout complete, starting sampling...")
 
         // Sample every 500 characters for better accuracy (reduced from 1000)
         let sampleInterval = 500
@@ -3428,10 +3428,10 @@ case "Book Subtitle":
             mapping.append((location: totalLength - 1, page: lastPageNum))
         }
 
-        NSLog("📄 buildPageMapping: Created \(mapping.count) page mapping entries for \(totalLength) characters")
+        DebugLog.log("📄 buildPageMapping: Created \(mapping.count) page mapping entries for \(totalLength) characters")
         if !mapping.isEmpty {
-            NSLog("📄 First entry: location=\(mapping.first!.location) page=\(mapping.first!.page)")
-            NSLog("📄 Last entry: location=\(mapping.last!.location) page=\(mapping.last!.page)")
+            DebugLog.log("📄 First entry: location=\(mapping.first!.location) page=\(mapping.first!.page)")
+            DebugLog.log("📄 Last entry: location=\(mapping.last!.location) page=\(mapping.last!.page)")
         }
         return mapping
     }
@@ -3841,13 +3841,13 @@ case "Book Subtitle":
     }
 
     func setColumnCount(_ columns: Int) {
-        NSLog("setColumnCount called with \(columns)")
+        DebugLog.log("setColumnCount called with \(columns)")
         guard columns >= 2, columns <= 4 else {
-            NSLog("setColumnCount: columns out of range (must be 2-4)")
+            DebugLog.log("setColumnCount: columns out of range (must be 2-4)")
             return
         }
         guard let textStorage = textView.textStorage else {
-            NSLog("setColumnCount: no textStorage")
+            DebugLog.log("setColumnCount: no textStorage")
             return
         }
 
@@ -3855,7 +3855,7 @@ case "Book Subtitle":
         textView.window?.makeFirstResponder(textView)
 
         let currentRange = textView.selectedRange()
-        NSLog("setColumnCount: inserting at location \(currentRange.location)")
+        DebugLog.log("setColumnCount: inserting at location \(currentRange.location)")
 
         // Suppress text change notifications during column insertion to prevent hang
         suppressTextChangeNotifications = true
@@ -3934,7 +3934,7 @@ case "Book Subtitle":
         // Manually trigger a single text change notification now that insertion is complete
         delegate?.textDidChange()
 
-        NSLog("setColumnCount: columns inserted successfully")
+        DebugLog.log("setColumnCount: columns inserted successfully")
     }
 
     /// Add one column to an existing column layout (up to max of 4)
@@ -3957,7 +3957,7 @@ case "Book Subtitle":
         let currentColumns = existingTable.numberOfColumns
 
         guard currentColumns < 4 else {
-            NSLog("addColumnToExisting: already at max columns (4)")
+            DebugLog.log("addColumnToExisting: already at max columns (4)")
             return
         }
 
@@ -4067,19 +4067,19 @@ case "Book Subtitle":
         // Replace the old column layout with the new one
         textStorage.replaceCharacters(in: columnRange, with: result)
         textView.setSelectedRange(NSRange(location: startLocation + 1, length: 0))
-        NSLog("addColumnToExisting: expanded from \(currentColumns) to \(newColumnCount) columns")
+        DebugLog.log("addColumnToExisting: expanded from \(currentColumns) to \(newColumnCount) columns")
     }
 
     // MARK: - Table System (separate from columns)
 
     func insertTable(rows: Int, columns: Int) {
-        NSLog("insertTable called with rows=\(rows), columns=\(columns)")
+        DebugLog.log("insertTable called with rows=\(rows), columns=\(columns)")
         guard rows >= 1, rows <= 10, columns >= 1, columns <= 6 else {
-            NSLog("insertTable: rows/columns out of range")
+            DebugLog.log("insertTable: rows/columns out of range")
             return
         }
         guard let textStorage = textView.textStorage else {
-            NSLog("insertTable: no textStorage")
+            DebugLog.log("insertTable: no textStorage")
             return
         }
 
@@ -4087,7 +4087,7 @@ case "Book Subtitle":
         textView.window?.makeFirstResponder(textView)
 
         let currentRange = textView.selectedRange()
-        NSLog("insertTable: inserting at location \(currentRange.location)")
+        DebugLog.log("insertTable: inserting at location \(currentRange.location)")
         let borderColor = (ThemeManager.shared.currentTheme.headerBackground).withAlphaComponent(0.5)
 
         let result = NSMutableAttributedString()
@@ -4154,7 +4154,7 @@ case "Book Subtitle":
         // Manually trigger a single text change notification
         delegate?.textDidChange()
 
-        NSLog("insertTable: table inserted successfully")
+        DebugLog.log("insertTable: table inserted successfully")
     }
 
     // MARK: - Table Editing Methods
@@ -4317,7 +4317,7 @@ case "Book Subtitle":
         guard let paragraphStyle = attrs[.paragraphStyle] as? NSParagraphStyle,
               let textBlocks = paragraphStyle.textBlocks as? [NSTextTableBlock],
               let currentBlock = textBlocks.first else {
-            NSLog("No table column found at cursor position")
+                        DebugLog.log("No table column found at cursor position")
             return
         }
 
@@ -4325,7 +4325,7 @@ case "Book Subtitle":
         let columnToDelete = currentBlock.startingColumn
         let totalColumns = table.numberOfColumns
 
-        NSLog("Deleting column \(columnToDelete) from table with \(totalColumns) columns")
+        DebugLog.log("Deleting column \(columnToDelete) from table with \(totalColumns) columns")
 
         // Find all paragraphs in the table first
         let fullString = textStorage.string as NSString
@@ -4356,7 +4356,7 @@ case "Book Subtitle":
 
         // If this would leave only one column or fewer, convert to body text
         if totalColumns <= 2 {
-            NSLog("Converting table to body text (only \(totalColumns - 1) column(s) would remain)")
+            DebugLog.log("Converting table to body text (only \(totalColumns - 1) column(s) would remain)")
 
             // Create standard body text paragraph style
             let bodyParagraphStyle = NSMutableParagraphStyle()

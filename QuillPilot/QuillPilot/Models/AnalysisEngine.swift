@@ -824,8 +824,8 @@ class AnalysisEngine {
         let library = CharacterLibrary.shared
         let validCharacterNames: [String]
 
-        NSLog("📊 analyzeCharacterArcs: Input characterNames = \(characterNames)")
-        NSLog("📊 analyzeCharacterArcs: Library has \(library.characters.count) characters")
+        DebugLog.log("📊 analyzeCharacterArcs: Input characterNames = \(characterNames)")
+        DebugLog.log("📊 analyzeCharacterArcs: Library has \(library.characters.count) characters")
 
         if !library.characters.isEmpty {
             // Filter to only include characters that exist in the library
@@ -834,18 +834,18 @@ class AnalysisEngine {
                 guard !fullName.isEmpty else { return nil }
                 return fullName.components(separatedBy: .whitespaces).first
             }
-            NSLog("📊 analyzeCharacterArcs: Library first names = \(libraryFirstNames)")
+            DebugLog.log("📊 analyzeCharacterArcs: Library first names = \(libraryFirstNames)")
             validCharacterNames = characterNames.filter { libraryFirstNames.contains($0) }
-            NSLog("📊 analyzeCharacterArcs: Valid character names after filtering = \(validCharacterNames)")
+            DebugLog.log("📊 analyzeCharacterArcs: Valid character names after filtering = \(validCharacterNames)")
         } else {
             // No library = no character analysis
             validCharacterNames = []
-            NSLog("📊 analyzeCharacterArcs: No library characters, returning empty")
+            DebugLog.log("📊 analyzeCharacterArcs: No library characters, returning empty")
         }
 
         // If no valid characters after filtering, return empty results
         guard !validCharacterNames.isEmpty else {
-            NSLog("📊 analyzeCharacterArcs: No valid characters, returning empty arrays")
+            DebugLog.log("📊 analyzeCharacterArcs: No valid characters, returning empty arrays")
             return ([], [], [])
         }
 
@@ -856,7 +856,7 @@ class AnalysisEngine {
         let interactions = analyzer.analyzeInteractions(text: text, characterNames: validCharacterNames)
         let presence = analyzer.analyzePresenceByChapter(text: text, characterNames: validCharacterNames, outlineEntries: outlineEntries)
 
-        NSLog("📊 analyzeCharacterArcs: Returning \(loops.count) loops, \(interactions.count) interactions, \(presence.count) presence entries")
+        DebugLog.log("📊 analyzeCharacterArcs: Returning \(loops.count) loops, \(interactions.count) interactions, \(presence.count) presence entries")
 
         return (loops, interactions, presence)
     }

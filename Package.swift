@@ -33,6 +33,7 @@ let package = Package(
                 "Models/Chapter.swift",
                 "Models/SceneManager.swift",
                 "Utilities/ThemeManager.swift",
+                "Utilities/DebugLog.swift",
                 "Utilities/StyleCatalog.swift",
                 "Extensions/NSColor+Hex.swift",
                 "Extensions/NSAlert+Themed.swift",

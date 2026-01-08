@@ -266,7 +266,7 @@ class MainWindowController: NSWindowController {
         }
 
         let hasWindow = pageContainer.window != nil
-        NSLog("Preparing print. pageContainer frame: \(pageContainer.frame) bounds: \(pageContainer.bounds) inWindow: \(hasWindow)")
+        debugLog("Preparing print. pageContainer frame: \(pageContainer.frame) bounds: \(pageContainer.bounds) inWindow: \(hasWindow)")
         guard hasWindow else {
             presentErrorAlert(message: "Print Failed", details: "Document view is not in a window")
             return
@@ -277,18 +277,18 @@ class MainWindowController: NSWindowController {
         printInfoCopy.jobDisposition = .spool
 
         let printers = NSPrinter.printerNames
-        NSLog("Available printers: \(printers)")
+        debugLog("Available printers: \(printers)")
 
         // Try the user-reported printer name first
         if let userPrinter = NSPrinter(name: "HP LaserJet M110w (8C17D0)") {
             printInfoCopy.printer = userPrinter
-            NSLog("Using user-specified printer: HP LaserJet M110w (8C17D0)")
+            debugLog("Using user-specified printer: HP LaserJet M110w (8C17D0)")
         } else if let hp = printers.first(where: { $0.localizedCaseInsensitiveContains("HP") }) ?? printers.first,
                   let chosen = NSPrinter(name: hp) {
             printInfoCopy.printer = chosen
-            NSLog("Using discovered printer: \(hp)")
+            debugLog("Using discovered printer: \(hp)")
         } else {
-            NSLog("No printer assigned; proceeding with default printInfo.printer")
+            debugLog("No printer assigned; proceeding with default printInfo.printer")
         }
 
         let printOperation = NSPrintOperation(view: pageContainer, printInfo: printInfoCopy)
@@ -298,9 +298,9 @@ class MainWindowController: NSWindowController {
 
         activePrintOperation = printOperation // keep alive while printing
         let printerName = printOperation.printInfo.printer.name
-        NSLog("Starting print operation (printer: \(printerName), shows panel: \(printOperation.showsPrintPanel), shows progress: \(printOperation.showsProgressPanel))")
+        debugLog("Starting print operation (printer: \(printerName), shows panel: \(printOperation.showsPrintPanel), shows progress: \(printOperation.showsProgressPanel))")
         let success = printOperation.run()
-        NSLog("NSPrintOperation.run returned: \(success)")
+        debugLog("NSPrintOperation.run returned: \(success)")
         activePrintOperation = nil
     }
 
@@ -373,12 +373,21 @@ class MainWindowController: NSWindowController {
     }
 }
 
+// MARK: - Debug Logging
+
+private extension MainWindowController {
+    @inline(__always)
+    func debugLog(_ message: @autoclosure () -> String) {
+        DebugLog.log(message())
+    }
+}
+
 // MARK: - Menu Item Validation
 extension MainWindowController: NSMenuItemValidation {
     func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
         if menuItem.action == #selector(printDocument(_:)) {
             let isValid = mainContentViewController != nil
-            NSLog("MainWindowController validateMenuItem for Print: \(isValid)")
+            debugLog("MainWindowController validateMenuItem for Print: \(isValid)")
             return isValid
         }
         return true
@@ -747,7 +756,7 @@ extension MainWindowController: FormattingToolbarDelegate {
     @objc private func handleSetColumnsFromSheet(_ sender: NSButton) {
         guard let columnsField = self.columnsSheetField else { return }
         let clamped = max(2, min(4, Int(columnsField.stringValue) ?? 2))
-        NSLog("handleSetColumnsFromSheet: field value='\(columnsField.stringValue)' clamped=\(clamped)")
+        debugLog("handleSetColumnsFromSheet: field value='\(columnsField.stringValue)' clamped=\(clamped)")
 
         // Close sheet first, then insert after window becomes key
         if let window = sender.window {
@@ -780,7 +789,7 @@ extension MainWindowController: FormattingToolbarDelegate {
     @objc private func handleCloseColumnsSheet(_ sender: NSButton) {
         guard let window = sender.window else { return }
         let clamped = max(2, min(4, Int(self.columnsSheetField?.stringValue ?? "2") ?? 2))
-        NSLog("handleCloseColumnsSheet: field value='\(self.columnsSheetField?.stringValue ?? "nil")' clamped=\(clamped)")
+        debugLog("handleCloseColumnsSheet: field value='\(self.columnsSheetField?.stringValue ?? "nil")' clamped=\(clamped)")
 
         self.window?.endSheet(window)
         self.columnsSheetField = nil
@@ -795,7 +804,7 @@ extension MainWindowController: FormattingToolbarDelegate {
 
         let rows = max(1, min(10, Int(rowsField.stringValue) ?? 3))
         let cols = max(1, min(6, Int(colsField.stringValue) ?? 3))
-        NSLog("handleInsertTableFromSheet: rows='\(rowsField.stringValue)'->\(rows) cols='\(colsField.stringValue)'->\(cols)")
+        debugLog("handleInsertTableFromSheet: rows='\(rowsField.stringValue)'->\(rows) cols='\(colsField.stringValue)'->\(cols)")
 
         // Close sheet first, then insert after window becomes key
         if let window = sender.window {
@@ -812,7 +821,7 @@ extension MainWindowController: FormattingToolbarDelegate {
         guard let window = sender.window else { return }
         let rows = max(1, min(10, Int(self.tableRowsSheetField?.stringValue ?? "3") ?? 3))
         let cols = max(1, min(6, Int(self.tableColsSheetField?.stringValue ?? "3") ?? 3))
-        NSLog("handleCloseTableSheet: rows='\(self.tableRowsSheetField?.stringValue ?? "nil")'->\(rows) cols='\(self.tableColsSheetField?.stringValue ?? "nil")'->\(cols)")
+        debugLog("handleCloseTableSheet: rows='\(self.tableRowsSheetField?.stringValue ?? "nil")'->\(rows) cols='\(self.tableColsSheetField?.stringValue ?? "nil")'->\(cols)")
 
         self.window?.endSheet(window)
         self.tableRowsSheetField = nil
@@ -965,7 +974,7 @@ extension MainWindowController {
                 let stamped = stampImageSizes(in: mainContentViewController.editorExportReadyAttributedContent())
                 let data = try DocxBuilder.makeDocxData(from: stamped)
                 try data.write(to: url, options: .atomic)
-                NSLog("✅ DOCX exported to \(url.path)")
+                debugLog("✅ DOCX exported to \(url.path)")
 
                 // Update document URL for character library (but don't auto-save)
                 CharacterLibrary.shared.setDocumentURL(url)
@@ -976,25 +985,25 @@ extension MainWindowController {
                 let fullRange = NSRange(location: 0, length: content.length)
                 let data = try content.data(from: fullRange, documentAttributes: [.documentType: NSAttributedString.DocumentType.rtf])
                 try data.write(to: url, options: .atomic)
-                NSLog("✅ RTF exported to \(url.path)")
+                debugLog("✅ RTF exported to \(url.path)")
 
             case .rtfd:
                 // Export to RTFD (includes attachments/images)
                 let data = try mainContentViewController.editorViewController.rtfdData()
                 try data.write(to: url, options: .atomic)
-                NSLog("✅ RTFD exported to \(url.path)")
+                debugLog("✅ RTFD exported to \(url.path)")
 
             case .txt:
                 // Export to plain text
                 let text = mainContentViewController.editorViewController.plainTextContent()
                 try text.write(to: url, atomically: true, encoding: .utf8)
-                NSLog("✅ TXT exported to \(url.path)")
+                debugLog("✅ TXT exported to \(url.path)")
 
             case .markdown:
                 // Export to Markdown (currently plain-text export)
                 let text = mainContentViewController.editorViewController.plainTextContent()
                 try text.write(to: url, atomically: true, encoding: .utf8)
-                NSLog("✅ Markdown exported to \(url.path)")
+                debugLog("✅ Markdown exported to \(url.path)")
 
             case .html:
                 // Export to HTML
@@ -1002,31 +1011,31 @@ extension MainWindowController {
                 let fullRange = NSRange(location: 0, length: content.length)
                 let data = try content.data(from: fullRange, documentAttributes: [.documentType: NSAttributedString.DocumentType.html])
                 try data.write(to: url, options: .atomic)
-                NSLog("✅ HTML exported to \(url.path)")
+                debugLog("✅ HTML exported to \(url.path)")
 
             case .pdf:
                 // Export to PDF
                 let data = mainContentViewController.editorPDFData()
                 try data.write(to: url, options: .atomic)
-                NSLog("✅ PDF exported to \(url.path)")
+                debugLog("✅ PDF exported to \(url.path)")
 
             case .epub:
                 // Export to ePub
                 let content = mainContentViewController.editorExportReadyAttributedContent()
                 let epubData = try self.generateEPub(from: content, url: url)
                 try epubData.write(to: url, options: Data.WritingOptions.atomic)
-                NSLog("✅ ePub exported to \(url.path)")
+                debugLog("✅ ePub exported to \(url.path)")
 
             case .mobi:
                 // Export to Mobi (Kindle format)
                 let content = mainContentViewController.editorExportReadyAttributedContent()
                 let mobiData = try self.generateMobi(from: content, url: url)
                 try mobiData.write(to: url, options: Data.WritingOptions.atomic)
-                NSLog("✅ Mobi exported to \(url.path)")
+                debugLog("✅ Mobi exported to \(url.path)")
             }
             hasUnsavedChanges = false
         } catch {
-            NSLog("❌ Save failed: \(error.localizedDescription)")
+            debugLog("❌ Save failed: \(error.localizedDescription)")
             self.presentErrorAlert(message: "Save failed", details: error.localizedDescription)
         }
     }
@@ -1047,7 +1056,7 @@ extension MainWindowController {
 
         // Silently save in background
         saveToURL(url, format: currentDocumentFormat)
-        NSLog("💾 Auto-saved to \(url.lastPathComponent)")
+        debugLog("💾 Auto-saved to \(url.lastPathComponent)")
     }
 
     func markDocumentDirty() {
@@ -1066,13 +1075,13 @@ extension MainWindowController {
                 let storedBounds = NSRectFromString(sizeString)
                 if storedBounds.width > 0 && storedBounds.height > 0 {
                     attachment.bounds = storedBounds
-                    NSLog("📷 Restored image size: \(storedBounds.width) x \(storedBounds.height)")
+                    debugLog("📷 Restored image size: \(storedBounds.width) x \(storedBounds.height)")
                 }
             } else if let filename = attachment.fileWrapper?.preferredFilename,
                       let parsedSize = parseImageSize(from: filename) {
                 let bounds = CGRect(origin: .zero, size: parsedSize)
                 attachment.bounds = bounds
-                NSLog("📷 Restored image size from filename: \(bounds.width) x \(bounds.height)")
+                debugLog("📷 Restored image size from filename: \(bounds.width) x \(bounds.height)")
             }
         }
 
@@ -1146,13 +1155,13 @@ extension MainWindowController {
 
     @MainActor
     func performOpenDocument(_ sender: Any?) {
-        NSLog("MainWindowController.performOpenDocument called")
+        debugLog("MainWindowController.performOpenDocument called")
         guard let window else {
-            NSLog("ERROR: window is nil in performOpenDocument")
+            debugLog("ERROR: window is nil in performOpenDocument")
             return
         }
 
-        NSLog("Creating NSOpenPanel")
+        debugLog("Creating NSOpenPanel")
         let panel = NSOpenPanel()
         panel.canChooseFiles = true
         panel.canChooseDirectories = false
@@ -1189,12 +1198,12 @@ extension MainWindowController {
             panel.allowedContentTypes = allowedTypes
         }
 
-        NSLog("Allowed content types: \(allowedTypes.map { $0.identifier })")
+        debugLog("Allowed content types: \(allowedTypes.map { $0.identifier })")
 
         panel.beginSheetModal(for: window) { response in
-            NSLog("Open panel response: \(response.rawValue)")
+            self.debugLog("Open panel response: \(response.rawValue)")
             guard response == .OK, let url = panel.url else { return }
-            NSLog("About to import file: \(url.path)")
+            self.debugLog("About to import file: \(url.path)")
             do {
                 try self.importFile(url: url)
             } catch {
@@ -1237,31 +1246,31 @@ extension MainWindowController {
         closeAndClearTOCIndexWindowForDocumentChange()
 
         // Clear the document and analysis
-        NSLog("🆕 NEW DOCUMENT: Clearing editor content")
+        debugLog("🆕 NEW DOCUMENT: Clearing editor content")
         mainContentViewController.editorViewController.clearAll()
 
-        NSLog("🆕 NEW DOCUMENT: Clearing analysis")
+        debugLog("🆕 NEW DOCUMENT: Clearing analysis")
         mainContentViewController.clearAnalysis()
 
         // Clear TOC and Index entries for new document
-        NSLog("🆕 NEW DOCUMENT: Clearing TOC and Index")
+        debugLog("🆕 NEW DOCUMENT: Clearing TOC and Index")
 
         // Clear search panel fields
         searchPanel?.clearFields()
 
         // Clear Character Library for the new document
-        NSLog("🆕 NEW DOCUMENT: Starting fresh character library")
+        debugLog("🆕 NEW DOCUMENT: Starting fresh character library")
         CharacterLibrary.shared.loadCharacters(for: nil)
 
         // Notify that document changed (clears analysis popouts)
-        NSLog("🆕 NEW DOCUMENT: Notifying document changed")
+        debugLog("🆕 NEW DOCUMENT: Notifying document changed")
         mainContentViewController.documentDidChange(url: nil)
 
         // Reset the current file path and window title
         currentDocumentURL = nil
         hasUnsavedChanges = false
         window?.title = "QuillPilot"
-        NSLog("🆕 NEW DOCUMENT: Complete")
+        debugLog("🆕 NEW DOCUMENT: Complete")
     }
 
     private func exportData(format: ExportFormat) throws -> Data {
@@ -1299,23 +1308,23 @@ extension MainWindowController {
     }
 
     private func importFile(url: URL) throws {
-        NSLog("=== importFile called with: \(url.path) ===")
+        debugLog("=== importFile called with: \(url.path) ===")
         let ext = url.pathExtension.lowercased()
-        NSLog("File extension: \(ext)")
+        debugLog("File extension: \(ext)")
 
         closeAndClearTOCIndexWindowForDocumentChange()
 
         // Clear TOC and Index entries before loading new document
-        NSLog("📂 OPENING DOCUMENT: Clearing TOC and Index")
+        debugLog("📂 OPENING DOCUMENT: Clearing TOC and Index")
 
         // Clear search panel fields
         searchPanel?.clearFields()
 
         // Load characters for this document
-        NSLog("📂 OPENING DOCUMENT: Loading characters for document")
+        debugLog("📂 OPENING DOCUMENT: Loading characters for document")
         CharacterLibrary.shared.loadCharacters(for: url)
 
-        NSLog("📂 OPENING DOCUMENT: Clearing analysis")
+        debugLog("📂 OPENING DOCUMENT: Clearing analysis")
         mainContentViewController.clearAnalysis()
 
         // Support multiple formats
@@ -1360,37 +1369,37 @@ extension MainWindowController {
 
                 // Get file size for logging
                 let fileSize = (try? FileManager.default.attributesOfItem(atPath: url.path)[.size] as? Int) ?? 0
-                NSLog("📄 File size: \(fileSize) bytes (\(fileSize / 1024 / 1024) MB)")
+                self?.debugLog("📄 File size: \(fileSize) bytes (\(fileSize / 1024 / 1024) MB)")
 
                 // Parse in background, set content directly on main thread
-                NSLog("📄 Starting DOCX extraction for: \(url.lastPathComponent)")
+                self?.debugLog("📄 Starting DOCX extraction for: \(url.lastPathComponent)")
                 let startTime = CFAbsoluteTimeGetCurrent()
                 do {
-                    NSLog("📄 Reading file data...")
+                    self?.debugLog("📄 Reading file data...")
                     let data = try Data(contentsOf: url)
-                    NSLog("📄 File data read: \(data.count) bytes in \(CFAbsoluteTimeGetCurrent() - startTime)s")
+                    self?.debugLog("📄 File data read: \(data.count) bytes in \(CFAbsoluteTimeGetCurrent() - startTime)s")
 
                     let parseStart = CFAbsoluteTimeGetCurrent()
-                    NSLog("📄 Starting XML parsing...")
+                    self?.debugLog("📄 Starting XML parsing...")
                     let attributedString = try DocxTextExtractor.extractAttributedString(fromDocxData: data)
-                    NSLog("📄 Parsing complete: \(attributedString.length) chars in \(CFAbsoluteTimeGetCurrent() - parseStart)s")
+                    self?.debugLog("📄 Parsing complete: \(attributedString.length) chars in \(CFAbsoluteTimeGetCurrent() - parseStart)s")
 
                     let restoreStart = CFAbsoluteTimeGetCurrent()
                     let restored = self?.restoreImageSizes(in: attributedString) ?? attributedString
-                    NSLog("📄 Image restore took \(CFAbsoluteTimeGetCurrent() - restoreStart)s")
+                    self?.debugLog("📄 Image restore took \(CFAbsoluteTimeGetCurrent() - restoreStart)s")
 
-                    NSLog("📄 Total extraction time: \(CFAbsoluteTimeGetCurrent() - startTime)s")
+                    self?.debugLog("📄 Total extraction time: \(CFAbsoluteTimeGetCurrent() - startTime)s")
 
                     DispatchQueue.main.async {
                         guard let self = self else { return }
-                        NSLog("📄 Setting content on main thread, length: \(restored.length)")
+                        self.debugLog("📄 Setting content on main thread, length: \(restored.length)")
                         let setStart = CFAbsoluteTimeGetCurrent()
                         self.applyImportedContent(restored, url: url)
                         self.currentDocumentFormat = .docx
-                        NSLog("📄 Content set complete in \(CFAbsoluteTimeGetCurrent() - setStart)s")
+                        self.debugLog("📄 Content set complete in \(CFAbsoluteTimeGetCurrent() - setStart)s")
                     }
                 } catch {
-                    NSLog("📄 DOCX extraction failed: \(error)")
+                    self?.debugLog("📄 DOCX extraction failed: \(error)")
                     DispatchQueue.main.async {
                         self?.presentErrorAlert(message: "Failed to open Word document", details: error.localizedDescription)
                     }
@@ -1539,7 +1548,7 @@ class HeaderView: NSView {
         addSubview(titleLabel)
 
         // Tagline (two lines) next to title
-        taglineLabel = NSTextField(labelWithString: "AI-Powered Writing and Analysis\nFor Fiction • Nonfiction • Poetry • Screenplays")
+        taglineLabel = NSTextField(labelWithString: "Advanced writing analysis and visualization\nFor Fiction • Nonfiction • Poetry • Screenplays")
         taglineLabel.font = NSFont.systemFont(ofSize: 11, weight: .regular)
         taglineLabel.textColor = ThemeManager.shared.currentTheme.headerText.withAlphaComponent(0.75)
         taglineLabel.lineBreakMode = .byWordWrapping
@@ -2219,7 +2228,7 @@ class FormattingToolbar: NSView {
 
     @objc private func sidebarToggleTapped() {
         // Post notification to toggle sidebars
-        print("[DEBUG] sidebarToggleTapped - posting ToggleSidebars notification")
+        DebugLog.log("[DEBUG] sidebarToggleTapped - posting ToggleSidebars notification")
         NotificationCenter.default.post(name: NSNotification.Name("ToggleSidebars"), object: nil)
     }
 
@@ -2388,9 +2397,9 @@ class ContentViewController: NSViewController {
         }
 
         // Listen for sidebar toggle notification
-        print("[DEBUG] ContentViewController.viewDidLoad - adding observer for ToggleSidebars")
+        DebugLog.log("[DEBUG] ContentViewController.viewDidLoad - adding observer for ToggleSidebars")
         NotificationCenter.default.addObserver(forName: Notification.Name("ToggleSidebars"), object: nil, queue: .main) { [weak self] _ in
-            print("[DEBUG] ContentViewController received ToggleSidebars notification")
+            DebugLog.log("[DEBUG] ContentViewController received ToggleSidebars notification")
             self?.outlinePanelController?.toggleMenuSidebar()
             self?.analysisViewController?.toggleMenuSidebar()
         }
@@ -2433,7 +2442,7 @@ class ContentViewController: NSViewController {
 
         // Set up analysis callback
         analysisViewController.analyzeCallback = { [weak self] in
-            NSLog("🔗 Analysis callback triggered")
+            DebugLog.log("🔗 Analysis callback triggered")
             self?.performAnalysis()
         }
 
@@ -2615,35 +2624,35 @@ class ContentViewController: NSViewController {
     private var isAnalyzing = false
 
     func performAnalysis() {
-        NSLog("🔍 performAnalysis called in ContentViewController")
+        DebugLog.log("🔍 performAnalysis called in ContentViewController")
 
         // Skip if already analyzing to prevent queue buildup
         guard !isAnalyzing else {
-            NSLog("⏸️ Analysis already in progress, skipping")
+            DebugLog.log("⏸️ Analysis already in progress, skipping")
             return
         }
 
         guard let text = editorViewController.getTextContent(), !text.isEmpty else {
-            NSLog("⚠️ No text to analyze")
+            DebugLog.log("⚠️ No text to analyze")
             return
         }
 
         // Also verify document storage has content (prevents analyzing during/before import)
         guard editorViewController.textView.textStorage?.length ?? 0 > 0 else {
-            NSLog("⚠️ Document storage is empty, skipping analysis")
+            DebugLog.log("⚠️ Document storage is empty, skipping analysis")
             return
         }
 
         isAnalyzing = true
-        NSLog("📊 MainWindowController: Starting background analysis thread")
+        DebugLog.log("📊 MainWindowController: Starting background analysis thread")
 
         // Build outline entries on MAIN THREAD before background work
         // (textStorage and layoutManager must be accessed on main thread only)
         let editorOutlines = editorViewController.buildOutlineEntries()
-        NSLog("📋 MainWindowController: Built \(editorOutlines.count) outline entries on main thread")
+        DebugLog.log("📋 MainWindowController: Built \(editorOutlines.count) outline entries on main thread")
         if !editorOutlines.isEmpty {
             editorOutlines.prefix(3).forEach { entry in
-                NSLog("  - '\(entry.title)' level=\(entry.level) range=\(NSStringFromRange(entry.range))")
+                DebugLog.log("  - '\(entry.title)' level=\(entry.level) range=\(NSStringFromRange(entry.range))")
             }
         }
 
@@ -2652,7 +2661,7 @@ class ContentViewController: NSViewController {
 
         // Run analysis on background thread to avoid blocking UI
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
-            NSLog("📊 MainWindowController: Inside background thread")
+            DebugLog.log("📊 MainWindowController: Inside background thread")
             let analysisEngine = AnalysisEngine()
 
             // Convert outline entries for AnalysisEngine. Always pass an array (empty means no outline yet).
@@ -2660,23 +2669,23 @@ class ContentViewController: NSViewController {
                 DecisionBeliefLoopAnalyzer.OutlineEntry(title: $0.title, level: $0.level, range: $0.range, page: $0.page)
             }
 
-            NSLog("📋 MainWindowController: Passing \(analysisOutlineEntries.count) outline entries to analyzeText")
+            DebugLog.log("📋 MainWindowController: Passing \(analysisOutlineEntries.count) outline entries to analyzeText")
 
             var results = analysisEngine.analyzeText(text, outlineEntries: analysisOutlineEntries, pageMapping: pageMapping)
 
             // Get character names from Character Library if available (override auto-detected characters)
             let characterLibraryPath = Bundle.main.resourcePath.flatMap { URL(fileURLWithPath: $0).appendingPathComponent("character_library.json").path }
-            NSLog("📚 Character library path: \(characterLibraryPath ?? "nil")")
+                DebugLog.log("📚 Character library path: \(characterLibraryPath ?? "nil")")
             if let path = characterLibraryPath, FileManager.default.fileExists(atPath: path),
                let data = try? Data(contentsOf: URL(fileURLWithPath: path)),
                let json = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]] {
 
                 let characterNames = json.compactMap { $0["name"] as? String }
-                NSLog("📚 Found \(characterNames.count) characters in library")
+                DebugLog.log("📚 Found \(characterNames.count) characters in library")
 
                 if !characterNames.isEmpty {
                     // Reuse already-converted outline entries instead of converting again
-                    NSLog("📋 MainWindowController: Using character library with \(analysisOutlineEntries.count) outline entries")
+                    DebugLog.log("📋 MainWindowController: Using character library with \(analysisOutlineEntries.count) outline entries")
 
                     // Perform character arc analysis with Decision-Belief Loop Framework
                     let (loops, interactions, presence) = analysisEngine.analyzeCharacterArcs(
@@ -2691,7 +2700,7 @@ class ContentViewController: NSViewController {
                 }
             }
 
-            NSLog("📊 Analysis results: \(results.wordCount) words, \(results.sentenceCount) sentences, \(results.paragraphCount) paragraphs")
+            DebugLog.log("📊 Analysis results: \(results.wordCount) words, \(results.sentenceCount) sentences, \(results.paragraphCount) paragraphs")
 
             // Update UI on main thread
             DispatchQueue.main.async {
@@ -3700,7 +3709,7 @@ private enum DocxBuilder {
         let color = (attributes[.foregroundColor] as? NSColor) ?? .black
         let background = (attributes[.backgroundColor] as? NSColor)?.usingColorSpace(.sRGB)
 
-        NSLog("📝 Export run: fontName='\(font.fontName)', displayName='\(font.displayName ?? "nil")', size=\(font.pointSize)")
+        DebugLog.log("📝 Export run: fontName='\(font.fontName)', displayName='\(font.displayName ?? "nil")', size=\(font.pointSize)")
 
         var rPr: [String] = []
         let escapedFont = xmlEscape(font.fontName)
@@ -3775,16 +3784,16 @@ private enum DocxTextExtractor {
     static func extractAttributedString(fromDocxData data: Data) throws -> NSAttributedString {
         let documentXml = try ZipReader.extractFile(named: "word/document.xml", fromZipData: data)
 
-        NSLog("📄 Extracted document.xml: \(documentXml.count) bytes")
+        DebugLog.log("📄 Extracted document.xml: \(documentXml.count) bytes")
 
         // Clean the XML data by removing invalid control characters that cause parse errors
         let cleanedXml = cleanXMLData(documentXml)
 
-        NSLog("📄 After cleaning: \(cleanedXml.count) bytes")
+        DebugLog.log("📄 After cleaning: \(cleanedXml.count) bytes")
 
         // Debug: Log first 1000 chars to see structure
         if let preview = String(data: cleanedXml.prefix(1000), encoding: .utf8) {
-            NSLog("📄 XML preview: \(preview.prefix(500))")
+            DebugLog.log("📄 XML preview: \(preview.prefix(500))")
         }
 
         // Pre-parse relationships to avoid reentrant parsing
@@ -3795,7 +3804,7 @@ private enum DocxTextExtractor {
             xmlParser.delegate = parser
             xmlParser.parse()
             relationships = parser.relationships
-            NSLog("📄 Found \(relationships.count) relationships")
+            DebugLog.log("📄 Found \(relationships.count) relationships")
         }
 
         return try DocumentXMLAttributedCollector.makeAttributedString(from: cleanedXml, docxData: data, relationships: relationships)
@@ -3804,7 +3813,7 @@ private enum DocxTextExtractor {
     /// Cleans XML data by removing invalid control characters that cause parser errors
     private static func cleanXMLData(_ data: Data) -> Data {
         guard let xmlString = String(data: data, encoding: .utf8) else {
-            NSLog("📄 Failed to decode XML as UTF-8, returning original data")
+            DebugLog.log("📄 Failed to decode XML as UTF-8, returning original data")
             return data
         }
 
@@ -3821,7 +3830,7 @@ private enum DocxTextExtractor {
         }
         let withoutInvalidChars = String(String.UnicodeScalarView(validChars))
         if withoutInvalidChars.count != cleaned.count {
-            NSLog("📄 Removed \(cleaned.count - withoutInvalidChars.count) invalid XML characters")
+            DebugLog.log("📄 Removed \(cleaned.count - withoutInvalidChars.count) invalid XML characters")
             cleaned = withoutInvalidChars
             changesMade = true
         }
@@ -3832,7 +3841,7 @@ private enum DocxTextExtractor {
             cleaned = cleaned.replacingOccurrences(of: "< ", with: "<")
             cleaned = cleaned.replacingOccurrences(of: " >", with: ">")
             changesMade = true
-            NSLog("📄 Fixed malformed tag spacing")
+            DebugLog.log("📄 Fixed malformed tag spacing")
         }
 
         // 3. Remove any embedded binary data between tags (non-printable sequences)
@@ -3853,14 +3862,14 @@ private enum DocxTextExtractor {
                 }
             }
             if result != cleaned {
-                NSLog("📄 Removed embedded binary data from XML content")
+                DebugLog.log("📄 Removed embedded binary data from XML content")
                 cleaned = result
                 changesMade = true
             }
         }
 
         if changesMade {
-            NSLog("📄 XML repair completed")
+            DebugLog.log("📄 XML repair completed")
         }
 
         return cleaned.data(using: .utf8) ?? data
@@ -4039,7 +4048,7 @@ private enum DocxTextExtractor {
 
             // If we got some content despite parse errors, use it
             if !parseResult {
-                NSLog("📄 Parser failed but recovered \(output.length) characters")
+                DebugLog.log("📄 Parser failed but recovered \(output.length) characters")
             }
 
             return output
@@ -4058,15 +4067,15 @@ private enum DocxTextExtractor {
 
         func parser(_ parser: XMLParser, parseErrorOccurred parseError: Error) {
             let nsError = parseError as NSError
-            NSLog("📷 XML Parse Error (code \(nsError.code)): \(parseError)")
-            NSLog("📷 Parser line: \(parser.lineNumber), column: \(parser.columnNumber)")
+            DebugLog.log("📷 XML Parse Error (code \(nsError.code)): \(parseError)")
+            DebugLog.log("📷 Parser line: \(parser.lineNumber), column: \(parser.columnNumber)")
 
             // For non-fatal errors (like entities, formatting), continue parsing
             // Fatal errors like "no document" will still stop the parser
             if nsError.code == 4 || nsError.code == 9 || nsError.code == 68 {
                 // Code 4: Tag mismatch, 9: Undeclared entity, 68: Entity boundary issues
                 // These are often recoverable - log but continue
-                NSLog("📷 Non-fatal XML error, attempting to continue...")
+                DebugLog.log("📷 Non-fatal XML error, attempting to continue...")
             }
         }
 
@@ -4198,7 +4207,7 @@ private enum DocxTextExtractor {
                     // Only set styleName and log if it's not empty (filters out Scene Break)
                     if !mappedName.isEmpty {
                         paragraphStyle.styleName = mappedName
-                        NSLog("📝 Read style from DOCX: \(val) -> \(mappedName)")
+                        DebugLog.log("📝 Read style from DOCX: \(val) -> \(mappedName)")
                     }
                 }
 
@@ -4247,7 +4256,7 @@ private enum DocxTextExtractor {
 
             case "w:rfonts", "rfonts":
                 let fontName = attributeDict["w:ascii"] ?? attributeDict["w:hAnsi"] ?? attributeDict["w:cs"] ?? attributeDict["ascii"]
-                NSLog("📝 Parsing rfonts: attrs=\(attributeDict), extracted fontName='\(fontName ?? "nil")'")
+                DebugLog.log("📝 Parsing rfonts: attrs=\(attributeDict), extracted fontName='\(fontName ?? "nil")'")
                 runAttributes.fontName = fontName
 
             case "w:sz", "sz":
@@ -4316,7 +4325,7 @@ private enum DocxTextExtractor {
 
             case "w:drawing", "drawing", "wp:inline", "inline":
                 inDrawing = true
-                NSLog("📷 Found drawing element: \(name)")
+                DebugLog.log("📷 Found drawing element: \(name)")
 
             case "wp:extent", "extent":
                 // Parse image dimensions in EMU units
@@ -4327,14 +4336,14 @@ private enum DocxTextExtractor {
                     if let cyStr = attributeDict["cy"], let cy = Int(cyStr) {
                         currentImageHeight = cy
                     }
-                    NSLog("📷 Parsed extent: cx=\(currentImageWidth ?? 0) cy=\(currentImageHeight ?? 0)")
+                    DebugLog.log("📷 Parsed extent: cx=\(currentImageWidth ?? 0) cy=\(currentImageHeight ?? 0)")
                 }
 
             case "a:blip", "blip":
                 // Extract the relationship ID for the image
                 if inDrawing {
                     currentImageRId = attributeDict["r:embed"] ?? attributeDict["embed"]
-                    NSLog("📷 Found blip with rId: \(currentImageRId ?? "nil")")
+                    DebugLog.log("📷 Found blip with rId: \(currentImageRId ?? "nil")")
                 }
 
             default:
@@ -4394,10 +4403,10 @@ private enum DocxTextExtractor {
             var attrs: [NSAttributedString.Key: Any] = [:]
             let size = runAttributes.fontSize ?? 12
             let fontName = runAttributes.fontName ?? "Times New Roman"
-            NSLog("📝 Import run: fontName='\(fontName)', fontSize=\(size), bold=\(runAttributes.isBold), italic=\(runAttributes.isItalic)")
+            DebugLog.log("📝 Import run: fontName='\(fontName)', fontSize=\(size), bold=\(runAttributes.isBold), italic=\(runAttributes.isItalic)")
             var font = NSFont(name: fontName, size: size) ?? NSFont.systemFont(ofSize: size)
             if font.fontName != fontName {
-                NSLog("⚠️ Font name mismatch: requested '\(fontName)' but got '\(font.fontName)'")
+                DebugLog.log("⚠️ Font name mismatch: requested '\(fontName)' but got '\(font.fontName)'")
             }
             if runAttributes.isBold {
                 font = NSFontManager.shared.convert(font, toHaveTrait: .boldFontMask)
@@ -4429,7 +4438,7 @@ private enum DocxTextExtractor {
 
         private func finalizeImage() {
             guard let rId = currentImageRId, let docxData = docxData else {
-                NSLog("📷 finalizeImage: rId=\(currentImageRId ?? "nil"), hasDocxData=\(docxData != nil)")
+                DebugLog.log("📷 finalizeImage: rId=\(currentImageRId ?? "nil"), hasDocxData=\(docxData != nil)")
                 return
             }
 
@@ -4439,20 +4448,20 @@ private enum DocxTextExtractor {
             currentImageWidth = nil
             currentImageHeight = nil
 
-            NSLog("📷 Attempting to load image for rId: \(rId), dimensions: \(widthEmu ?? 0) x \(heightEmu ?? 0) EMU")
+            DebugLog.log("📷 Attempting to load image for rId: \(rId), dimensions: \(widthEmu ?? 0) x \(heightEmu ?? 0) EMU")
 
             // Load and decode image immediately
             guard let imageData = loadImageFromDocx(rId: rId, docxData: docxData) else {
-                NSLog("📷 Failed to load image data from DOCX")
+                DebugLog.log("📷 Failed to load image data from DOCX")
                 return
             }
 
             guard let image = NSImage(data: imageData) else {
-                NSLog("📷 Failed to decode image data (\(imageData.count) bytes)")
+                DebugLog.log("📷 Failed to decode image data (\(imageData.count) bytes)")
                 return
             }
 
-            NSLog("📷 Created NSImage: \(image.size.width) x \(image.size.height)")
+            DebugLog.log("📷 Created NSImage: \(image.size.width) x \(image.size.height)")
 
             // Create attachment with fileWrapper for proper preservation
             let attachment = NSTextAttachment()
@@ -4470,7 +4479,7 @@ private enum DocxTextExtractor {
                 let widthPt = CGFloat(wEmu) / 12700.0
                 let heightPt = CGFloat(hEmu) / 12700.0
                 finalBounds = CGRect(x: 0, y: 0, width: widthPt, height: heightPt)
-                NSLog("📷 Using stored dimensions: \(widthPt) x \(heightPt) pt")
+                DebugLog.log("📷 Using stored dimensions: \(widthPt) x \(heightPt) pt")
             } else {
                 let maxWidth: CGFloat = 400
                 var bounds = CGRect(origin: .zero, size: image.size)
@@ -4480,7 +4489,7 @@ private enum DocxTextExtractor {
                     bounds.size.height *= scale
                 }
                 finalBounds = bounds
-                NSLog("📷 Using intrinsic dimensions: \(bounds.width) x \(bounds.height) pt")
+                DebugLog.log("📷 Using intrinsic dimensions: \(bounds.width) x \(bounds.height) pt")
             }
 
             attachment.bounds = finalBounds
@@ -4500,7 +4509,7 @@ private enum DocxTextExtractor {
             // Mark that this paragraph contains an image
             currentParagraphHasImage = true
 
-            NSLog("📷 Added image to paragraph buffer")
+            DebugLog.log("📷 Added image to paragraph buffer")
         }
 
         private func encodeImageFilename(size: CGSize, ext: String) -> String {
@@ -4528,7 +4537,7 @@ private enum DocxTextExtractor {
 
         private func loadImageFromDocx(rId: String, docxData: Data) -> Data? {
             guard let target = relationships[rId] else {
-                NSLog("📷 Failed to find relationship for rId: \(rId). Available keys: \(relationships.keys.joined(separator: ", "))")
+                DebugLog.log("📷 Failed to find relationship for rId: \(rId). Available keys: \(relationships.keys.joined(separator: ", "))")
                 return nil
             }
 
@@ -4546,15 +4555,15 @@ private enum DocxTextExtractor {
                 imagePath = "word/\(cleanTarget)"
             }
 
-            NSLog("📷 Found image path: \(imagePath)")
+            DebugLog.log("📷 Found image path: \(imagePath)")
 
             // Extract image from zip
             guard let imageData = try? ZipReader.extractFile(named: imagePath, fromZipData: docxData) else {
-                NSLog("📷 Failed to extract image from zip at path: \(imagePath)")
+                DebugLog.log("📷 Failed to extract image from zip at path: \(imagePath)")
                 return nil
             }
 
-            NSLog("📷 Successfully extracted image: \(imageData.count) bytes")
+            DebugLog.log("📷 Successfully extracted image: \(imageData.count) bytes")
             return imageData
         }
 
@@ -4571,11 +4580,11 @@ private enum DocxTextExtractor {
 
                 // Apply QuillStyleName attribute
                 paragraphBuffer.addAttribute(NSAttributedString.Key("QuillStyleName"), value: styleName, range: NSRange(location: 0, length: paragraphBuffer.length))
-                NSLog("📝 Applied QuillStyleName attribute: \(styleName)")
+                DebugLog.log("📝 Applied QuillStyleName attribute: \(styleName)")
 
                 // Apply style definition from StyleCatalog to ensure formatting is preserved
                 if let styleDefinition = StyleCatalog.shared.style(named: styleName) {
-                    NSLog("📝 Applying style definition from catalog for: \(styleName)")
+                    DebugLog.log("📝 Applying style definition from catalog for: \(styleName)")
 
                     // Apply font attributes from style definition
                     let font = makeFont(from: styleDefinition)
@@ -4632,7 +4641,7 @@ private enum DocxTextExtractor {
                         paragraphBuffer.addAttribute(.paragraphStyle, value: updatedParagraphStyle, range: NSRange(location: 0, length: paragraphBuffer.length))
                     }
                 } else {
-                    NSLog("⚠️ Style '\(styleName)' not found in StyleCatalog")
+                    DebugLog.log("⚠️ Style '\(styleName)' not found in StyleCatalog")
                 }
 
                 result.append(paragraphBuffer)
@@ -4788,7 +4797,7 @@ private enum DocxTextExtractor {
                 cursor += 46 + fileNameLen + extraLen + commentLen
             }
 
-            NSLog("📷 ZipReader failed to find: \(targetName). Total entries: \(totalEntries)")
+            DebugLog.log("📷 ZipReader failed to find: \(targetName). Total entries: \(totalEntries)")
             throw NSError(domain: "QuillPilot", code: 5, userInfo: [NSLocalizedDescriptionKey: "DOCX is missing \(targetName)"])
         }
 

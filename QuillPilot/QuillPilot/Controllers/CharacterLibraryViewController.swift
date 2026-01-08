@@ -56,7 +56,7 @@ class CharacterLibraryViewController: NSViewController {
         view.nextResponder = self
 
         NotificationCenter.default.addObserver(forName: .characterLibraryDidChange, object: nil, queue: .main) { [weak self] _ in
-            NSLog("📋 CharacterLibraryViewController: Received characterLibraryDidChange notification")
+            DebugLog.log("📋 CharacterLibraryViewController: Received characterLibraryDidChange notification")
             self?.refreshCharacterList()
         }
 
@@ -77,21 +77,21 @@ class CharacterLibraryViewController: NSViewController {
     }
 
     @objc func performSave(_ sender: Any?) {
-        NSLog("⌨️ Cmd+S pressed in Character Library")
+        DebugLog.log("⌨️ Cmd+S pressed in Character Library")
 
         // First, save the current character to the library
         if let character = selectedCharacter {
             saveCharacterFromFields(character)
-            NSLog("💾 Saved character to library: \(character.displayName)")
+            DebugLog.log("💾 Saved character to library: \(character.displayName)")
         }
 
         // Forward to the main window controller to save the document
         if let mainWindow = NSApp.windows.first(where: { $0.windowController is MainWindowController }),
            let mainController = mainWindow.windowController as? MainWindowController {
-            NSLog("💾 Forwarding save to main document")
+            DebugLog.log("💾 Forwarding save to main document")
             mainController.performSaveDocument(sender)
         } else {
-            NSLog("⚠️ Could not find main window controller to save document")
+            DebugLog.log("⚠️ Could not find main window controller to save document")
         }
     }
 
@@ -369,28 +369,28 @@ class CharacterLibraryViewController: NSViewController {
     }
 
     private func scrollListToTop() {
-        NSLog("📜 Scrolling character list to top")
+        DebugLog.log("📜 Scrolling character list to top")
         DispatchQueue.main.async { [weak self] in
             guard let scrollView = self?.scrollView else {
-                NSLog("⚠️ scrollView is nil")
+                DebugLog.log("⚠️ scrollView is nil")
                 return
             }
             scrollView.contentView.setBoundsOrigin(.zero)
             scrollView.reflectScrolledClipView(scrollView.contentView)
-            NSLog("✅ Character list scrolled to top")
+            DebugLog.log("✅ Character list scrolled to top")
         }
     }
 
     private func scrollDetailToTop() {
-        NSLog("📜 Scrolling detail view to top")
+        DebugLog.log("📜 Scrolling detail view to top")
         DispatchQueue.main.async { [weak self] in
             guard let detailScrollView = self?.detailScrollView else {
-                NSLog("⚠️ detailScrollView is nil")
+                DebugLog.log("⚠️ detailScrollView is nil")
                 return
             }
             detailScrollView.contentView.setBoundsOrigin(.zero)
             detailScrollView.reflectScrolledClipView(detailScrollView.contentView)
-            NSLog("✅ Detail view scrolled to top")
+            DebugLog.log("✅ Detail view scrolled to top")
         }
     }
 

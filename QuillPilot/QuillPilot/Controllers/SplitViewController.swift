@@ -68,14 +68,14 @@ class SplitViewController: NSSplitViewController {
         splitView.autosaveName = "QuillPilotSplitView"
 
         // Listen for sidebar toggle notification
-        print("[DEBUG] SplitViewController.viewDidLoad - adding observer for ToggleSidebars")
+        DebugLog.log("[DEBUG] SplitViewController.viewDidLoad - adding observer for ToggleSidebars")
         NotificationCenter.default.addObserver(
             self,
             selector: #selector(toggleAllSidebars),
             name: NSNotification.Name("ToggleSidebars"),
             object: nil
         )
-        print("[DEBUG] SplitViewController.viewDidLoad - observer added")
+        DebugLog.log("[DEBUG] SplitViewController.viewDidLoad - observer added")
     }
 
     deinit {
@@ -126,9 +126,9 @@ class SplitViewController: NSSplitViewController {
 
     @objc func toggleAllSidebars() {
         // Toggle the icon menu sidebars on both outline (left) and analysis (right) panels
-        print("[DEBUG] toggleAllSidebars called")
-        print("[DEBUG] outlinePanelController: \(outlinePanelController != nil)")
-        print("[DEBUG] analysisViewController: \(analysisViewController != nil)")
+        DebugLog.log("[DEBUG] toggleAllSidebars called")
+        DebugLog.log("[DEBUG] outlinePanelController: \(outlinePanelController != nil)")
+        DebugLog.log("[DEBUG] analysisViewController: \(analysisViewController != nil)")
         outlinePanelController.toggleMenuSidebar()
         analysisViewController.toggleMenuSidebar()
     }

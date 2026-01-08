@@ -64,7 +64,7 @@ class TOCIndexManager {
         // Exclude any existing TOC/Index sections so we don't re-ingest previously inserted lists
         let excludedRanges = findExcludedRanges(in: textStorage)
 
-        NSLog("🔍 TOC Generation: Scanning document of length \(textStorage.length)")
+        DebugLog.log("🔍 TOC Generation: Scanning document of length \(textStorage.length)")
 
         textStorage.enumerateAttributes(in: fullRange, options: []) { attrs, range, _ in
             if rangeIntersectsExcluded(range, excludedRanges) { return }
@@ -81,7 +81,7 @@ class TOCIndexManager {
                         // Check for duplicates by title text, not just location
                         let isDuplicate = entries.contains { $0.title == text }
                         if !isDuplicate {
-                            NSLog("📖 TOC: Found styled entry '\(text)' at \(range.location) with style '\(styleName)'")
+                            DebugLog.log("📖 TOC: Found styled entry '\(text)' at \(range.location) with style '\(styleName)'")
                             entries.append(TOCEntry(
                                 title: text,
                                 level: level,
@@ -109,7 +109,7 @@ class TOCIndexManager {
                         // Check for duplicates by title text
                         let isDuplicate = entries.contains { $0.title == text }
                         if !isDuplicate {
-                            NSLog("📖 TOC: Found font-based entry '\(text)' at \(range.location) with font size \(font.pointSize)")
+                            DebugLog.log("📖 TOC: Found font-based entry '\(text)' at \(range.location) with font size \(font.pointSize)")
                             entries.append(TOCEntry(
                                 title: text,
                                 level: level,
@@ -124,9 +124,9 @@ class TOCIndexManager {
         }
 
         tocEntries = entries.sorted { $0.range.location < $1.range.location }
-        NSLog("📊 TOC Generation complete: Found \(tocEntries.count) entries")
+        DebugLog.log("📊 TOC Generation complete: Found \(tocEntries.count) entries")
         for (i, entry) in tocEntries.enumerated() {
-            NSLog("  \(i+1). '\(entry.title)' page \(entry.pageNumber)")
+            DebugLog.log("  \(i+1). '\(entry.title)' page \(entry.pageNumber)")
         }
         return tocEntries
     }
@@ -435,19 +435,19 @@ class TOCIndexWindowController: NSWindowController, NSOutlineViewDataSource, NSO
         // This ensures we use the template's font family
           if let tocStyle = StyleCatalog.shared.style(named: "TOC Entry Level 1"),
               let tocFont = NSFont.quillPilotResolve(nameOrFamily: tocStyle.fontName, size: tocStyle.fontSize) {
-            print("DEBUG TOC: Using StyleCatalog TOC Entry font: \(tocStyle.fontName)")
+                        DebugLog.log("DEBUG TOC: Using StyleCatalog TOC Entry font: \(tocStyle.fontName)")
             return tocFont
         }
 
           if let bodyStyle = StyleCatalog.shared.style(named: "Body Text"),
               let bodyFont = NSFont.quillPilotResolve(nameOrFamily: bodyStyle.fontName, size: bodyStyle.fontSize) {
-            print("DEBUG TOC: Using StyleCatalog Body Text font: \(bodyStyle.fontName)")
+                        DebugLog.log("DEBUG TOC: Using StyleCatalog Body Text font: \(bodyStyle.fontName)")
             return bodyFont
         }
 
         // SECOND: Try the textView's font property - this reflects current template
         if let viewFont = textView.font {
-            print("DEBUG TOC: Using textView.font: \(viewFont.fontName)")
+            DebugLog.log("DEBUG TOC: Using textView.font: \(viewFont.fontName)")
             return viewFont
         }
 
@@ -479,12 +479,12 @@ class TOCIndexWindowController: NSWindowController, NSOutlineViewDataSource, NSO
 
             // Return most common body font
             if let mostCommon = fontCounts.max(by: { $0.value.count < $1.value.count }) {
-                print("DEBUG TOC: Using sampled document font: \(mostCommon.value.font.fontName)")
+                DebugLog.log("DEBUG TOC: Using sampled document font: \(mostCommon.value.font.fontName)")
                 return mostCommon.value.font
             }
         }
 
-        print("DEBUG TOC: Falling back to system font")
+        DebugLog.log("DEBUG TOC: Falling back to system font")
         return NSFont(name: "Helvetica", size: 12) ?? NSFont.systemFont(ofSize: 12)
     }
 
@@ -792,7 +792,7 @@ class TOCIndexWindowController: NSWindowController, NSOutlineViewDataSource, NSO
 
         // Detect document font from StyleCatalog or document
         let documentFont = resolveDocumentFont(from: textView)
-        print("DEBUG TOC: Resolved document font: \(documentFont.fontName) family: \(documentFont.familyName ?? "nil")")
+        DebugLog.log("DEBUG TOC: Resolved document font: \(documentFont.fontName) family: \(documentFont.familyName ?? "nil")")
 
         // Get font for this family at different sizes, derived from document font
         func fontFromDocument(_ baseFont: NSFont, size: CGFloat, bold: Bool) -> NSFont {
@@ -828,10 +828,10 @@ class TOCIndexWindowController: NSWindowController, NSOutlineViewDataSource, NSO
         // Use the actual text container width from the editor for accurate tab positioning
         // Fall back to standard Letter page text width (612pt - 1" margins each side)
         let pageTextWidth: CGFloat = textView.textContainer?.size.width ?? (612 - (72 * 2))
-        NSLog("📐 TOC Insert: pageTextWidth = \(pageTextWidth)")
+        DebugLog.log("📐 TOC Insert: pageTextWidth = \(pageTextWidth)")
 
         // Entries with leader dots - page numbers align right via a tab stop
-        NSLog("📝 TOC Insert: Processing \(entries.count) entries")
+        DebugLog.log("📝 TOC Insert: Processing \(entries.count) entries")
         for (index, entry) in entries.enumerated() {
             let fontSize: CGFloat = entry.level == 1 ? 14 : (entry.level == 2 ? 12 : 11)
             let isBold = entry.level == 1
@@ -877,7 +877,7 @@ class TOCIndexWindowController: NSWindowController, NSOutlineViewDataSource, NSO
 
             // Format: title + dots + TAB + right-aligned page number
             let line = "\(entry.title)\(leaderDots)\t\(pageNumStr)\n"
-            NSLog("📝 TOC Entry \(index+1): '\(entry.title)' -> \(maxDots) dots, page \(pageNumStr)")
+            DebugLog.log("📝 TOC Entry \(index+1): '\(entry.title)' -> \(maxDots) dots, page \(pageNumStr)")
             tocString.append(NSAttributedString(string: line, attributes: entryAttrs))
         }
 

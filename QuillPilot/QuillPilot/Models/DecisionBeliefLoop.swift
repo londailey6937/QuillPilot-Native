@@ -375,7 +375,7 @@ class DecisionBeliefLoopAnalyzer {
         self.pageMapping = pageMapping
 
         if let mapping = pageMapping {
-            NSLog("📄 Decision-Belief Loop: Using page mapping with \(mapping.count) entries")
+            DebugLog.log("📄 Decision-Belief Loop: Using page mapping with \(mapping.count) entries")
         }
 
         let chapters: [(text: String, number: Int, startPos: Int)]
@@ -846,10 +846,10 @@ class DecisionBeliefLoopAnalyzer {
 
     /// Analyze character presence across chapters for the presence graph
     func analyzePresenceByChapter(text: String, characterNames: [String], outlineEntries: [OutlineEntry]? = nil) -> [CharacterPresence] {
-        NSLog("📊 analyzePresenceByChapter: Starting with \(characterNames.count) characters")
-        NSLog("📊 analyzePresenceByChapter: Character names = \(characterNames)")
-        NSLog("📊 analyzePresenceByChapter: Text length = \(text.count) characters")
-        NSLog("📊 analyzePresenceByChapter: Outline entries count = \(outlineEntries?.count ?? 0)")
+        DebugLog.log("📊 analyzePresenceByChapter: Starting with \(characterNames.count) characters")
+        DebugLog.log("📊 analyzePresenceByChapter: Character names = \(characterNames)")
+        DebugLog.log("📊 analyzePresenceByChapter: Text length = \(text.count) characters")
+        DebugLog.log("📊 analyzePresenceByChapter: Outline entries count = \(outlineEntries?.count ?? 0)")
 
         var presenceData: [CharacterPresence] = []
 
@@ -859,10 +859,10 @@ class DecisionBeliefLoopAnalyzer {
             // If caller provided outline entries, treat them as source of truth when available;
             // otherwise, fall back to regex detection so we never return empty data silently.
             if entries.isEmpty {
-                NSLog("⚠️ analyzePresenceByChapter: Outline entries empty, falling back to regex detection")
+                DebugLog.log("⚠️ analyzePresenceByChapter: Outline entries empty, falling back to regex detection")
                 let chapterTexts = splitIntoChapters(text: text)
                 chapters = chapterTexts.enumerated().map { (text: $1, number: $0 + 1) }
-                NSLog("📊 analyzePresenceByChapter: Regex detected \(chapters.count) chapters")
+                DebugLog.log("📊 analyzePresenceByChapter: Regex detected \(chapters.count) chapters")
             } else {
                 // Look for level 1 entries (chapters) first - these are the main chapter divisions
                 let chapterEntries = entries.filter { $0.level == 1 }
@@ -878,10 +878,10 @@ class DecisionBeliefLoopAnalyzer {
                 }
 
                 if effectiveEntries.isEmpty {
-                    NSLog("⚠️ analyzePresenceByChapter: No usable outline entries, falling back to regex detection")
+                    DebugLog.log("⚠️ analyzePresenceByChapter: No usable outline entries, falling back to regex detection")
                     let chapterTexts = splitIntoChapters(text: text)
                     chapters = chapterTexts.enumerated().map { (text: $1, number: $0 + 1) }
-                    NSLog("📊 analyzePresenceByChapter: Regex detected \(chapters.count) chapters")
+                    DebugLog.log("📊 analyzePresenceByChapter: Regex detected \(chapters.count) chapters")
                 } else {
                     let fullText = text as NSString
                     chapters = effectiveEntries.enumerated().map { index, entry in
@@ -899,35 +899,35 @@ class DecisionBeliefLoopAnalyzer {
             }
         } else {
             // No outline provided; fall back to regex detection
-            NSLog("📊 analyzePresenceByChapter: No outline entries, using regex detection")
+            DebugLog.log("📊 analyzePresenceByChapter: No outline entries, using regex detection")
             let chapterTexts = splitIntoChapters(text: text)
             chapters = chapterTexts.enumerated().map { (text: $1, number: $0 + 1) }
-            NSLog("📊 analyzePresenceByChapter: Regex detected \(chapters.count) chapters")
+            DebugLog.log("📊 analyzePresenceByChapter: Regex detected \(chapters.count) chapters")
         }
 
-        NSLog("📊 analyzePresenceByChapter: Total chapters detected = \(chapters.count)")
+        DebugLog.log("📊 analyzePresenceByChapter: Total chapters detected = \(chapters.count)")
 
         for characterName in characterNames {
             var presence = CharacterPresence(characterName: characterName)
-            NSLog("📊 analyzePresenceByChapter: Analyzing presence for character '\(characterName)'")
+            DebugLog.log("📊 analyzePresenceByChapter: Analyzing presence for character '\(characterName)'")
 
             for chapter in chapters {
                 let mentions = countMentions(of: characterName, in: chapter.text)
                 if mentions > 0 {
                     presence.chapterPresence[chapter.number] = mentions
-                    NSLog("📊 analyzePresenceByChapter: Character '\(characterName)' has \(mentions) mentions in chapter \(chapter.number)")
+                    DebugLog.log("📊 analyzePresenceByChapter: Character '\(characterName)' has \(mentions) mentions in chapter \(chapter.number)")
                 }
             }
 
             if presence.chapterPresence.isEmpty {
-                NSLog("⚠️ analyzePresenceByChapter: Character '\(characterName)' has NO mentions in any chapter")
+                DebugLog.log("⚠️ analyzePresenceByChapter: Character '\(characterName)' has NO mentions in any chapter")
             } else {
-                NSLog("✅ analyzePresenceByChapter: Character '\(characterName)' found in \(presence.chapterPresence.count) chapters")
+                DebugLog.log("✅ analyzePresenceByChapter: Character '\(characterName)' found in \(presence.chapterPresence.count) chapters")
             }
             presenceData.append(presence)
         }
 
-        NSLog("📊 analyzePresenceByChapter: Returning \(presenceData.count) presence entries")
+        DebugLog.log("📊 analyzePresenceByChapter: Returning \(presenceData.count) presence entries")
         return presenceData
     }
 

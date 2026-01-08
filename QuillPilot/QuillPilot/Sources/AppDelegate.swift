@@ -254,17 +254,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     @MainActor
     @objc private func printDocument(_ sender: Any?) {
-        NSLog("AppDelegate.printDocument called")
-        NSLog("mainWindowController exists: \(mainWindowController != nil)")
+        DebugLog.log("AppDelegate.printDocument called")
+        DebugLog.log("mainWindowController exists: \(mainWindowController != nil)")
 
         guard let controller = mainWindowController else {
-            NSLog("ERROR: mainWindowController is nil in AppDelegate")
+            DebugLog.log("ERROR: mainWindowController is nil in AppDelegate")
             return
         }
 
-        NSLog("About to call mainWindowController.printDocument")
+        DebugLog.log("About to call mainWindowController.printDocument")
         controller.printDocument(sender)
-        NSLog("Finished calling mainWindowController.printDocument")
+        DebugLog.log("Finished calling mainWindowController.printDocument")
     }
 
     // Note: Removed print(_:) wrapper to avoid conflict with Swift's print() function
@@ -555,7 +555,7 @@ extension AppDelegate: NSMenuItemValidation {
     func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
         if menuItem.action == #selector(printDocument(_:)) {
             let isValid = mainWindowController != nil
-            NSLog("Validating Print menu item: \(isValid)")
+            DebugLog.log("Validating Print menu item: \(isValid)")
             return isValid
         }
         if menuItem.action == #selector(saveDocument(_:)) || menuItem.action == #selector(openDocument(_:)) {

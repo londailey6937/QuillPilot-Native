@@ -151,7 +151,7 @@ class AnalysisViewController: NSViewController, NSWindowDelegate {
 
     /// Called when a new document is loaded or created
     func documentDidChange(url: URL?) {
-        NSLog("📄 AnalysisViewController: documentDidChange called")
+        DebugLog.log("📄 AnalysisViewController: documentDidChange called")
         // Store current document URL for when scene window is created
         currentDocumentURL = url
         // Load scenes for this document if window exists
@@ -162,7 +162,7 @@ class AnalysisViewController: NSViewController, NSWindowDelegate {
 
         // Clear plot visualization view to remove stale data
         if #available(macOS 13.0, *) {
-            NSLog("📊 Clearing plot and character visualization views")
+            DebugLog.log("📊 Clearing plot and character visualization views")
             plotVisualizationView.configure(with: nil)
             plotVisualizationView.removeFromSuperview()
             characterArcVisualizationView.removeFromSuperview()
@@ -751,15 +751,15 @@ class AnalysisViewController: NSViewController, NSWindowDelegate {
 
     // MARK: - Toggle Menu Sidebar
     func toggleMenuSidebar() {
-        print("[DEBUG] toggleMenuSidebar called, isOutlinePanel: \(isOutlinePanel)")
-        print("[DEBUG] menuSidebar.isHidden: \(menuSidebar.isHidden)")
+        DebugLog.log("[DEBUG] toggleMenuSidebar called, isOutlinePanel: \(isOutlinePanel)")
+        DebugLog.log("[DEBUG] menuSidebar.isHidden: \(menuSidebar.isHidden)")
         let isHidden = menuSidebar.isHidden
         NSAnimationContext.runAnimationGroup { context in
             context.duration = 0.2
             menuSidebar.animator().isHidden = !isHidden
             menuSeparator.animator().isHidden = !isHidden
         }
-        print("[DEBUG] menuSidebar.isHidden after: \(menuSidebar.isHidden)")
+        DebugLog.log("[DEBUG] menuSidebar.isHidden after: \(menuSidebar.isHidden)")
     }
 
     func displayResults(_ results: AnalysisResults) {
@@ -3438,24 +3438,24 @@ extension AnalysisViewController {
     }
 
     @objc private func showPresence() {
-        NSLog("👥 showPresence called")
+        DebugLog.log("👥 showPresence called")
         // Don't show if Character Library is empty
         guard !CharacterLibrary.shared.characters.isEmpty else {
-            NSLog("⚠️ Character Library is empty, not showing presence")
+            DebugLog.log("⚠️ Character Library is empty, not showing presence")
             showMissingCharactersAlert()
             return
         }
 
         // Always trigger fresh analysis to ensure we use current outline structure
         // Document outline is the source of truth for chapter detection
-        NSLog("🔄 Triggering fresh analysis for character presence")
+        DebugLog.log("🔄 Triggering fresh analysis for character presence")
         analyzeCallback?()
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in
             if let results = self?.latestAnalysisResults {
-                NSLog("📊 Opening presence popout with \(results.characterPresence.count) entries")
+                DebugLog.log("📊 Opening presence popout with \(results.characterPresence.count) entries")
                 self?.openPresencePopout(presence: results.characterPresence)
             } else {
-                NSLog("⚠️ No analysis results available for presence")
+                DebugLog.log("⚠️ No analysis results available for presence")
             }
         }
     }

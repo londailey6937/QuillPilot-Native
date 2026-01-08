@@ -435,6 +435,35 @@ Columns:
 • Evidence - Actions/decisions reflecting the belief
 • Counterpressure - Forces challenging the belief
 
+How this ties to the Decision–Belief Loop:
+• Counterpressure ≈ Pressure (the force pushing against the belief)
+• Evidence ≈ Decision + Outcome (what they did, and what happened because of it)
+• Changes across rows ≈ Belief Shift (how the belief updates over time)
+
+How to use it (fast):
+1) Pick one character.
+2) Read down the Core Belief column and ask: “Is this belief changing in a believable way?”
+3) For any row that feels "hand-wavy", jump to that chapter and strengthen either the Evidence (action) or the Counterpressure (stress test).
+4) Re-run analysis and confirm the row reads like cause → effect.
+
+Empty cells: what they usually mean (and how to address them)
+
+Core Belief is empty
+• Meaning: the chapter may not reveal what the character thinks is true/important.
+• Fix: add a line of principle, a value-laden choice, or a reaction that implies the belief (“I don’t trust X”, “People always…”, “I won’t…”).
+
+Evidence is empty
+• Meaning: the belief is stated/assumed but not demonstrated through action.
+• Fix: add a decision with a visible cost, or show a concrete behavior that expresses the belief (avoid purely explanatory narration).
+
+Counterpressure is empty
+• Meaning: the belief is not being challenged, so it can’t meaningfully evolve.
+• Fix: introduce an opposing force: a person contradicts it, reality disproves it, the character faces a dilemma where the belief causes harm, or a new constraint makes the belief harder to live by.
+
+Many rows are empty
+• Meaning: your manuscript may have character moments, but not enough on-page causality (pressure → choice → consequence → revised belief).
+• Fix: use the Decision–Belief Loop view to identify where the chain breaks, then revise the scene to add the missing link(s).
+
 Evolution Quality Badge:
 • Logical Evolution - Clear pressures causing belief shifts
 • Developing - Some belief shifts occurring

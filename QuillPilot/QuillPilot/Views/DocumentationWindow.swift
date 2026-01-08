@@ -383,16 +383,43 @@ Tracks how character decisions reinforce or challenge their beliefs.
 
 Access: Analyze Document → Characters tab → 📊 Decision-Belief Loops
 
-Shows:
-• Key character decisions in the story
-• Underlying beliefs driving those decisions
-• Whether decisions strengthen or weaken beliefs
-• Pattern of character growth or stagnation
+What the framework is tracking (per chapter):
+• Pressure — new forces acting on the character (conflict, dilemma, constraint)
+• Belief in Play — the value/worldview being tested
+• Decision — the choice made because of (or against) that belief
+• Outcome — the immediate result of that decision
+• Belief Shift — how the belief changes (reinforced, refined, reversed)
 
-Useful for:
-• Ensuring character development
-• Identifying stuck characters
-• Planning character arc progression
+How to use it (fast):
+1) Start with your protagonist.
+2) Scan for rows with 2+ empty cells.
+3) Open that chapter/scene and ask: “What is the pressure? What is the choice? What does it cost?”
+4) Revise, then re-run analysis.
+
+Empty cells: what they usually mean (and how to address them)
+
+Pressure is empty
+• Meaning: the chapter may be low-conflict, transitional, or the character isn’t under new constraints.
+• Fix: add a clear complication (deadline, obstacle, ultimatum, temptation, new information) that forces tradeoffs.
+
+Belief in Play is empty
+• Meaning: the chapter may show events but not the character’s values/assumptions driving interpretation.
+• Fix: surface the belief via (a) a stated principle, (b) an internal line of reasoning, or (c) a choice that clearly implies a value (“I won’t do X even if…”).
+
+Decision is empty
+• Meaning: the character may be reacting, being carried by plot, or the choice isn’t explicit.
+• Fix: convert “things happen” into “they choose”: give the character a fork (A vs B), then commit to an action with a verb that changes the situation.
+
+Outcome is empty
+• Meaning: decisions may not be producing visible consequences on-page.
+• Fix: show the immediate result (pushback, fallout, gain/loss, relationship change, new problem created). If the consequence is delayed, add a small immediate ripple.
+
+Belief Shift is empty
+• Meaning: the character’s worldview may be unchanged (which can be fine in setup chapters), or the story isn’t showing reflection/learning.
+• Fix: add a moment where the character updates their model of the world: a realization, rationalization, doubt, or a stated new rule going forward.
+
+Important note:
+Not every chapter needs all five elements. Too many empty cells across many chapters, however, usually correlates with flat arcs, passive protagonists, or consequences that aren’t dramatized.
 """, color: bodyColor))
         content.append(makeNewline())
 

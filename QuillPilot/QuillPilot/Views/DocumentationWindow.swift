@@ -353,8 +353,16 @@ Features:
 
 • Continuous line plots showing progression
 • Dropdown to switch between metrics
-• Solid lines = Surface behavior (what character shows)
-• Dashed lines = Subtext (internal emotional state)
+• X-axis = progress through the document (0% → 100%)
+• Y-axis = the selected metric (top = higher, bottom = lower)
+• Solid lines = surface behavior (what the character shows)
+• Dashed lines = subtext/internal state (what they feel or believe underneath)
+
+How to interpret the curves:
+• Look for changes (rises/drops), not exact numbers.
+• Sudden shifts often indicate a turning point, revelation, or setback.
+• Crossovers between characters (or between a character’s surface vs subtext) often indicate conflict, reversal, or a masked emotional state.
+• Small vertical separation between lines can be visual spacing to reduce overlap—treat the overall trend as the signal.
 
 How Subtext Works:
 The first character (typically protagonist) shows TWO lines:
@@ -420,6 +428,12 @@ Belief Shift is empty
 
 Important note:
 Not every chapter needs all five elements. Too many empty cells across many chapters, however, usually correlates with flat arcs, passive protagonists, or consequences that aren’t dramatized.
+
+Character Arc Timeline (legend):
+• Chapters are shown as labels (rows or "Ch #").
+• Dots appear when an element is detected in that chapter.
+• Dot colors help you classify what kind of change is happening (they are not chapter colors).
+• Dashed connectors typically indicate a likely regression/negative shift between chapters.
 """, color: bodyColor))
         content.append(makeNewline())
 

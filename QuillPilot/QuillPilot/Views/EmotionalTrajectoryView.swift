@@ -252,48 +252,73 @@ class EmotionalTrajectoryView: NSView {
     }
 
     private func drawLegend(in bounds: NSRect) {
+        let theme = ThemeManager.shared.currentTheme
+
+        // List each character once (color), and provide a line-style key for surface vs subtext
+        let baseTrajectories = trajectories.filter { !$0.isDashed }
+
         // Use two-column layout for legend to save space
         let legendWidth: CGFloat = 400
         let columnWidth: CGFloat = 200
         let legendX: CGFloat = bounds.maxX - legendWidth - 10
-        let legendY: CGFloat = bounds.maxY - 40
-        let itemsPerColumn = (trajectories.count + 1) / 2
+        let legendTopY: CGFloat = bounds.maxY - 24
 
-        for (index, trajectory) in trajectories.enumerated() {
+        let labelAttributes: [NSAttributedString.Key: Any] = [
+            .font: NSFont.systemFont(ofSize: 10),
+            .foregroundColor: theme.popoutTextColor
+        ]
+
+        // Line-style key
+        do {
+            let keyX = legendX
+            let keyY = legendTopY
+
+            let solid = NSBezierPath()
+            solid.move(to: NSPoint(x: keyX, y: keyY))
+            solid.line(to: NSPoint(x: keyX + 22, y: keyY))
+            theme.popoutTextColor.setStroke()
+            solid.lineWidth = 2.5
+            solid.stroke()
+            NSAttributedString(string: "Surface", attributes: labelAttributes)
+                .draw(at: NSPoint(x: keyX + 28, y: keyY - 5))
+
+            let dashedY = keyY - 14
+            let dashed = NSBezierPath()
+            dashed.move(to: NSPoint(x: keyX, y: dashedY))
+            dashed.line(to: NSPoint(x: keyX + 22, y: dashedY))
+            theme.popoutTextColor.setStroke()
+            dashed.lineWidth = 2.5
+            dashed.setLineDash([5, 3], count: 2, phase: 0)
+            dashed.stroke()
+            NSAttributedString(string: "Subtext", attributes: labelAttributes)
+                .draw(at: NSPoint(x: keyX + 28, y: dashedY - 5))
+        }
+
+        let listStartY = legendTopY - 34
+        let itemsPerColumn = (baseTrajectories.count + 1) / 2
+
+        for (index, trajectory) in baseTrajectories.enumerated() {
             let column = index / itemsPerColumn
             let row = index % itemsPerColumn
             let currentX = legendX + CGFloat(column) * columnWidth
-            let currentY = legendY - CGFloat(row) * 18
+            let currentY = listStartY - CGFloat(row) * 18
 
-            // Line sample
+            // Color sample
             let linePath = NSBezierPath()
             linePath.move(to: NSPoint(x: currentX, y: currentY))
             linePath.line(to: NSPoint(x: currentX + 25, y: currentY))
             trajectory.color.setStroke()
             linePath.lineWidth = 2.5
-
-            if trajectory.isDashed {
-                linePath.setLineDash([5, 3], count: 2, phase: 0)
-            }
-
             linePath.stroke()
 
             // Label - truncate if needed
-            let theme = ThemeManager.shared.currentTheme
-            let labelAttributes: [NSAttributedString.Key: Any] = [
-                .font: NSFont.systemFont(ofSize: 10),
-                .foregroundColor: theme.popoutTextColor
-            ]
-
-            let suffix = trajectory.isDashed ? " (subtext)" : ""
-            var labelText = trajectory.characterName + suffix
-            // Truncate long names
+            var labelText = trajectory.characterName
             if labelText.count > 25 {
-                let index = labelText.index(labelText.startIndex, offsetBy: 22)
-                labelText = String(labelText[..<index]) + "..."
+                let cut = labelText.index(labelText.startIndex, offsetBy: 22)
+                labelText = String(labelText[..<cut]) + "..."
             }
-            let label = NSAttributedString(string: labelText, attributes: labelAttributes)
-            label.draw(at: NSPoint(x: currentX + 32, y: currentY - 5))
+            NSAttributedString(string: labelText, attributes: labelAttributes)
+                .draw(at: NSPoint(x: currentX + 32, y: currentY - 5))
         }
     }
 }

@@ -569,6 +569,33 @@ struct DecisionBeliefLoopFullView: View {
                                 .font(.caption)
                                 .foregroundColor(textColor.opacity(0.7))
 
+                            Text("Rows = chapters; columns = loop elements. Dots appear when an element is detected. Dot color reflects the dominant theme keywords (not the chapter): Fear (red), Agency (purple), Trust (blue), Identity (green), Moral/Ethical (yellow). Dashed vertical connectors indicate likely regression between chapters.")
+                                .font(.caption)
+                                .foregroundColor(textColor.opacity(0.7))
+
+                            HStack(spacing: 10) {
+                                HStack(spacing: 4) {
+                                    Circle().fill(Color.red).frame(width: 8, height: 8)
+                                    Text("Fear").font(.caption2).foregroundColor(textColor.opacity(0.7))
+                                }
+                                HStack(spacing: 4) {
+                                    Circle().fill(Color.purple).frame(width: 8, height: 8)
+                                    Text("Agency").font(.caption2).foregroundColor(textColor.opacity(0.7))
+                                }
+                                HStack(spacing: 4) {
+                                    Circle().fill(Color.blue).frame(width: 8, height: 8)
+                                    Text("Trust").font(.caption2).foregroundColor(textColor.opacity(0.7))
+                                }
+                                HStack(spacing: 4) {
+                                    Circle().fill(Color.green).frame(width: 8, height: 8)
+                                    Text("Identity").font(.caption2).foregroundColor(textColor.opacity(0.7))
+                                }
+                                HStack(spacing: 4) {
+                                    Circle().fill(Color.yellow).frame(width: 8, height: 8)
+                                    Text("Moral/Ethical").font(.caption2).foregroundColor(textColor.opacity(0.7))
+                                }
+                            }
+
                             CharacterArcTimelineView(entries: loop.entries, textColor: textColor)
                         }
                         .padding()

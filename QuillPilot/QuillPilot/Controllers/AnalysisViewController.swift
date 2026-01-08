@@ -3621,8 +3621,17 @@ extension AnalysisViewController {
 
         containerView.addSubview(toolbar)
 
+        // Interpretation guide (shown inside the dialog)
+        let guideLabel = NSTextField(wrappingLabelWithString: "How to read: X-axis is document progress; Y-axis is the selected metric (top = higher, bottom = lower). Solid lines show surface behavior; dashed lines show subtext/internal state. Focus on rises/drops and crossovers more than exact values.")
+        guideLabel.font = NSFont.systemFont(ofSize: 11)
+        guideLabel.textColor = currentTheme.textColor.withAlphaComponent(0.75)
+        guideLabel.maximumNumberOfLines = 3
+        guideLabel.frame = NSRect(x: 20, y: window.contentView!.bounds.height - 85, width: window.contentView!.bounds.width - 40, height: 32)
+        guideLabel.autoresizingMask = [.width, .minYMargin]
+        containerView.addSubview(guideLabel)
+
         // Create trajectory view
-        let trajectoryView = EmotionalTrajectoryView(frame: NSRect(x: 20, y: 20, width: window.contentView!.bounds.width - 40, height: window.contentView!.bounds.height - 90))
+        let trajectoryView = EmotionalTrajectoryView(frame: NSRect(x: 20, y: 20, width: window.contentView!.bounds.width - 40, height: window.contentView!.bounds.height - 125))
         trajectoryView.autoresizingMask = [.width, .height]
 
         // Generate sample trajectory data from analysis results

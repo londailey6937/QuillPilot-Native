@@ -352,9 +352,18 @@ class DecisionBeliefLoopView: NSView {
         timelineSubLabel.frame = NSRect(x: 15, y: yPos - 38, width: width - 30, height: 16)
         container.addSubview(timelineSubLabel)
 
+        // Timeline legend (node color meaning)
+        let legend = createLabel(
+            text: "Legend: Reinforced (blue) • Weakened (orange) • Reframed (purple) • Contradicted (red) • Other shift (green) • No shift detected (gray)",
+            font: NSFont.systemFont(ofSize: 10),
+            textColor: textColor.withAlphaComponent(0.7)
+        )
+        legend.frame = NSRect(x: 15, y: yPos - 56, width: width - 30, height: 16)
+        container.addSubview(legend)
+
         // Simple timeline visualization
         let timelineView = createTimelineView(entries: loop.entries, width: width - 40, textColor: textColor)
-        timelineView.frame.origin = NSPoint(x: 20, y: yPos - 130)
+        timelineView.frame.origin = NSPoint(x: 20, y: yPos - 145)
         container.addSubview(timelineView)
 
         return container

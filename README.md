@@ -136,13 +136,12 @@ Three powerful visualization modes:
 
 ### Analyzing Your Work
 
-1. Click **"Analyze Document"** in the toolbar
-2. View results in the Analysis Panel (right sidebar)
-3. Switch between tabs:
-   - **📝 Outline**: Basic metrics and style analysis
-   - **🔬 Advanced**: Coming soon
-   - **📖 Plot**: Coming soon
-   - **📊 Graphs**: Plot points and character arcs
+1. Open the right-side Analysis panel and click one of the icons:
+   - **📊 Analysis**: Basic metrics and writing quality
+   - **📖 Plot Structure**: Plot/structure visualization
+   - **👥 Characters**: Character-focused tools
+2. If results aren’t available yet, QuillPilot runs analysis automatically when you open an analysis view.
+3. Use the popout windows to explore results.
 
 ### Understanding Visualizations
 

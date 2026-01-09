@@ -2325,14 +2325,40 @@ class EditorViewController: NSViewController {
 
             // Get paragraph attributes
             let attrs = mutable.attributes(at: paragraphRange.location, effectiveRange: nil)
+
+            // Get paragraph text to help with content-based style detection
+            let paragraphText = fullString.substring(with: paragraphRange).trimmingCharacters(in: .whitespacesAndNewlines)
+
+            // Plain-text imports often arrive with no explicit font/paragraph style attributes.
+            // If we don't seed those, the text view may render using stale defaults (e.g. centered title style).
+            // Seed with a template-appropriate default so the rest of inference is stable.
+            if (attrs[.font] as? NSFont) == nil || (attrs[.paragraphStyle] as? NSParagraphStyle) == nil {
+                let defaultStyleName = (StyleCatalog.shared.currentTemplateName == "Screenplay")
+                    ? "Screenplay — Action"
+                    : "Body Text"
+
+                if let definition = StyleCatalog.shared.style(named: defaultStyleName) {
+                    let catalogParagraph = self.paragraphStyle(from: definition)
+                    let catalogFont = self.font(from: definition)
+
+                    mutable.addAttribute(styleAttributeKey, value: defaultStyleName, range: paragraphRange)
+                    mutable.addAttribute(.paragraphStyle, value: catalogParagraph, range: paragraphRange)
+                    mutable.addAttribute(.font, value: catalogFont, range: paragraphRange)
+
+                    if attrs[.foregroundColor] == nil {
+                        mutable.addAttribute(.foregroundColor, value: currentTheme.textColor, range: paragraphRange)
+                    }
+                }
+
+                location = NSMaxRange(paragraphRange)
+                continue
+            }
+
             guard let font = attrs[.font] as? NSFont,
                   let paragraphStyle = attrs[.paragraphStyle] as? NSParagraphStyle else {
                 location = NSMaxRange(paragraphRange)
                 continue
             }
-
-            // Get paragraph text to help with content-based style detection
-            let paragraphText = fullString.substring(with: paragraphRange).trimmingCharacters(in: .whitespacesAndNewlines)
 
             // Infer style based on font, paragraph attributes, and text content
             let styleName = inferStyle(font: font, paragraphStyle: paragraphStyle, text: paragraphText)

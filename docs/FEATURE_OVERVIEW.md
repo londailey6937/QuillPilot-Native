@@ -4,7 +4,7 @@
 
 ### 1. Analyze Your Manuscript Structure
 
-When you click "Analyze Document", QuillPilot now provides THREE types of analysis:
+When you open an analysis view from the right-side Analysis panel (📊 / 📖 / 👥), QuillPilot provides THREE types of analysis:
 
 #### A. Text Quality (📝 Outline tab)
 
@@ -20,7 +20,7 @@ When you click "Analyze Document", QuillPilot now provides THREE types of analys
   - Conflict presence
   - Pacing variety
 
-#### B. Plot Structure (📊 Graphs tab → Plot Points)
+#### B. Plot Structure (Right panel → 📖 Plot Structure → Plot Points)
 
 **NEW FEATURE**: Visual story structure analysis
 
@@ -39,7 +39,7 @@ When you click "Analyze Document", QuillPilot now provides THREE types of analys
 - See **missing beats** warnings
 - **Click any plot point** to jump to that location in your editor
 
-#### C. Character Development (📊 Graphs tab → Character Arcs)
+#### C. Character Development (Right panel → 👥 Characters)
 
 **NEW FEATURE**: Three powerful character visualizations
 
@@ -90,20 +90,16 @@ When you click "Analyze Document", QuillPilot now provides THREE types of analys
 ### Step 2: Run Analysis
 
 ```
-1. Click "Analyze Document" in toolbar
+1. In the right-side Analysis panel, click 📊 (Analysis), 📖 (Plot Structure), or 👥 (Characters)
 2. Wait 2-5 seconds (longer for huge manuscripts)
-3. Results appear in right sidebar
+3. Results open in popout windows
 ```
 
 ### Step 3: Explore Visualizations
 
 ```
-1. Click "📊 Graphs" tab in Analysis Panel
-2. See two sub-tabs: "Plot Points" and "Character Arcs"
-3. In Character Arcs, use segment control to switch between:
-   - Emotional Journey
-   - Character Network
-   - Presence Heatmap
+1. Click 📖 (Plot Structure) for plot visualizations
+2. Click 👥 (Characters) for character visualizations
 ```
 
 ### Step 4: Navigate to Problem Areas

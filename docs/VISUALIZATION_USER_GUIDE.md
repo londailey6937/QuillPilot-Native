@@ -7,9 +7,8 @@ QuillPilot now includes powerful visualization tools to help you understand your
 ## Accessing Visualizations
 
 1. Write or open your manuscript in the Editor
-2. Click **"Analyze Document"** to run analysis
-3. In the Analysis Panel, click the **"📊 Graphs"** tab
-4. Choose between **Plot Points** and **Character Arcs** tabs
+2. In the right-side Analysis panel, click **📖 Plot Structure** or **👥 Characters**
+3. If results aren’t available yet, QuillPilot runs analysis automatically when you open an analysis view
 
 ## Plot Point Visualization
 
@@ -192,7 +191,7 @@ Automatically identifies chapters by headers:
 ### "No analysis data available"
 
 - **Cause**: Haven't run document analysis yet
-- **Solution**: Click "Analyze Document" first
+- **Solution**: Open 📊 Analysis (or 📖 Plot Structure / 👥 Characters) in the right-side Analysis panel
 
 ### "No character data available"
 

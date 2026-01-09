@@ -1241,6 +1241,13 @@ extension MainWindowController {
             allowedTypes.append(mdType)
         }
 
+        // Fade In screenplay (.fadein) is a ZIP archive (Open Screenplay Format).
+        if let fadeInType = UTType("com.quillpilot.fadein") {
+            allowedTypes.append(fadeInType)
+        } else if let fadeInType = UTType(filenameExtension: "fadein", conformingTo: .data) {
+            allowedTypes.append(fadeInType)
+        }
+
         // Safety: include `.data` so legacy/mis-typed files (e.g. old flat .rtfd) still appear in the Open panel
         // even if their UTType isn't recognized correctly.
         if !allowedTypes.isEmpty {
@@ -1358,6 +1365,91 @@ extension MainWindowController {
             let tempURL = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString).appendingPathExtension("mobi")
             return try self.generateMobi(from: content, url: tempURL)
         }
+    }
+
+    private func readTextFromFile(at url: URL) throws -> String {
+        let data = try Data(contentsOf: url, options: [.mappedIfSafe])
+        if data.isEmpty { return "" }
+
+        func decode(_ data: Data, encoding: String.Encoding) -> String? {
+            String(data: data, encoding: encoding)
+        }
+
+        // BOM-based detection.
+        if data.count >= 3, data[0] == 0xEF, data[1] == 0xBB, data[2] == 0xBF {
+            if let s = decode(Data(data.dropFirst(3)), encoding: .utf8) { return s }
+        }
+        if data.count >= 4 {
+            // UTF-32 BOM
+            if data[0] == 0x00, data[1] == 0x00, data[2] == 0xFE, data[3] == 0xFF {
+                if let s = decode(Data(data.dropFirst(4)), encoding: .utf32BigEndian) { return s }
+            }
+            if data[0] == 0xFF, data[1] == 0xFE, data[2] == 0x00, data[3] == 0x00 {
+                if let s = decode(Data(data.dropFirst(4)), encoding: .utf32LittleEndian) { return s }
+            }
+        }
+        if data.count >= 2 {
+            // UTF-16 BOM
+            if data[0] == 0xFE, data[1] == 0xFF {
+                if let s = decode(Data(data.dropFirst(2)), encoding: .utf16BigEndian) { return s }
+            }
+            if data[0] == 0xFF, data[1] == 0xFE {
+                if let s = decode(Data(data.dropFirst(2)), encoding: .utf16LittleEndian) { return s }
+            }
+        }
+
+        // Heuristic detection for UTF-16 without BOM (common for some editor exports).
+        if data.count >= 8 {
+            var zeroEven = 0
+            var zeroOdd = 0
+            var checked = 0
+            let limit = min(data.count, 4096)
+            for i in 0..<limit {
+                let b = data[i]
+                if b == 0 {
+                    if i % 2 == 0 { zeroEven += 1 } else { zeroOdd += 1 }
+                }
+                checked += 1
+            }
+
+            // If a large portion of bytes are NULs, it likely isn't single-byte text.
+            let nulRatio = Double(zeroEven + zeroOdd) / Double(checked)
+            if nulRatio > 0.20 {
+                // ASCII-in-UTF16LE looks like: 0x41 0x00 (NULs on odd indices).
+                if zeroOdd > zeroEven, let s = decode(data, encoding: .utf16LittleEndian) { return s }
+                // ASCII-in-UTF16BE looks like: 0x00 0x41 (NULs on even indices).
+                if zeroEven > zeroOdd, let s = decode(data, encoding: .utf16BigEndian) { return s }
+            }
+        }
+
+        // Fallback attempts.
+        let fallbackEncodings: [String.Encoding] = [
+            .utf8,
+            .utf16,
+            .utf16LittleEndian,
+            .utf16BigEndian,
+            .utf32,
+            .utf32LittleEndian,
+            .utf32BigEndian,
+            .windowsCP1252,
+            .isoLatin1,
+            .macOSRoman
+        ]
+
+        for encoding in fallbackEncodings {
+            if let s = decode(data, encoding: encoding) {
+                return s
+            }
+        }
+
+        throw NSError(
+            domain: "QuillPilot.TextDecoding",
+            code: 1,
+            userInfo: [
+                NSLocalizedDescriptionKey: "QuillPilot couldn't determine this file's text encoding.",
+                NSLocalizedRecoverySuggestionErrorKey: "Try re-saving/exporting it as UTF-8 or UTF-16, then import again."
+            ]
+        )
     }
 
     private func importFile(url: URL) throws {
@@ -1542,6 +1634,47 @@ extension MainWindowController {
             }
             return
 
+        case "fadein":
+            // Fade In screenplay format is plain text with screenplay semantics.
+            // Switch to the Screenplay template so the expected styles exist.
+            toolbarView.selectTemplateProgrammatically("Screenplay")
+
+            let filename = url.deletingPathExtension().lastPathComponent
+            headerView.setDocumentTitle(filename)
+            currentDocumentURL = url
+            currentDocumentFormat = .txt
+            hasUnsavedChanges = false
+            mainContentViewController.editorViewController.headerText = ""
+            mainContentViewController.editorViewController.headerTextRight = ""
+            mainContentViewController.editorViewController.footerText = ""
+            mainContentViewController.editorViewController.footerTextRight = ""
+
+            mainContentViewController.documentDidChange(url: url)
+            mainContentViewController.editorViewController.textView?.string = "Loading document..."
+
+            DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+                do {
+                    let attributed: NSAttributedString
+
+                    // Real Fade In `.fadein` files are ZIP archives containing `document.xml`.
+                    if FadeInImporter.isZipArchive(at: url) {
+                        attributed = try FadeInImporter.attributedString(fromFadeInURL: url)
+                    } else {
+                        let text = try self?.readTextFromFile(at: url) ?? ""
+                        attributed = ScreenplayImporter.attributedString(fromPlainText: text)
+                    }
+
+                    DispatchQueue.main.async {
+                        self?.applyImportedContent(attributed, url: url)
+                    }
+                } catch {
+                    DispatchQueue.main.async {
+                        self?.presentErrorAlert(message: "Failed to open screenplay", details: error.localizedDescription)
+                    }
+                }
+            }
+            return
+
         case "rtf", "rtfd", "odt", "txt", "md", "markdown", "html", "htm":
             let filename = url.deletingPathExtension().lastPathComponent
             headerView.setDocumentTitle(filename)
@@ -1634,10 +1767,14 @@ extension MainWindowController {
                             documentAttributes: nil
                         )
                     case "txt", "md", "markdown":
-                        let text = try String(contentsOf: url)
-                        attributed = NSAttributedString(string: text)
+                        let text = try self?.readTextFromFile(at: url) ?? ""
+                        if StyleCatalog.shared.currentTemplateName == "Screenplay" {
+                            attributed = ScreenplayImporter.attributedString(fromPlainText: text)
+                        } else {
+                            attributed = NSAttributedString(string: text)
+                        }
                     default:
-                        let text = try String(contentsOf: url)
+                        let text = try self?.readTextFromFile(at: url) ?? ""
                         attributed = NSAttributedString(string: text)
                     }
 
@@ -1654,7 +1791,7 @@ extension MainWindowController {
         default:
             presentErrorAlert(
                 message: "Unsupported format",
-                details: "QuillPilot opens .docx, .odt, .pages, .rtf, .rtfd, .txt, .md, and .html documents.\n\nUse Export to save as Word (.docx), OpenDocument (.odt), RTF/RTFD, PDF, ePub, Kindle, HTML, or Text."
+                details: "QuillPilot opens .docx, .odt, .pages, .rtf, .rtfd, .txt, .md, .html, and .fadein documents.\n\nUse Export to save as Word (.docx), OpenDocument (.odt), RTF/RTFD, PDF, ePub, Kindle, HTML, or Text."
             )
             return
         }
@@ -2530,6 +2667,14 @@ class FormattingToolbar: NSView {
         ]
         sender.attributedTitle = NSAttributedString(string: templateName, attributes: attrs)
         sender.synchronizeTitleAndSelectedItem()
+    }
+
+    /// Switch the active template and update toolbar UI.
+    /// Useful for imports where the file format implies a specific template (e.g. `.fadein` → Screenplay).
+    func selectTemplateProgrammatically(_ templateName: String) {
+        guard templatePopup.itemTitles.contains(templateName) else { return }
+        templatePopup.selectItem(withTitle: templateName)
+        templateChanged(templatePopup)
     }
 
     @objc private func fontSizeChanged(_ sender: NSPopUpButton) {

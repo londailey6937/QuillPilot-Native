@@ -217,7 +217,12 @@ QuillPilot is for the latter.
 
         content.append(makeTitle("Document Analysis Features", color: titleColor))
         content.append(makeBody("""
-Click "Analyze Document" in the toolbar to generate real-time feedback on your writing.
+Open analysis from the right-side Analysis panel:
+• Click 📊 (Analysis) to open the main analysis popout
+• Click 📖 (Plot Structure) for plot/structure visualizations
+• Click 👥 (Characters) for character-focused tools
+
+If results aren’t available yet, QuillPilot runs analysis automatically the first time you open any analysis view.
 """, color: bodyColor))
         content.append(makeNewline())
 
@@ -324,7 +329,7 @@ Balance - distribution among characters
 
         content.append(makeTitle("Character Analysis Tools", color: titleColor))
         content.append(makeBody("""
-Access character analysis from the right panel Navigator (👥) or after running "Analyze Document."
+Character analysis lives in the right-side Analysis panel (👥). If results aren’t available yet, QuillPilot runs analysis automatically when you open a character tool.
 """, color: bodyColor))
         content.append(makeNewline())
 
@@ -354,7 +359,7 @@ To use:
         content.append(makeBody("""
 Visualize character emotional states throughout your story.
 
-Access: Analyze Document → Characters tab → 📈 Emotional Trajectory
+Access: Right panel → 👥 Characters → 📈 Emotional Trajectory
 
 Features:
 • Multi-character overlay with color coding
@@ -402,7 +407,7 @@ This visualization helps identify:
         content.append(makeBody("""
 Tracks how character decisions reinforce or challenge their beliefs.
 
-Access: Analyze Document → Characters tab → 📊 Decision-Belief Loops
+Access: Right panel → 👥 Characters → 📊 Decision-Belief Loops
 
 What the framework is tracking (per chapter):
 • Pressure — new forces acting on the character (conflict, dilemma, constraint)
@@ -454,7 +459,7 @@ Character Arc Timeline (legend):
         content.append(makeBody("""
 Table format tracking character belief evolution through chapters.
 
-Access: Analyze Document → Characters tab → 📋 Belief Shift Matrix
+Access: Right panel → 👥 Characters → 📋 Belief Shift Matrix
 
 Columns:
 • Chapter - Where the belief appears
@@ -510,7 +515,7 @@ Perfect for:
         content.append(makeBody("""
 Maps choices, not traits. Ensures growth comes from action, not narration.
 
-Access: Analyze Document → Characters tab → ⛓️ Decision-Consequence Chains
+Access: Right panel → 👥 Characters → ⛓️ Decision-Consequence Chains
 
 Structure:
 • Chapter → Decision → Immediate Outcome → Long-term Effect
@@ -540,7 +545,7 @@ and those decisions have real, lasting consequences on their journey.
         content.append(makeBody("""
 Analyzes relationships and scenes between characters.
 
-Access: Analyze Document → Characters tab → 🤝 Character Interactions
+Access: Right panel → 👥 Characters → 🤝 Character Interactions
 
 Features:
 • Network graph of character relationships
@@ -560,7 +565,7 @@ Helps with:
         content.append(makeBody("""
 Heat map showing which characters appear in which chapters.
 
-Access: Analyze Document → Characters tab → 📍 Character Presence
+Access: Right panel → 👥 Characters → 📍 Character Presence
 
 Displays:
 • Grid: Rows = Characters, Columns = Chapters
@@ -581,7 +586,7 @@ Use cases:
         content.append(makeBody("""
 Network diagram visualizing character relationships and their evolution.
 
-Access: Analyze Document → Characters tab → 🔗 Relationship Evolution Maps
+Access: Right panel → 👥 Characters → 🔗 Relationship Evolution Maps
 
 Visual Elements:
 • Nodes = Characters (size = emotional investment %)
@@ -615,7 +620,7 @@ Great for:
         content.append(makeBody("""
 Track the gap between who characters are inside and how they act.
 
-Access: Analyze Document → Characters tab → 🎭 Internal vs External Alignment
+Access: Right panel → 👥 Characters → 🎭 Internal vs External Alignment
 
 Two Parallel Tracks:
 • Purple line = Inner Truth (what they feel/believe)
@@ -657,7 +662,7 @@ Character Selection:
         content.append(makeBody("""
 Track how character's language changes — reveals unconscious growth.
 
-Access: Analyze Document → Characters tab → 📝 Language Drift Analysis
+Access: Right panel → 👥 Characters → 📝 Language Drift Analysis
 
 Five Metrics Tracked:
 
@@ -729,7 +734,7 @@ Interactive Features:
 
         content.append(makeHeading("📖 Plot Points Visualization", color: headingColor))
         content.append(makeBody("""
-Access: Analyze Document → 📊 Graphs tab → Plot Points
+Access: Right panel → 📖 Plot Structure → Plot Points
 
 Features:
 • Tension Arc - Line graph showing story tension over time

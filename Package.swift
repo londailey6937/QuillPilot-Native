@@ -35,6 +35,8 @@ let package = Package(
                 "Utilities/ThemeManager.swift",
                 "Utilities/DebugLog.swift",
                 "Utilities/StyleCatalog.swift",
+                "Utilities/ScreenplayImporter.swift",
+                "Utilities/FadeInImporter.swift",
                 "Extensions/NSColor+Hex.swift",
                 "Extensions/NSAlert+Themed.swift",
                 "Views/DocumentInfoPanel.swift",

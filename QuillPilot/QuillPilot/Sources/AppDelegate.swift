@@ -27,6 +27,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var dialogueTipsWindow: DialogueTipsWindowController?
     private var aboutWindow: NSWindow?
     private var welcomeWindow: WelcomeWindowController?
+    private var recentlyOpenedMenu: NSMenu?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         setupMenuBar()
@@ -246,6 +247,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
+    @objc private func openRecentFromMenu(_ sender: NSMenuItem) {
+        guard let url = sender.representedObject as? URL else { return }
+        presentMainWindow(orderingSource: nil)
+        mainWindowController?.performOpenDocumentForURL(url)
+    }
+
+    @objc private func clearRecentDocuments(_ sender: Any?) {
+        NSDocumentController.shared.clearRecentDocuments(sender)
+        recentlyOpenedMenu?.removeAllItems()
+    }
+
     @objc private func newDocument(_ sender: Any?) {
         Task { @MainActor [weak self] in
             self?.mainWindowController?.performNewDocument(sender)
@@ -299,6 +311,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let openItem = NSMenuItem(title: "Open…", action: #selector(openDocument(_:)), keyEquivalent: "o")
         openItem.target = self
         fileMenu.addItem(openItem)
+
+        let recentItem = NSMenuItem(title: "Recently Opened", action: nil, keyEquivalent: "")
+        let recentMenu = NSMenu(title: "Recently Opened")
+        recentMenu.delegate = self
+        recentItem.submenu = recentMenu
+        fileMenu.addItem(recentItem)
+        recentlyOpenedMenu = recentMenu
 
         fileMenu.addItem(.separator())
 
@@ -562,6 +581,35 @@ extension AppDelegate: NSMenuItemValidation {
             return mainWindowController != nil
         }
         return true
+    }
+}
+
+// MARK: - Recently Opened Menu
+extension AppDelegate: NSMenuDelegate {
+    func menuNeedsUpdate(_ menu: NSMenu) {
+        guard menu == recentlyOpenedMenu else { return }
+
+        menu.removeAllItems()
+
+        let recents = NSDocumentController.shared.recentDocumentURLs
+        guard !recents.isEmpty else {
+            let none = NSMenuItem(title: "No Recent Documents", action: nil, keyEquivalent: "")
+            none.isEnabled = false
+            menu.addItem(none)
+            return
+        }
+
+        for url in recents.prefix(12) {
+            let item = NSMenuItem(title: url.lastPathComponent, action: #selector(openRecentFromMenu(_:)), keyEquivalent: "")
+            item.target = self
+            item.representedObject = url
+            menu.addItem(item)
+        }
+
+        menu.addItem(.separator())
+        let clear = NSMenuItem(title: "Clear Menu", action: #selector(clearRecentDocuments(_:)), keyEquivalent: "")
+        clear.target = self
+        menu.addItem(clear)
     }
 }
 

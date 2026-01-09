@@ -364,13 +364,17 @@ private func removeAllSections(title: String, in storage: NSTextStorage) {
 }
 
 // MARK: - TOC & Index Window Controller
-class TOCIndexWindowController: NSWindowController, NSOutlineViewDataSource, NSOutlineViewDelegate, NSTableViewDataSource, NSTableViewDelegate {
+class TOCIndexWindowController: NSWindowController, NSWindowDelegate, NSOutlineViewDataSource, NSOutlineViewDelegate, NSTableViewDataSource, NSTableViewDelegate {
 
     private var tabView: NSTabView!
     private var tocOutlineView: NSOutlineView!
     private var indexTableView: NSTableView!
     private var addTermField: NSTextField!
     private var addCategoryPopup: NSPopUpButton!
+    private var indexGoToButton: NSButton!
+
+    // Index navigation state (for Go to Next)
+    private var activeIndexTermLowercased: String?
 
     weak var editorTextView: NSTextView?
     weak var editorViewController: EditorViewController?
@@ -502,6 +506,8 @@ class TOCIndexWindowController: NSWindowController, NSOutlineViewDataSource, NSO
         panel.hidesOnDeactivate = false
 
         self.init(window: panel)
+
+        panel.delegate = self
         setupUI()
         applyTheme()
 
@@ -726,9 +732,45 @@ class TOCIndexWindowController: NSWindowController, NSOutlineViewDataSource, NSO
         let goToButton = NSButton(title: "Go to First", target: self, action: #selector(goToIndexEntry))
         goToButton.frame = NSRect(x: 320, y: 10, width: 100, height: 30)
         goToButton.bezelStyle = .rounded
+        indexGoToButton = goToButton
         container.addSubview(goToButton)
 
         return container
+    }
+
+    // MARK: - NSWindowDelegate
+
+    func windowDidResignKey(_ notification: Notification) {
+        resetIndexGoToState()
+    }
+
+    func windowDidUpdate(_ notification: Notification) {
+        guard let window = window else { return }
+        // Only care when Index tab is active
+        if let selected = tabView?.selectedTabViewItem?.identifier as? String, selected != "index" {
+            return
+        }
+
+        // If focus leaves the index entry/table, revert to Go to First.
+        guard indexTableView?.selectedRow ?? -1 >= 0 else {
+            resetIndexGoToState()
+            return
+        }
+
+        if let responderView = window.firstResponder as? NSView {
+            let isInIndexTable = responderView.isDescendant(of: indexTableView)
+            let isGoToButton = (indexGoToButton != nil) && (responderView == indexGoToButton || responderView.isDescendant(of: indexGoToButton))
+            if !isInIndexTable && !isGoToButton {
+                resetIndexGoToState()
+            }
+        } else {
+            resetIndexGoToState()
+        }
+    }
+
+    private func resetIndexGoToState() {
+        activeIndexTermLowercased = nil
+        indexGoToButton?.title = "Go to First"
     }
 
     // MARK: - Actions
@@ -1135,11 +1177,33 @@ class TOCIndexWindowController: NSWindowController, NSOutlineViewDataSource, NSO
               let textView = editorTextView else { return }
 
         let entry = TOCIndexManager.shared.indexEntries[selectedRow]
-        if let firstRange = entry.ranges.first {
-            textView.setSelectedRange(firstRange)
-            textView.scrollRangeToVisible(firstRange)
-            textView.window?.makeFirstResponder(textView)
+
+        let ranges = entry.ranges.sorted { $0.location < $1.location }
+        guard !ranges.isEmpty else { return }
+
+        let termKey = entry.term.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        let currentSelection = textView.selectedRange()
+
+        let targetRange: NSRange
+        if activeIndexTermLowercased == termKey {
+            // If we're already on one of this term's occurrences, advance to the next.
+            if let currentIdx = ranges.firstIndex(where: { r in
+                NSEqualRanges(r, currentSelection) || NSIntersectionRange(r, currentSelection).length > 0
+            }) {
+                targetRange = ranges[(currentIdx + 1) % ranges.count]
+            } else {
+                targetRange = ranges[0]
+            }
+        } else {
+            // New term (or focus changed) => start at first occurrence.
+            targetRange = ranges[0]
         }
+
+        activeIndexTermLowercased = termKey
+        indexGoToButton?.title = ranges.count > 1 ? "Go to Next" : "Go to First"
+
+        textView.setSelectedRange(targetRange)
+        textView.scrollRangeToVisible(targetRange)
     }
 
     // MARK: - NSOutlineViewDataSource
@@ -1188,6 +1252,11 @@ class TOCIndexWindowController: NSWindowController, NSOutlineViewDataSource, NSO
 
     func numberOfRows(in tableView: NSTableView) -> Int {
         return TOCIndexManager.shared.indexEntries.count
+    }
+
+    func tableViewSelectionDidChange(_ notification: Notification) {
+        guard let table = notification.object as? NSTableView, table == indexTableView else { return }
+        resetIndexGoToState()
     }
 
     // MARK: - NSTableViewDelegate

@@ -7,6 +7,59 @@
 //
 
 import Cocoa
+import ImageIO
+
+private final class AttachmentClickableTextView: NSTextView {
+    var onMouseDownInTextView: ((NSPoint) -> Void)?
+
+    override func mouseDown(with event: NSEvent) {
+        let point = convert(event.locationInWindow, from: nil)
+        onMouseDownInTextView?(point)
+        super.mouseDown(with: event)
+    }
+}
+
+private final class ImageResizeSlider: NSSlider {
+    var onMouseDown: (() -> Void)?
+    var onMouseUp: (() -> Void)?
+
+    override func mouseDown(with event: NSEvent) {
+        onMouseDown?()
+        super.mouseDown(with: event)
+    }
+
+    override func mouseUp(with event: NSEvent) {
+        super.mouseUp(with: event)
+        onMouseUp?()
+    }
+}
+
+private final class QuillPilotResizableAttachmentCell: NSTextAttachmentCell {
+    var forcedSize: NSSize
+
+    init(image: NSImage, size: NSSize) {
+        self.forcedSize = size
+        super.init(imageCell: image)
+    }
+
+    required init(coder: NSCoder) {
+        self.forcedSize = .zero
+        super.init(coder: coder)
+    }
+
+    override var cellSize: NSSize {
+        forcedSize
+    }
+
+    override func draw(withFrame cellFrame: NSRect, in controlView: NSView?) {
+        // Draw the image scaled into the provided frame.
+        if let image {
+            image.draw(in: cellFrame, from: .zero, operation: .sourceOver, fraction: 1.0, respectFlipped: true, hints: nil)
+        } else {
+            super.draw(withFrame: cellFrame, in: controlView)
+        }
+    }
+}
 import UniformTypeIdentifiers
 
 fileprivate let quillIndexMarkerRegex: NSRegularExpression? = {
@@ -94,6 +147,8 @@ class EditorViewController: NSViewController {
     private var lastImageRange: NSRange?
     private var imageScaleLabel: NSTextField?
     private var popoverScrollObserver: NSObjectProtocol?
+    private var suppressLayoutDuringImageResize: Bool = false
+    private var imageResizeEndWorkItem: DispatchWorkItem?
 
     // Format painter state
     private var formatPainterActive: Bool = false
@@ -326,7 +381,23 @@ class EditorViewController: NSViewController {
 
         // Create text view that grows with content
         let textFrame = pageContainer.bounds.insetBy(dx: standardMargin * editorZoom, dy: standardMargin * editorZoom)
-        textView = NSTextView(frame: textFrame)
+        let clickable = AttachmentClickableTextView(frame: textFrame)
+        clickable.onMouseDownInTextView = { [weak self, weak clickable] point in
+            guard let self, let textView = clickable else { return }
+            guard let layoutManager = textView.layoutManager, let textContainer = textView.textContainer else { return }
+
+            // Hit-test the clicked point to a character index, then check for an attachment at that index.
+            let p = NSPoint(x: point.x - textView.textContainerOrigin.x, y: point.y - textView.textContainerOrigin.y)
+            var fraction: CGFloat = 0
+            let index = layoutManager.characterIndex(for: p, in: textContainer, fractionOfDistanceBetweenInsertionPoints: &fraction)
+            guard let attachmentRange = self.imageAttachmentRange(at: index) else { return }
+
+            // Select the attachment itself so selection-change based logic works.
+            textView.setSelectedRange(attachmentRange)
+            self.lastImageRange = attachmentRange
+            self.showImageControlsIfNeeded()
+        }
+        textView = clickable
         textView.minSize = NSSize(width: textFrame.width, height: textFrame.height)
         textView.maxSize = NSSize(width: textFrame.width, height: CGFloat.greatestFiniteMagnitude)
         textView.isVerticallyResizable = true
@@ -850,6 +921,7 @@ class EditorViewController: NSViewController {
         let attachment = NSTextAttachment()
         attachment.image = image
         attachment.bounds = NSRect(origin: .zero, size: targetSize)
+        attachment.attachmentCell = QuillPilotResizableAttachmentCell(image: image, size: targetSize)
 
         // Preserve image data and size in fileWrapper; normalize to PNG for consistency
         if let pngData = image.pngData() {
@@ -933,11 +1005,20 @@ class EditorViewController: NSViewController {
 
     private func imageAttachmentRange(at location: Int) -> NSRange? {
         guard let storage = textView.textStorage, storage.length > 0 else { return nil }
-        let clampedLoc = max(0, min(location, storage.length - 1))
-        var effectiveRange = NSRange(location: NSNotFound, length: 0)
-        if storage.attribute(.attachment, at: clampedLoc, effectiveRange: &effectiveRange) != nil {
-            return effectiveRange
+
+        func attachmentRangeIfPresent(at loc: Int) -> NSRange? {
+            let clampedLoc = max(0, min(loc, storage.length - 1))
+            var effectiveRange = NSRange(location: NSNotFound, length: 0)
+            if storage.attribute(.attachment, at: clampedLoc, effectiveRange: &effectiveRange) != nil {
+                return effectiveRange
+            }
+            return nil
         }
+
+        // Clicking an attachment often places the caret *after* the attachment character.
+        // Check both the current location and the preceding character.
+        if let found = attachmentRangeIfPresent(at: location) { return found }
+        if location > 0, let found = attachmentRangeIfPresent(at: location - 1) { return found }
         return nil
     }
 
@@ -982,6 +1063,29 @@ class EditorViewController: NSViewController {
         lastImageRange = attachmentRange
 
         let maxWidth = textView.textContainer?.size.width ?? ((pageWidth - standardMargin * 2) * editorZoom)
+        if let storage = textView.textStorage,
+           let attachment = storage.attribute(.attachment, at: attachmentRange.location, effectiveRange: nil) as? NSTextAttachment {
+            // Ensure the attachment has an image loaded for resizing/drawing.
+            if attachment.image == nil, let data = attachment.fileWrapper?.regularFileContents {
+                attachment.image = NSImage(data: data)
+            }
+
+            // If an attachment is oversized (common with paste/import), clamp it immediately
+            // so it doesn't render off the page and so the slider is meaningful.
+            let currentSize = attachment.bounds.size
+            if currentSize.width > maxWidth * 1.02 {
+                let aspect = (currentSize.width > 0) ? (currentSize.height / currentSize.width) : 1
+                let targetWidth = max(40, maxWidth)
+                let targetHeight = max(40, targetWidth * aspect)
+                let newBounds = NSRect(origin: .zero, size: NSSize(width: targetWidth, height: targetHeight))
+                attachment.bounds = newBounds
+                if let img = attachment.image {
+                    attachment.attachmentCell = QuillPilotResizableAttachmentCell(image: img, size: newBounds.size)
+                }
+                storage.addAttribute(NSAttributedString.Key("QuillPilotImageSize"), value: NSStringFromRect(newBounds), range: attachmentRange)
+            }
+        }
+
         let currentWidth = (textView.textStorage?.attribute(.attachment, at: attachmentRange.location, effectiveRange: nil) as? NSTextAttachment)?.bounds.width ?? (maxWidth * 0.5)
         // Scale is relative to max width: 0.5 = 50% of text width, 1.0 = 100% of text width
         let currentScale = max(0.1, min(1.0, currentWidth / maxWidth))
@@ -1031,8 +1135,19 @@ class EditorViewController: NSViewController {
         scaleLabel.font = NSFont.systemFont(ofSize: 10)
         imageScaleLabel = scaleLabel
 
-        let slider = NSSlider(value: currentScale, minValue: 0.1, maxValue: 1.0, target: self, action: #selector(resizeSliderChanged(_:)))
+        let slider = ImageResizeSlider(value: currentScale, minValue: 0.1, maxValue: 1.0, target: self, action: #selector(resizeSliderChanged(_:)))
         slider.isContinuous = true
+        slider.onMouseDown = { [weak self] in
+            guard let self else { return }
+            self.suppressLayoutDuringImageResize = true
+            // Prevent any pending delayed relayout from firing mid-drag.
+            NSObject.cancelPreviousPerformRequests(withTarget: self, selector: #selector(updatePageCenteringDelayed), object: nil)
+            NSObject.cancelPreviousPerformRequests(withTarget: self, selector: #selector(checkAndUpdateTitleDelayed), object: nil)
+            self.imageResizeEndWorkItem?.cancel()
+        }
+        slider.onMouseUp = { [weak self] in
+            self?.commitImageResizeChanges()
+        }
 
         let resizeRow = NSStackView(views: [scaleLabel, slider])
         resizeRow.orientation = .horizontal
@@ -1067,8 +1182,14 @@ class EditorViewController: NSViewController {
         let glyphRange = textView.layoutManager?.glyphRange(forCharacterRange: attachmentRange, actualCharacterRange: nil) ?? attachmentRange
         var rect = textView.layoutManager?.boundingRect(forGlyphRange: glyphRange, in: textView.textContainer!) ?? .zero
         if rect.isEmpty {
-            rect = textView.firstRect(forCharacterRange: attachmentRange, actualRange: nil)
-            rect = textView.convert(rect, from: nil)
+            // firstRect(forCharacterRange:) returns screen coordinates.
+            let screenRect = textView.firstRect(forCharacterRange: attachmentRange, actualRange: nil)
+            if let win = textView.window {
+                let windowRect = win.convertFromScreen(screenRect)
+                rect = textView.convert(windowRect, from: nil)
+            } else {
+                rect = .zero
+            }
         } else {
             rect.origin.x += textView.textContainerOrigin.x
             rect.origin.y += textView.textContainerOrigin.y
@@ -1091,7 +1212,21 @@ class EditorViewController: NSViewController {
 
     @objc private func resizeSliderChanged(_ sender: NSSlider) {
         let scale = CGFloat(sender.doubleValue)
-        resizeImage(toScale: scale)
+        resizeImageLive(toScale: scale)
+    }
+
+    private func commitImageResizeChanges() {
+        suppressLayoutDuringImageResize = false
+        guard let storage = textView.textStorage else { return }
+        guard let range = lastImageRange ?? imageAttachmentRange(at: textView.selectedRange().location) else { return }
+
+        // Commit the change into undo + downstream update pipeline once.
+        storage.edited(.editedAttributes, range: range, changeInLength: 0)
+        textView.didChangeText()
+
+        // Reflow pages without scrolling the view.
+        updatePageCentering(ensureSelectionVisible: false)
+        showImageControlsIfNeeded()
     }
 
     @objc private func alignImageLeft() { alignImage(.left) }
@@ -1213,10 +1348,19 @@ class EditorViewController: NSViewController {
         showImageControlsIfNeeded()
     }
 
-    private func resizeImage(toScale scale: CGFloat) {
+    private func resizeImageLive(toScale scale: CGFloat) {
         guard let storage = textView.textStorage else { return }
         guard let range = lastImageRange ?? imageAttachmentRange(at: textView.selectedRange().location) else { return }
         guard let attachment = storage.attribute(.attachment, at: range.location, effectiveRange: nil) as? NSTextAttachment else { return }
+
+        // Ensure we have an NSImage for predictable resizing/drawing.
+        if attachment.image == nil, let data = attachment.fileWrapper?.regularFileContents {
+            attachment.image = NSImage(data: data)
+        }
+
+        // Cancel any pending layout work from earlier edits so it can't fire mid-drag and jump the view.
+        NSObject.cancelPreviousPerformRequests(withTarget: self, selector: #selector(updatePageCenteringDelayed), object: nil)
+        NSObject.cancelPreviousPerformRequests(withTarget: self, selector: #selector(checkAndUpdateTitleDelayed), object: nil)
 
         let maxWidth = textView.textContainer?.size.width ?? ((pageWidth - standardMargin * 2) * editorZoom)
         let maxHeight = (pageHeight - headerHeight - footerHeight - (standardMargin * 2)) * editorZoom * 0.8 // Leave margin for safety
@@ -1237,7 +1381,20 @@ class EditorViewController: NSViewController {
         }
         let targetHeight = targetWidth * aspect
 
-        attachment.bounds = NSRect(origin: .zero, size: NSSize(width: targetWidth, height: targetHeight))
+        let newBounds = NSRect(origin: .zero, size: NSSize(width: targetWidth, height: targetHeight))
+        attachment.bounds = newBounds
+        if let img = attachment.image {
+            if let cell = attachment.attachmentCell as? QuillPilotResizableAttachmentCell {
+                cell.forcedSize = newBounds.size
+            } else {
+                attachment.attachmentCell = QuillPilotResizableAttachmentCell(image: img, size: newBounds.size)
+            }
+        }
+
+        // Persist size for QuillPilot reopen/migration logic.
+        storage.beginEditing()
+        storage.addAttribute(NSAttributedString.Key("QuillPilotImageSize"), value: NSStringFromRect(newBounds), range: range)
+        storage.endEditing()
 
         // Update the stored size in the fileWrapper filename for persistence
         if let wrapper = attachment.fileWrapper, let oldName = wrapper.preferredFilename {
@@ -1245,8 +1402,15 @@ class EditorViewController: NSViewController {
             wrapper.preferredFilename = encodeImageFilename(size: NSSize(width: targetWidth, height: targetHeight), ext: ext)
         }
 
-        textView.textStorage?.edited(.editedAttributes, range: range, changeInLength: 0)
-        textView.didChangeText()
+        // Invalidate layout so the attachment redraws at the new size immediately.
+        let paragraphRange = (storage.string as NSString).paragraphRange(for: NSRange(location: range.location, length: 1))
+        textView.layoutManager?.invalidateLayout(forCharacterRange: paragraphRange, actualCharacterRange: nil)
+        textView.layoutManager?.invalidateDisplay(forCharacterRange: paragraphRange)
+        textView.layoutManager?.ensureLayout(forCharacterRange: paragraphRange)
+
+        // Do not call didChangeText() while dragging; that triggers expensive relayout
+        // and can cause the page to jump horizontally.
+        storage.edited(.editedAttributes, range: range, changeInLength: 0)
         updateScaleLabel(clampedScale)
     }
 
@@ -1843,6 +2007,8 @@ class EditorViewController: NSViewController {
         textView.textStorage?.setAttributedString(retagged)
         textView.setSelectedRange(NSRange(location: 0, length: 0))
 
+        clampImportedImageAttachmentsToSafeBounds()
+
         repairBodyTextIndentAfterLoadIfNeeded()
 
         applyDefaultTypingAttributes()
@@ -1869,6 +2035,8 @@ class EditorViewController: NSViewController {
         textView.textStorage?.setAttributedString(retagged)
         textView.setSelectedRange(NSRange(location: 0, length: 0))
 
+        clampImportedImageAttachmentsToSafeBounds()
+
         repairBodyTextIndentAfterLoadIfNeeded()
 
         // Don't reset typing attributes - let them inherit from document content
@@ -1892,6 +2060,94 @@ class EditorViewController: NSViewController {
             scrollToTop()
             delegate?.resumeAnalysisAfterLayout()
         }
+    }
+
+    private func clampImportedImageAttachmentsToSafeBounds() {
+        guard let storage = textView.textStorage, storage.length > 0 else { return }
+
+        // Bounds are in points (not zoomed). Keep images within the page text area.
+        let maxWidth = max(120, (pageWidth - (leftPageMargin + rightPageMargin)) * 0.95)
+        let maxHeight = max(120, (pageHeight - headerHeight - footerHeight - (standardMargin * 2.0)) * 0.90)
+
+        let fullRange = NSRange(location: 0, length: storage.length)
+        let sizeKey = NSAttributedString.Key("QuillPilotImageSize")
+
+        func imagePixelInfo(from data: Data) -> (width: Int, height: Int)? {
+            let cfData = data as CFData
+            guard let source = CGImageSourceCreateWithData(cfData, [kCGImageSourceShouldCache: false] as CFDictionary) else { return nil }
+            guard let props = CGImageSourceCopyPropertiesAtIndex(source, 0, [kCGImageSourceShouldCache: false] as CFDictionary) as? [CFString: Any] else { return nil }
+            let w = props[kCGImagePropertyPixelWidth] as? Int
+            let h = props[kCGImagePropertyPixelHeight] as? Int
+            if let w, let h, w > 0, h > 0 { return (w, h) }
+            return nil
+        }
+
+        func downscaledPngData(from data: Data, maxPixel: Int) -> Data? {
+            let cfData = data as CFData
+            guard let source = CGImageSourceCreateWithData(cfData, [kCGImageSourceShouldCache: false] as CFDictionary) else { return nil }
+
+            let options: [CFString: Any] = [
+                kCGImageSourceCreateThumbnailFromImageAlways: true,
+                kCGImageSourceCreateThumbnailWithTransform: true,
+                kCGImageSourceThumbnailMaxPixelSize: maxPixel,
+                kCGImageSourceShouldCacheImmediately: false,
+                kCGImageSourceShouldCache: false
+            ]
+            guard let cgThumb = CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary) else { return nil }
+            let rep = NSBitmapImageRep(cgImage: cgThumb)
+            return rep.representation(using: .png, properties: [:])
+        }
+
+        storage.beginEditing()
+        storage.enumerateAttribute(.attachment, in: fullRange, options: []) { value, range, _ in
+            guard let attachment = value as? NSTextAttachment else { return }
+
+            // Determine current intended size.
+            var size = attachment.bounds.size
+            if size.width <= 1 || size.height <= 1 {
+                if let stored = storage.attribute(sizeKey, at: range.location, effectiveRange: nil) as? String {
+                    let rect = NSRectFromString(stored)
+                    if rect.width > 1 && rect.height > 1 {
+                        size = rect.size
+                    }
+                }
+            }
+            if size.width <= 1 || size.height <= 1, let img = attachment.image {
+                size = img.size
+            }
+
+            guard size.width > 1, size.height > 1 else { return }
+
+            // Clamp bounds to safe page area.
+            let scale = min(1.0, maxWidth / size.width, maxHeight / size.height)
+            if scale < 0.999 {
+                let newSize = NSSize(width: floor(size.width * scale), height: floor(size.height * scale))
+                let newBounds = NSRect(origin: .zero, size: newSize)
+                attachment.bounds = newBounds
+                storage.addAttribute(sizeKey, value: NSStringFromRect(newBounds), range: range)
+            } else if attachment.bounds.width > 0 && attachment.bounds.height > 0 {
+                // Ensure we persist whatever bounds we currently have.
+                storage.addAttribute(sizeKey, value: NSStringFromRect(attachment.bounds), range: range)
+            }
+
+            // Optional safety: downscale huge embedded image data to reduce memory pressure.
+            // Only triggers for very large images.
+            if let wrapper = attachment.fileWrapper, let data = wrapper.regularFileContents {
+                let dataTooLarge = data.count > (30 * 1024 * 1024)
+                let pixelInfo = imagePixelInfo(from: data)
+                let pixelTooLarge = pixelInfo.map { ($0.width * $0.height) > 40_000_000 || max($0.width, $0.height) > 8000 } ?? false
+
+                if dataTooLarge || pixelTooLarge {
+                    if let png = downscaledPngData(from: data, maxPixel: 4096) {
+                        let newWrapper = FileWrapper(regularFileWithContents: png)
+                        newWrapper.preferredFilename = encodeImageFilename(size: attachment.bounds.size, ext: "png")
+                        attachment.fileWrapper = newWrapper
+                        attachment.image = NSImage(data: png)
+                    }
+                }
+            }
+        }
+        storage.endEditing()
     }
 
     private func updateTypingAttributesFromContent() {
@@ -3505,6 +3761,7 @@ case "Book Subtitle":
         let level: Int
         let range: NSRange
         let page: Int?
+        let styleName: String?
     }
 
     func buildOutlineEntries() -> [OutlineEntry] {
@@ -3551,7 +3808,7 @@ case "Book Subtitle":
                         let pageGap: CGFloat = 20
                         // Account for page gaps when calculating page number
                         let pageIndex = max(0, Int(floor(bounds.midY / (scaledPageHeight + pageGap)))) + 1
-                        results.append(OutlineEntry(title: rawTitle, level: level, range: paragraphRange, page: pageIndex))
+                        results.append(OutlineEntry(title: rawTitle, level: level, range: paragraphRange, page: pageIndex, styleName: styleName))
                         if results.count <= 3 {
                             DebugLog.log("📋✅ Found: '\(rawTitle)' style='\(styleName)' level=\(level)")
                         }
@@ -4995,6 +5252,12 @@ extension EditorViewController: NSTextViewDelegate {
         textView.breakUndoCoalescing()
 
         delegate?.textDidChange()
+
+        // When resizing an image, we still want to mark the doc dirty, but we don't
+        // want the delayed page-centering pass to scroll-jump on every slider tick.
+        if suppressLayoutDuringImageResize {
+            return
+        }
 
         // Throttle expensive operations to improve typing performance
         NSObject.cancelPreviousPerformRequests(withTarget: self, selector: #selector(checkAndUpdateTitleDelayed), object: nil)

@@ -1177,6 +1177,14 @@ Note: Auto-save runs every 30 seconds for saved documents.
 """, color: bodyColor))
         content.append(makeNewline())
 
+        content.append(makeHeading("📦 Working Format: RTFD (Recommended)", color: headingColor))
+        content.append(makeBody("""
+RTFD is a macOS-native rich-text format stored as a package (a folder that looks like a single file). It preserves text styling and embedded images reliably, and is usually the best choice while drafting in QuillPilot.
+
+For sharing, collaboration, or cross-platform editing, exporting is often better than distributing your working RTFD. Use Export to generate Word (.docx), OpenDocument (.odt), PDF, HTML, or plain text depending on where the document needs to go.
+""", color: bodyColor))
+        content.append(makeNewline())
+
         content.append(makeHeading("✂️ Editing", color: headingColor))
         content.append(makeBody("""
 ⌘Z - Undo

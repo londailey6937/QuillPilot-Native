@@ -1000,10 +1000,29 @@ extension MainWindowController {
                 debugLog("✅ RTF exported to \(url.path)")
 
             case .rtfd:
-                // Export to RTFD (includes attachments/images)
-                let data = try mainContentViewController.editorViewController.rtfdData()
-                try data.write(to: url, options: .atomic)
+                // Export to RTFD as a real .rtfd package (directory wrapper).
+                // Writing flat Data to a .rtfd path can produce a file that doesn't register as UTType.rtfd,
+                // which makes it disappear from Open dialogs filtered by content type.
+                let content = mainContentViewController.editorExportReadyAttributedContent()
+                let fullRange = NSRange(location: 0, length: content.length)
+                let wrapper = try content.fileWrapper(
+                    from: fullRange,
+                    documentAttributes: [.documentType: NSAttributedString.DocumentType.rtfd]
+                )
+
+                if FileManager.default.fileExists(atPath: url.path) {
+                    try? FileManager.default.removeItem(at: url)
+                }
+                try wrapper.write(to: url, options: .atomic, originalContentsURL: nil)
                 debugLog("✅ RTFD exported to \(url.path)")
+
+            case .odt:
+                // Export to OpenDocument Text (.odt) for LibreOffice.
+                let content = mainContentViewController.editorExportReadyAttributedContent()
+                let fullRange = NSRange(location: 0, length: content.length)
+                let data = try content.data(from: fullRange, documentAttributes: [.documentType: NSAttributedString.DocumentType.openDocument])
+                try data.write(to: url, options: Data.WritingOptions.atomic)
+                debugLog("✅ ODT exported to \(url.path)")
 
             case .txt:
                 // Export to plain text
@@ -1195,11 +1214,25 @@ extension MainWindowController {
             allowedTypes.append(docxType)
         }
 
+        // Apple Pages (.pages) is a file package. If the UTType is available, include it; otherwise fall back to extension.
+        if let pagesType = UTType("com.apple.iwork.pages.pages") {
+            allowedTypes.append(pagesType)
+        } else if let pagesType = UTType(filenameExtension: "pages", conformingTo: .data) {
+            allowedTypes.append(pagesType)
+        }
+
         // Add common rich/text formats
         allowedTypes.append(.rtf)
         allowedTypes.append(.rtfd)
         allowedTypes.append(.plainText)
         allowedTypes.append(.html)
+
+        // OpenDocument Text (.odt)
+        if let odtType = UTType("org.oasis-open.opendocument.text") {
+            allowedTypes.append(odtType)
+        } else if let odtType = UTType(filenameExtension: "odt", conformingTo: .data) {
+            allowedTypes.append(odtType)
+        }
 
         // Markdown is not a built-in UTType on every macOS SDK; fall back to extension.
         if let mdType = UTType("net.daringfireball.markdown") {
@@ -1208,9 +1241,10 @@ extension MainWindowController {
             allowedTypes.append(mdType)
         }
 
-        // If we have types, use them; otherwise allow all
+        // Safety: include `.data` so legacy/mis-typed files (e.g. old flat .rtfd) still appear in the Open panel
+        // even if their UTType isn't recognized correctly.
         if !allowedTypes.isEmpty {
-            panel.allowedContentTypes = allowedTypes
+            panel.allowedContentTypes = allowedTypes + [.data]
         }
 
         debugLog("Allowed content types: \(allowedTypes.map { $0.identifier })")
@@ -1296,6 +1330,10 @@ extension MainWindowController {
             return try content.data(from: fullRange, documentAttributes: [.documentType: NSAttributedString.DocumentType.rtf])
         case .rtfd:
             return try mainContentViewController.editorViewController.rtfdData()
+        case .odt:
+            let content = mainContentViewController.editorExportReadyAttributedContent()
+            let fullRange = NSRange(location: 0, length: content.length)
+            return try content.data(from: fullRange, documentAttributes: [.documentType: NSAttributedString.DocumentType.openDocument])
         case .txt:
             return Data(mainContentViewController.editorViewController.plainTextContent().utf8)
         case .markdown:
@@ -1453,7 +1491,58 @@ extension MainWindowController {
             }
             return
 
-        case "rtf", "rtfd", "txt", "md", "markdown", "html", "htm":
+        case "pages":
+            // Import Apple Pages document.
+            // We don't write .pages; after import we treat it like an unsaved document and prompt on Save.
+            let filename = url.deletingPathExtension().lastPathComponent
+            headerView.setDocumentTitle(filename)
+            currentDocumentURL = nil
+            currentDocumentFormat = .docx
+            hasUnsavedChanges = false
+            mainContentViewController.editorViewController.headerText = ""
+            mainContentViewController.editorViewController.headerTextRight = ""
+            mainContentViewController.editorViewController.footerText = ""
+            mainContentViewController.editorViewController.footerTextRight = ""
+
+            mainContentViewController.documentDidChange(url: url)
+            mainContentViewController.editorViewController.textView?.string = "Loading document..."
+
+            DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+                do {
+                    // Best-effort: let AppKit try to import directly if a system filter is available.
+                    if let attributed = try? NSAttributedString(url: url, options: [:], documentAttributes: nil) {
+                        DispatchQueue.main.async {
+                            self?.applyImportedContent(attributed, url: url)
+                            self?.currentDocumentFormat = .docx
+                        }
+                        return
+                    }
+
+                    // Fallback: ask Pages.app to export to RTF, then import that.
+                    guard let self else { return }
+                    let rtfURL = try self.convertPagesDocumentToRTF(pagesURL: url)
+                    let attributed = try NSAttributedString(
+                        url: rtfURL,
+                        options: [.documentType: NSAttributedString.DocumentType.rtf],
+                        documentAttributes: nil
+                    )
+
+                    DispatchQueue.main.async {
+                        self.applyImportedContent(attributed, url: url)
+                        self.currentDocumentFormat = .docx
+                    }
+                } catch {
+                    DispatchQueue.main.async {
+                        self?.presentErrorAlert(
+                            message: "Failed to open Pages document",
+                            details: "QuillPilot can import .pages using macOS conversion filters or Apple Pages.\n\nIf this fails, make sure Pages is installed and allow QuillPilot to control Pages when macOS asks for permission.\n\nDetails: \(error.localizedDescription)"
+                        )
+                    }
+                }
+            }
+            return
+
+        case "rtf", "rtfd", "odt", "txt", "md", "markdown", "html", "htm":
             let filename = url.deletingPathExtension().lastPathComponent
             headerView.setDocumentTitle(filename)
             currentDocumentURL = url
@@ -1467,6 +1556,7 @@ extension MainWindowController {
             switch ext {
             case "rtf": currentDocumentFormat = .rtf
             case "rtfd": currentDocumentFormat = .rtfd
+            case "odt": currentDocumentFormat = .odt
             case "txt": currentDocumentFormat = .txt
             case "md", "markdown": currentDocumentFormat = .markdown
             case "html", "htm": currentDocumentFormat = .html
@@ -1487,9 +1577,54 @@ extension MainWindowController {
                             documentAttributes: nil
                         )
                     case "rtfd":
+                        // RTFD is a file *package* (directory). Older builds incorrectly wrote RTFD
+                        // as a single flat file. If we detect that case, read as data and migrate.
+                        let isDirectory = (try? url.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) ?? false
+                        if isDirectory {
+                            attributed = try NSAttributedString(
+                                url: url,
+                                options: [.documentType: NSAttributedString.DocumentType.rtfd],
+                                documentAttributes: nil
+                            )
+                        } else {
+                            let data = try Data(contentsOf: url)
+                            do {
+                                attributed = try NSAttributedString(
+                                    data: data,
+                                    options: [.documentType: NSAttributedString.DocumentType.rtfd],
+                                    documentAttributes: nil
+                                )
+                            } catch {
+                                // If the data isn't parseable as RTFD, try RTF as a last resort.
+                                attributed = try NSAttributedString(
+                                    data: data,
+                                    options: [.documentType: NSAttributedString.DocumentType.rtf],
+                                    documentAttributes: nil
+                                )
+                            }
+
+                            // Best-effort migration: convert legacy flat .rtfd into a proper package.
+                            do {
+                                let fullRange = NSRange(location: 0, length: attributed.length)
+                                let wrapper = try attributed.fileWrapper(
+                                    from: fullRange,
+                                    documentAttributes: [.documentType: NSAttributedString.DocumentType.rtfd]
+                                )
+
+                                // Replace the old file with the new .rtfd package at the same URL.
+                                if FileManager.default.fileExists(atPath: url.path) {
+                                    try FileManager.default.removeItem(at: url)
+                                }
+                                try wrapper.write(to: url, options: .atomic, originalContentsURL: nil)
+                                self?.debugLog("✅ Migrated legacy flat RTFD to package: \(url.lastPathComponent)")
+                            } catch {
+                                self?.debugLog("⚠️ Legacy RTFD migration failed: \(error.localizedDescription)")
+                            }
+                        }
+                    case "odt":
                         attributed = try NSAttributedString(
                             url: url,
-                            options: [.documentType: NSAttributedString.DocumentType.rtfd],
+                            options: [.documentType: NSAttributedString.DocumentType.openDocument],
                             documentAttributes: nil
                         )
                     case "html", "htm":
@@ -1519,10 +1654,54 @@ extension MainWindowController {
         default:
             presentErrorAlert(
                 message: "Unsupported format",
-                details: "QuillPilot opens .docx, .rtf, .rtfd, .txt, .md, and .html documents.\n\nUse Export to save as Word, RTF/RTFD, PDF, ePub, Kindle, HTML, or Text."
+                details: "QuillPilot opens .docx, .odt, .pages, .rtf, .rtfd, .txt, .md, and .html documents.\n\nUse Export to save as Word (.docx), OpenDocument (.odt), RTF/RTFD, PDF, ePub, Kindle, HTML, or Text."
             )
             return
         }
+    }
+
+    private func convertPagesDocumentToRTF(pagesURL: URL) throws -> URL {
+        let tempDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("QuillPilot-PagesImport-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+
+        let outURL = tempDir
+            .appendingPathComponent(pagesURL.deletingPathExtension().lastPathComponent)
+            .appendingPathExtension("rtf")
+
+        func escapeForAppleScript(_ path: String) -> String {
+            path
+                .replacingOccurrences(of: "\\", with: "\\\\")
+                .replacingOccurrences(of: "\"", with: "\\\"")
+        }
+
+        let inPath = escapeForAppleScript(pagesURL.path)
+        let outPath = escapeForAppleScript(outURL.path)
+
+        let script = """
+        tell application \"Pages\"
+            set theDoc to open POSIX file \"\(inPath)\"
+            export theDoc to POSIX file \"\(outPath)\" as RTF
+            close theDoc saving no
+        end tell
+        """
+
+        var errorDict: NSDictionary?
+        guard let appleScript = NSAppleScript(source: script) else {
+            throw NSError(domain: "QuillPilot", code: 1, userInfo: [NSLocalizedDescriptionKey: "Failed to create Pages conversion script."])
+        }
+        appleScript.executeAndReturnError(&errorDict)
+        if let errorDict {
+            let message = (errorDict[NSAppleScript.errorMessage] as? String) ?? "Pages conversion failed."
+            let number = errorDict[NSAppleScript.errorNumber] as? Int
+            let details = number.map { "\(message) (AppleScript error \($0))" } ?? message
+            throw NSError(domain: "QuillPilot", code: number ?? 1, userInfo: [NSLocalizedDescriptionKey: details])
+        }
+
+        guard FileManager.default.fileExists(atPath: outURL.path) else {
+            throw NSError(domain: "QuillPilot", code: 2, userInfo: [NSLocalizedDescriptionKey: "Pages did not produce an RTF file."])
+        }
+        return outURL
     }
 
     private func presentErrorAlert(message: String, details: String) {
@@ -1934,10 +2113,23 @@ class FormattingToolbar: NSView {
         numberingBtn.toolTip = "Numbered List"
 
         // Images
-        imageButton = createToolbarButton("⧉", fontSize: 20) // Image silhouette icon
-        imageButton.target = self
-        imageButton.action = #selector(imageTapped)
-        imageButton.toolTip = "Insert Image"
+        if let baseSymbol = NSImage(systemSymbolName: "photo", accessibilityDescription: "Insert Image") {
+            let config = NSImage.SymbolConfiguration(pointSize: 14, weight: .regular)
+            let symbol = baseSymbol.withSymbolConfiguration(config) ?? baseSymbol
+            symbol.isTemplate = true
+            let btn = registerControl(NSButton(image: symbol, target: self, action: #selector(imageTapped)))
+            btn.bezelStyle = .texturedRounded
+            btn.setButtonType(.momentaryPushIn)
+            btn.imagePosition = .imageOnly
+            btn.title = ""
+            btn.toolTip = "Insert Image"
+            imageButton = btn
+        } else {
+            imageButton = createToolbarButton("▭", fontSize: 18)
+            imageButton.target = self
+            imageButton.action = #selector(imageTapped)
+            imageButton.toolTip = "Insert Image"
+        }
 
         // Layout
         let columnsBtn = createToolbarButton("⫼", fontSize: 20) // Column icon
@@ -3050,7 +3242,7 @@ extension OutlineViewController: NSOutlineViewDataSource, NSOutlineViewDelegate 
 
         let selectedRow = outlineView.selectedRow
         guard selectedRow >= 0, let node = outlineView.item(atRow: selectedRow) as? Node else { return }
-        let entry = EditorViewController.OutlineEntry(title: node.title, level: node.level, range: node.range, page: node.page)
+        let entry = EditorViewController.OutlineEntry(title: node.title, level: node.level, range: node.range, page: node.page, styleName: nil)
         onSelect?(entry)
     }
 }
@@ -3060,6 +3252,7 @@ private enum ExportFormat: CaseIterable {
     case docx       // Full support (save + open)
     case rtf        // Export only
     case rtfd       // Export + open
+    case odt        // Export only (LibreOffice)
     case txt        // Export + open
     case markdown   // Export + open
     case html       // Export + open
@@ -3072,6 +3265,7 @@ private enum ExportFormat: CaseIterable {
         case .docx: return "Word Document (.docx)"
         case .rtf: return "Rich Text (.rtf)"
         case .rtfd: return "Rich Text with Attachments (.rtfd)"
+        case .odt: return "OpenDocument Text (.odt)"
         case .txt: return "Plain Text (.txt)"
         case .markdown: return "Markdown (.md)"
         case .html: return "Web Page (.html)"
@@ -3086,6 +3280,7 @@ private enum ExportFormat: CaseIterable {
         case .docx: return "docx"
         case .rtf: return "rtf"
         case .rtfd: return "rtfd"
+        case .odt: return "odt"
         case .txt: return "txt"
         case .markdown: return "md"
         case .html: return "html"
@@ -3110,6 +3305,14 @@ private enum ExportFormat: CaseIterable {
             return [.rtf]
         case .rtfd:
             return [.rtfd]
+        case .odt:
+            if let odtType = UTType("org.oasis-open.opendocument.text") {
+                return [odtType]
+            }
+            if let odtType = UTType(filenameExtension: "odt", conformingTo: .data) {
+                return [odtType]
+            }
+            return [.data]
         case .txt:
             return [.plainText]
         case .markdown:
@@ -3140,7 +3343,7 @@ private enum ExportFormat: CaseIterable {
     /// Whether this format can be opened (not just exported)
     var canOpen: Bool {
         switch self {
-        case .docx, .rtf, .rtfd, .txt, .markdown, .html: return true
+        case .docx, .odt, .rtf, .rtfd, .txt, .markdown, .html: return true
         case .pdf, .epub, .mobi: return false
         }
     }

@@ -97,6 +97,9 @@ class AnalysisViewController: NSViewController, NSWindowDelegate {
     // Window delegate for auto-closing popouts
     private let autoCloseDelegate = AutoCloseWindowDelegate()
 
+    // Emotional Trajectory: preserve metric selection across refreshes
+    private var selectedEmotionalTrajectoryMetricIndex: Int = 0
+
     // High-contrast qualitative palette reused across popouts
     private let qualitativePalette: [NSColor] = [
         NSColor(calibratedRed: 0.12, green: 0.47, blue: 0.71, alpha: 1.0),
@@ -3562,10 +3565,9 @@ extension AnalysisViewController {
     }
 
     private func openEmotionalTrajectoryPopout(results: AnalysisResults) {
-        // If window exists and is visible, bring it to front and return
+        // If window exists and is visible, bring it to front but still refresh its content
         if let existingWindow = emotionalTrajectoryPopoutWindow, existingWindow.isVisible {
             existingWindow.makeKeyAndOrderFront(nil)
-            return
         }
         if emotionalTrajectoryPopoutWindow == nil {
             let window = NSWindow(
@@ -3615,6 +3617,10 @@ extension AnalysisViewController {
         for metric in EmotionalTrajectoryView.EmotionalMetric.allCases {
             metricPopup.addItem(withTitle: metric.rawValue)
         }
+        let metrics = EmotionalTrajectoryView.EmotionalMetric.allCases
+        if selectedEmotionalTrajectoryMetricIndex >= 0 && selectedEmotionalTrajectoryMetricIndex < metrics.count {
+            metricPopup.selectItem(at: selectedEmotionalTrajectoryMetricIndex)
+        }
         metricPopup.target = self
         metricPopup.action = #selector(metricChanged(_:))
         toolbar.addSubview(metricPopup)
@@ -3641,6 +3647,11 @@ extension AnalysisViewController {
         let trajectories = generateEmotionalTrajectories(from: results, chapterCount: chapterCount)
         trajectoryView.setTrajectories(trajectories)
 
+        // Apply the selected metric after data is set
+        if selectedEmotionalTrajectoryMetricIndex >= 0 && selectedEmotionalTrajectoryMetricIndex < metrics.count {
+            trajectoryView.setMetric(metrics[selectedEmotionalTrajectoryMetricIndex])
+        }
+
         containerView.addSubview(trajectoryView)
 
         window.contentView = containerView
@@ -3660,7 +3671,8 @@ extension AnalysisViewController {
             return
         }
 
-        let selectedMetric = metrics[sender.indexOfSelectedItem]
+        selectedEmotionalTrajectoryMetricIndex = sender.indexOfSelectedItem
+        let selectedMetric = metrics[selectedEmotionalTrajectoryMetricIndex]
         trajectoryView.setMetric(selectedMetric)
     }
 
@@ -3677,12 +3689,46 @@ extension AnalysisViewController {
 
         // Fallback: use outline headings as a proxy
         if let outlineEntries = getOutlineEntriesCallback?() {
-            let filtered = outlineEntries.filter { $0.level == 1 }
-            if filtered.count >= 2 { return filtered.count }
-            if filtered.count == 1 { return 1 }
+            let bannedStyles: Set<String> = [
+                "TOC Title",
+                "Index Title",
+                "Glossary Title",
+                "Appendix Title"
+            ]
+            let preferredChapterStyles: Set<String> = [
+                "Chapter Number",
+                "Chapter Title"
+            ]
+
+            func isNonChapterTitle(_ title: String) -> Bool {
+                let t = title.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+                return t == "table of contents" || t == "contents" || t == "toc" || t == "index" || t == "glossary" || t == "appendix"
+            }
+
+            func looksLikeChapterHeading(_ title: String) -> Bool {
+                let t = title.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+                if t.hasPrefix("chapter ") { return true }
+                if t.hasPrefix("ch ") || t.hasPrefix("ch.") { return true }
+                if t.hasPrefix("prologue") || t.hasPrefix("epilogue") { return true }
+                return false
+            }
+
+            let sorted = outlineEntries.sorted { $0.range.location < $1.range.location }
+            let candidatesLevel1 = sorted.filter {
+                $0.level == 1 && !(($0.styleName).map { bannedStyles.contains($0) } ?? false) && !isNonChapterTitle($0.title)
+            }
+
+            let preferred = candidatesLevel1.filter { ($0.styleName).map { preferredChapterStyles.contains($0) } ?? false }
+            if preferred.count >= 2 { return preferred.count }
+
+            let chapterish = candidatesLevel1.filter { looksLikeChapterHeading($0.title) }
+            if chapterish.count >= 2 { return chapterish.count }
+
+            if candidatesLevel1.count >= 2 { return candidatesLevel1.count }
+            if candidatesLevel1.count == 1 { return 1 }
         }
 
-        return 10
+        return 1
     }
 
     private func generateEmotionalTrajectories(from results: AnalysisResults, chapterCount: Int) -> [EmotionalTrajectoryView.CharacterTrajectory] {

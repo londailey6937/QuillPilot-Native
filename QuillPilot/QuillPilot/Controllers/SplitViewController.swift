@@ -160,15 +160,65 @@ class SplitViewController: NSSplitViewController {
             // Get outline entries from editor
             let outlineEntries = self.editorViewController.buildOutlineEntries()
 
-            // Convert to DecisionBeliefLoopAnalyzer.OutlineEntry format
-            let analyzerOutlineEntries: [DecisionBeliefLoopAnalyzer.OutlineEntry]? = outlineEntries.isEmpty ? nil : outlineEntries.map { entry in
-                DecisionBeliefLoopAnalyzer.OutlineEntry(
-                    title: entry.title,
-                    level: entry.level,
-                    range: entry.range,
-                    page: entry.page
-                )
-            }
+            // Convert to DecisionBeliefLoopAnalyzer.OutlineEntry format (filtered to chapter-relevant headings)
+            let analyzerOutlineEntries: [DecisionBeliefLoopAnalyzer.OutlineEntry]? = {
+                guard !outlineEntries.isEmpty else { return nil }
+
+                let bannedStyles: Set<String> = [
+                    "TOC Title",
+                    "Index Title",
+                    "Glossary Title",
+                    "Appendix Title"
+                ]
+                let preferredChapterStyles: Set<String> = [
+                    "Chapter Number",
+                    "Chapter Title"
+                ]
+
+                func isNonChapterTitle(_ title: String) -> Bool {
+                    let t = title.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+                    return t == "table of contents" || t == "contents" || t == "toc" || t == "index" || t == "glossary" || t == "appendix"
+                }
+
+                func looksLikeChapterHeading(_ title: String) -> Bool {
+                    let t = title.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+                    if t.hasPrefix("chapter ") { return true }
+                    if t.hasPrefix("ch ") || t.hasPrefix("ch.") { return true }
+                    if t.hasPrefix("prologue") || t.hasPrefix("epilogue") { return true }
+                    return false
+                }
+
+                let sorted = outlineEntries.sorted { $0.range.location < $1.range.location }
+                let candidatesLevel1 = sorted.filter {
+                    $0.level == 1 && !(($0.styleName).map { bannedStyles.contains($0) } ?? false) && !isNonChapterTitle($0.title)
+                }
+
+                // Prefer explicit chapter styles when present.
+                let preferred = candidatesLevel1.filter { ($0.styleName).map { preferredChapterStyles.contains($0) } ?? false }
+                let chapterEntries: [EditorViewController.OutlineEntry]
+                if preferred.count >= 2 {
+                    chapterEntries = preferred
+                } else {
+                    // Otherwise, try to use chapter-ish titles (common for Heading 1).
+                    let chapterish = candidatesLevel1.filter { looksLikeChapterHeading($0.title) }
+                    if chapterish.count >= 2 {
+                        chapterEntries = chapterish
+                    } else {
+                        // Last resort: use remaining level-1 headings (still excluding TOC/Index/Glossary/Appendix).
+                        chapterEntries = candidatesLevel1
+                    }
+                }
+
+                guard !chapterEntries.isEmpty else { return nil }
+                return chapterEntries.map { entry in
+                    DecisionBeliefLoopAnalyzer.OutlineEntry(
+                        title: entry.title,
+                        level: entry.level,
+                        range: entry.range,
+                        page: entry.page
+                    )
+                }
+            }()
 
             let results = self.analysisEngine.analyzeText(text, outlineEntries: analyzerOutlineEntries)
 

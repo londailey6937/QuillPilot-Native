@@ -294,11 +294,14 @@ class AnalysisEngine {
         results.plotAnalysis = plotDetector.detectPlotPoints(text: analysisText, wordCount: results.wordCount)
 
         // Character arc analysis
-        // Use ONLY first name from full name field in Character Library
+        // Prefer first token from full name; fall back to nickname if full name is empty.
         let libraryNames = CharacterLibrary.shared.characters.compactMap { character -> String? in
             let fullName = character.fullName.trimmingCharacters(in: .whitespacesAndNewlines)
-            guard !fullName.isEmpty else { return nil }
-            return fullName.components(separatedBy: .whitespaces).first
+            if !fullName.isEmpty {
+                return fullName.components(separatedBy: .whitespaces).first
+            }
+            let nickname = character.nickname.trimmingCharacters(in: .whitespacesAndNewlines)
+            return nickname.isEmpty ? nil : nickname
         }
 
         let characterNames: [String]

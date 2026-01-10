@@ -1,5 +1,9 @@
 import Cocoa
 
+extension Notification.Name {
+    static let styleTemplateDidChange = Notification.Name("styleTemplateDidChange")
+}
+
 extension NSFont {
     /// Resolves either a PostScript font name (e.g. "TimesNewRomanPSMT") or a font family name
     /// (e.g. "Times New Roman", "Inter") into a concrete font at the given size.
@@ -73,8 +77,18 @@ final class StyleCatalog {
 
     func setCurrentTemplate(_ name: String) {
         guard templates[name] != nil else { return }
+        guard currentTemplateName != name else { return }
         currentTemplateName = name
         defaults.set(name, forKey: templateKey)
+        NotificationCenter.default.post(name: .styleTemplateDidChange, object: name)
+    }
+
+    var isScreenplayTemplate: Bool {
+        currentTemplateName.lowercased().contains("screenplay")
+    }
+
+    var isPoetryTemplate: Bool {
+        currentTemplateName.lowercased().contains("poetry")
     }
 
     func style(named name: String) -> StyleDefinition? {
@@ -306,37 +320,13 @@ final class StyleCatalog {
         var styles: [String: StyleDefinition] = [:]
         let font = "Times New Roman"
 
-        styles["Poetry — Title"] = baseDefinition(
+        // Poet-friendly baseline (no "Headings" language; preserve hard line breaks).
+        // Core
+        styles["Poem"] = baseDefinition(
             font: font,
-            size: 22,
-            bold: true,
-            alignment: .center,
-            lineHeight: 1.15,
-            before: 72,
-            after: 12,
-            headIndent: 0,
-            firstLine: 0,
-            tailIndent: 0
-        )
-
-        styles["Poetry — Author"] = baseDefinition(
-            font: font,
-            size: 14,
-            alignment: .center,
-            lineHeight: 1.15,
-            before: 6,
-            after: 24,
-            headIndent: 0,
-            firstLine: 0,
-            tailIndent: 0
-        )
-
-        // Verse: preserve line breaks, no first-line indent.
-        styles["Poetry — Verse"] = baseDefinition(
-            font: font,
-            size: 14,
+            size: 20,
             alignment: .left,
-            lineHeight: 1.25,
+            lineHeight: 1.5,
             before: 0,
             after: 0,
             headIndent: 0,
@@ -344,22 +334,143 @@ final class StyleCatalog {
             tailIndent: 0
         )
 
-        // A stanza break is just extra vertical space.
-        styles["Poetry — Stanza Break"] = baseDefinition(
+        styles["Poem Title"] = baseDefinition(
             font: font,
-            size: 14,
+            size: 24,
+            bold: true,
             alignment: .left,
-            lineHeight: 1.0,
-            before: 0,
-            after: 14,
+            lineHeight: 1.15,
+            before: 48,
+            after: 12,
             headIndent: 0,
             firstLine: 0,
             tailIndent: 0
         )
 
-        // Make the standard Body Text map to Verse so defaults behave as expected in the Poetry template.
-        styles["Body Text"] = styles["Poetry — Verse"]
-        styles["Body Text – No Indent"] = styles["Poetry — Verse"]
+        // Structural
+        styles["Section / Sequence Title"] = baseDefinition(
+            font: font,
+            size: 16,
+            bold: true,
+            alignment: .left,
+            lineHeight: 1.15,
+            before: 18,
+            after: 6,
+            headIndent: 0,
+            firstLine: 0,
+            tailIndent: 0
+        )
+
+        styles["Part Number"] = baseDefinition(
+            font: font,
+            size: 14,
+            bold: true,
+            alignment: .left,
+            lineHeight: 1.1,
+            before: 12,
+            after: 6,
+            headIndent: 0,
+            firstLine: 0,
+            tailIndent: 0
+        )
+
+        // Auxiliary
+        styles["Epigraph"] = baseDefinition(
+            font: font,
+            size: 16,
+            italic: true,
+            alignment: .left,
+            lineHeight: 1.35,
+            before: 12,
+            after: 12,
+            headIndent: 24,
+            firstLine: 24,
+            tailIndent: -24
+        )
+
+        styles["Dedication"] = baseDefinition(
+            font: font,
+            size: 16,
+            italic: true,
+            alignment: .left,
+            lineHeight: 1.2,
+            before: 12,
+            after: 12,
+            headIndent: 0,
+            firstLine: 0,
+            tailIndent: 0
+        )
+
+        styles["Notes"] = baseDefinition(
+            font: font,
+            size: 16,
+            alignment: .left,
+            lineHeight: 1.35,
+            before: 12,
+            after: 6,
+            headIndent: 18,
+            firstLine: 0,
+            tailIndent: 0
+        )
+
+        // Editorial
+        styles["Draft / Margin Note"] = baseDefinition(
+            font: font,
+            size: 16,
+            italic: true,
+            color: "#6B6B6B",
+            alignment: .left,
+            lineHeight: 1.25,
+            before: 6,
+            after: 6,
+            headIndent: 18,
+            firstLine: 0,
+            tailIndent: 0
+        )
+
+        styles["Revision Variant"] = baseDefinition(
+            font: font,
+            size: 16,
+            italic: true,
+            color: "#4B4B6B",
+            alignment: .left,
+            lineHeight: 1.25,
+            before: 6,
+            after: 6,
+            headIndent: 0,
+            firstLine: 0,
+            tailIndent: 0
+        )
+
+        // Legacy Poetry style keys (kept for backwards compatibility with existing documents/importers).
+        styles["Poetry — Title"] = styles["Poem Title"]
+        styles["Poetry — Verse"] = styles["Poem"]
+        styles["Poetry — Stanza Break"] = baseDefinition(
+            font: font,
+            size: 20,
+            alignment: .left,
+            lineHeight: 1.0,
+            before: 0,
+            after: 18,
+            headIndent: 0,
+            firstLine: 0,
+            tailIndent: 0
+        )
+        styles["Poetry — Author"] = baseDefinition(
+            font: font,
+            size: 16,
+            alignment: .left,
+            lineHeight: 1.15,
+            before: 6,
+            after: 18,
+            headIndent: 0,
+            firstLine: 0,
+            tailIndent: 0
+        )
+
+        // Make the standard Body Text map to Poem so defaults behave as expected in the Poetry template.
+        styles["Body Text"] = styles["Poem"]
+        styles["Body Text – No Indent"] = styles["Poem"]
 
         return styles
     }
@@ -398,8 +509,8 @@ final class StyleCatalog {
 
     private static func fictionStyles() -> [String: StyleDefinition] {
         var styles: [String: StyleDefinition] = [:]
-        styles["Body Text"] = baseDefinition(font: "Times New Roman", size: 14)
-        styles["Body Text – No Indent"] = baseDefinition(font: "Times New Roman", size: 14, firstLine: 0)
+        styles["Body Text"] = baseDefinition(font: "Times New Roman", size: 20)
+        styles["Body Text – No Indent"] = baseDefinition(font: "Times New Roman", size: 20, firstLine: 0)
         styles["Book Title"] = baseDefinition(font: "Times New Roman", size: 24, bold: false, alignment: .center, before: 0, after: 18, headIndent: 0, firstLine: 0)
         styles["Book Subtitle"] = baseDefinition(font: "Times New Roman", size: 16, alignment: .center, before: 0, after: 12, headIndent: 0, firstLine: 0)
         styles["Author Name"] = baseDefinition(font: "Times New Roman", size: 14, alignment: .center, before: 0, after: 12, headIndent: 0, firstLine: 0)
@@ -446,8 +557,8 @@ final class StyleCatalog {
 
     private static func nonfictionStyles() -> [String: StyleDefinition] {
         var styles = fictionStyles()
-        styles["Body Text"] = baseDefinition(font: "Georgia", size: 11, lineHeight: 1.6, headIndent: 0, firstLine: 24)
-        styles["Body Text – No Indent"] = baseDefinition(font: "Georgia", size: 11, lineHeight: 1.6, headIndent: 0, firstLine: 0)
+        styles["Body Text"] = baseDefinition(font: "Georgia", size: 20, lineHeight: 1.6, headIndent: 0, firstLine: 24)
+        styles["Body Text – No Indent"] = baseDefinition(font: "Georgia", size: 20, lineHeight: 1.6, headIndent: 0, firstLine: 0)
         styles["Heading 1"] = baseDefinition(font: "Georgia", size: 16, bold: true, alignment: .left, lineHeight: 1.2, before: 18, after: 8, headIndent: 0, firstLine: 0)
         styles["Heading 2"] = baseDefinition(font: "Georgia", size: 14, bold: true, alignment: .left, lineHeight: 1.2, before: 14, after: 6, headIndent: 0, firstLine: 0)
         styles["Heading 3"] = baseDefinition(font: "Georgia", size: 12, italic: true, alignment: .left, lineHeight: 1.2, before: 10, after: 4, headIndent: 0, firstLine: 0)
@@ -477,6 +588,8 @@ final class StyleCatalog {
         styles["Screenplay — Contact"] = baseDefinition(font: font, size: 12, alignment: .left, lineHeight: 1.0, before: 0, after: 0, headIndent: 0, firstLine: 0, tailIndent: -288)
         styles["Screenplay — Draft"] = baseDefinition(font: font, size: 12, alignment: .right, lineHeight: 1.0, before: 0, after: 0, headIndent: 0, firstLine: 0, tailIndent: 0)
         // Script body styles
+        // Act headings (e.g. ACT I / ACT II / ACT III)
+        styles["Screenplay — Act"] = baseDefinition(font: font, size: 12, bold: true, alignment: .center, lineHeight: 1.0, before: 24, after: 12, headIndent: 0, firstLine: 0, tailIndent: 0)
         styles["Screenplay — Slugline"] = baseDefinition(font: font, size: 12, alignment: .left, lineHeight: 1.0, before: 12, after: 0, headIndent: 0, firstLine: 0, tailIndent: 0)
         styles["Screenplay — Action"] = baseDefinition(font: font, size: 12, alignment: .left, lineHeight: 1.0, before: 0, after: 0, headIndent: 0, firstLine: 0, tailIndent: 0)
         styles["Screenplay — Character"] = baseDefinition(font: font, size: 12, alignment: .left, lineHeight: 1.0, before: 12, after: 0, headIndent: 158, firstLine: 158, tailIndent: -72)
@@ -499,8 +612,8 @@ final class StyleCatalog {
     private static func baskervilleStyles() -> [String: StyleDefinition] {
         var styles: [String: StyleDefinition] = [:]
         let font = "Baskerville"
-        styles["Body Text"] = baseDefinition(font: font, size: 14, lineHeight: 1.8)
-        styles["Body Text – No Indent"] = baseDefinition(font: font, size: 14, lineHeight: 1.8, firstLine: 0)
+        styles["Body Text"] = baseDefinition(font: font, size: 20, lineHeight: 1.8)
+        styles["Body Text – No Indent"] = baseDefinition(font: font, size: 20, lineHeight: 1.8, firstLine: 0)
         styles["Book Title"] = baseDefinition(font: font, size: 28, bold: false, alignment: .center, lineHeight: 1.2, before: 0, after: 24, headIndent: 0, firstLine: 0)
         styles["Book Subtitle"] = baseDefinition(font: font, size: 18, alignment: .center, lineHeight: 1.2, before: 0, after: 18, headIndent: 0, firstLine: 0)
         styles["Author Name"] = baseDefinition(font: font, size: 14, alignment: .center, lineHeight: 1.2, before: 0, after: 12, headIndent: 0, firstLine: 0)
@@ -531,8 +644,8 @@ final class StyleCatalog {
     private static func garamondStyles() -> [String: StyleDefinition] {
         var styles: [String: StyleDefinition] = [:]
         let font = "Garamond"
-        styles["Body Text"] = baseDefinition(font: font, size: 14, lineHeight: 1.75)
-        styles["Body Text – No Indent"] = baseDefinition(font: font, size: 14, lineHeight: 1.75, firstLine: 0)
+        styles["Body Text"] = baseDefinition(font: font, size: 20, lineHeight: 1.75)
+        styles["Body Text – No Indent"] = baseDefinition(font: font, size: 20, lineHeight: 1.75, firstLine: 0)
         styles["Book Title"] = baseDefinition(font: font, size: 26, bold: false, alignment: .center, lineHeight: 1.2, before: 0, after: 20, headIndent: 0, firstLine: 0)
         styles["Book Subtitle"] = baseDefinition(font: font, size: 17, italic: true, alignment: .center, lineHeight: 1.2, before: 0, after: 16, headIndent: 0, firstLine: 0)
         styles["Author Name"] = baseDefinition(font: font, size: 14, alignment: .center, lineHeight: 1.2, before: 0, after: 12, headIndent: 0, firstLine: 0)
@@ -563,8 +676,8 @@ final class StyleCatalog {
     private static func palatinoStyles() -> [String: StyleDefinition] {
         var styles: [String: StyleDefinition] = [:]
         let font = "Palatino"
-        styles["Body Text"] = baseDefinition(font: font, size: 13, lineHeight: 1.8)
-        styles["Body Text – No Indent"] = baseDefinition(font: font, size: 13, lineHeight: 1.8, firstLine: 0)
+        styles["Body Text"] = baseDefinition(font: font, size: 20, lineHeight: 1.8)
+        styles["Body Text – No Indent"] = baseDefinition(font: font, size: 20, lineHeight: 1.8, firstLine: 0)
         styles["Book Title"] = baseDefinition(font: font, size: 26, bold: true, alignment: .center, lineHeight: 1.2, before: 0, after: 22, headIndent: 0, firstLine: 0)
         styles["Book Subtitle"] = baseDefinition(font: font, size: 17, alignment: .center, lineHeight: 1.2, before: 0, after: 16, headIndent: 0, firstLine: 0)
         styles["Author Name"] = baseDefinition(font: font, size: 14, alignment: .center, lineHeight: 1.2, before: 0, after: 12, headIndent: 0, firstLine: 0)
@@ -595,8 +708,8 @@ final class StyleCatalog {
     private static func hoeflerStyles() -> [String: StyleDefinition] {
         var styles: [String: StyleDefinition] = [:]
         let font = "Hoefler Text"
-        styles["Body Text"] = baseDefinition(font: font, size: 14, lineHeight: 1.7)
-        styles["Body Text – No Indent"] = baseDefinition(font: font, size: 14, lineHeight: 1.7, firstLine: 0)
+        styles["Body Text"] = baseDefinition(font: font, size: 20, lineHeight: 1.7)
+        styles["Body Text – No Indent"] = baseDefinition(font: font, size: 20, lineHeight: 1.7, firstLine: 0)
         styles["Book Title"] = baseDefinition(font: font, size: 30, bold: true, alignment: .center, lineHeight: 1.2, before: 0, after: 24, headIndent: 0, firstLine: 0)
         styles["Book Subtitle"] = baseDefinition(font: font, size: 18, italic: true, alignment: .center, lineHeight: 1.2, before: 0, after: 18, headIndent: 0, firstLine: 0)
         styles["Author Name"] = baseDefinition(font: font, size: 15, alignment: .center, lineHeight: 1.2, before: 0, after: 12, headIndent: 0, firstLine: 0)
@@ -627,8 +740,8 @@ final class StyleCatalog {
     private static func bradleyHandStyles() -> [String: StyleDefinition] {
         var styles: [String: StyleDefinition] = [:]
         let font = "Bradley Hand"
-        styles["Body Text"] = baseDefinition(font: font, size: 16, lineHeight: 1.8)
-        styles["Body Text – No Indent"] = baseDefinition(font: font, size: 16, lineHeight: 1.8, firstLine: 0)
+        styles["Body Text"] = baseDefinition(font: font, size: 20, lineHeight: 1.8)
+        styles["Body Text – No Indent"] = baseDefinition(font: font, size: 20, lineHeight: 1.8, firstLine: 0)
         styles["Book Title"] = baseDefinition(font: font, size: 32, bold: true, alignment: .center, lineHeight: 1.2, before: 0, after: 24, headIndent: 0, firstLine: 0)
         styles["Book Subtitle"] = baseDefinition(font: font, size: 20, alignment: .center, lineHeight: 1.2, before: 0, after: 18, headIndent: 0, firstLine: 0)
         styles["Author Name"] = baseDefinition(font: font, size: 16, alignment: .center, lineHeight: 1.2, before: 0, after: 12, headIndent: 0, firstLine: 0)
@@ -657,8 +770,8 @@ final class StyleCatalog {
     private static func snellRoundhandStyles() -> [String: StyleDefinition] {
         var styles: [String: StyleDefinition] = [:]
         let font = "Snell Roundhand"
-        styles["Body Text"] = baseDefinition(font: font, size: 16, lineHeight: 1.9)
-        styles["Body Text – No Indent"] = baseDefinition(font: font, size: 16, lineHeight: 1.9, firstLine: 0)
+        styles["Body Text"] = baseDefinition(font: font, size: 20, lineHeight: 1.9)
+        styles["Body Text – No Indent"] = baseDefinition(font: font, size: 20, lineHeight: 1.9, firstLine: 0)
         styles["Book Title"] = baseDefinition(font: font, size: 34, bold: true, alignment: .center, lineHeight: 1.2, before: 0, after: 26, headIndent: 0, firstLine: 0)
         styles["Book Subtitle"] = baseDefinition(font: font, size: 22, alignment: .center, lineHeight: 1.2, before: 0, after: 20, headIndent: 0, firstLine: 0)
         styles["Author Name"] = baseDefinition(font: font, size: 17, alignment: .center, lineHeight: 1.2, before: 0, after: 14, headIndent: 0, firstLine: 0)

@@ -100,6 +100,31 @@ struct CharacterProfile: Codable, Identifiable {
         }
         return fullName.isEmpty ? "Unnamed Character" : fullName
     }
+
+    /// Canonical key used for analysis + chart labels.
+    /// Prefer the first token of `fullName` (matches screenplay character cues),
+    /// falling back to `nickname` when `fullName` is empty.
+    var analysisKey: String? {
+        let trimmedFull = fullName.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !trimmedFull.isEmpty {
+            // Be resilient to multi-word names and prefixes like "Dr." or "Mr.".
+            for raw in trimmedFull.split(whereSeparator: { $0.isWhitespace }) {
+                let token = String(raw).trimmingCharacters(in: .punctuationCharacters)
+                if !token.isEmpty {
+                    return token
+                }
+            }
+        }
+
+        let trimmedNick = nickname.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmedNick.isEmpty { return nil }
+        return trimmedNick.trimmingCharacters(in: .punctuationCharacters)
+    }
+
+    /// Minor characters should not be included in analysis windows.
+    var isAnalysisEligible: Bool {
+        role != .minor
+    }
 }
 
 // MARK: - Character Library Manager
@@ -112,6 +137,18 @@ class CharacterLibrary {
 
     private init() {
         // Start with empty library - characters load when document opens
+    }
+
+    /// Characters that should appear in analysis windows (excludes `.minor`).
+    /// Returned in the library's current order.
+    var analysisEligibleCharacters: [CharacterProfile] {
+        characters.filter { $0.isAnalysisEligible && ($0.analysisKey != nil) }
+    }
+
+    /// Canonical character keys used by analysis + charts.
+    /// Returned in the library's current order.
+    var analysisCharacterKeys: [String] {
+        analysisEligibleCharacters.compactMap { $0.analysisKey }
     }
 
     /// Get the sidecar file URL for a document's characters

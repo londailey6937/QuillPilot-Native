@@ -19,17 +19,19 @@ class CharacterInteractionsView: NSView {
     }
 
     private var interactions: [InteractionData] = []
+    private var allCharacterNames: [String] = []
     private let maxBars = 15 // Show top 15 interactions
 
-    func setInteractions(_ interactions: [InteractionData]) {
+    func setInteractions(_ interactions: [InteractionData], allCharacterNames: [String] = []) {
         self.interactions = Array(interactions.sorted { $0.coAppearances > $1.coAppearances }.prefix(maxBars))
+        self.allCharacterNames = allCharacterNames
         needsDisplay = true
     }
 
     override func draw(_ dirtyRect: NSRect) {
         super.draw(dirtyRect)
 
-        guard !interactions.isEmpty else {
+        if interactions.isEmpty && allCharacterNames.isEmpty {
             drawEmptyState()
             return
         }
@@ -85,8 +87,13 @@ class CharacterInteractionsView: NSView {
         subtitle.draw(in: subtitleRect, withAttributes: subtitleAttributes)
 
         // Draw a simple network diagram: characters as nodes, interactions as edges.
-        let allNames = Set(interactions.flatMap { [$0.character1, $0.character2] })
-        let names = Array(allNames).sorted()
+        let interactionNames = Set(interactions.flatMap { [$0.character1, $0.character2] })
+        let allNames = Set(allCharacterNames).union(interactionNames)
+
+        let libraryOrder = CharacterLibrary.shared.analysisCharacterKeys
+        let names: [String] = !libraryOrder.isEmpty
+            ? libraryOrder.filter { allNames.contains($0) }
+            : Array(allNames).sorted()
         if names.isEmpty {
             drawEmptyState()
             return

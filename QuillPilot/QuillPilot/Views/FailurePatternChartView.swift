@@ -61,9 +61,35 @@ class FailurePatternChartView: NSView {
 
     private var patterns: [CharacterFailurePattern] = []
     private var selectedCharacterIndex: Int = 0
+    private var characterSelectorHitRects: [NSRect] = []
 
     func setFailureData(_ data: [CharacterFailurePattern]) {
-        self.patterns = data
+        let previouslySelectedName: String? = {
+            guard selectedCharacterIndex >= 0, selectedCharacterIndex < self.patterns.count else { return nil }
+            return self.patterns[selectedCharacterIndex].characterName
+        }()
+
+        let libraryOrder = CharacterLibrary.shared.analysisCharacterKeys
+        let librarySet = Set(libraryOrder)
+
+        let ordered: [CharacterFailurePattern]
+        if !libraryOrder.isEmpty {
+            ordered = data
+                .filter { librarySet.contains($0.characterName) }
+                .sorted {
+                    (libraryOrder.firstIndex(of: $0.characterName) ?? Int.max) < (libraryOrder.firstIndex(of: $1.characterName) ?? Int.max)
+                }
+        } else {
+            ordered = data
+        }
+
+        self.patterns = ordered
+
+        if let name = previouslySelectedName, let idx = self.patterns.firstIndex(where: { $0.characterName == name }) {
+            selectedCharacterIndex = idx
+        } else {
+            selectedCharacterIndex = 0
+        }
         needsDisplay = true
     }
 
@@ -92,7 +118,8 @@ class FailurePatternChartView: NSView {
         let leftPadding: CGFloat = 200
         let rightPadding: CGFloat = 200
         let topPadding: CGFloat = 140
-        let bottomPadding: CGFloat = 100
+        // Extra room for wrapped character selector.
+        let bottomPadding: CGFloat = 150
         let chartWidth = bounds.width - leftPadding - rightPadding
         let chartHeight = bounds.height - topPadding - bottomPadding
         let chartRect = NSRect(x: leftPadding, y: bottomPadding, width: chartWidth, height: chartHeight)
@@ -235,8 +262,8 @@ class FailurePatternChartView: NSView {
                 isDarkMode: isDarkMode
             )
 
-            // Draw chapter label below
-            let chapterLabel = "Ch \(failure.chapter)"
+            // Draw scene label below
+            let chapterLabel = "Sc \(failure.chapter)"
             let labelAttr: [NSAttributedString.Key: Any] = [
                 .font: NSFont.systemFont(ofSize: 9),
                 .foregroundColor: textColor.withAlphaComponent(0.5)
@@ -335,16 +362,22 @@ class FailurePatternChartView: NSView {
     }
 
     private func drawCharacterSelector(textColor: NSColor) {
-        let selectorY: CGFloat = 25
+        characterSelectorHitRects.removeAll(keepingCapacity: true)
+
+        let baseY: CGFloat = 25
         let startX: CGFloat = 200
+        let maxX: CGFloat = bounds.width - 40
+        let rowHeight: CGFloat = 18
+        let rowSpacing: CGFloat = 6
 
         let labelAttr: [NSAttributedString.Key: Any] = [
             .font: NSFont.systemFont(ofSize: 10),
             .foregroundColor: textColor.withAlphaComponent(0.6)
         ]
-        "Character:".draw(at: NSPoint(x: startX, y: selectorY), withAttributes: labelAttr)
+        "Character:".draw(at: NSPoint(x: startX, y: baseY), withAttributes: labelAttr)
 
         var currentX = startX + 70
+        var currentY = baseY
         for (index, pattern) in patterns.enumerated() {
             let isSelected = index == selectedCharacterIndex
             let buttonAttr: [NSAttributedString.Key: Any] = [
@@ -354,13 +387,22 @@ class FailurePatternChartView: NSView {
             let name = pattern.characterName
             let size = name.size(withAttributes: buttonAttr)
 
+            // Wrap to the next row if this label would overflow.
+            if currentX + size.width + 8 > maxX {
+                currentX = startX + 70
+                currentY += rowHeight + rowSpacing
+            }
+
             if isSelected {
-                let bgRect = NSRect(x: currentX - 4, y: selectorY - 2, width: size.width + 8, height: size.height + 4)
+                let bgRect = NSRect(x: currentX - 4, y: currentY - 2, width: size.width + 8, height: size.height + 4)
                 NSColor.systemBlue.withAlphaComponent(0.1).setFill()
                 NSBezierPath(roundedRect: bgRect, xRadius: 4, yRadius: 4).fill()
             }
 
-            name.draw(at: NSPoint(x: currentX, y: selectorY), withAttributes: buttonAttr)
+            name.draw(at: NSPoint(x: currentX, y: currentY), withAttributes: buttonAttr)
+
+            let hitRect = NSRect(x: currentX - 4, y: currentY - 5, width: size.width + 8, height: 20)
+            characterSelectorHitRects.append(hitRect)
             currentX += size.width + 25
         }
     }
@@ -456,21 +498,13 @@ class FailurePatternChartView: NSView {
 
         // Check character selector clicks
         guard patterns.count > 1 else { return }
-        let selectorY: CGFloat = 25
-        let startX: CGFloat = 270
 
-        guard location.y >= selectorY - 5 && location.y <= selectorY + 20 else { return }
-
-        var currentX = startX
-        for (index, pattern) in patterns.enumerated() {
-            let size = pattern.characterName.size(withAttributes: [.font: NSFont.systemFont(ofSize: 10)])
-            let buttonRect = NSRect(x: currentX - 4, y: selectorY - 5, width: size.width + 8, height: 20)
-            if buttonRect.contains(location) {
+        for (index, rect) in characterSelectorHitRects.enumerated() {
+            if rect.contains(location) {
                 selectedCharacterIndex = index
                 needsDisplay = true
                 return
             }
-            currentX += size.width + 25
         }
     }
 }

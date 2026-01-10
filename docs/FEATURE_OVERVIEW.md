@@ -48,7 +48,7 @@ When you open an analysis view from the right-side Analysis panel (📊 / 📖 /
 - Line chart for each character showing sentiment over time
 - Colors: Blue, Green, Orange, Purple, Pink, etc.
 - Y-axis: -1.0 (negative) to +1.0 (positive emotions)
-- X-axis: Story sections
+- X-axis: Story sections (chapters for manuscripts; scenes/acts for screenplays)
 - Shows:
   - Arc Type: Positive/Negative/Flat/Transformational
   - Arc Strength: 0-100%
@@ -64,15 +64,23 @@ When you open an analysis view from the right-side Analysis panel (📊 / 📖 /
   - Weak relationships (rarely interact)
   - Isolated characters
 
+Notes:
+
+- Character analysis is kept in sync with the Character Library and focuses on major characters.
+
 **Mode 3: Presence Heatmap** 📊
 
-- Grid: Rows = Characters, Columns = Chapters
+- Grid: Rows = Characters, Columns = Sections
 - Color intensity = mention frequency
 - Numbers show exact count
 - Helps you:
   - Spot characters who disappear
   - Balance screen time
   - Track POV distribution
+
+Screenplays:
+
+- Presence is organized by scene with an optional act view.
 
 ---
 
@@ -84,7 +92,7 @@ When you open an analysis view from the right-side Analysis panel (📊 / 📖 /
 1. Open or create your document
 2. Define characters in Character Library (Navigator → 👥)
 3. Write at least 5,000 words (more is better)
-4. Use "Chapter 1", "Chapter 2" headers for best results
+4. Use "Chapter 1", "Chapter 2" headers for manuscripts; for screenplays, use clear scene sluglines (INT./EXT.) and optional ACT I/II/III headings
 ```
 
 ### Step 2: Run Analysis

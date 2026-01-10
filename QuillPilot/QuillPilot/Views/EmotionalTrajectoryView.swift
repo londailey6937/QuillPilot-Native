@@ -30,6 +30,19 @@ class EmotionalTrajectoryView: NSView {
     private var showOverlay: Bool = false
     private var chapterCount: Int = 0
 
+    struct ActMarker {
+        let act: Int
+        let position: Double // 0.0 to 1.0
+    }
+
+    enum XAxisMode {
+        case scenes
+        case acts
+    }
+
+    private var xAxisMode: XAxisMode = .scenes
+    private var actMarkers: [ActMarker] = []
+
     enum EmotionalMetric: String, CaseIterable {
         case confidence = "Confidence"
         case hope = "Hope vs Despair"
@@ -63,13 +76,37 @@ class EmotionalTrajectoryView: NSView {
     }
 
     func setTrajectories(_ trajectories: [CharacterTrajectory], metric: EmotionalMetric = .confidence) {
-        self.trajectories = trajectories
+        let libraryOrder = CharacterLibrary.shared.analysisCharacterKeys
+        if !libraryOrder.isEmpty {
+            // Maintain stable ordering by character, while keeping dashed/solid variants adjacent.
+            let orderIndex: [String: Int] = Dictionary(uniqueKeysWithValues: libraryOrder.enumerated().map { ($0.element, $0.offset) })
+            self.trajectories = trajectories.sorted { a, b in
+                let ia = orderIndex[a.characterName] ?? Int.max
+                let ib = orderIndex[b.characterName] ?? Int.max
+                if ia != ib { return ia < ib }
+                // For same character, show solid first then dashed.
+                if a.isDashed != b.isDashed { return a.isDashed == false }
+                return a.characterName < b.characterName
+            }
+        } else {
+            self.trajectories = trajectories
+        }
         self.selectedMetric = metric
         self.needsDisplay = true
     }
 
     func setChapterCount(_ count: Int) {
         self.chapterCount = max(0, count)
+        self.needsDisplay = true
+    }
+
+    func setXAxisMode(_ mode: XAxisMode) {
+        self.xAxisMode = mode
+        self.needsDisplay = true
+    }
+
+    func setActMarkers(_ markers: [ActMarker]) {
+        self.actMarkers = markers
         self.needsDisplay = true
     }
 
@@ -191,28 +228,57 @@ class EmotionalTrajectoryView: NSView {
         }
 
         // X-axis label
-        let xAxisTitle = (chapterCount > 1) ? "Chapters →" : "Document Progress →"
+        let xAxisTitle: String
+        if chapterCount > 1 {
+            xAxisTitle = (xAxisMode == .acts) ? "Acts →" : "Scenes →"
+        } else {
+            xAxisTitle = "Document Progress →"
+        }
         let xLabel = NSAttributedString(string: xAxisTitle, attributes: labelAttributes)
         xLabel.draw(at: NSPoint(x: chartRect.midX - 50, y: chartRect.minY - 40))
 
         if chapterCount > 1 {
-            // X-axis chapter markers (use a reduced set of ticks to avoid clutter)
-            let maxTicks = 8
-            let step = max(1, Int(ceil(Double(chapterCount - 1) / Double(maxTicks - 1))))
-            var ticks: [Int] = []
-            var ch = 1
-            while ch <= chapterCount {
-                ticks.append(ch)
-                ch += step
-            }
-            if ticks.last != chapterCount { ticks.append(chapterCount) }
+            if xAxisMode == .acts {
+                func roman(_ value: Int) -> String {
+                    switch value {
+                    case 1: return "I"
+                    case 2: return "II"
+                    case 3: return "III"
+                    case 4: return "IV"
+                    case 5: return "V"
+                    case 6: return "VI"
+                    default: return "\(value)"
+                    }
+                }
 
-            for ch in ticks {
-                let denom = max(1, chapterCount - 1)
-                let position = Double(ch - 1) / Double(denom)
-                let x = chartRect.minX + chartRect.width * CGFloat(position) - 10
-                let label = NSAttributedString(string: "Ch \(ch)", attributes: labelAttributes)
-                label.draw(at: NSPoint(x: x, y: chartRect.minY - 25))
+                let markers = actMarkers.isEmpty
+                    ? [ActMarker(act: 1, position: 1.0 / 6.0), ActMarker(act: 2, position: 0.5), ActMarker(act: 3, position: 5.0 / 6.0)]
+                    : actMarkers.sorted { $0.act < $1.act }
+
+                for marker in markers {
+                    let x = chartRect.minX + chartRect.width * CGFloat(marker.position) - 16
+                    let label = NSAttributedString(string: "Act \(roman(marker.act))", attributes: labelAttributes)
+                    label.draw(at: NSPoint(x: x, y: chartRect.minY - 25))
+                }
+            } else {
+                // X-axis chapter markers (use a reduced set of ticks to avoid clutter)
+                let maxTicks = 8
+                let step = max(1, Int(ceil(Double(chapterCount - 1) / Double(maxTicks - 1))))
+                var ticks: [Int] = []
+                var ch = 1
+                while ch <= chapterCount {
+                    ticks.append(ch)
+                    ch += step
+                }
+                if ticks.last != chapterCount { ticks.append(chapterCount) }
+
+                for ch in ticks {
+                    let denom = max(1, chapterCount - 1)
+                    let position = Double(ch - 1) / Double(denom)
+                    let x = chartRect.minX + chartRect.width * CGFloat(position) - 10
+                    let label = NSAttributedString(string: "Sc \(ch)", attributes: labelAttributes)
+                    label.draw(at: NSPoint(x: x, y: chartRect.minY - 25))
+                }
             }
         } else {
             // Fallback: percentage markers

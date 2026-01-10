@@ -210,6 +210,10 @@ struct DecisionConsequenceChain {
 struct CharacterPresence {
     let characterName: String
     var chapterPresence: [Int: Int] = [:]  // Chapter # -> mention count
+
+    /// Optional metadata used for screenplay Act aggregation.
+    /// Keys are chapter/scene indexes (1-based) and values are act numbers (1-based).
+    var chapterToAct: [Int: Int] = [:]
 }
 
 // MARK: - Character Interaction (kept for relationship tracking)
@@ -854,14 +858,15 @@ class DecisionBeliefLoopAnalyzer {
         var presenceData: [CharacterPresence] = []
 
         // Get chapters using outline or fall back to regex
-        let chapters: [(text: String, number: Int)]
+        let chapters: [(text: String, number: Int, startLocation: Int)]
+        var chapterToAct: [Int: Int] = [:]
         if let entries = outlineEntries {
             // If caller provided outline entries, treat them as source of truth when available;
             // otherwise, fall back to regex detection so we never return empty data silently.
             if entries.isEmpty {
                 DebugLog.log("⚠️ analyzePresenceByChapter: Outline entries empty, falling back to regex detection")
                 let chapterTexts = splitIntoChapters(text: text)
-                chapters = chapterTexts.enumerated().map { (text: $1, number: $0 + 1) }
+                chapters = chapterTexts.enumerated().map { (text: $1, number: $0 + 1, startLocation: 0) }
                 DebugLog.log("📊 analyzePresenceByChapter: Regex detected \(chapters.count) chapters")
             } else {
                 // Look for level 1 entries (chapters) first - these are the main chapter divisions
@@ -880,7 +885,7 @@ class DecisionBeliefLoopAnalyzer {
                 if effectiveEntries.isEmpty {
                     DebugLog.log("⚠️ analyzePresenceByChapter: No usable outline entries, falling back to regex detection")
                     let chapterTexts = splitIntoChapters(text: text)
-                    chapters = chapterTexts.enumerated().map { (text: $1, number: $0 + 1) }
+                    chapters = chapterTexts.enumerated().map { (text: $1, number: $0 + 1, startLocation: 0) }
                     DebugLog.log("📊 analyzePresenceByChapter: Regex detected \(chapters.count) chapters")
                 } else {
                     let fullText = text as NSString
@@ -893,7 +898,57 @@ class DecisionBeliefLoopAnalyzer {
                             endLocation = fullText.length
                         }
                         let chapterRange = NSRange(location: startLocation, length: endLocation - startLocation)
-                        return (text: fullText.substring(with: chapterRange), number: index + 1)
+                        return (text: fullText.substring(with: chapterRange), number: index + 1, startLocation: startLocation)
+                    }
+
+                    // If the outline contains ACT headings (level 0) and chapters/scenes are level 1,
+                    // build a chapter/scene -> act mapping for accurate aggregation.
+                    let actEntries = entries.filter { $0.level == 0 }.sorted { $0.range.location < $1.range.location }
+                    let sceneEntries = effectiveEntries
+
+                    func parseActNumber(from title: String) -> Int? {
+                        let t = title.trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
+                        guard t.hasPrefix("ACT") else { return nil }
+                        let cleaned = t.replacingOccurrences(of: ".", with: " ")
+                            .replacingOccurrences(of: ":", with: " ")
+                            .replacingOccurrences(of: "-", with: " ")
+                        let parts = cleaned.split(whereSeparator: { $0.isWhitespace })
+                        guard parts.count >= 2 else { return nil }
+                        let token = String(parts[1])
+                        switch token {
+                        case "I", "1": return 1
+                        case "II", "2": return 2
+                        case "III", "3": return 3
+                        case "IV", "4": return 4
+                        case "V", "5": return 5
+                        default:
+                            if let n = Int(token) { return n }
+                            return nil
+                        }
+                    }
+
+                    if !actEntries.isEmpty, sceneEntries.count >= 2 {
+                        // Build an ordered list of act markers with usable act numbers.
+                        let numberedActs: [(start: Int, act: Int)] = actEntries.compactMap { entry in
+                            guard let act = parseActNumber(from: entry.title) else { return nil }
+                            return (start: entry.range.location, act: act)
+                        }.sorted { $0.start < $1.start }
+
+                        if !numberedActs.isEmpty {
+                            for (index, scene) in sceneEntries.enumerated() {
+                                let sceneStart = scene.range.location
+                                // Find the last act marker at or before this scene.
+                                var act = numberedActs.first?.act ?? 1
+                                for marker in numberedActs {
+                                    if marker.start <= sceneStart {
+                                        act = marker.act
+                                    } else {
+                                        break
+                                    }
+                                }
+                                chapterToAct[index + 1] = act
+                            }
+                        }
                     }
                 }
             }
@@ -901,18 +956,57 @@ class DecisionBeliefLoopAnalyzer {
             // No outline provided; fall back to regex detection
             DebugLog.log("📊 analyzePresenceByChapter: No outline entries, using regex detection")
             let chapterTexts = splitIntoChapters(text: text)
-            chapters = chapterTexts.enumerated().map { (text: $1, number: $0 + 1) }
+            chapters = chapterTexts.enumerated().map { (text: $1, number: $0 + 1, startLocation: 0) }
             DebugLog.log("📊 analyzePresenceByChapter: Regex detected \(chapters.count) chapters")
         }
 
         DebugLog.log("📊 analyzePresenceByChapter: Total chapters detected = \(chapters.count)")
 
+        let library = CharacterLibrary.shared
+
+        func presenceAliases(for canonicalName: String) -> [String] {
+            let canonical = canonicalName.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !canonical.isEmpty else { return [] }
+
+            var aliases: [String] = [canonical]
+
+            if let profile = library.analysisEligibleCharacters.first(where: {
+                ($0.analysisKey ?? "").caseInsensitiveCompare(canonical) == .orderedSame
+            }) {
+                let nick = profile.nickname.trimmingCharacters(in: .whitespacesAndNewlines)
+                if !nick.isEmpty, nick.caseInsensitiveCompare(canonical) != .orderedSame {
+                    aliases.append(nick)
+                }
+            }
+
+            // De-dupe while preserving order.
+            var seen = Set<String>()
+            var unique: [String] = []
+            for a in aliases {
+                let key = a.lowercased()
+                if seen.contains(key) { continue }
+                seen.insert(key)
+                unique.append(a)
+            }
+            return unique
+        }
+
         for characterName in characterNames {
             var presence = CharacterPresence(characterName: characterName)
+            if !chapterToAct.isEmpty {
+                presence.chapterToAct = chapterToAct
+            }
             DebugLog.log("📊 analyzePresenceByChapter: Analyzing presence for character '\(characterName)'")
 
+            let aliases = presenceAliases(for: characterName)
+            if aliases.count > 1 {
+                DebugLog.log("📊 analyzePresenceByChapter: Using aliases for '\(characterName)': \(aliases)")
+            }
+
             for chapter in chapters {
-                let mentions = countMentions(of: characterName, in: chapter.text)
+                let mentions = aliases.reduce(0) { partial, alias in
+                    partial + countMentions(of: alias, in: chapter.text)
+                }
                 if mentions > 0 {
                     presence.chapterPresence[chapter.number] = mentions
                     DebugLog.log("📊 analyzePresenceByChapter: Character '\(characterName)' has \(mentions) mentions in chapter \(chapter.number)")

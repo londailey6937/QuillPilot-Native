@@ -41,7 +41,17 @@ class DecisionBeliefLoopView: NSView {
     }
 
     func setLoops(_ loops: [DecisionBeliefLoop]) {
-        self.loops = loops
+        let libraryOrder = CharacterLibrary.shared.analysisCharacterKeys
+        let librarySet = Set(libraryOrder)
+        if !libraryOrder.isEmpty {
+            self.loops = loops
+                .filter { librarySet.contains($0.characterName) }
+                .sorted {
+                    (libraryOrder.firstIndex(of: $0.characterName) ?? Int.max) < (libraryOrder.firstIndex(of: $1.characterName) ?? Int.max)
+                }
+        } else {
+            self.loops = loops
+        }
         updateContent()
     }
 
@@ -91,7 +101,7 @@ class DecisionBeliefLoopView: NSView {
 
         // "The Loop" section header
         let loopHeaderLabel = createLabel(
-            text: "The Loop (per chapter or major scene)",
+            text: "The Loop (per scene)",
             font: NSFont.boldSystemFont(ofSize: 16),
             textColor: textColor
         )
@@ -345,7 +355,7 @@ class DecisionBeliefLoopView: NSView {
         container.addSubview(timelineLabel)
 
         let timelineSubLabel = createLabel(
-            text: "Key inflection points across chapters",
+            text: "Key inflection points across scenes",
             font: NSFont.systemFont(ofSize: 10),
             textColor: textColor.withAlphaComponent(0.6)
         )
@@ -381,7 +391,7 @@ class DecisionBeliefLoopView: NSView {
         // Pre-compute colors for each entry
         view.nodeColors = entries.map { beliefShiftColor($0.beliefShift) }
 
-        // Add chapter labels
+        // Add scene labels
         guard !entries.isEmpty else { return view }
 
         let lineY: CGFloat = 40
@@ -390,9 +400,9 @@ class DecisionBeliefLoopView: NSView {
         for (index, entry) in entries.enumerated() {
             let x = spacing * CGFloat(index + 1)
 
-            // Chapter label
+            // Scene label
             let chapterLabel = createLabel(
-                text: "Ch \(entry.chapter)",
+                text: "Sc \(entry.chapter)",
                 font: NSFont.systemFont(ofSize: 9),
                 textColor: textColor.withAlphaComponent(0.7)
             )

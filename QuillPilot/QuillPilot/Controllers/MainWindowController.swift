@@ -1874,6 +1874,13 @@ extension MainWindowController {
 
     @MainActor
     private func applyImportedContent(_ attributed: NSAttributedString, url: URL) {
+        // If the imported content is already tagged with a template-specific Quill style name,
+        // switch templates before we run style retagging/materialization so the style definitions exist.
+        if let inferredTemplate = inferTemplateFromImportedStyleTags(in: attributed),
+           inferredTemplate != StyleCatalog.shared.currentTemplateName {
+            toolbarView.selectTemplateProgrammatically(inferredTemplate)
+        }
+
         mainContentViewController.editorViewController.setAttributedContentDirect(attributed)
         mainContentViewController.editorViewController.applyTheme(ThemeManager.shared.currentTheme)
 
@@ -1907,6 +1914,28 @@ extension MainWindowController {
         // Ensure Welcome recents are populated (this app is not NSDocument-based).
         NSDocumentController.shared.noteNewRecentDocumentURL(url)
         RecentDocuments.shared.note(url)
+    }
+
+    private func inferTemplateFromImportedStyleTags(in attributed: NSAttributedString) -> String? {
+        let styleKey = NSAttributedString.Key("QuillStyleName")
+        let fullRange = NSRange(location: 0, length: attributed.length)
+
+        var inferred: String? = nil
+        attributed.enumerateAttribute(styleKey, in: fullRange, options: []) { value, _, stop in
+            guard let styleName = value as? String else { return }
+            if styleName.hasPrefix("Screenplay —") {
+                inferred = "Screenplay"
+                stop.pointee = true
+                return
+            }
+            if styleName.hasPrefix("Poetry —") {
+                inferred = "Poetry"
+                stop.pointee = true
+                return
+            }
+        }
+
+        return inferred
     }
 
     private enum AssociatedKeys {
@@ -2143,66 +2172,97 @@ class FormattingToolbar: NSView {
         let allStyles = StyleCatalog.shared.getAllStyles()
         let sortedStyleNames = allStyles.keys.sorted()
 
-        // Group styles by category based on naming patterns
-        var titleStyles: [String] = []
-        var headingStyles: [String] = []
-        var bodyStyles: [String] = []
-        var specialStyles: [String] = []
-        var screenplayStyles: [String] = []
-
-        for styleName in sortedStyleNames {
-            if styleName.contains("Screenplay") {
-                screenplayStyles.append(styleName)
-            } else if styleName.contains("Title") || styleName.contains("Author") || styleName.contains("Subtitle") {
-                titleStyles.append(styleName)
-            } else if styleName.contains("Heading") || styleName.contains("Chapter") || styleName.contains("Part") {
-                headingStyles.append(styleName)
-            } else if styleName.contains("Body") || styleName == "Dialogue" {
-                bodyStyles.append(styleName)
-            } else {
-                specialStyles.append(styleName)
+        if StyleCatalog.shared.isPoetryTemplate {
+            // Poetry: ship a safe, poet-expected style set (and avoid "Headings" language).
+            func addSection(_ title: String, _ names: [String]) {
+                let available = names.filter { allStyles[$0] != nil }
+                guard !available.isEmpty else { return }
+                addHeader(title)
+                available.forEach(addStyle)
+                stylesMenu.addItem(.separator())
             }
-        }
 
-        // Add grouped styles
-        if !titleStyles.isEmpty {
-            addHeader("Titles")
-            titleStyles.forEach(addStyle)
-            stylesMenu.addItem(.separator())
-        }
+            addSection("Core", ["Poem", "Poem Title"])
+            addSection("Structural", ["Section / Sequence Title", "Part Number"])
+            addSection("Auxiliary", ["Epigraph", "Dedication", "Notes"])
+            addSection("Editorial", ["Draft / Margin Note", "Revision Variant"])
 
-        if !headingStyles.isEmpty {
-            addHeader("Headings")
-            headingStyles.forEach(addStyle)
-            stylesMenu.addItem(.separator())
-        }
-
-        if !bodyStyles.isEmpty {
-            addHeader("Body")
-            bodyStyles.forEach(addStyle)
-            stylesMenu.addItem(.separator())
-        }
-
-        if !specialStyles.isEmpty {
-            addHeader("Special")
-            specialStyles.forEach(addStyle)
-            stylesMenu.addItem(.separator())
-        }
-
-        if !screenplayStyles.isEmpty {
-            addHeader("Screenplay")
-            screenplayStyles.forEach(addStyle)
-            stylesMenu.addItem(.separator())
-        }
-
-        stylePopup.menu = stylesMenu
-        // Restore last selected style from UserDefaults, default to "Body Text"
-        let lastStyle = UserDefaults.standard.string(forKey: "LastSelectedStyle") ?? "Body Text"
-        if stylePopup.itemTitles.contains(lastStyle) {
-            stylePopup.selectItem(withTitle: lastStyle)
+            stylePopup.menu = stylesMenu
+            let lastStyle = UserDefaults.standard.string(forKey: "LastSelectedStyle") ?? "Poem"
+            if stylePopup.itemTitles.contains(lastStyle) {
+                stylePopup.selectItem(withTitle: lastStyle)
+            } else if stylePopup.itemTitles.contains("Poem") {
+                stylePopup.selectItem(withTitle: "Poem")
+            }
         } else {
-            stylePopup.selectItem(withTitle: "Body Text")
+
+            // Group styles by category based on naming patterns
+            var titleStyles: [String] = []
+            var headingStyles: [String] = []
+            var bodyStyles: [String] = []
+            var specialStyles: [String] = []
+            var screenplayStyles: [String] = []
+
+            for styleName in sortedStyleNames {
+                if styleName.contains("Screenplay") {
+                    screenplayStyles.append(styleName)
+                } else if styleName.contains("Title") || styleName.contains("Author") || styleName.contains("Subtitle") {
+                    titleStyles.append(styleName)
+                } else if styleName.contains("Heading") || styleName.contains("Chapter") || styleName.contains("Part") {
+                    headingStyles.append(styleName)
+                } else if styleName.contains("Body") || styleName == "Dialogue" {
+                    bodyStyles.append(styleName)
+                } else {
+                    specialStyles.append(styleName)
+                }
+            }
+
+            // Add grouped styles
+            if !titleStyles.isEmpty {
+                addHeader("Titles")
+                titleStyles.forEach(addStyle)
+                stylesMenu.addItem(.separator())
+            }
+
+            if !headingStyles.isEmpty {
+                addHeader("Headings")
+                headingStyles.forEach(addStyle)
+                stylesMenu.addItem(.separator())
+            }
+
+            if !bodyStyles.isEmpty {
+                addHeader("Body")
+                bodyStyles.forEach(addStyle)
+                stylesMenu.addItem(.separator())
+            }
+
+            if !specialStyles.isEmpty {
+                addHeader("Special")
+                specialStyles.forEach(addStyle)
+                stylesMenu.addItem(.separator())
+            }
+
+            if !screenplayStyles.isEmpty {
+                addHeader("Screenplay")
+                screenplayStyles.forEach(addStyle)
+                stylesMenu.addItem(.separator())
+            }
+
+            stylePopup.menu = stylesMenu
+            // Restore last selected style from UserDefaults, default to "Body Text"
+            let lastStyle = UserDefaults.standard.string(forKey: "LastSelectedStyle") ?? "Body Text"
+            if stylePopup.itemTitles.contains(lastStyle) {
+                stylePopup.selectItem(withTitle: lastStyle)
+            } else {
+                stylePopup.selectItem(withTitle: "Body Text")
+            }
+            stylePopup.translatesAutoresizingMaskIntoConstraints = false
+            stylePopup.target = self
+            stylePopup.action = #selector(styleChanged(_:))
+            stylePopup.toolTip = "Paragraph Style"
         }
+
+        // Common popup configuration
         stylePopup.translatesAutoresizingMaskIntoConstraints = false
         stylePopup.target = self
         stylePopup.action = #selector(styleChanged(_:))
@@ -2233,7 +2293,7 @@ class FormattingToolbar: NSView {
         decreaseSizeBtn.toolTip = "Decrease Font Size"
         sizePopup = registerControl(NSPopUpButton(frame: .zero, pullsDown: false))
         sizePopup.addItems(withTitles: ["8", "9", "10", "11", "12", "14", "16", "18", "20", "24", "28", "32"])
-        sizePopup.selectItem(at: 4) // 12pt default
+        sizePopup.selectItem(withTitle: "20")
         sizePopup.target = self
         sizePopup.action = #selector(fontSizeChanged(_:))
         sizePopup.toolTip = "Font Size"
@@ -3211,6 +3271,7 @@ class OutlineViewController: NSViewController {
 
     private var headerLabel: NSTextField!
     private var outlineView: NSOutlineView!
+    private var templateObserver: NSObjectProtocol?
 
     private var levelColors: [NSColor] = [
         NSColor(calibratedRed: 0.18, green: 0.33, blue: 0.61, alpha: 1.0), // Part
@@ -3232,6 +3293,16 @@ class OutlineViewController: NSViewController {
         headerLabel.font = NSFont.boldSystemFont(ofSize: 14)
         headerLabel.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(headerLabel)
+
+        // Poetry template hides the "Document Outline" heading.
+        applyTemplateVisibility()
+        templateObserver = NotificationCenter.default.addObserver(
+            forName: .styleTemplateDidChange,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            self?.applyTemplateVisibility()
+        }
 
         outlineView = NSOutlineView()
         outlineView.headerView = nil
@@ -3269,6 +3340,16 @@ class OutlineViewController: NSViewController {
         ])
 
         applyTheme(ThemeManager.shared.currentTheme)
+    }
+
+    deinit {
+        if let observer = templateObserver {
+            NotificationCenter.default.removeObserver(observer)
+        }
+    }
+
+    private func applyTemplateVisibility() {
+        headerLabel?.isHidden = StyleCatalog.shared.isPoetryTemplate
     }
 
     func update(with entries: [EditorViewController.OutlineEntry]) {

@@ -164,6 +164,65 @@ class SplitViewController: NSSplitViewController {
             let analyzerOutlineEntries: [DecisionBeliefLoopAnalyzer.OutlineEntry]? = {
                 guard !outlineEntries.isEmpty else { return nil }
 
+                if StyleCatalog.shared.isScreenplayTemplate {
+                    // For screenplays, presence is driven by sluglines (scenes), but we also want ACT I/II/III markers
+                    // so the UI can aggregate accurately by act.
+                    func parseActNumber(from title: String) -> Int? {
+                        let t = title.trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
+                        guard t.hasPrefix("ACT") else { return nil }
+
+                        // Normalize punctuation and split.
+                        let cleaned = t.replacingOccurrences(of: ".", with: " ")
+                            .replacingOccurrences(of: ":", with: " ")
+                            .replacingOccurrences(of: "-", with: " ")
+                        let parts = cleaned.split(whereSeparator: { $0.isWhitespace })
+                        guard parts.count >= 2 else { return nil }
+
+                        let token = String(parts[1])
+                        switch token {
+                        case "I", "1": return 1
+                        case "II", "2": return 2
+                        case "III", "3": return 3
+                        case "IV", "4": return 4
+                        case "V", "5": return 5
+                        default:
+                            if let n = Int(token) { return n }
+                            return nil
+                        }
+                    }
+
+                    func isActHeading(_ title: String) -> Bool {
+                        parseActNumber(from: title) != nil
+                    }
+
+                    let sorted = outlineEntries.sorted { $0.range.location < $1.range.location }
+
+                    let sceneEntries = sorted.filter { ($0.styleName ?? "") == "Screenplay — Slugline" }
+                    let actEntries = sorted.filter { isActHeading($0.title) }
+
+                    let combined = (sceneEntries + actEntries)
+                        .sorted { $0.range.location < $1.range.location }
+
+                    guard !combined.isEmpty else { return nil }
+                    return combined.map { entry in
+                        let level: Int
+                        if entry.styleName == "Screenplay — Slugline" {
+                            level = 1
+                        } else if isActHeading(entry.title) {
+                            level = 0
+                        } else {
+                            level = entry.level
+                        }
+
+                        return DecisionBeliefLoopAnalyzer.OutlineEntry(
+                            title: entry.title,
+                            level: level,
+                            range: entry.range,
+                            page: entry.page
+                        )
+                    }
+                }
+
                 let bannedStyles: Set<String> = [
                     "TOC Title",
                     "Index Title",

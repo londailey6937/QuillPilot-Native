@@ -155,7 +155,7 @@ struct CharacterArcCharts: View {
                 }
                 .padding(.horizontal)
 
-                Text("Shows per-chapter mentions for each character. Use this to ensure pacing is balanced and to spot chapters where key characters drop out.")
+                Text("Shows per-scene mentions for each character. Use this to ensure pacing is balanced and to spot scenes where key characters drop out.")
                     .font(.caption)
                     .foregroundColor(.secondary)
                     .padding(.horizontal)
@@ -299,6 +299,9 @@ struct CharacterPresenceBarChart: View {
     }
 
     private var dataPoints: [CharacterPresenceDataPoint] {
+        let libraryOrder = CharacterLibrary.shared.analysisCharacterKeys
+        let orderIndex: [String: Int] = Dictionary(uniqueKeysWithValues: libraryOrder.enumerated().map { ($0.element, $0.offset) })
+
         let points = presence.flatMap { entry in
             entry.chapterPresence.map { chapter, mentions in
                 CharacterPresenceDataPoint(
@@ -309,7 +312,11 @@ struct CharacterPresenceBarChart: View {
             }
         }
         return points.sorted { lhs, rhs in
-            lhs.chapter == rhs.chapter ? lhs.character < rhs.character : lhs.chapter < rhs.chapter
+            if lhs.chapter != rhs.chapter { return lhs.chapter < rhs.chapter }
+            let li = orderIndex[lhs.character] ?? Int.max
+            let ri = orderIndex[rhs.character] ?? Int.max
+            if li != ri { return li < ri }
+            return lhs.character < rhs.character
         }
     }
 
@@ -334,7 +341,7 @@ struct CharacterPresenceBarChart: View {
                     ScrollView(.horizontal, showsIndicators: true) {
                         Chart(dataPoints) { point in
                             BarMark(
-                                x: .value("Chapter", "Ch \(point.chapter)"),
+                                x: .value("Scene", "Sc \(point.chapter)"),
                                 y: .value("Mentions", point.mentions)
                             )
                             .foregroundStyle(by: .value("Character", point.character))
@@ -346,10 +353,10 @@ struct CharacterPresenceBarChart: View {
                                 }
                             }
                         }
-                        .chartXAxisLabel("Chapter", alignment: .center)
+                        .chartXAxisLabel("Scene", alignment: .center)
                         .chartYAxisLabel("Mentions")
                         .chartXAxis {
-                            AxisMarks(values: chapters.map { "Ch \($0)" }) { _ in
+                            AxisMarks(values: chapters.map { "Sc \($0)" }) { _ in
                                 AxisValueLabel()
                                     .foregroundStyle(textColor)
                             }
@@ -565,11 +572,11 @@ struct DecisionBeliefLoopFullView: View {
                                 .fontWeight(.semibold)
                                 .foregroundColor(textColor)
 
-                            Text("Key inflection points across chapters")
+                            Text("Key inflection points across scenes")
                                 .font(.caption)
                                 .foregroundColor(textColor.opacity(0.7))
 
-                            Text("Rows = chapters; columns = loop elements. Dots appear when an element is detected. Dot color reflects the dominant theme keywords (not the chapter): Fear (red), Agency (purple), Trust (blue), Identity (green), Moral/Ethical (yellow). Dashed vertical connectors indicate likely regression between chapters.")
+                            Text("Rows = scenes; columns = loop elements. Dots appear when an element is detected. Dot color reflects the dominant theme keywords (not the scene): Fear (red), Agency (purple), Trust (blue), Identity (green), Moral/Ethical (yellow). Dashed vertical connectors indicate likely regression between scenes.")
                                 .font(.caption)
                                 .foregroundColor(textColor.opacity(0.7))
 
@@ -727,10 +734,10 @@ struct CharacterArcTimelineView: View {
         GeometryReader { geometry in
             let width = geometry.size.width - 60 // Reserve space for y-axis labels
             let elementSpacing = width / CGFloat(loopElements.count)
-            let chapterSpacing: CGFloat = 50 // Fixed spacing between chapters
+            let chapterSpacing: CGFloat = 50 // Fixed spacing between scenes
 
             ZStack(alignment: .topLeading) {
-                // Y-axis (chapters)
+                // Y-axis (scenes)
                 VStack(alignment: .leading, spacing: 0) {
                     // Header space
                     Spacer()
@@ -738,8 +745,8 @@ struct CharacterArcTimelineView: View {
 
                     ForEach(entries) { entry in
                         HStack(spacing: 0) {
-                            // Chapter label on y-axis
-                            Text("Ch \(entry.chapter)")
+                            // Scene label on y-axis
+                            Text("Sc \(entry.chapter)")
                                 .font(.caption)
                                 .foregroundColor(textColor.opacity(0.7))
                                 .frame(width: 50, alignment: .trailing)

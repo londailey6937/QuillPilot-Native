@@ -672,15 +672,6 @@ class CharacterLibraryViewController: NSViewController {
         infoLabel.maximumNumberOfLines = 2
         contentView.addSubview(infoLabel)
 
-        // OK button
-        let okButton = NSButton(title: "OK", target: nil, action: nil)
-        okButton.bezelStyle = .rounded
-        okButton.frame = NSRect(x: contentView.bounds.width - 90, y: 15, width: 70, height: 32)
-        okButton.keyEquivalent = "\r"
-        okButton.target = panel
-        okButton.action = #selector(NSPanel.close)
-        contentView.addSubview(okButton)
-
         // Center and show
         panel.center()
         panel.makeKeyAndOrderFront(nil)

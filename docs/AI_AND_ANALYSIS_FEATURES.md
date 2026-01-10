@@ -110,7 +110,7 @@ struct DialogueAnalysis {
 
 ### Feature Description
 
-Visualize character development and interactions across story acts/chapters.
+Visualize character development and interactions across story sections (chapters for manuscripts; scenes/acts for screenplays).
 
 ### Visualization Types
 
@@ -165,9 +165,13 @@ Allison   █    ██   ███  ██   ██
 
 **Displays:**
 
-- Screen time per chapter (intensity)
+- Screen time per section (intensity)
 - Character availability patterns
 - Subplot tracking
+
+**Notes:**
+
+- Character analysis is driven by the Character Library (major characters only) so analysis windows stay in sync with your cast list.
 
 ### Implementation
 

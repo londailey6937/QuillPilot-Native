@@ -27,6 +27,8 @@ class AnalysisViewController: NSViewController, NSWindowDelegate {
 
     private var menuSidebar: NSView!
     private var menuSeparator: NSView!
+    private var menuSidebarWidthConstraint: NSLayoutConstraint?
+    private var menuSeparatorWidthConstraint: NSLayoutConstraint?
     private var menuButtons: [NSButton] = []
     private var scrollContainer: NSView!
     private var scrollView: NSScrollView!
@@ -99,6 +101,8 @@ class AnalysisViewController: NSViewController, NSWindowDelegate {
 
     // Emotional Trajectory: preserve metric selection across refreshes
     private var selectedEmotionalTrajectoryMetricIndex: Int = 0
+    private var selectedEmotionalTrajectoryXAxisModeIndex: Int = 0 // 0 = Scenes, 1 = Acts
+    private var lastEmotionalTrajectoryResults: AnalysisResults?
 
     // High-contrast qualitative palette reused across popouts
     private let qualitativePalette: [NSColor] = [
@@ -228,6 +232,14 @@ class AnalysisViewController: NSViewController, NSWindowDelegate {
         setupContent()
         applyTheme(currentTheme)
 
+        // Apply template-specific UI (Poetry vs Screenplay/Fiction)
+        applyTemplateAdaptiveUI()
+
+        // Respond to template switches (e.g., Poetry) to adapt the UI
+        NotificationCenter.default.addObserver(forName: .styleTemplateDidChange, object: nil, queue: .main) { [weak self] _ in
+            self?.applyTemplateAdaptiveUI()
+        }
+
         // Hide inline analysis for the analysis panel; use popout only
         if !isOutlinePanel {
             scrollContainer.isHidden = true
@@ -269,12 +281,53 @@ class AnalysisViewController: NSViewController, NSWindowDelegate {
         menuSeparator.wantsLayer = true
         view.addSubview(menuSeparator)
 
-        // Create menu buttons - different for Navigator vs Analysis panel
+        if isOutlinePanel {
+            menuSidebarWidthConstraint = menuSidebar.widthAnchor.constraint(equalToConstant: 56)
+            menuSeparatorWidthConstraint = menuSeparator.widthAnchor.constraint(equalToConstant: 1)
+            NSLayoutConstraint.activate([
+                menuSidebar.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+                menuSidebar.topAnchor.constraint(equalTo: view.topAnchor),
+                menuSidebar.bottomAnchor.constraint(equalTo: view.bottomAnchor),
+                menuSidebarWidthConstraint!,
+
+                menuSeparator.trailingAnchor.constraint(equalTo: menuSidebar.leadingAnchor),
+                menuSeparator.topAnchor.constraint(equalTo: view.topAnchor),
+                menuSeparator.bottomAnchor.constraint(equalTo: view.bottomAnchor),
+                menuSeparatorWidthConstraint!
+            ])
+        } else {
+            menuSidebarWidthConstraint = menuSidebar.widthAnchor.constraint(equalToConstant: 56)
+            menuSeparatorWidthConstraint = menuSeparator.widthAnchor.constraint(equalToConstant: 1)
+            NSLayoutConstraint.activate([
+                menuSidebar.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+                menuSidebar.topAnchor.constraint(equalTo: view.topAnchor),
+                menuSidebar.bottomAnchor.constraint(equalTo: view.bottomAnchor),
+                menuSidebarWidthConstraint!,
+
+                menuSeparator.leadingAnchor.constraint(equalTo: menuSidebar.trailingAnchor),
+                menuSeparator.topAnchor.constraint(equalTo: view.topAnchor),
+                menuSeparator.bottomAnchor.constraint(equalTo: view.bottomAnchor),
+                menuSeparatorWidthConstraint!
+            ])
+        }
+
+        rebuildSidebarButtons()
+    }
+
+    private func rebuildSidebarButtons() {
+        // Remove existing buttons
+        for button in menuButtons {
+            button.removeFromSuperview()
+        }
+        menuButtons.removeAll()
+
         var yPosition: CGFloat = 12
+        let isPoetry = StyleCatalog.shared.isPoetryTemplate
 
         if isOutlinePanel {
-            // Navigator panel - show Outline and Characters
-            for category in NavigatorCategory.allCases {
+            // Poetry: hide the navigator chrome entirely (more writing/outline space)
+            let categories: [NavigatorCategory] = isPoetry ? [] : NavigatorCategory.allCases
+            for category in categories {
                 let button = NSButton(frame: NSRect(x: 0, y: 0, width: 44, height: 44))
                 button.title = category.icon
                 button.font = .systemFont(ofSize: 20)
@@ -299,8 +352,9 @@ class AnalysisViewController: NSViewController, NSWindowDelegate {
                 yPosition += 52
             }
         } else {
-            // Analysis panel - show analysis categories
-            for category in AnalysisCategory.allCases {
+            // Poetry: only show the Poetry-focused Analysis popout (hide Plot/Characters)
+            let categories: [AnalysisCategory] = isPoetry ? [.basic] : AnalysisCategory.allCases
+            for category in categories {
                 let button = NSButton(frame: NSRect(x: 0, y: 0, width: 44, height: 44))
                 button.title = category.icon
                 button.font = .systemFont(ofSize: 20)
@@ -310,7 +364,7 @@ class AnalysisViewController: NSViewController, NSWindowDelegate {
                 button.action = #selector(categoryButtonTapped(_:))
                 button.tag = AnalysisCategory.allCases.firstIndex(of: category) ?? 0
                 button.translatesAutoresizingMaskIntoConstraints = false
-                button.toolTip = category.rawValue
+                button.toolTip = (isPoetry && category == .basic) ? "Poetry Analysis" : category.rawValue
 
                 menuSidebar.addSubview(button)
                 menuButtons.append(button)
@@ -326,37 +380,74 @@ class AnalysisViewController: NSViewController, NSWindowDelegate {
             }
         }
 
+        updateSelectedButton()
+    }
+
+    private func applyTemplateAdaptiveUI() {
+        let isPoetry = StyleCatalog.shared.isPoetryTemplate
+
+        // Outline panel: remove navigator chrome in Poetry for a cleaner workspace.
         if isOutlinePanel {
-            NSLayoutConstraint.activate([
-                menuSidebar.trailingAnchor.constraint(equalTo: view.trailingAnchor),
-                menuSidebar.topAnchor.constraint(equalTo: view.topAnchor),
-                menuSidebar.bottomAnchor.constraint(equalTo: view.bottomAnchor),
-                menuSidebar.widthAnchor.constraint(equalToConstant: 56),
-
-                menuSeparator.trailingAnchor.constraint(equalTo: menuSidebar.leadingAnchor),
-                menuSeparator.topAnchor.constraint(equalTo: view.topAnchor),
-                menuSeparator.bottomAnchor.constraint(equalTo: view.bottomAnchor),
-                menuSeparator.widthAnchor.constraint(equalToConstant: 1)
-            ])
-        } else {
-            NSLayoutConstraint.activate([
-                menuSidebar.leadingAnchor.constraint(equalTo: view.leadingAnchor),
-                menuSidebar.topAnchor.constraint(equalTo: view.topAnchor),
-                menuSidebar.bottomAnchor.constraint(equalTo: view.bottomAnchor),
-                menuSidebar.widthAnchor.constraint(equalToConstant: 56),
-
-                menuSeparator.leadingAnchor.constraint(equalTo: menuSidebar.trailingAnchor),
-                menuSeparator.topAnchor.constraint(equalTo: view.topAnchor),
-                menuSeparator.bottomAnchor.constraint(equalTo: view.bottomAnchor),
-                menuSeparator.widthAnchor.constraint(equalToConstant: 1)
-            ])
+            if isPoetry {
+                menuSidebar.isHidden = true
+                menuSeparator.isHidden = true
+                menuSidebarWidthConstraint?.constant = 0
+                menuSeparatorWidthConstraint?.constant = 0
+                showOutlineInlineIfNeeded()
+            } else {
+                menuSidebar.isHidden = false
+                menuSeparator.isHidden = false
+                menuSidebarWidthConstraint?.constant = 56
+                menuSeparatorWidthConstraint?.constant = 1
+            }
         }
 
+        // Rebuild buttons if template switch changes which ones are shown
+        rebuildSidebarButtons()
+
+        // Keep popout title aligned with template
+        if let window = analysisPopoutWindow {
+            window.title = isPoetry ? "🪶 Poetry Analysis" : "📊 Analysis"
+        }
+
+        // If analysis popout is open, re-render its content for the new template
+        if analysisPopoutWindow != nil {
+            refreshAnalysisPopoutContent()
+        }
+    }
+
+    private func showOutlineInlineIfNeeded() {
+        guard isOutlinePanel else { return }
+        guard !isOutlineVisible else { return }
+        scrollContainer.isHidden = true
+        if let outlineVC = outlineViewController {
+            if outlineVC.view.superview == nil {
+                view.addSubview(outlineVC.view)
+                outlineVC.view.translatesAutoresizingMaskIntoConstraints = false
+                NSLayoutConstraint.activate([
+                    outlineVC.view.topAnchor.constraint(equalTo: view.topAnchor),
+                    outlineVC.view.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+                    outlineVC.view.trailingAnchor.constraint(equalTo: menuSeparator.leadingAnchor),
+                    outlineVC.view.bottomAnchor.constraint(equalTo: view.bottomAnchor)
+                ])
+            }
+            outlineVC.view.isHidden = false
+        }
+        isOutlineVisible = true
+        currentCategory = .basic
         updateSelectedButton()
+        DispatchQueue.main.async {
+            NotificationCenter.default.post(name: Notification.Name("QuillPilotOutlineRefresh"), object: nil)
+        }
     }
 
     @objc private func categoryButtonTapped(_ sender: NSButton) {
         let category = AnalysisCategory.allCases[sender.tag]
+
+        // Poetry template: hide non-poetry analysis categories
+        if StyleCatalog.shared.isPoetryTemplate && category != .basic {
+            return
+        }
 
         // For basic analysis, open popout window
         if category == .basic {
@@ -1712,10 +1803,26 @@ extension AnalysisViewController {
         window.backgroundColor = theme.pageBackground
         window.appearance = NSAppearance(named: isDarkMode ? .darkAqua : .aqua)
 
+        let keep = StyleCatalog.shared.isScreenplayTemplate ? currentSignificantCharacterNameSet() : []
+        let libraryOrder = CharacterLibrary.shared.analysisCharacterKeys
+        let librarySet = Set(libraryOrder)
+
+        let filteredLoops = keep.isEmpty ? loops : loops.filter { keep.contains($0.characterName) }
+        let displayLoops: [DecisionBeliefLoop]
+        if !libraryOrder.isEmpty {
+            displayLoops = filteredLoops
+                .filter { librarySet.contains($0.characterName) }
+                .sorted {
+                    (libraryOrder.firstIndex(of: $0.characterName) ?? Int.max) < (libraryOrder.firstIndex(of: $1.characterName) ?? Int.max)
+                }
+        } else {
+            displayLoops = filteredLoops
+        }
+
         // Use AppKit view for proper theme support
         let decisionBeliefView = DecisionBeliefLoopView(frame: window.contentView!.bounds)
         decisionBeliefView.autoresizingMask = [.width, .height]
-        decisionBeliefView.setLoops(loops)
+        decisionBeliefView.setLoops(displayLoops)
 
         window.contentView = decisionBeliefView
         window.center()
@@ -1755,8 +1862,9 @@ extension AnalysisViewController {
         let interactionsView = CharacterInteractionsView(frame: window.contentView!.bounds)
         interactionsView.autoresizingMask = [.width, .height]
 
-        let keep = currentSignificantCharacterNameSet(fallbackPresence: nil, fallbackInteractions: interactions)
-        let filtered = keep.isEmpty ? interactions : interactions.filter { keep.contains($0.character1) && keep.contains($0.character2) }
+        let libraryOrder = CharacterLibrary.shared.analysisCharacterKeys
+        let librarySet = Set(libraryOrder)
+        let filtered = interactions.filter { librarySet.contains($0.character1) && librarySet.contains($0.character2) }
 
         // Convert CharacterInteraction to InteractionData
         let interactionData = filtered.map { interaction in
@@ -1769,7 +1877,7 @@ extension AnalysisViewController {
             )
         }
 
-        interactionsView.setInteractions(interactionData)
+        interactionsView.setInteractions(interactionData, allCharacterNames: libraryOrder)
 
         // Create container
         let container = NSView(frame: window.contentView!.bounds)
@@ -1907,7 +2015,17 @@ extension AnalysisViewController {
         alignmentView.autoresizingMask = [.width, .height]
 
         // Convert data to view format
-        let characterAlignments = alignmentData.characterAlignments.map { charData in
+        let libraryOrder = CharacterLibrary.shared.analysisCharacterKeys
+        let librarySet = Set(libraryOrder)
+
+        // Filter to analysis-eligible characters and keep Character Library order.
+        let orderedSource = alignmentData.characterAlignments
+            .filter { librarySet.contains($0.characterName) }
+            .sorted { a, b in
+                (libraryOrder.firstIndex(of: a.characterName) ?? Int.max) < (libraryOrder.firstIndex(of: b.characterName) ?? Int.max)
+            }
+
+        let characterAlignments = orderedSource.map { charData in
             let dataPoints = charData.dataPoints.map { point in
                 InternalExternalAlignmentView.AlignmentDataPoint(
                     chapter: point.chapter,
@@ -2017,8 +2135,8 @@ extension AnalysisViewController {
             )
         }
 
-        // Ensure every library character is represented even if the analysis data was missing
-        let libraryNames = CharacterLibrary.shared.characters.map { $0.nickname }.filter { !$0.isEmpty }
+        // Ensure every analysis-eligible library character is represented even if the analysis data was missing
+        let libraryNames = CharacterLibrary.shared.analysisCharacterKeys
         let existingNames = Set(characterDrifts.map { $0.characterName })
         let missingNames = libraryNames.filter { !existingNames.contains($0) }
 
@@ -2062,6 +2180,17 @@ extension AnalysisViewController {
                     )
                 )
             }
+        }
+
+        // Keep Character Library order (and only analysis-eligible characters).
+        let libraryOrder = CharacterLibrary.shared.analysisCharacterKeys
+        let librarySet = Set(libraryOrder)
+        if !libraryOrder.isEmpty {
+            characterDrifts = characterDrifts
+                .filter { librarySet.contains($0.characterName) }
+                .sorted {
+                    (libraryOrder.firstIndex(of: $0.characterName) ?? Int.max) < (libraryOrder.firstIndex(of: $1.characterName) ?? Int.max)
+                }
         }
 
         driftView.setDriftData(characterDrifts)
@@ -2209,11 +2338,7 @@ extension AnalysisViewController {
         let library = CharacterLibrary.shared
         let characterNames: [String]
         if !library.characters.isEmpty {
-            characterNames = library.characters.compactMap { character -> String? in
-                let fullName = character.fullName.trimmingCharacters(in: .whitespacesAndNewlines)
-                guard !fullName.isEmpty else { return nil }
-                return fullName.components(separatedBy: .whitespaces).first
-            }
+            characterNames = library.analysisCharacterKeys
         } else if let presenceEntries = latestAnalysisResults?.characterPresence, !presenceEntries.isEmpty {
             characterNames = presenceEntries.map { $0.characterName }
         } else {
@@ -2399,11 +2524,7 @@ extension AnalysisViewController {
         let characterNames: [String]
 
         if !library.characters.isEmpty {
-            characterNames = library.characters.compactMap { character -> String? in
-                let fullName = character.fullName.trimmingCharacters(in: .whitespacesAndNewlines)
-                guard !fullName.isEmpty else { return nil }
-                return fullName.components(separatedBy: .whitespaces).first
-            }
+            characterNames = library.analysisCharacterKeys
         } else if let presenceEntries = latestAnalysisResults?.characterPresence, !presenceEntries.isEmpty {
             characterNames = presenceEntries.map { $0.characterName }
         } else {
@@ -2572,8 +2693,30 @@ extension AnalysisViewController {
         let isDarkMode = ThemeManager.shared.isDarkMode
         window.appearance = NSAppearance(named: isDarkMode ? .darkAqua : .aqua)
 
+        let keep = StyleCatalog.shared.isScreenplayTemplate ? currentSignificantCharacterNameSet() : []
+        let libraryOrder = CharacterLibrary.shared.analysisCharacterKeys
+        let librarySet = Set(libraryOrder)
+
+        let filteredMatrices: [BeliefShiftMatrix]
+        if keep.isEmpty {
+            filteredMatrices = matrices
+        } else {
+            let kept = matrices.filter { keep.contains($0.characterName) }
+            filteredMatrices = kept.count >= 2 ? kept : matrices
+        }
+        let displayMatrices: [BeliefShiftMatrix]
+        if !libraryOrder.isEmpty {
+            displayMatrices = filteredMatrices
+                .filter { librarySet.contains($0.characterName) }
+                .sorted {
+                    (libraryOrder.firstIndex(of: $0.characterName) ?? Int.max) < (libraryOrder.firstIndex(of: $1.characterName) ?? Int.max)
+                }
+        } else {
+            displayMatrices = filteredMatrices
+        }
+
         // Create SwiftUI view
-        let beliefMatrixView = BeliefShiftMatrixView(matrices: matrices)
+        let beliefMatrixView = BeliefShiftMatrixView(matrices: displayMatrices)
             .preferredColorScheme(isDarkMode ? .dark : .light)
         let hostingView = NSHostingView(rootView: beliefMatrixView)
         hostingView.autoresizingMask = [.width, .height]
@@ -2622,8 +2765,24 @@ extension AnalysisViewController {
         let isDarkMode = ThemeManager.shared.isDarkMode
         window.appearance = NSAppearance(named: isDarkMode ? .darkAqua : .aqua)
 
+        let keep = StyleCatalog.shared.isScreenplayTemplate ? currentSignificantCharacterNameSet() : []
+        let libraryOrder = CharacterLibrary.shared.analysisCharacterKeys
+        let librarySet = Set(libraryOrder)
+
+        let filteredChains = keep.isEmpty ? chains : chains.filter { keep.contains($0.characterName) }
+        let displayChains: [DecisionConsequenceChain]
+        if !libraryOrder.isEmpty {
+            displayChains = filteredChains
+                .filter { librarySet.contains($0.characterName) }
+                .sorted {
+                    (libraryOrder.firstIndex(of: $0.characterName) ?? Int.max) < (libraryOrder.firstIndex(of: $1.characterName) ?? Int.max)
+                }
+        } else {
+            displayChains = filteredChains
+        }
+
         // Create SwiftUI view
-        let chainView = DecisionConsequenceChainView(chains: chains)
+        let chainView = DecisionConsequenceChainView(chains: displayChains)
             .preferredColorScheme(isDarkMode ? .dark : .light)
         let hostingView = NSHostingView(rootView: chainView)
         hostingView.autoresizingMask = [.width, .height]
@@ -2719,7 +2878,8 @@ extension AnalysisViewController {
         }
         passiveDisclosureViews.removeAll()
 
-        let header = NSTextField(labelWithString: "Document Analysis")
+        let headerTitle = StyleCatalog.shared.isPoetryTemplate ? "Poetry Analysis" : "Document Analysis"
+        let header = NSTextField(labelWithString: headerTitle)
         header.font = NSFont.boldSystemFont(ofSize: 18)
         header.textColor = theme.popoutTextColor
         stack.addArrangedSubview(header)
@@ -2768,6 +2928,29 @@ extension AnalysisViewController {
             stack.addArrangedSubview(label)
         }
 
+        func addBullet(_ text: String) {
+            let label = NSTextField(wrappingLabelWithString: "")
+            label.font = NSFont.systemFont(ofSize: 11)
+            label.textColor = theme.popoutSecondaryColor
+            label.lineBreakMode = .byWordWrapping
+            label.maximumNumberOfLines = 0
+
+            let paragraph = NSMutableParagraphStyle()
+            let bulletTab: CGFloat = 14
+            paragraph.tabStops = [NSTextTab(textAlignment: .left, location: bulletTab, options: [:])]
+            paragraph.defaultTabInterval = bulletTab
+            paragraph.firstLineHeadIndent = 0
+            paragraph.headIndent = bulletTab
+
+            let attrs: [NSAttributedString.Key: Any] = [
+                .font: label.font as Any,
+                .foregroundColor: label.textColor as Any,
+                .paragraphStyle: paragraph
+            ]
+            label.attributedStringValue = NSAttributedString(string: "•\t\(text)", attributes: attrs)
+            stack.addArrangedSubview(label)
+        }
+
         func addDivider() {
             let box = NSBox()
             box.boxType = .separator
@@ -2775,7 +2958,62 @@ extension AnalysisViewController {
             stack.addArrangedSubview(box)
         }
 
-        // Basic stats
+        // Poetry template: show poetry-focused insights (and hide fiction/screenplay-oriented sections)
+        if StyleCatalog.shared.isPoetryTemplate {
+            if let poetry = results.poetryInsights {
+                addHeader("🪶 Writer’s Poetry Analysis")
+                addStat("Words", "\(results.wordCount)")
+                addStat("Lines", "\(poetry.formal.lineCount)")
+                addStat("Stanzas", "\(poetry.formal.stanzaCount)")
+                addDetail("Mode: \(poetry.writers.mode.rawValue) — \(poetry.writers.modeRationale)")
+
+                func addBullets(_ items: [String]) {
+                    for item in items {
+                        addBullet(item)
+                    }
+                }
+
+                addDivider()
+                addHeader("1. Pressure Points (Form as Leverage)")
+                addBullets(poetry.writers.pressurePoints)
+
+                addDivider()
+                addHeader("2. Line Energy (The Physics of the Line)")
+                addBullets(poetry.writers.lineEnergy)
+
+                addDivider()
+                addHeader("3. Image Logic (How Images Think)")
+                addBullets(poetry.writers.imageLogic)
+
+                addDivider()
+                addHeader("4. Voice Management (Persona Control)")
+                addBullets(poetry.writers.voiceManagement)
+
+                addDivider()
+                addHeader("5. Emotional Arc (Invisible Plot)")
+                addBullets(poetry.writers.emotionalArc)
+                if !poetry.emotion.lineScores.isEmpty {
+                    let graph = createPoetryEmotionGraphForPopout(poetry.emotion.lineScores)
+                    stack.addArrangedSubview(graph)
+                }
+
+                addDivider()
+                addHeader("6. Compression Choices (What’s Omitted)")
+                addBullets(poetry.writers.compressionChoices)
+
+                addDivider()
+                addHeader("7. Ending Strategy")
+                addBullets(poetry.writers.endingStrategy)
+            } else {
+                let placeholder = NSTextField(labelWithString: "Poetry Insights not available yet.\n\nSet Template to Poetry and click Update.")
+                placeholder.textColor = theme.popoutSecondaryColor
+                placeholder.maximumNumberOfLines = 0
+                stack.addArrangedSubview(placeholder)
+            }
+            return
+        }
+
+        // Basic stats (non-poetry templates)
         addStat("Words", "\(results.wordCount)")
         addStat("Sentences", "\(results.sentenceCount)")
         addStat("Reading Level", results.readingLevel)
@@ -3003,6 +3241,91 @@ extension AnalysisViewController {
                 addWarning("Consider revising dialogue for more impact")
             }
         }
+
+    }
+
+    private func createPoetryEmotionGraphForPopout(_ scores: [Double]) -> NSView {
+        // Fixed width for popout
+        let graphWidth: CGFloat = 560
+        let graphHeight: CGFloat = 150
+
+        let container = NSView(frame: NSRect(x: 0, y: 0, width: graphWidth, height: graphHeight))
+        container.wantsLayer = true
+        container.translatesAutoresizingMaskIntoConstraints = false
+
+        let graphBackground = currentTheme.pageAround.blended(withFraction: 0.05, of: .black) ?? currentTheme.pageAround
+        container.layer?.backgroundColor = graphBackground.cgColor
+        container.layer?.cornerRadius = 8
+        container.layer?.borderWidth = 1.0
+        let borderColor = currentTheme == .day ? NSColor(red: 0.7, green: 0.65, blue: 0.6, alpha: 1.0) : NSColor(white: 0.3, alpha: 1.0)
+        container.layer?.borderColor = borderColor.cgColor
+
+        NSLayoutConstraint.activate([
+            container.heightAnchor.constraint(equalToConstant: graphHeight),
+            container.widthAnchor.constraint(equalToConstant: graphWidth)
+        ])
+
+        guard scores.count >= 2 else {
+            let label = NSTextField(labelWithString: "Not enough lines for a curve")
+            label.font = .systemFont(ofSize: 11)
+            label.textColor = .tertiaryLabelColor
+            label.frame = NSRect(x: 10, y: graphHeight/2 - 10, width: graphWidth - 20, height: 20)
+            container.addSubview(label)
+            return container
+        }
+
+        let inset: CGFloat = 12
+        let chartRect = NSRect(x: inset, y: 24, width: graphWidth - inset * 2, height: graphHeight - 44)
+        let midY = chartRect.midY
+
+        // Midline
+        let midline = NSView(frame: NSRect(x: chartRect.minX, y: midY, width: chartRect.width, height: 1))
+        midline.wantsLayer = true
+        midline.layer?.backgroundColor = currentTheme.popoutSecondaryColor.withAlphaComponent(0.25).cgColor
+        container.addSubview(midline)
+
+        // Polyline as small bars/points for reliability (no custom drawing)
+        let maxPoints = min(scores.count, 120)
+        let stride = max(1, scores.count / maxPoints)
+        let sampled: [Double] = stride == 1 ? scores : scores.enumerated().compactMap { ($0.offset % stride == 0) ? $0.element : nil }
+
+        let stepX = chartRect.width / CGFloat(max(1, sampled.count - 1))
+        for (i, s) in sampled.enumerated() {
+            let x = chartRect.minX + CGFloat(i) * stepX
+            let y = chartRect.minY + (CGFloat((s + 1.0) / 2.0) * chartRect.height)
+            let dot = NSView(frame: NSRect(x: x - 2, y: y - 2, width: 4, height: 4))
+            dot.wantsLayer = true
+            dot.layer?.cornerRadius = 2
+            dot.layer?.backgroundColor = (s >= 0 ? NSColor.systemPink : NSColor.systemBlue).withAlphaComponent(0.85).cgColor
+            container.addSubview(dot)
+        }
+
+        // Labels
+        let labelTop = NSTextField(labelWithString: "↑")
+        labelTop.font = .systemFont(ofSize: 10)
+        labelTop.textColor = currentTheme.popoutSecondaryColor
+        labelTop.frame = NSRect(x: 6, y: chartRect.maxY - 6, width: 12, height: 12)
+        container.addSubview(labelTop)
+
+        let labelMid = NSTextField(labelWithString: "0")
+        labelMid.font = .systemFont(ofSize: 10)
+        labelMid.textColor = currentTheme.popoutSecondaryColor
+        labelMid.frame = NSRect(x: 6, y: midY - 6, width: 18, height: 12)
+        container.addSubview(labelMid)
+
+        let labelBottom = NSTextField(labelWithString: "↓")
+        labelBottom.font = .systemFont(ofSize: 10)
+        labelBottom.textColor = currentTheme.popoutSecondaryColor
+        labelBottom.frame = NSRect(x: 6, y: chartRect.minY - 6, width: 12, height: 12)
+        container.addSubview(labelBottom)
+
+        let caption = NSTextField(labelWithString: "Line-by-line affect (rough)")
+        caption.font = .systemFont(ofSize: 10)
+        caption.textColor = currentTheme.popoutSecondaryColor.withAlphaComponent(0.75)
+        caption.frame = NSRect(x: inset, y: 6, width: graphWidth - inset * 2, height: 14)
+        container.addSubview(caption)
+
+        return container
     }
 
     /// Helper to apply theme colors to any popout window - ensures all analysis popouts match navigator style
@@ -3040,7 +3363,7 @@ extension AnalysisViewController {
             backing: .buffered,
             defer: false
         )
-        window.title = "📊 Analysis"
+        window.title = StyleCatalog.shared.isPoetryTemplate ? "🪶 Poetry Analysis" : "📊 Analysis"
         window.isReleasedWhenClosed = false
         window.hidesOnDeactivate = true
 
@@ -3137,7 +3460,7 @@ extension AnalysisViewController {
             backing: .buffered,
             defer: false
         )
-        window.title = "📝 Document Outline"
+        window.title = StyleCatalog.shared.isPoetryTemplate ? "📝 Outline" : "📝 Document Outline"
         window.isReleasedWhenClosed = false
         window.hidesOnDeactivate = true
 
@@ -3161,6 +3484,8 @@ extension AnalysisViewController {
 
         let header = NSTextField(labelWithString: "Document Outline")
         header.font = NSFont.boldSystemFont(ofSize: 18)
+        // Poetry template hides this heading.
+        header.isHidden = StyleCatalog.shared.isPoetryTemplate
         stack.addArrangedSubview(header)
 
         // Get actual outline entries from editor
@@ -3380,7 +3705,7 @@ extension AnalysisViewController {
         beliefMatrixItem.target = self
         menu.addItem(beliefMatrixItem)
 
-        if StyleCatalog.shared.currentTemplateName != "Screenplay" {
+        if !StyleCatalog.shared.isScreenplayTemplate {
             let chainItem = NSMenuItem(title: "⛓️ Decision-Consequence Chains", action: #selector(showDecisionConsequenceChains), keyEquivalent: "")
             chainItem.target = self
             menu.addItem(chainItem)
@@ -3390,21 +3715,24 @@ extension AnalysisViewController {
         relationshipMapItem.target = self
         menu.addItem(relationshipMapItem)
 
-        let alignmentItem = NSMenuItem(title: "🎭 Internal vs External Alignment", action: #selector(showInternalExternalAlignment), keyEquivalent: "")
-        alignmentItem.target = self
-        menu.addItem(alignmentItem)
+        // Lower/optional diagnostics: hide by default for Screenplay templates.
+        if !StyleCatalog.shared.isScreenplayTemplate {
+            let alignmentItem = NSMenuItem(title: "🎭 Internal vs External Alignment", action: #selector(showInternalExternalAlignment), keyEquivalent: "")
+            alignmentItem.target = self
+            menu.addItem(alignmentItem)
 
-        let languageDriftItem = NSMenuItem(title: "📝 Language Drift Analysis", action: #selector(showLanguageDriftAnalysis), keyEquivalent: "")
-        languageDriftItem.target = self
-        menu.addItem(languageDriftItem)
+            let languageDriftItem = NSMenuItem(title: "📝 Language Drift Analysis", action: #selector(showLanguageDriftAnalysis), keyEquivalent: "")
+            languageDriftItem.target = self
+            menu.addItem(languageDriftItem)
 
-        let thematicResonanceItem = NSMenuItem(title: "🎯 Thematic Resonance Map", action: #selector(showThematicResonanceMap), keyEquivalent: "")
-        thematicResonanceItem.target = self
-        menu.addItem(thematicResonanceItem)
+            let thematicResonanceItem = NSMenuItem(title: "🎯 Thematic Resonance Map", action: #selector(showThematicResonanceMap), keyEquivalent: "")
+            thematicResonanceItem.target = self
+            menu.addItem(thematicResonanceItem)
 
-        let failurePatternItem = NSMenuItem(title: "📉 Failure Pattern Charts", action: #selector(showFailurePatternCharts), keyEquivalent: "")
-        failurePatternItem.target = self
-        menu.addItem(failurePatternItem)
+            let failurePatternItem = NSMenuItem(title: "📉 Failure Pattern Charts", action: #selector(showFailurePatternCharts), keyEquivalent: "")
+            failurePatternItem.target = self
+            menu.addItem(failurePatternItem)
+        }
 
         let interactionsItem = NSMenuItem(title: "🤝 Character Interactions", action: #selector(showInteractions), keyEquivalent: "")
         interactionsItem.target = self
@@ -3627,6 +3955,7 @@ extension AnalysisViewController {
     }
 
     private func openEmotionalTrajectoryPopout(results: AnalysisResults) {
+        lastEmotionalTrajectoryResults = results
         // If window exists and is visible, bring it to front but still refresh its content
         if let existingWindow = emotionalTrajectoryPopoutWindow, existingWindow.isVisible {
             existingWindow.makeKeyAndOrderFront(nil)
@@ -3687,15 +4016,29 @@ extension AnalysisViewController {
         metricPopup.action = #selector(metricChanged(_:))
         toolbar.addSubview(metricPopup)
 
+        // X-axis mode selector (Scenes / Acts)
+        let xAxisLabel = NSTextField(labelWithString: "X-axis:")
+        xAxisLabel.font = NSFont.systemFont(ofSize: 12)
+        xAxisLabel.textColor = currentTheme.textColor
+        xAxisLabel.frame = NSRect(x: 630, y: 18, width: 50, height: 20)
+        toolbar.addSubview(xAxisLabel)
+
+        let xAxisControl = NSSegmentedControl(labels: ["Scenes", "Acts"], trackingMode: .selectOne, target: self, action: #selector(trajectoryXAxisModeChanged(_:)))
+        xAxisControl.frame = NSRect(x: 690, y: 13, width: 160, height: 26)
+        xAxisControl.selectedSegment = (selectedEmotionalTrajectoryXAxisModeIndex == 1) ? 1 : 0
+        toolbar.addSubview(xAxisControl)
+
         containerView.addSubview(toolbar)
 
         // Interpretation guide (shown inside the dialog)
-        let guideLabel = NSTextField(wrappingLabelWithString: "How to read: X-axis is chapters; Y-axis is the selected metric (top = higher, bottom = lower). Solid lines show surface behavior; dashed lines show subtext/internal state. Focus on rises/drops and crossovers more than exact values.")
+        let xAxisGuide = (selectedEmotionalTrajectoryXAxisModeIndex == 1) ? "acts" : "scenes"
+        let guideLabel = NSTextField(wrappingLabelWithString: "How to read: X-axis is \(xAxisGuide); Y-axis is the selected metric (top = higher, bottom = lower). Solid lines show surface behavior; dashed lines show subtext/internal state. Focus on rises/drops and crossovers more than exact values.")
         guideLabel.font = NSFont.systemFont(ofSize: 11)
         guideLabel.textColor = currentTheme.textColor.withAlphaComponent(0.75)
         guideLabel.maximumNumberOfLines = 3
         guideLabel.frame = NSRect(x: 20, y: window.contentView!.bounds.height - 85, width: window.contentView!.bounds.width - 40, height: 32)
         guideLabel.autoresizingMask = [.width, .minYMargin]
+        guideLabel.identifier = NSUserInterfaceItemIdentifier("trajectoryGuideLabel")
         containerView.addSubview(guideLabel)
 
         // Create trajectory view
@@ -3705,8 +4048,23 @@ extension AnalysisViewController {
         let chapterCount = determineChapterCount(for: results)
         trajectoryView.setChapterCount(chapterCount)
 
-        // Generate sample trajectory data from analysis results
-        let trajectories = generateEmotionalTrajectories(from: results, chapterCount: chapterCount)
+        if selectedEmotionalTrajectoryXAxisModeIndex == 1 {
+            trajectoryView.setXAxisMode(.acts)
+            trajectoryView.setActMarkers(actMarkers(for: results, sceneCount: chapterCount))
+        } else {
+            trajectoryView.setXAxisMode(.scenes)
+            trajectoryView.setActMarkers([])
+        }
+
+        // Generate trajectory data from analysis results
+        var trajectories = generateEmotionalTrajectories(from: results, chapterCount: chapterCount)
+
+        if StyleCatalog.shared.isScreenplayTemplate {
+            let keep = currentSignificantCharacterNameSet(fallbackPresence: results.characterPresence, fallbackInteractions: results.characterInteractions)
+            if !keep.isEmpty {
+                trajectories = trajectories.filter { keep.contains($0.characterName) }
+            }
+        }
         trajectoryView.setTrajectories(trajectories)
 
         // Apply the selected metric after data is set
@@ -3719,6 +4077,34 @@ extension AnalysisViewController {
         window.contentView = containerView
         window.center()
         window.makeKeyAndOrderFront(nil)
+    }
+
+    private func actMarkers(for results: AnalysisResults, sceneCount: Int) -> [EmotionalTrajectoryView.ActMarker] {
+        guard sceneCount > 1 else { return [] }
+
+        if let mapping = results.characterPresence.first?.chapterToAct, !mapping.isEmpty {
+            var actToScenes: [Int: [Int]] = [:]
+            for (scene, act) in mapping {
+                guard scene > 0 else { continue }
+                actToScenes[act, default: []].append(scene)
+            }
+            let denom = Double(max(1, sceneCount - 1))
+            let markers = actToScenes.keys.sorted().compactMap { act -> EmotionalTrajectoryView.ActMarker? in
+                guard let scenes = actToScenes[act], !scenes.isEmpty else { return nil }
+                let sorted = scenes.sorted()
+                let midScene = sorted[sorted.count / 2]
+                let position = Double(max(1, min(sceneCount, midScene)) - 1) / denom
+                return EmotionalTrajectoryView.ActMarker(act: act, position: position)
+            }
+            if !markers.isEmpty { return markers }
+        }
+
+        // Fallback: equal thirds
+        return [
+            EmotionalTrajectoryView.ActMarker(act: 1, position: 1.0 / 6.0),
+            EmotionalTrajectoryView.ActMarker(act: 2, position: 0.5),
+            EmotionalTrajectoryView.ActMarker(act: 3, position: 5.0 / 6.0)
+        ]
     }
 
     @objc private func metricChanged(_ sender: NSPopUpButton) {
@@ -3736,6 +4122,31 @@ extension AnalysisViewController {
         selectedEmotionalTrajectoryMetricIndex = sender.indexOfSelectedItem
         let selectedMetric = metrics[selectedEmotionalTrajectoryMetricIndex]
         trajectoryView.setMetric(selectedMetric)
+    }
+
+    @objc private func trajectoryXAxisModeChanged(_ sender: NSSegmentedControl) {
+        selectedEmotionalTrajectoryXAxisModeIndex = sender.selectedSegment
+        guard let window = emotionalTrajectoryPopoutWindow,
+              let containerView = window.contentView,
+              let trajectoryView = containerView.subviews.first(where: { $0 is EmotionalTrajectoryView }) as? EmotionalTrajectoryView else {
+            return
+        }
+
+        if selectedEmotionalTrajectoryXAxisModeIndex == 1 {
+            trajectoryView.setXAxisMode(.acts)
+            if let results = lastEmotionalTrajectoryResults {
+                let chapterCount = determineChapterCount(for: results)
+                trajectoryView.setActMarkers(actMarkers(for: results, sceneCount: chapterCount))
+            }
+        } else {
+            trajectoryView.setXAxisMode(.scenes)
+            trajectoryView.setActMarkers([])
+        }
+
+        if let guideLabel = containerView.subviews.first(where: { $0.identifier?.rawValue == "trajectoryGuideLabel" }) as? NSTextField {
+            let xAxisGuide = (selectedEmotionalTrajectoryXAxisModeIndex == 1) ? "acts" : "scenes"
+            guideLabel.stringValue = "How to read: X-axis is \(xAxisGuide); Y-axis is the selected metric (top = higher, bottom = lower). Solid lines show surface behavior; dashed lines show subtext/internal state. Focus on rises/drops and crossovers more than exact values."
+        }
     }
 
     private func generateEmotionalTrajectories(from results: AnalysisResults) -> [EmotionalTrajectoryView.CharacterTrajectory] {
@@ -3796,15 +4207,11 @@ extension AnalysisViewController {
     private func generateEmotionalTrajectories(from results: AnalysisResults, chapterCount: Int) -> [EmotionalTrajectoryView.CharacterTrajectory] {
         var trajectories: [EmotionalTrajectoryView.CharacterTrajectory] = []
 
-        // Get character names from Character Library (all characters)
+        // Get character names from Character Library (analysis-eligible only)
         let library = CharacterLibrary.shared
         let characterNames: [String]
         if !library.characters.isEmpty {
-            characterNames = library.characters.compactMap { character -> String? in
-                let fullName = character.fullName.trimmingCharacters(in: .whitespacesAndNewlines)
-                guard !fullName.isEmpty else { return nil }
-                return fullName.components(separatedBy: .whitespaces).first
-            }
+            characterNames = library.analysisCharacterKeys
         } else if !results.characterPresence.isEmpty {
             characterNames = results.characterPresence.map { $0.characterName }
         } else {

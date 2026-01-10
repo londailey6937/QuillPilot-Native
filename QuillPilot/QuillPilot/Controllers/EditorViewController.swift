@@ -2039,6 +2039,11 @@ class EditorViewController: NSViewController {
 
         repairBodyTextIndentAfterLoadIfNeeded()
 
+        // Some importers preserve style identity via QuillStyleName but can lose visible formatting
+        // when AppKit normalizes attributed strings. Re-apply catalog formatting for any tagged
+        // paragraphs so Screenplay/Fiction/Poetry styles actually render on the page.
+        materializeCatalogStylesFromTags()
+
         // Don't reset typing attributes - let them inherit from document content
         // This preserves the Body Text style and other attributes when typing
         updateTypingAttributesFromContent()
@@ -2059,6 +2064,78 @@ class EditorViewController: NSViewController {
             updatePageLayout()
             scrollToTop()
             delegate?.resumeAnalysisAfterLayout()
+        }
+    }
+
+    private func materializeCatalogStylesFromTags(in range: NSRange? = nil) {
+        guard let storage = textView.textStorage, storage.length > 0 else { return }
+
+        let fullString = storage.string as NSString
+        let targetRange = range ?? NSRange(location: 0, length: storage.length)
+
+        // For TOC/Index entries, preserve ALL existing formatting (especially tab stops)
+        // These have custom formatting that shouldn't be overwritten by catalog styles.
+        let preserveFormattingStyles = [
+            "TOC Entry", "TOC Entry Level 1", "TOC Entry Level 2", "TOC Entry Level 3",
+            "Index Entry", "Index Letter"
+        ]
+
+        let currentTemplate = StyleCatalog.shared.currentTemplateName
+
+        storage.beginEditing()
+        defer { storage.endEditing() }
+
+        var location = targetRange.location
+        let end = NSMaxRange(targetRange)
+        while location < end {
+            let paragraphRange = fullString.paragraphRange(for: NSRange(location: location, length: 0))
+            let safeParagraphRange = NSIntersectionRange(paragraphRange, targetRange)
+            guard safeParagraphRange.length > 0 else {
+                location = NSMaxRange(paragraphRange)
+                continue
+            }
+
+            let attrs = storage.attributes(at: safeParagraphRange.location, effectiveRange: nil)
+            guard let styleName = attrs[styleAttributeKey] as? String,
+                  !preserveFormattingStyles.contains(styleName),
+                  let definition = StyleCatalog.shared.style(named: styleName) else {
+                location = NSMaxRange(paragraphRange)
+                continue
+            }
+
+            // Ensure the tag covers the full paragraph range.
+            storage.addAttribute(styleAttributeKey, value: styleName, range: safeParagraphRange)
+
+            let catalogParagraph = self.paragraphStyle(from: definition)
+            let catalogFont = self.font(from: definition)
+
+            let existingPara = (attrs[.paragraphStyle] as? NSParagraphStyle) ?? (textView.defaultParagraphStyle ?? NSParagraphStyle.default)
+
+            // Screenplay styles are layout-sensitive; force exact catalog paragraph style.
+            let finalParagraph: NSParagraphStyle
+            if currentTemplate == "Screenplay", styleName.hasPrefix("Screenplay —") {
+                finalParagraph = catalogParagraph
+            } else {
+                finalParagraph = mergedParagraphStyle(existing: existingPara, style: catalogParagraph)
+            }
+            storage.addAttribute(.paragraphStyle, value: finalParagraph, range: safeParagraphRange)
+
+            // Apply font per run to preserve inline bold/italic.
+            storage.enumerateAttributes(in: safeParagraphRange, options: []) { runAttrs, runRange, _ in
+                let existingFont = runAttrs[.font] as? NSFont
+                let finalFont: NSFont
+                if currentTemplate == "Screenplay", styleName.hasPrefix("Screenplay —") {
+                    finalFont = mergedScreenplayFont(existing: existingFont, style: catalogFont)
+                } else {
+                    finalFont = mergedFont(existing: existingFont, style: catalogFont)
+                }
+                storage.addAttribute(.font, value: finalFont, range: runRange)
+                if runAttrs[.foregroundColor] == nil {
+                    storage.addAttribute(.foregroundColor, value: currentTheme.textColor, range: runRange)
+                }
+            }
+
+            location = NSMaxRange(paragraphRange)
         }
     }
 
@@ -2512,7 +2589,12 @@ class EditorViewController: NSViewController {
                 mutable.enumerateAttributes(in: paragraphRange, options: []) { attrs, runRange, _ in
                     // Merge style font with existing font to preserve inline changes
                     let existingFont = attrs[.font] as? NSFont
-                    let finalFont = mergedFont(existing: existingFont, style: catalogFont)
+                    let finalFont: NSFont
+                    if currentTemplate == "Screenplay", styleName.hasPrefix("Screenplay —") {
+                        finalFont = mergedScreenplayFont(existing: existingFont, style: catalogFont)
+                    } else {
+                        finalFont = mergedFont(existing: existingFont, style: catalogFont)
+                    }
                     mutable.addAttribute(.font, value: finalFont, range: runRange)
 
                     let existingFg = attrs[.foregroundColor] as? NSColor
@@ -3863,6 +3945,22 @@ case "Book Subtitle":
         return styleFont
     }
 
+    private func mergedScreenplayFont(existing existingFont: NSFont?, style styleFont: NSFont) -> NSFont {
+        guard let existing = existingFont else { return styleFont }
+
+        // Always use the screenplay style's family (e.g. Courier), but preserve bold/italic and size
+        // that may be present on imported run spans.
+        let existingTraits = NSFontManager.shared.traits(of: existing)
+        var font = NSFontManager.shared.convert(styleFont, toSize: existing.pointSize)
+        if existingTraits.contains(.boldFontMask) {
+            font = NSFontManager.shared.convert(font, toHaveTrait: .boldFontMask)
+        }
+        if existingTraits.contains(.italicFontMask) {
+            font = NSFontManager.shared.convert(font, toHaveTrait: .italicFontMask)
+        }
+        return font
+    }
+
     private func mergedParagraphStyle(existing: NSParagraphStyle?, style: NSParagraphStyle) -> NSParagraphStyle {
         guard let existing = existing else { return style }
         guard let mutable = style.mutableCopy() as? NSMutableParagraphStyle else { return style }
@@ -4084,7 +4182,7 @@ case "Book Subtitle":
         DebugLog.log("📋🔍 buildOutlineEntries: Starting scan of \(storage.length) characters")
         DebugLog.log("📋🔍 styleAttributeKey: \(styleAttributeKey)")
 
-        let isScreenplayTemplate = StyleCatalog.shared.currentTemplateName == "Screenplay"
+        let isScreenplayTemplate = StyleCatalog.shared.isScreenplayTemplate
 
         var levels: [String: Int] = [
             "Part Title": 0,
@@ -4114,6 +4212,19 @@ case "Book Subtitle":
             guard !upper.isEmpty else { return false }
             let prefixes = ["INT.", "EXT.", "INT/EXT.", "EXT/INT.", "I/E.", "EST."]
             return prefixes.contains(where: { upper.hasPrefix($0) })
+        }
+
+        func looksLikeScreenplayActHeading(_ text: String) -> Bool {
+            let upper = text.trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
+            guard upper.hasPrefix("ACT") else { return false }
+            // Accept: ACT I / ACT II / ACT III / ACT 1 / ACT 2 / ACT 3 (optionally punctuated)
+            let cleaned = upper.replacingOccurrences(of: ".", with: " ")
+                .replacingOccurrences(of: ":", with: " ")
+                .replacingOccurrences(of: "-", with: " ")
+            let parts = cleaned.split(whereSeparator: { $0.isWhitespace })
+            guard parts.count >= 2 else { return false }
+            let token = String(parts[1])
+            return token == "I" || token == "II" || token == "III" || token == "1" || token == "2" || token == "3"
         }
 
         var location = 0
@@ -4149,6 +4260,13 @@ case "Book Subtitle":
                     let pageGap: CGFloat = 20
                     let pageIndex = max(0, Int(floor(bounds.midY / (scaledPageHeight + pageGap)))) + 1
                     results.append(OutlineEntry(title: rawTitle, level: 1, range: paragraphRange, page: pageIndex, styleName: "Screenplay — Slugline"))
+                } else if looksLikeScreenplayActHeading(rawTitle) {
+                    let glyphRange = layoutManager.glyphRange(forCharacterRange: paragraphRange, actualCharacterRange: nil)
+                    let bounds = layoutManager.boundingRect(forGlyphRange: glyphRange, in: textContainer)
+                    let scaledPageHeight = pageHeight * editorZoom
+                    let pageGap: CGFloat = 20
+                    let pageIndex = max(0, Int(floor(bounds.midY / (scaledPageHeight + pageGap)))) + 1
+                    results.append(OutlineEntry(title: rawTitle, level: 0, range: paragraphRange, page: pageIndex, styleName: "Screenplay — Act"))
                 }
             }
 

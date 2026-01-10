@@ -71,6 +71,102 @@ struct AnalysisResults {
 
     // Language Drift Analysis
     var languageDriftData: LanguageDriftData = LanguageDriftData()
+
+    // Poetry (template-specific)
+    var poetryInsights: PoetryInsights?
+}
+
+struct PoetryInsights {
+    struct CountedItem {
+        let text: String
+        let count: Int
+    }
+
+    struct FormalTechnical {
+        let lineCount: Int
+        let stanzaCount: Int
+        let averageLineLength: Int
+        let lineLengthStdDev: Double
+        let enjambmentRate: Double // 0..1
+        let caesuraRate: Double // 0..1
+        let rhymeSchemeByStanza: [String]
+        let notableRepetitions: [CountedItem]
+        let notableAnaphora: [CountedItem]
+        let alliterationExamples: [String]
+    }
+
+    enum Sense: String, CaseIterable {
+        case visual = "Visual"
+        case auditory = "Auditory"
+        case tactile = "Tactile"
+        case olfactory = "Olfactory"
+        case gustatory = "Gustatory"
+        case kinesthetic = "Kinesthetic"
+    }
+
+    struct ImagerySensory {
+        let countsBySense: [Sense: Int]
+        let dominantSenses: [Sense]
+        let topSensoryTokens: [CountedItem]
+    }
+
+    struct VoiceRhetoric {
+        let firstPersonPronouns: Int
+        let secondPersonPronouns: Int
+        let thirdPersonPronouns: Int
+        let questions: Int
+        let exclamations: Int
+        let hedges: [CountedItem]
+        let modality: [CountedItem]
+        let likelyAddressMode: String
+        let candidateVoltaLine: Int?
+    }
+
+    struct EmotionalTrajectory {
+        let lineScores: [Double] // -1..1 per analyzed line
+        let peakLine: Int?
+        let troughLine: Int?
+        let volatility: Double
+        let notableShiftLines: [Int]
+    }
+
+    struct ThemeMotif {
+        let topMotifs: [CountedItem]
+        let repeatedPhrases: [CountedItem]
+    }
+
+    struct MacroStructure {
+        let stanzaLineCounts: [Int]
+        let longestStanzaIndex: Int?
+        let shortestStanzaIndex: Int?
+    }
+
+    enum PoetryMode: String {
+        case lyric = "Lyric"
+        case narrative = "Narrative"
+        case hybrid = "Hybrid"
+    }
+
+    /// Writer-facing craft lenses ("How was this built—and how could I steal it?")
+    struct WritersAnalysis {
+        let mode: PoetryMode
+        let modeRationale: String
+        let pressurePoints: [String]
+        let lineEnergy: [String]
+        let imageLogic: [String]
+        let voiceManagement: [String]
+        let emotionalArc: [String]
+        let compressionChoices: [String]
+        let endingStrategy: [String]
+    }
+
+    let formal: FormalTechnical
+    let imagery: ImagerySensory
+    let voice: VoiceRhetoric
+    let emotion: EmotionalTrajectory
+    let motif: ThemeMotif
+    let structure: MacroStructure
+    let writers: WritersAnalysis
 }
 
 class AnalysisEngine {
@@ -294,25 +390,8 @@ class AnalysisEngine {
         results.plotAnalysis = plotDetector.detectPlotPoints(text: analysisText, wordCount: results.wordCount)
 
         // Character arc analysis
-        // Prefer first token from full name; fall back to nickname if full name is empty.
-        let libraryNames = CharacterLibrary.shared.characters.compactMap { character -> String? in
-            let fullName = character.fullName.trimmingCharacters(in: .whitespacesAndNewlines)
-            if !fullName.isEmpty {
-                return fullName.components(separatedBy: .whitespaces).first
-            }
-            let nickname = character.nickname.trimmingCharacters(in: .whitespacesAndNewlines)
-            return nickname.isEmpty ? nil : nickname
-        }
-
-        let characterNames: [String]
-        // ONLY use Character Library - do not extract from text
-        // Analysis should only occur on characters in the library (source of truth)
-        if !libraryNames.isEmpty {
-            characterNames = libraryNames
-        } else {
-            // No library = no character analysis
-            characterNames = []
-        }
+        // ONLY use Character Library (source of truth) and exclude minor characters.
+        let characterNames = CharacterLibrary.shared.analysisCharacterKeys
 
         if !characterNames.isEmpty {
             let (loops, interactions, presence) = analyzeCharacterArcs(text: analysisText, characterNames: characterNames, outlineEntries: outlineEntries)
@@ -337,7 +416,697 @@ class AnalysisEngine {
             results.languageDriftData = analyzer.generateLanguageDriftAnalysis(from: analysisText, characterNames: characterNames, outlineEntries: outlineEntries)
         }
 
+        // Poetry insights (template-specific; does not require Character Library)
+        if StyleCatalog.shared.isPoetryTemplate {
+            results.poetryInsights = generatePoetryInsights(text: analysisText)
+        } else {
+            results.poetryInsights = nil
+        }
+
         return results
+    }
+
+    // MARK: - Poetry Analysis
+
+    private func generatePoetryInsights(text: String) -> PoetryInsights {
+        let normalized = text
+            .replacingOccurrences(of: "\r\n", with: "\n")
+            .replacingOccurrences(of: "\r", with: "\n")
+
+        var rawLines = normalized.split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
+
+        // Drop obvious title/author header if present: a few short lines followed by a blank line.
+        if let firstBlank = rawLines.firstIndex(where: { $0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }),
+           firstBlank > 0 && firstBlank <= 5 {
+            let header = rawLines[0..<firstBlank]
+                .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+                .filter { !$0.isEmpty }
+            if header.count >= 1 && header.count <= 3 && header.allSatisfy({ ($0 as NSString).length <= 80 }) {
+                rawLines.removeSubrange(0...firstBlank)
+            }
+        }
+
+        // Build stanzas as contiguous non-empty line blocks.
+        var stanzas: [[String]] = []
+        var current: [String] = []
+        for line in rawLines {
+            if line.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                if !current.isEmpty {
+                    stanzas.append(current)
+                    current = []
+                }
+                continue
+            }
+            current.append(line)
+        }
+        if !current.isEmpty { stanzas.append(current) }
+
+        let lines = stanzas.flatMap { $0 }
+
+        // Formal/technical
+        let lineLengths: [Int] = lines.map { ($0.trimmingCharacters(in: .whitespacesAndNewlines) as NSString).length }
+        let averageLineLength = lineLengths.isEmpty ? 0 : Int(round(Double(lineLengths.reduce(0, +)) / Double(lineLengths.count)))
+        let stdDev = standardDeviation(lineLengths.map(Double.init))
+
+        let punctuationEnd = CharacterSet(charactersIn: ".,;:!?\"'”)”»—–")
+        let enjambedCount: Int = lines.reduce(0) { acc, line in
+            let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !trimmed.isEmpty else { return acc }
+            if let last = trimmed.unicodeScalars.last, punctuationEnd.contains(last) {
+                return acc
+            }
+            return acc + 1
+        }
+        let enjambmentRate = lines.isEmpty ? 0.0 : Double(enjambedCount) / Double(lines.count)
+
+        let caesuraCount: Int = lines.reduce(0) { acc, line in
+            let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !trimmed.isEmpty else { return acc }
+            // crude: dash/semicolon/colon/comma in the middle of the line
+            let mid = trimmed.index(trimmed.startIndex, offsetBy: max(0, trimmed.count / 2))
+            let left = trimmed[..<mid]
+            let right = trimmed[mid...]
+            if (left.contains("—") || left.contains(":") || left.contains(";") || left.contains(",")) && right.trimmingCharacters(in: .whitespacesAndNewlines).count > 2 {
+                return acc + 1
+            }
+            return acc
+        }
+        let caesuraRate = lines.isEmpty ? 0.0 : Double(caesuraCount) / Double(lines.count)
+
+        let rhymeSchemeByStanza: [String] = stanzas.map { stanza in
+            var keyToLetter: [String: Character] = [:]
+            var nextLetterScalar = UnicodeScalar("A").value
+            var scheme: [Character] = []
+
+            for line in stanza {
+                let endKey = rhymeKey(for: line)
+                if endKey.isEmpty {
+                    scheme.append("-" )
+                    continue
+                }
+                if let existing = keyToLetter[endKey] {
+                    scheme.append(existing)
+                } else {
+                    let letter = Character(UnicodeScalar(nextLetterScalar)!)
+                    nextLetterScalar += 1
+                    keyToLetter[endKey] = letter
+                    scheme.append(letter)
+                }
+            }
+            return String(scheme)
+        }
+
+        let stopwords = poetryStopwords
+        let tokensByLine: [[String]] = lines.map { tokenizeWords($0) }
+
+        // Repetition (content words)
+        var wordCounts: [String: Int] = [:]
+        for tokens in tokensByLine {
+            for w in tokens {
+                if stopwords.contains(w) { continue }
+                if w.count <= 2 { continue }
+                wordCounts[w, default: 0] += 1
+            }
+        }
+        let notableRepetitions = topCountedItems(from: wordCounts, limit: 8, minCount: 2)
+
+        // Anaphora: repeated first 1-2 words at line starts.
+        var startPhraseCounts: [String: Int] = [:]
+        for tokens in tokensByLine {
+            let leading = tokens.filter { !stopwords.contains($0) }
+            if let first = leading.first {
+                startPhraseCounts[first, default: 0] += 1
+            }
+            if leading.count >= 2 {
+                let phrase = leading[0] + " " + leading[1]
+                startPhraseCounts[phrase, default: 0] += 1
+            }
+        }
+        let notableAnaphora = topCountedItems(from: startPhraseCounts, limit: 6, minCount: 2)
+
+        let alliterationExamples = findAlliterationExamples(lines: lines, limit: 6)
+
+        let formal = PoetryInsights.FormalTechnical(
+            lineCount: lines.count,
+            stanzaCount: stanzas.count,
+            averageLineLength: averageLineLength,
+            lineLengthStdDev: stdDev,
+            enjambmentRate: enjambmentRate,
+            caesuraRate: caesuraRate,
+            rhymeSchemeByStanza: rhymeSchemeByStanza,
+            notableRepetitions: notableRepetitions,
+            notableAnaphora: notableAnaphora,
+            alliterationExamples: alliterationExamples
+        )
+
+        // Imagery & sensory
+        let imagery = analyzeImagery(tokensByLine: tokensByLine)
+
+        // Voice & rhetoric
+        let voice = analyzeVoiceAndRhetoric(lines: lines, tokensByLine: tokensByLine)
+
+        // Emotional trajectory
+        let emotion = analyzePoetryEmotion(lines: lines, tokensByLine: tokensByLine, candidateVoltaLine: voice.candidateVoltaLine)
+
+        // Motifs
+        let motif = analyzeMotifs(tokensByLine: tokensByLine)
+
+        // Macro structure
+        let stanzaLineCounts = stanzas.map { $0.count }
+        let longest = stanzaLineCounts.enumerated().max(by: { $0.element < $1.element })?.offset
+        let shortest = stanzaLineCounts.enumerated().min(by: { $0.element < $1.element })?.offset
+        let structure = PoetryInsights.MacroStructure(stanzaLineCounts: stanzaLineCounts, longestStanzaIndex: longest, shortestStanzaIndex: shortest)
+
+        // Writer-oriented craft lenses
+        let writers = buildWritersAnalysis(
+            lines: lines,
+            stanzas: stanzas,
+            tokensByLine: tokensByLine,
+            formal: formal,
+            imagery: imagery,
+            voice: voice,
+            emotion: emotion,
+            motif: motif
+        )
+
+        return PoetryInsights(formal: formal, imagery: imagery, voice: voice, emotion: emotion, motif: motif, structure: structure, writers: writers)
+    }
+
+    private func standardDeviation(_ values: [Double]) -> Double {
+        guard values.count >= 2 else { return 0.0 }
+        let mean = values.reduce(0, +) / Double(values.count)
+        let variance = values.reduce(0) { $0 + pow($1 - mean, 2) } / Double(values.count - 1)
+        return sqrt(variance)
+    }
+
+    private func rhymeKey(for line: String) -> String {
+        let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return "" }
+        let pieces = trimmed.split(whereSeparator: { $0.isWhitespace }).map(String.init)
+        guard let last = pieces.last else { return "" }
+        let cleaned = last
+            .lowercased()
+            .replacingOccurrences(of: "[^a-z']", with: "", options: .regularExpression)
+        guard !cleaned.isEmpty else { return "" }
+        if cleaned.count <= 3 { return cleaned }
+        return String(cleaned.suffix(3))
+    }
+
+    private var poetryStopwords: Set<String> {
+        [
+            "the", "a", "an", "and", "or", "but", "if", "then", "so", "than", "as",
+            "to", "of", "in", "on", "at", "by", "for", "from", "with", "without", "into", "over", "under",
+            "is", "are", "was", "were", "be", "been", "being", "do", "did", "does", "have", "has", "had",
+            "i", "me", "my", "mine", "you", "your", "yours", "we", "us", "our", "ours", "he", "him", "his", "she", "her", "hers", "they", "them", "their", "theirs",
+            "this", "that", "these", "those", "it", "its", "not", "no", "yes", "all", "any", "some",
+            "there", "here", "where", "when", "why", "how", "what", "who", "whom",
+            "up", "down", "out", "off", "again", "once", "very", "just", "only", "even"
+        ]
+    }
+
+    private func tokenizeWords(_ line: String) -> [String] {
+        let lower = line.lowercased()
+        return lower
+            .split(whereSeparator: { !$0.isLetter && $0 != "'" })
+            .map(String.init)
+            .filter { !$0.isEmpty }
+    }
+
+    private func topCountedItems(from counts: [String: Int], limit: Int, minCount: Int) -> [PoetryInsights.CountedItem] {
+        counts
+            .filter { $0.value >= minCount }
+            .sorted { a, b in
+                if a.value != b.value { return a.value > b.value }
+                return a.key < b.key
+            }
+            .prefix(limit)
+            .map { PoetryInsights.CountedItem(text: $0.key, count: $0.value) }
+    }
+
+    private func findAlliterationExamples(lines: [String], limit: Int) -> [String] {
+        func initialSound(_ word: String) -> String? {
+            let cleaned = word.lowercased().replacingOccurrences(of: "[^a-z]", with: "", options: .regularExpression)
+            guard let first = cleaned.first else { return nil }
+            return String(first)
+        }
+
+        var examples: [String] = []
+        for (idx, line) in lines.enumerated() {
+            let words = line.split(whereSeparator: { $0.isWhitespace }).map(String.init)
+            var runChar: String?
+            var runLen = 0
+            var best: (String, Int)? = nil
+
+            for w in words {
+                guard let c = initialSound(w) else { continue }
+                if c == runChar {
+                    runLen += 1
+                } else {
+                    if let rc = runChar, runLen >= 2 {
+                        if best == nil || runLen > best!.1 { best = (rc, runLen) }
+                    }
+                    runChar = c
+                    runLen = 1
+                }
+            }
+            if let rc = runChar, runLen >= 2 {
+                if best == nil || runLen > best!.1 { best = (rc, runLen) }
+            }
+            if let best {
+                examples.append("Line \(idx + 1): repeated initial '\(best.0)' (\(best.1)×)")
+            }
+            if examples.count >= limit { break }
+        }
+        return examples
+    }
+
+    private func buildWritersAnalysis(
+        lines: [String],
+        stanzas: [[String]],
+        tokensByLine: [[String]],
+        formal: PoetryInsights.FormalTechnical,
+        imagery: PoetryInsights.ImagerySensory,
+        voice: PoetryInsights.VoiceRhetoric,
+        emotion: PoetryInsights.EmotionalTrajectory,
+        motif: PoetryInsights.ThemeMotif
+    ) -> PoetryInsights.WritersAnalysis {
+        let stop = poetryStopwords
+
+        func pct(_ value: Double) -> String { "\(Int(round(value * 100)))%" }
+
+        // --- Mode classification (very lightweight heuristic)
+        let modeResult = classifyPoetryMode(lines: lines, tokensByLine: tokensByLine)
+
+        // --- Line ending behavior
+        var openBreaks = 0
+        var hardStops = 0
+        var dashEndings = 0
+        var questionEndings = 0
+        var exclamationEndings = 0
+
+        for line in lines {
+            let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !trimmed.isEmpty else { continue }
+            let last = trimmed.last
+            switch last {
+            case "?": questionEndings += 1; hardStops += 1
+            case "!": exclamationEndings += 1; hardStops += 1
+            case ".": hardStops += 1
+            case "—", "–": dashEndings += 1
+            case ",", ";", ":": hardStops += 1
+            default:
+                openBreaks += 1
+            }
+        }
+        let totalLines = max(1, lines.count)
+        let openBreakRate = Double(openBreaks) / Double(totalLines)
+        let hardStopRate = Double(hardStops) / Double(totalLines)
+
+        // --- Exposition markers (compression proxy)
+        let expositionMarkers: Set<String> = [
+            "because", "therefore", "thus", "hence", "since", "means", "meaning", "explains", "explain",
+            "define", "definition", "conclude", "conclusion", "implies", "imply"
+        ]
+        var expositionCount = 0
+        for tokens in tokensByLine {
+            for t in tokens {
+                if expositionMarkers.contains(t) { expositionCount += 1 }
+            }
+        }
+
+        // --- Opening/ending echo
+        let firstLine = lines.first(where: { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }) ?? ""
+        let lastLine = lines.last(where: { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }) ?? ""
+        let firstTokens = Set(tokenizeWords(firstLine).filter { !stop.contains($0) && $0.count > 2 })
+        let lastTokens = Set(tokenizeWords(lastLine).filter { !stop.contains($0) && $0.count > 2 })
+        let unionCount = max(1, firstTokens.union(lastTokens).count)
+        let overlap = Double(firstTokens.intersection(lastTokens).count) / Double(unionCount)
+
+        // --- Motifs at the end
+        let lastStanzaTokens: Set<String> = {
+            guard let lastStanza = stanzas.last else { return [] }
+            let toks = lastStanza.flatMap { tokenizeWords($0) }
+            return Set(toks.filter { !stop.contains($0) && $0.count > 2 })
+        }()
+        let endingMotifs = motif.topMotifs
+            .prefix(6)
+            .map { $0.text }
+            .filter { lastStanzaTokens.contains($0) }
+
+        // --- Pressure Points
+        var pressure: [String] = []
+        if formal.enjambmentRate >= 0.6 {
+            pressure.append("High enjambment (\(pct(formal.enjambmentRate))): the poem delays closure; use this to carry tension without explaining it.")
+        } else if formal.enjambmentRate <= 0.3 {
+            pressure.append("Low enjambment (\(pct(formal.enjambmentRate))): lines land cleanly; use the occasional run-on line as a deliberate breach.")
+        } else {
+            pressure.append("Mixed closure (enjambment \(pct(formal.enjambmentRate))): you can control when the reader is allowed to " +
+                            "know something by tightening or loosening line endings.")
+        }
+
+        if formal.caesuraRate >= 0.25 {
+            pressure.append("Frequent mid-line pauses (caesura \(pct(formal.caesuraRate))): internal pivots are part of the music—great for reversals and rethinks.")
+        }
+
+        if formal.averageLineLength > 0 {
+            let variability = (formal.lineLengthStdDev / Double(max(1, formal.averageLineLength)))
+            if variability >= 0.35 {
+                pressure.append("Line lengths vary a lot (σ/μ ≈ \(String(format: "%.2f", variability))): form is already doing emotional modulation for you.")
+            }
+        }
+
+        if !formal.notableAnaphora.isEmpty {
+            let top = formal.notableAnaphora.prefix(2).map { "\($0.text)×\($0.count)" }.joined(separator: ", ")
+            pressure.append("You establish a rule early (anaphora): \(top). Consider breaking it once for emphasis.")
+        }
+
+        // --- Line Energy
+        var lineEnergy: [String] = []
+        lineEnergy.append("Open line breaks: \(pct(openBreakRate)); hard stops: \(pct(hardStopRate)). Line breaks are the poem’s timing edits.")
+        if dashEndings > 0 {
+            lineEnergy.append("Dash endings (\(dashEndings)) keep meaning suspended—use them to deny closure or force rereads.")
+        }
+        if questionEndings > 0 {
+            lineEnergy.append("Questions (\(questionEndings)) inject uncertainty—good for pressure without plot.")
+        }
+        if let volta = voice.candidateVoltaLine {
+            lineEnergy.append("Candidate turn: line \(volta). If you want a pivot, tighten syntax right before it, then break pattern at the turn.")
+        }
+
+        // --- Image Logic
+        func dominantSenses(for tokens: [[String]]) -> String {
+            let slice = analyzeImagery(tokensByLine: tokens)
+            let dom = slice.dominantSenses.map { $0.rawValue }
+            return dom.isEmpty ? "(none detected)" : dom.joined(separator: ", ")
+        }
+
+        var imageLogic: [String] = []
+        if !lines.isEmpty {
+            let third = max(1, lines.count / 3)
+            let first = Array(tokensByLine.prefix(third))
+            let middle = Array(tokensByLine.dropFirst(third).prefix(third))
+            let last = Array(tokensByLine.suffix(max(1, lines.count - 2 * third)))
+            imageLogic.append("Dominant senses (start → middle → end): \(dominantSenses(for: first)) → \(dominantSenses(for: middle)) → \(dominantSenses(for: last)).")
+        }
+        if !motif.topMotifs.isEmpty {
+            let top = motif.topMotifs.prefix(6).map { "\($0.text)×\($0.count)" }.joined(separator: ", ")
+            imageLogic.append("Recurring image-words (motifs): \(top). Let order do the thinking—arrange these to escalate, soften, or turn uncanny.")
+        }
+
+        // --- Voice Management
+        var voiceMgmt: [String] = []
+        voiceMgmt.append("Address mode: \(voice.likelyAddressMode). Pronouns (1st/2nd/3rd): \(voice.firstPersonPronouns)/\(voice.secondPersonPronouns)/\(voice.thirdPersonPronouns).")
+        if !voice.modality.isEmpty {
+            let items = voice.modality.prefix(4).map { "\($0.text)×\($0.count)" }.joined(separator: ", ")
+            voiceMgmt.append("Modality pressure (must/should/never/etc.): \(items). Use certainty to create authority—or remove it to create vulnerability.")
+        }
+        if !voice.hedges.isEmpty {
+            let items = voice.hedges.prefix(4).map { "\($0.text)×\($0.count)" }.joined(separator: ", ")
+            voiceMgmt.append("Hedges (maybe/seems/etc.): \(items). Strategic hedging can imply fear, irony, or self-protection.")
+        }
+        if voice.exclamations == 0 && voice.questions == 0 {
+            voiceMgmt.append("Low overt rhetoric (no ?/! endings): tone reads controlled. That restraint can intensify disturbing content.")
+        }
+
+        // --- Emotional Arc
+        var emotionalArc: [String] = []
+        if let peak = emotion.peakLine { emotionalArc.append("Peak intensity around line \(peak).") }
+        if let trough = emotion.troughLine { emotionalArc.append("Lowest point around line \(trough).") }
+        if !emotion.notableShiftLines.isEmpty {
+            let shifts = emotion.notableShiftLines.prefix(6).map(String.init).joined(separator: ", ")
+            emotionalArc.append("Notable emotional turns near lines: \(shifts).")
+        }
+        let endWindow = emotion.lineScores.suffix(3)
+        let endAvg = endWindow.isEmpty ? 0.0 : (endWindow.reduce(0, +) / Double(endWindow.count))
+        let endingPunct = lastLine.trimmingCharacters(in: .whitespacesAndNewlines).last
+        let endingJob: String
+        switch endingPunct {
+        case "?": endingJob = "Ends in suspension (question)."
+        case "!": endingJob = "Ends with a surge (exclamation)."
+        case "—", "–": endingJob = "Ends in refusal/suspension (dash)."
+        default:
+            if endAvg >= 0.2 { endingJob = "Ends with emotional lift." }
+            else if endAvg <= -0.2 { endingJob = "Ends in darkening/unease." }
+            else { endingJob = "Ends without clear resolution (steady state)." }
+        }
+        emotionalArc.append(endingJob)
+
+        // --- Compression Choices
+        var compression: [String] = []
+        if expositionCount <= 1 {
+            compression.append("Low explanation markers: the poem relies on implication more than reasoning.")
+        } else {
+            compression.append("Explanation markers detected (\(expositionCount))—if the poem feels over-explained, try deleting one causal bridge.")
+        }
+        let avgLineLen = formal.averageLineLength
+        if avgLineLen > 0 {
+            if avgLineLen <= 35 {
+                compression.append("Short lines (avg \(avgLineLen) chars) concentrate meaning; silence is already doing work.")
+            } else if avgLineLen >= 70 {
+                compression.append("Longer lines (avg \(avgLineLen) chars) read more prose-like; consider strategic cuts to increase pressure.")
+            }
+        }
+
+        // --- Ending Strategy
+        var ending: [String] = []
+        if overlap >= 0.18 {
+            ending.append("Ending echoes the opening (shared keywords overlap ≈ \(String(format: "%.0f", overlap * 100))%). Echoes make rereads inevitable.")
+        } else {
+            ending.append("Ending resists the opening (low keyword overlap). Resistive endings can reframe the first line without mirroring it.")
+        }
+        if !endingMotifs.isEmpty {
+            ending.append("Ends on an established motif: \(endingMotifs.prefix(3).joined(separator: ", ")).")
+        }
+        let directionWords: Set<String> = ["toward", "into", "beyond", "away", "home", "forward", "out", "through"]
+        let lastLineTokens = Set(tokenizeWords(lastLine))
+        if !directionWords.intersection(lastLineTokens).isEmpty {
+            ending.append("The last line is directional (points somewhere). Endings that point often feel stronger than endings that conclude.")
+        }
+
+        return PoetryInsights.WritersAnalysis(
+            mode: modeResult.mode,
+            modeRationale: modeResult.rationale,
+            pressurePoints: pressure,
+            lineEnergy: lineEnergy,
+            imageLogic: imageLogic,
+            voiceManagement: voiceMgmt,
+            emotionalArc: emotionalArc,
+            compressionChoices: compression,
+            endingStrategy: ending
+        )
+    }
+
+    private func classifyPoetryMode(lines: [String], tokensByLine: [[String]]) -> (mode: PoetryInsights.PoetryMode, rationale: String) {
+        // This is intentionally heuristic and writer-facing, not a scholarly classification.
+        let narrativeMarkers: Set<String> = [
+            "then", "when", "after", "before", "suddenly", "later", "once", "while", "as", "until",
+            "walked", "ran", "went", "came", "said", "looked", "turned", "took", "gave", "made"
+        ]
+
+        let lyricMarkers: Set<String> = [
+            "i", "me", "my", "you", "your", "feel", "felt", "think", "thought", "remember", "dream", "desire"
+        ]
+
+        var narrativeScore = 0
+        var lyricScore = 0
+
+        for tokens in tokensByLine {
+            for t in tokens {
+                if narrativeMarkers.contains(t) { narrativeScore += 1 }
+                if lyricMarkers.contains(t) { lyricScore += 1 }
+                if t.hasSuffix("ed") && t.count > 3 { narrativeScore += 1 }
+            }
+        }
+
+        // Dialogue-ish punctuation can push narrative a bit.
+        let quoteCount = lines.reduce(0) { $0 + ($1.contains("\"") ? 1 : 0) }
+        narrativeScore += min(6, quoteCount)
+
+        if narrativeScore >= lyricScore + 6 {
+            return (.narrative, "Leans narrative: temporal/action markers outnumber direct address/reflection cues.")
+        }
+        if lyricScore >= narrativeScore + 6 {
+            return (.lyric, "Leans lyric: direct address/reflection cues outnumber action/sequence markers.")
+        }
+        return (.hybrid, "Hybrid: voice cues and sequence cues are both present.")
+    }
+
+    private func analyzeImagery(tokensByLine: [[String]]) -> PoetryInsights.ImagerySensory {
+        let visual: Set<String> = ["see", "saw", "look", "looked", "light", "bright", "dark", "color", "shadow", "glow", "shimmer", "spark", "glitter", "eyes"]
+        let auditory: Set<String> = ["hear", "heard", "sound", "sing", "song", "voice", "whisper", "shout", "silence", "echo", "rumble", "buzz"]
+        let tactile: Set<String> = ["touch", "feel", "felt", "cold", "warm", "hot", "soft", "hard", "rough", "smooth", "skin", "bone"]
+        let olfactory: Set<String> = ["smell", "scent", "odor", "fragrant", "musty", "stale", "fresh", "acrid", "perfume"]
+        let gustatory: Set<String> = ["taste", "tasted", "sweet", "sour", "bitter", "salt", "salty", "honey", "tongue"]
+        let kinesthetic: Set<String> = ["run", "ran", "walk", "walked", "move", "moved", "fall", "fell", "rise", "rising", "turn", "lean", "tremble", "shiver"]
+
+        var counts: [PoetryInsights.Sense: Int] = Dictionary(uniqueKeysWithValues: PoetryInsights.Sense.allCases.map { ($0, 0) })
+        var tokenCounts: [String: Int] = [:]
+
+        for tokens in tokensByLine {
+            for t in tokens {
+                if visual.contains(t) { counts[.visual, default: 0] += 1; tokenCounts[t, default: 0] += 1 }
+                else if auditory.contains(t) { counts[.auditory, default: 0] += 1; tokenCounts[t, default: 0] += 1 }
+                else if tactile.contains(t) { counts[.tactile, default: 0] += 1; tokenCounts[t, default: 0] += 1 }
+                else if olfactory.contains(t) { counts[.olfactory, default: 0] += 1; tokenCounts[t, default: 0] += 1 }
+                else if gustatory.contains(t) { counts[.gustatory, default: 0] += 1; tokenCounts[t, default: 0] += 1 }
+                else if kinesthetic.contains(t) { counts[.kinesthetic, default: 0] += 1; tokenCounts[t, default: 0] += 1 }
+            }
+        }
+
+        let ranked = counts.sorted { a, b in
+            if a.value != b.value { return a.value > b.value }
+            return a.key.rawValue < b.key.rawValue
+        }
+        let dominant = ranked.filter { $0.value > 0 }.prefix(2).map { $0.key }
+
+        let topTokens = topCountedItems(from: tokenCounts, limit: 8, minCount: 1)
+        return PoetryInsights.ImagerySensory(countsBySense: counts, dominantSenses: dominant, topSensoryTokens: topTokens)
+    }
+
+    private func analyzeVoiceAndRhetoric(lines: [String], tokensByLine: [[String]]) -> PoetryInsights.VoiceRhetoric {
+        let first: Set<String> = ["i", "me", "my", "mine", "myself"]
+        let second: Set<String> = ["you", "your", "yours", "yourself"]
+        let third: Set<String> = ["he", "him", "his", "she", "her", "hers", "they", "them", "their", "theirs"]
+
+        let hedgeWords: Set<String> = ["maybe", "perhaps", "seems", "seemed", "almost", "nearly", "kind", "sort", "possibly"]
+        let modalityWords: Set<String> = ["must", "should", "ought", "need", "can't", "cannot", "won't", "never", "always"]
+        let voltaCues: Set<String> = ["but", "yet", "however", "though", "although", "instead", "still", "then", "so", "therefore"]
+
+        var firstCount = 0
+        var secondCount = 0
+        var thirdCount = 0
+        var questions = 0
+        var exclamations = 0
+        var hedges: [String: Int] = [:]
+        var modality: [String: Int] = [:]
+        var candidateVoltaLine: Int? = nil
+
+        for (idx, line) in lines.enumerated() {
+            let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
+            if trimmed.hasSuffix("?") { questions += 1 }
+            if trimmed.hasSuffix("!") { exclamations += 1 }
+
+            let tokens = tokensByLine[idx]
+            for t in tokens {
+                if first.contains(t) { firstCount += 1 }
+                if second.contains(t) { secondCount += 1 }
+                if third.contains(t) { thirdCount += 1 }
+                if hedgeWords.contains(t) { hedges[t, default: 0] += 1 }
+                if modalityWords.contains(t) { modality[t, default: 0] += 1 }
+            }
+            if candidateVoltaLine == nil {
+                if tokens.contains(where: { voltaCues.contains($0) }) {
+                    candidateVoltaLine = idx + 1
+                }
+            }
+        }
+
+        let hedgesTop = topCountedItems(from: hedges, limit: 6, minCount: 1)
+        let modalityTop = topCountedItems(from: modality, limit: 6, minCount: 1)
+
+        let likelyMode: String
+        if secondCount > firstCount && secondCount > 0 {
+            likelyMode = "Address (speaker → you)"
+        } else if firstCount > 0 {
+            likelyMode = "Lyric reflection (speaker-centered)"
+        } else {
+            likelyMode = "Observational / descriptive"
+        }
+
+        return PoetryInsights.VoiceRhetoric(
+            firstPersonPronouns: firstCount,
+            secondPersonPronouns: secondCount,
+            thirdPersonPronouns: thirdCount,
+            questions: questions,
+            exclamations: exclamations,
+            hedges: hedgesTop,
+            modality: modalityTop,
+            likelyAddressMode: likelyMode,
+            candidateVoltaLine: candidateVoltaLine
+        )
+    }
+
+    private func analyzePoetryEmotion(lines: [String], tokensByLine: [[String]], candidateVoltaLine: Int?) -> PoetryInsights.EmotionalTrajectory {
+        let positive: Set<String> = ["love", "loved", "light", "bright", "warm", "hope", "joy", "gentle", "tender", "laugh", "smile", "grace", "bloom"]
+        let negative: Set<String> = ["dark", "cold", "fear", "grief", "sad", "sorrow", "hate", "anger", "alone", "lonely", "hurt", "loss", "die", "dead", "empty"]
+        let intensifiers: Set<String> = ["very", "so", "too", "utterly", "completely", "always", "never"]
+
+        var scores: [Double] = []
+        scores.reserveCapacity(lines.count)
+
+        for (idx, line) in lines.enumerated() {
+            let tokens = tokensByLine[idx]
+            var pos = 0
+            var neg = 0
+            var amp = 0
+            for t in tokens {
+                if positive.contains(t) { pos += 1 }
+                if negative.contains(t) { neg += 1 }
+                if intensifiers.contains(t) { amp += 1 }
+            }
+            let denom = max(1, pos + neg)
+            var score = Double(pos - neg) / Double(denom)
+            if line.trimmingCharacters(in: .whitespacesAndNewlines).hasSuffix("!") {
+                score = max(-1.0, min(1.0, score * 1.15))
+            }
+            if amp > 0 {
+                score = max(-1.0, min(1.0, score * (1.0 + min(0.25, Double(amp) * 0.05))))
+            }
+            scores.append(score)
+        }
+
+        let peak = scores.enumerated().max(by: { $0.element < $1.element })?.offset
+        let trough = scores.enumerated().min(by: { $0.element < $1.element })?.offset
+
+        var deltas: [Double] = []
+        if scores.count >= 2 {
+            for i in 1..<scores.count {
+                deltas.append(abs(scores[i] - scores[i - 1]))
+            }
+        }
+        let volatility = deltas.isEmpty ? 0.0 : deltas.reduce(0, +) / Double(deltas.count)
+
+        // Notable shifts: top 3 delta lines
+        let shiftLines = deltas.enumerated()
+            .sorted(by: { $0.element > $1.element })
+            .prefix(3)
+            .map { $0.offset + 1 }
+            .sorted()
+
+        // If we have a volta cue line, prefer highlighting it.
+        var notableShiftLines = shiftLines
+        if let volta = candidateVoltaLine, !notableShiftLines.contains(volta) {
+            notableShiftLines = (notableShiftLines + [volta]).sorted()
+        }
+
+        return PoetryInsights.EmotionalTrajectory(
+            lineScores: scores,
+            peakLine: peak.map { $0 + 1 },
+            troughLine: trough.map { $0 + 1 },
+            volatility: volatility,
+            notableShiftLines: notableShiftLines
+        )
+    }
+
+    private func analyzeMotifs(tokensByLine: [[String]]) -> PoetryInsights.ThemeMotif {
+        let stop = poetryStopwords
+        var counts: [String: Int] = [:]
+        var bigrams: [String: Int] = [:]
+
+        for tokens in tokensByLine {
+            let content = tokens.filter { !stop.contains($0) && $0.count > 2 }
+            for t in content { counts[t, default: 0] += 1 }
+            if content.count >= 2 {
+                for i in 0..<(content.count - 1) {
+                    let bg = content[i] + " " + content[i + 1]
+                    bigrams[bg, default: 0] += 1
+                }
+            }
+        }
+
+        let topMotifs = topCountedItems(from: counts, limit: 10, minCount: 2)
+        let repeatedPhrases = topCountedItems(from: bigrams, limit: 6, minCount: 2)
+        return PoetryInsights.ThemeMotif(topMotifs: topMotifs, repeatedPhrases: repeatedPhrases)
     }
 
     private func countWords(_ text: String) -> Int {
@@ -831,14 +1600,10 @@ class AnalysisEngine {
         DebugLog.log("📊 analyzeCharacterArcs: Library has \(library.characters.count) characters")
 
         if !library.characters.isEmpty {
-            // Filter to only include characters that exist in the library
-            let libraryFirstNames = library.characters.compactMap { character -> String? in
-                let fullName = character.fullName.trimmingCharacters(in: .whitespacesAndNewlines)
-                guard !fullName.isEmpty else { return nil }
-                return fullName.components(separatedBy: .whitespaces).first
-            }
-            DebugLog.log("📊 analyzeCharacterArcs: Library first names = \(libraryFirstNames)")
-            validCharacterNames = characterNames.filter { libraryFirstNames.contains($0) }
+            // Filter to only include analysis-eligible characters that exist in the library
+            let libraryKeys = library.analysisCharacterKeys
+            DebugLog.log("📊 analyzeCharacterArcs: Library analysis keys = \(libraryKeys)")
+            validCharacterNames = characterNames.filter { libraryKeys.contains($0) }
             DebugLog.log("📊 analyzeCharacterArcs: Valid character names after filtering = \(validCharacterNames)")
         } else {
             // No library = no character analysis
@@ -869,12 +1634,8 @@ class AnalysisEngine {
         let library = CharacterLibrary.shared
         let validCharacterNames: [String]
         if !library.characters.isEmpty {
-            let libraryFirstNames = library.characters.compactMap { character -> String? in
-                let fullName = character.fullName.trimmingCharacters(in: .whitespacesAndNewlines)
-                guard !fullName.isEmpty else { return nil }
-                return fullName.components(separatedBy: .whitespaces).first
-            }
-            validCharacterNames = characterNames.filter { libraryFirstNames.contains($0) }
+            let libraryKeys = library.analysisCharacterKeys
+            validCharacterNames = characterNames.filter { libraryKeys.contains($0) }
         } else {
             return [] // No library = no analysis
         }
@@ -931,36 +1692,75 @@ class AnalysisEngine {
         let evidenceIndicators = ["because", "shows", "demonstrates", "proves", "revealed", "acted", "chose", "decided", "refused"]
         let counterpressureIndicators = ["but", "however", "challenged", "questioned", "opposed", "confronted", "despite", "although", "forced", "pressured"]
 
+        func aliases(for analysisKey: String) -> [String] {
+            guard !analysisKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return [] }
+            if let profile = library.characters.first(where: { $0.analysisKey == analysisKey }) {
+                var values: [String] = [analysisKey]
+                let nick = profile.nickname.trimmingCharacters(in: .whitespacesAndNewlines)
+                if !nick.isEmpty { values.append(nick) }
+                return Array(Set(values)).filter { !$0.isEmpty }
+            }
+            return [analysisKey]
+        }
+
+        func aliasRegexes(for aliases: [String]) -> [NSRegularExpression] {
+            aliases.compactMap {
+                let pattern = "\\b" + NSRegularExpression.escapedPattern(for: $0) + "\\b"
+                return try? NSRegularExpression(pattern: pattern, options: .caseInsensitive)
+            }
+        }
+
+        func matchesAnyAlias(_ regexes: [NSRegularExpression], in text: String) -> Bool {
+            let range = NSRange(text.startIndex..., in: text)
+            for regex in regexes {
+                if regex.firstMatch(in: text, range: range) != nil {
+                    return true
+                }
+            }
+            return false
+        }
+
         for characterName in validCharacterNames {
             var entries: [BeliefShiftMatrix.BeliefEntry] = []
 
-            // Sample key chapters for analysis (beginning, middle, end)
+            let characterAliases = aliases(for: characterName)
+            let chapterAliasRegexes = aliasRegexes(for: characterAliases)
+
+            // Sample chapters for analysis.
+            // For screenplays (many scenes), sampling only 3 points is too sparse.
             let sampleIndices: [Int]
-            if chapters.count >= 3 {
-                sampleIndices = [0, chapters.count / 2, chapters.count - 1]
-            } else {
+            if chapters.count <= 12 {
                 sampleIndices = Array(0..<chapters.count)
+            } else {
+                let targetSamples = 12
+                let stride = max(1, chapters.count / targetSamples)
+                var idx: [Int] = []
+                var i = 0
+                while i < chapters.count {
+                    idx.append(i)
+                    i += stride
+                }
+                if idx.last != chapters.count - 1 { idx.append(chapters.count - 1) }
+                sampleIndices = idx
             }
 
             for index in sampleIndices {
                 let chapter = chapters[index]
 
                 // Only analyze chapters where character appears
-                let pattern = "\\b" + NSRegularExpression.escapedPattern(for: characterName) + "\\b"
-                guard let regex = try? NSRegularExpression(pattern: pattern, options: .caseInsensitive),
-                      regex.firstMatch(in: chapter.text, range: NSRange(chapter.text.startIndex..., in: chapter.text)) != nil else {
+                                guard matchesAnyAlias(chapterAliasRegexes, in: chapter.text) else {
                     continue
                 }
 
                 // Extract belief statement
-                let belief = extractBeliefStatement(from: chapter.text, character: characterName, indicators: beliefIndicators)
+                                let belief = extractBeliefStatement(from: chapter.text, aliases: characterAliases, indicators: beliefIndicators)
                 guard !belief.isEmpty else { continue }
 
                 // Extract supporting evidence
-                let evidence = extractEvidence(from: chapter.text, character: characterName, indicators: evidenceIndicators)
+                                let evidence = extractEvidence(from: chapter.text, aliases: characterAliases, indicators: evidenceIndicators)
 
                 // Extract counterpressure
-                let counterpressure = extractCounterpressure(from: chapter.text, character: characterName, indicators: counterpressureIndicators)
+                                let counterpressure = extractCounterpressure(from: chapter.text, aliases: characterAliases, indicators: counterpressureIndicators)
 
                 let entry = BeliefShiftMatrix.BeliefEntry(
                     chapter: chapter.number,
@@ -975,26 +1775,34 @@ class AnalysisEngine {
                 entries.append(entry)
             }
 
-            // Only add matrix if we found at least one belief
-            if !entries.isEmpty {
-                matrices.append(BeliefShiftMatrix(characterName: characterName, entries: entries))
-            }
+            // Always add a matrix for valid library characters, even if entries are sparse.
+            matrices.append(BeliefShiftMatrix(characterName: characterName, entries: entries))
         }
 
         return matrices
     }
 
-    private func extractBeliefStatement(from text: String, character: String, indicators: [String]) -> String {
+    private func extractBeliefStatement(from text: String, aliases: [String], indicators: [String]) -> String {
         let sentences = text.components(separatedBy: CharacterSet(charactersIn: ".!?")).filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+
+        let aliasRegexes: [NSRegularExpression] = aliases.compactMap {
+            let pattern = "\\b" + NSRegularExpression.escapedPattern(for: $0) + "\\b"
+            return try? NSRegularExpression(pattern: pattern, options: .caseInsensitive)
+        }
+
+        func sentenceMatchesAnyAlias(_ sentence: String) -> Bool {
+            let range = NSRange(sentence.startIndex..., in: sentence)
+            for regex in aliasRegexes {
+                if regex.firstMatch(in: sentence, range: range) != nil {
+                    return true
+                }
+            }
+            return false
+        }
 
         for sentence in sentences {
             let lower = sentence.lowercased()
-            let pattern = "\\b" + NSRegularExpression.escapedPattern(for: character.lowercased()) + "\\b"
-
-            guard let regex = try? NSRegularExpression(pattern: pattern, options: .caseInsensitive),
-                  regex.firstMatch(in: sentence, range: NSRange(sentence.startIndex..., in: sentence)) != nil else {
-                continue
-            }
+            guard sentenceMatchesAnyAlias(sentence) else { continue }
 
             for indicator in indicators {
                 if lower.contains(indicator) {
@@ -1005,17 +1813,27 @@ class AnalysisEngine {
         return ""
     }
 
-    private func extractEvidence(from text: String, character: String, indicators: [String]) -> String {
+    private func extractEvidence(from text: String, aliases: [String], indicators: [String]) -> String {
         let sentences = text.components(separatedBy: CharacterSet(charactersIn: ".!?")).filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+
+        let aliasRegexes: [NSRegularExpression] = aliases.compactMap {
+            let pattern = "\\b" + NSRegularExpression.escapedPattern(for: $0) + "\\b"
+            return try? NSRegularExpression(pattern: pattern, options: .caseInsensitive)
+        }
+
+        func sentenceMatchesAnyAlias(_ sentence: String) -> Bool {
+            let range = NSRange(sentence.startIndex..., in: sentence)
+            for regex in aliasRegexes {
+                if regex.firstMatch(in: sentence, range: range) != nil {
+                    return true
+                }
+            }
+            return false
+        }
 
         for sentence in sentences {
             let lower = sentence.lowercased()
-            let pattern = "\\b" + NSRegularExpression.escapedPattern(for: character.lowercased()) + "\\b"
-
-            guard let regex = try? NSRegularExpression(pattern: pattern, options: .caseInsensitive),
-                  regex.firstMatch(in: sentence, range: NSRange(sentence.startIndex..., in: sentence)) != nil else {
-                continue
-            }
+            guard sentenceMatchesAnyAlias(sentence) else { continue }
 
             for indicator in indicators {
                 if lower.contains(indicator) {
@@ -1026,17 +1844,27 @@ class AnalysisEngine {
         return ""
     }
 
-    private func extractCounterpressure(from text: String, character: String, indicators: [String]) -> String {
+    private func extractCounterpressure(from text: String, aliases: [String], indicators: [String]) -> String {
         let sentences = text.components(separatedBy: CharacterSet(charactersIn: ".!?")).filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+
+        let aliasRegexes: [NSRegularExpression] = aliases.compactMap {
+            let pattern = "\\b" + NSRegularExpression.escapedPattern(for: $0) + "\\b"
+            return try? NSRegularExpression(pattern: pattern, options: .caseInsensitive)
+        }
+
+        func sentenceMatchesAnyAlias(_ sentence: String) -> Bool {
+            let range = NSRange(sentence.startIndex..., in: sentence)
+            for regex in aliasRegexes {
+                if regex.firstMatch(in: sentence, range: range) != nil {
+                    return true
+                }
+            }
+            return false
+        }
 
         for sentence in sentences {
             let lower = sentence.lowercased()
-            let pattern = "\\b" + NSRegularExpression.escapedPattern(for: character.lowercased()) + "\\b"
-
-            guard let regex = try? NSRegularExpression(pattern: pattern, options: .caseInsensitive),
-                  regex.firstMatch(in: sentence, range: NSRange(sentence.startIndex..., in: sentence)) != nil else {
-                continue
-            }
+            guard sentenceMatchesAnyAlias(sentence) else { continue }
 
             for indicator in indicators {
                 if lower.contains(indicator) {
@@ -1052,12 +1880,8 @@ class AnalysisEngine {
         let library = CharacterLibrary.shared
         let validCharacterNames: [String]
         if !library.characters.isEmpty {
-            let libraryFirstNames = library.characters.compactMap { character -> String? in
-                let fullName = character.fullName.trimmingCharacters(in: .whitespacesAndNewlines)
-                guard !fullName.isEmpty else { return nil }
-                return fullName.components(separatedBy: .whitespaces).first
-            }
-            validCharacterNames = characterNames.filter { libraryFirstNames.contains($0) }
+            let libraryKeys = library.analysisCharacterKeys
+            validCharacterNames = characterNames.filter { libraryKeys.contains($0) }
         } else {
             return [] // No library = no analysis
         }

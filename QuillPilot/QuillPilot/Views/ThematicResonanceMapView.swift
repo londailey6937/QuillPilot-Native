@@ -49,7 +49,18 @@ class ThematicResonanceMapView: NSView {
     private var selectedMetric: MetricType = .alignment
 
     func setThematicData(_ data: [CharacterThematicJourney], theme: String) {
-        self.journeys = data
+        let libraryOrder = CharacterLibrary.shared.analysisCharacterKeys
+        let librarySet = Set(libraryOrder)
+
+        if !libraryOrder.isEmpty {
+            self.journeys = data
+                .filter { librarySet.contains($0.characterName) }
+                .sorted {
+                    (libraryOrder.firstIndex(of: $0.characterName) ?? Int.max) < (libraryOrder.firstIndex(of: $1.characterName) ?? Int.max)
+                }
+        } else {
+            self.journeys = data
+        }
         self.storyTheme = theme
         needsDisplay = true
     }
@@ -271,14 +282,14 @@ class ThematicResonanceMapView: NSView {
             }
         }
 
-        // Draw chapter labels
+        // Draw scene labels
         for chapter in sortedChapters {
             let x = rect.minX + (CGFloat(chapter - minChapter) / CGFloat(chapterRange)) * rect.width
             let labelAttr: [NSAttributedString.Key: Any] = [
                 .font: NSFont.systemFont(ofSize: 9),
                 .foregroundColor: textColor.withAlphaComponent(0.5)
             ]
-            "Ch \(chapter)".draw(at: NSPoint(x: x - 10, y: rect.minY - 18), withAttributes: labelAttr)
+            "Sc \(chapter)".draw(at: NSPoint(x: x - 10, y: rect.minY - 18), withAttributes: labelAttr)
         }
     }
 
@@ -302,29 +313,58 @@ class ThematicResonanceMapView: NSView {
         ]
         "Characters:".draw(at: NSPoint(x: legendX, y: legendY), withAttributes: titleAttr)
 
-        var currentY = legendY - 16
-        for journey in journeys {
-            // Draw color swatch
-            let swatchRect = NSRect(x: legendX, y: currentY + 3, width: 15, height: 3)
+        // Lay out in columns to avoid overflowing the window for large casts.
+        let itemHeight: CGFloat = 28
+        let headerOffset: CGFloat = 16
+        let availableHeight = max(1, (legendY - headerOffset) - 20)
+        let itemsPerColumn = max(1, Int(floor(availableHeight / itemHeight)))
+
+        let maxColumns = 2
+        let maxItems = itemsPerColumn * maxColumns
+        let visibleJourneys = journeys.prefix(maxItems)
+        let hiddenCount = max(0, journeys.count - visibleJourneys.count)
+
+        let nameAttr: [NSAttributedString.Key: Any] = [
+            .font: NSFont.systemFont(ofSize: 9),
+            .foregroundColor: textColor.withAlphaComponent(0.7)
+        ]
+        let badgeAttrBase: [NSAttributedString.Key: Any] = [
+            .font: NSFont.systemFont(ofSize: 8),
+            .foregroundColor: textColor.withAlphaComponent(0.55)
+        ]
+
+        let columnWidth: CGFloat = 170
+        for (idx, journey) in visibleJourneys.enumerated() {
+            let col = idx / itemsPerColumn
+            let row = idx % itemsPerColumn
+
+            let x = legendX + CGFloat(col) * columnWidth
+            let y = (legendY - headerOffset) - CGFloat(row) * itemHeight
+
+            // Color swatch
+            let swatchRect = NSRect(x: x, y: y + 3, width: 15, height: 3)
             journey.color.setFill()
             NSBezierPath(rect: swatchRect).fill()
 
-            // Draw character name
-            let nameAttr: [NSAttributedString.Key: Any] = [
-                .font: NSFont.systemFont(ofSize: 9),
-                .foregroundColor: textColor.withAlphaComponent(0.7)
-            ]
-            journey.characterName.draw(at: NSPoint(x: legendX + 20, y: currentY), withAttributes: nameAttr)
+            // Name
+            journey.characterName.draw(at: NSPoint(x: x + 20, y: y), withAttributes: nameAttr)
 
-            // Draw trajectory badge
-            let badgeAttr: [NSAttributedString.Key: Any] = [
-                .font: NSFont.systemFont(ofSize: 8),
-                .foregroundColor: journey.color.withAlphaComponent(0.8)
-            ]
+            // Trajectory
+            var badgeAttr = badgeAttrBase
+            badgeAttr[.foregroundColor] = journey.color.withAlphaComponent(0.8)
             let trajectoryText = "(\(journey.overallTrajectory.rawValue))"
-            trajectoryText.draw(at: NSPoint(x: legendX + 20, y: currentY - 10), withAttributes: badgeAttr)
+            trajectoryText.draw(at: NSPoint(x: x + 20, y: y - 10), withAttributes: badgeAttr)
+        }
 
-            currentY -= 28
+        if hiddenCount > 0 {
+            let moreText = "+\(hiddenCount) more"
+            let moreAttr: [NSAttributedString.Key: Any] = [
+                .font: NSFont.systemFont(ofSize: 9, weight: .medium),
+                .foregroundColor: textColor.withAlphaComponent(0.55)
+            ]
+            let x = legendX
+            let y: CGFloat = 20
+            moreText.draw(at: NSPoint(x: x, y: y), withAttributes: moreAttr)
         }
     }
 

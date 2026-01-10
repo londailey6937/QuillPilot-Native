@@ -11,6 +11,11 @@ A powerful native macOS writing application with advanced story analysis, plot v
 - **Document Management**: New, open, save, save as
 - **Split View Interface**: Editor + analysis sidebar
 
+### 🎭 Templates (Screenplay + Poetry)
+
+- **Screenplay Template**: Courier-based screenplay formatting, including an explicit act-heading style you can apply in the editor.
+- **Poetry Template**: Verse-friendly defaults (preserves hard line breaks + indentation); plain-text imports can auto-detect poetry.
+
 ### 📊 Advanced Analysis
 
 - **Real-time Writing Analysis**:
@@ -69,11 +74,20 @@ Three powerful visualization modes:
    - Relationship strength calculation
    - Identify under-developed relationships
 
+   Notes:
+
+   - Character visualizations are kept in sync with the Character Library and focus on major characters.
+
 3. **Presence Heatmap**:
-   - Grid showing character mentions per chapter
+
+   - Grid showing character mentions per section
    - Color-coded intensity
    - Spot characters who disappear
    - Balance protagonist screen time
+
+   Notes:
+
+   - For screenplays, presence is organized by scene with an optional act view.
 
 ### 🎨 Story Construction Tools
 
@@ -157,7 +171,12 @@ Three powerful visualization modes:
 - Switch between 3 chart types using segment control
 - **Emotional Journey**: Track each character's sentiment
 - **Character Network**: See who appears with whom
-- **Presence Heatmap**: View character distribution by chapter
+- **Presence Heatmap**: View character distribution by section (scenes/acts for screenplays)
+- **Presence Heatmap**: View character distribution by scene (and optionally acts for screenplays)
+
+### Poetry Analysis
+
+- When the Poetry template is active, the Analysis popout includes Poetry-specific lenses (formal/technical, imagery/sensory, voice/rhetoric, emotional trajectory, motifs, and macro structure).
 
 ### Getting Help
 

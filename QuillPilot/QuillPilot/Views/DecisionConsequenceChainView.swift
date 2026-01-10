@@ -132,7 +132,7 @@ struct DecisionConsequenceChainView: View {
         VStack(spacing: 0) {
             // Table header
             HStack(spacing: 0) {
-                tableHeaderCell("Chapter", width: 80)
+                tableHeaderCell("Scene", width: 80)
                 tableHeaderCell("Decision", width: nil)
                 tableHeaderCell("Immediate Outcome", width: nil)
                 tableHeaderCell("Long-term Effect", width: nil)
@@ -145,7 +145,7 @@ struct DecisionConsequenceChainView: View {
                     HStack(spacing: 0) {
                         tableCell(
                             VStack(alignment: .leading, spacing: 4) {
-                                Text("Ch \(entry.chapter)")
+                                Text("Sc \(entry.chapter)")
                                     .font(.system(.body, design: .rounded))
                                     .fontWeight(.semibold)
                                     .foregroundColor(.primary)

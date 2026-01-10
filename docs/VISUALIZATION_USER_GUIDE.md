@@ -101,6 +101,10 @@ Shows each character's emotional state throughout the story.
 - Number of sections where character appears
 - Arc type and strength percentage
 
+**Notes**:
+
+- Character visualizations are kept in sync with the Character Library and focus on major characters.
+
 #### 2. 🔗 Character Network
 
 Shows which characters interact most frequently.
@@ -123,15 +127,23 @@ Shows which characters interact most frequently.
 - Find characters who never interact
 - Balance character screen time
 
+**Notes**:
+
+- The network view shows all major characters; some may be isolated if they have no meaningful co-appearances.
+
 #### 3. 📊 Character Presence Heatmap
 
-Shows how often each character appears in each chapter.
+Shows how often each character appears in each section.
 
 **What It Shows**:
 
-- Grid: Characters (rows) × Chapters (columns)
+- Grid: Characters (rows) × Sections (columns)
 - Color intensity = mention frequency
 - Numbers = exact mention count
+
+**Screenplays**:
+
+- Presence is organized by scene, with an optional act view (derived from ACT I/II/III headings when present).
 
 **Color Scale**:
 
@@ -162,12 +174,10 @@ Measures dramatic moments with words like:
 
 - violent, explosive, desperate, frantic, urgent, critical
 
-### Chapter Detection
+### Section Detection
 
-Automatically identifies chapters by headers:
-
-- "Chapter 1", "CHAPTER ONE", etc.
-- Falls back to section-based analysis if no chapters found
+- Manuscripts: automatically identifies chapters by headers ("Chapter 1", "CHAPTER ONE", etc.) and falls back to section-based analysis if no chapters are found.
+- Screenplays: uses scene segmentation (sluglines) when available; can also map scenes into acts when ACT headings exist.
 
 ## Best Practices
 
@@ -205,13 +215,13 @@ Automatically identifies chapters by headers:
 
 ### Character not showing in arcs
 
-- **Cause**: Character name not in Character Library
-- **Solution**: Ensure exact name match (case-sensitive)
+- **Cause**: Character not in Character Library (or marked as minor)
+- **Solution**: Add the character to the library and mark them as a major character for analysis; keep names consistent
 
-### All chapters show as "Ch1"
+### All sections show as one bucket
 
-- **Cause**: No chapter markers detected
-- **Solution**: Add "Chapter X" headers in your manuscript
+- **Cause**: No chapter/scene markers detected
+- **Solution**: For manuscripts, add "Chapter X" headers; for screenplays, use clear scene sluglines (e.g., INT./EXT.)
 
 ## Technical Details
 

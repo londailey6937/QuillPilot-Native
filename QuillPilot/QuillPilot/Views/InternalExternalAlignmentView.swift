@@ -39,9 +39,35 @@ class InternalExternalAlignmentView: NSView {
 
     private var alignments: [CharacterAlignment] = []
     private var selectedCharacterIndex: Int = 0
+    private var characterSelectorHitRects: [NSRect] = []
 
     func setAlignments(_ alignments: [CharacterAlignment]) {
-        self.alignments = alignments
+        let previouslySelectedName: String? = {
+            guard selectedCharacterIndex >= 0, selectedCharacterIndex < self.alignments.count else { return nil }
+            return self.alignments[selectedCharacterIndex].characterName
+        }()
+
+        let libraryOrder = CharacterLibrary.shared.analysisCharacterKeys
+        let librarySet = Set(libraryOrder)
+
+        let ordered: [CharacterAlignment]
+        if !libraryOrder.isEmpty {
+            ordered = alignments
+                .filter { librarySet.contains($0.characterName) }
+                .sorted {
+                    (libraryOrder.firstIndex(of: $0.characterName) ?? Int.max) < (libraryOrder.firstIndex(of: $1.characterName) ?? Int.max)
+                }
+        } else {
+            ordered = alignments
+        }
+
+        self.alignments = ordered
+
+        if let name = previouslySelectedName, let idx = self.alignments.firstIndex(where: { $0.characterName == name }) {
+            selectedCharacterIndex = idx
+        } else {
+            selectedCharacterIndex = 0
+        }
         needsDisplay = true
     }
 
@@ -69,7 +95,8 @@ class InternalExternalAlignmentView: NSView {
 
         let padding: CGFloat = 60
         let topPadding: CGFloat = 50
-        let bottomPadding: CGFloat = 150
+        // Extra room for a wrapped, clickable character selector.
+        let bottomPadding: CGFloat = 180
         let chartWidth = bounds.width - (padding * 2)
         let chartHeight = bounds.height - topPadding - bottomPadding
         let chartRect = NSRect(x: padding, y: bottomPadding, width: chartWidth, height: chartHeight)
@@ -206,7 +233,7 @@ class InternalExternalAlignmentView: NSView {
             let outerPt = outerPoints[index]
 
             // Inner point
-            drawDataPoint(at: innerPt, color: innerColor, label: "Ch \(point.chapter)", detail: point.innerLabel, textColor: textColor, isDarkMode: isDarkMode, isInner: true)
+            drawDataPoint(at: innerPt, color: innerColor, label: "Sc \(point.chapter)", detail: point.innerLabel, textColor: textColor, isDarkMode: isDarkMode, isInner: true)
 
             // Outer point
             drawDataPoint(at: outerPt, color: outerColor, label: nil, detail: point.outerLabel, textColor: textColor, isDarkMode: isDarkMode, isInner: false)
@@ -363,16 +390,22 @@ class InternalExternalAlignmentView: NSView {
     }
 
     private func drawCharacterSelector(textColor: NSColor) {
-        let selectorY: CGFloat = 25
+        characterSelectorHitRects.removeAll(keepingCapacity: true)
+
+        let baseY: CGFloat = 25
         let startX: CGFloat = 60
+        let maxX: CGFloat = bounds.width - 60
+        let rowHeight: CGFloat = 18
+        let rowSpacing: CGFloat = 6
 
         let labelAttr: [NSAttributedString.Key: Any] = [
             .font: NSFont.systemFont(ofSize: 10),
             .foregroundColor: textColor.withAlphaComponent(0.6)
         ]
-        "Character:".draw(at: NSPoint(x: startX, y: selectorY), withAttributes: labelAttr)
+        "Character:".draw(at: NSPoint(x: startX, y: baseY), withAttributes: labelAttr)
 
         var currentX = startX + 70
+        var currentY = baseY
         for (index, alignment) in alignments.enumerated() {
             let isSelected = index == selectedCharacterIndex
             let buttonAttr: [NSAttributedString.Key: Any] = [
@@ -382,13 +415,23 @@ class InternalExternalAlignmentView: NSView {
             let name = alignment.characterName
             let size = name.size(withAttributes: buttonAttr)
 
+            // Wrap to the next row if this label would overflow.
+            if currentX + size.width + 8 > maxX {
+                currentX = startX + 70
+                currentY += rowHeight + rowSpacing
+            }
+
             if isSelected {
-                let bgRect = NSRect(x: currentX - 4, y: selectorY - 2, width: size.width + 8, height: size.height + 4)
+                let bgRect = NSRect(x: currentX - 4, y: currentY - 2, width: size.width + 8, height: size.height + 4)
                 NSColor.systemBlue.withAlphaComponent(0.1).setFill()
                 NSBezierPath(roundedRect: bgRect, xRadius: 4, yRadius: 4).fill()
             }
 
-            name.draw(at: NSPoint(x: currentX, y: selectorY), withAttributes: buttonAttr)
+            name.draw(at: NSPoint(x: currentX, y: currentY), withAttributes: buttonAttr)
+
+            // Slightly larger hit rect than the text.
+            let hitRect = NSRect(x: currentX - 4, y: currentY - 5, width: size.width + 8, height: 20)
+            characterSelectorHitRects.append(hitRect)
             currentX += size.width + 20
         }
     }
@@ -463,27 +506,13 @@ class InternalExternalAlignmentView: NSView {
         guard alignments.count > 1 else { return }
 
         let location = convert(event.locationInWindow, from: nil)
-        let selectorY: CGFloat = 25
-        let startX: CGFloat = 130
 
-        // Check if click is in character selector area
-        guard location.y >= selectorY - 5 && location.y <= selectorY + 20 else { return }
-
-        var currentX = startX
-        for (index, alignment) in alignments.enumerated() {
-            let labelAttr: [NSAttributedString.Key: Any] = [
-                .font: NSFont.systemFont(ofSize: 10),
-                .foregroundColor: NSColor.black
-            ]
-            let size = alignment.characterName.size(withAttributes: labelAttr)
-            let buttonRect = NSRect(x: currentX - 4, y: selectorY - 5, width: size.width + 8, height: 20)
-
-            if buttonRect.contains(location) {
+        for (index, rect) in characterSelectorHitRects.enumerated() {
+            if rect.contains(location) {
                 selectedCharacterIndex = index
                 needsDisplay = true
                 return
             }
-            currentX += size.width + 20
         }
     }
 }

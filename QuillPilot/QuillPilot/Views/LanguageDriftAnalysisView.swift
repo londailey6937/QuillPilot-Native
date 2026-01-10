@@ -50,9 +50,35 @@ class LanguageDriftAnalysisView: NSView {
     private var driftData: [CharacterLanguageDrift] = []
     private var selectedCharacterIndex: Int = 0
     private var selectedMetric: MetricType = .pronouns
+    private var characterSelectorHitRects: [NSRect] = []
 
     func setDriftData(_ data: [CharacterLanguageDrift]) {
-        self.driftData = data
+        let previouslySelectedName: String? = {
+            guard selectedCharacterIndex >= 0, selectedCharacterIndex < self.driftData.count else { return nil }
+            return self.driftData[selectedCharacterIndex].characterName
+        }()
+
+        let libraryOrder = CharacterLibrary.shared.analysisCharacterKeys
+        let librarySet = Set(libraryOrder)
+
+        let ordered: [CharacterLanguageDrift]
+        if !libraryOrder.isEmpty {
+            ordered = data
+                .filter { librarySet.contains($0.characterName) }
+                .sorted {
+                    (libraryOrder.firstIndex(of: $0.characterName) ?? Int.max) < (libraryOrder.firstIndex(of: $1.characterName) ?? Int.max)
+                }
+        } else {
+            ordered = data
+        }
+
+        self.driftData = ordered
+
+        if let name = previouslySelectedName, let idx = self.driftData.firstIndex(where: { $0.characterName == name }) {
+            selectedCharacterIndex = idx
+        } else {
+            selectedCharacterIndex = 0
+        }
         needsDisplay = true
     }
 
@@ -86,7 +112,8 @@ class LanguageDriftAnalysisView: NSView {
         let leftPadding: CGFloat = 220  // More space for left side text
         let rightPadding: CGFloat = 220  // More space for right side text
         let topPadding: CGFloat = 140
-        let bottomPadding: CGFloat = 80
+        // Extra room for wrapped character selector.
+        let bottomPadding: CGFloat = 130
         let chartWidth = bounds.width - leftPadding - rightPadding
         let chartHeight = bounds.height - topPadding - bottomPadding
         let chartRect = NSRect(x: leftPadding, y: bottomPadding, width: chartWidth, height: chartHeight)
@@ -299,14 +326,14 @@ class LanguageDriftAnalysisView: NSView {
             )
         }
 
-        // Draw chapter labels
+        // Draw scene labels
         for metric in metrics {
             let x = rect.minX + (CGFloat(metric.chapter - minChapter) / CGFloat(chapterRange)) * rect.width
             let labelAttr: [NSAttributedString.Key: Any] = [
                 .font: NSFont.systemFont(ofSize: 9),
                 .foregroundColor: textColor.withAlphaComponent(0.5)
             ]
-            "Ch \(metric.chapter)".draw(at: NSPoint(x: x - 10, y: rect.minY - 18), withAttributes: labelAttr)
+            "Sc \(metric.chapter)".draw(at: NSPoint(x: x - 10, y: rect.minY - 18), withAttributes: labelAttr)
         }
     }
 
@@ -466,16 +493,22 @@ class LanguageDriftAnalysisView: NSView {
     }
 
     private func drawCharacterSelector(textColor: NSColor) {
-        let selectorY: CGFloat = 25
+        characterSelectorHitRects.removeAll(keepingCapacity: true)
+
+        let baseY: CGFloat = 25
         let startX: CGFloat = 220
+        let maxX: CGFloat = bounds.width - 40
+        let rowHeight: CGFloat = 18
+        let rowSpacing: CGFloat = 6
 
         let labelAttr: [NSAttributedString.Key: Any] = [
             .font: NSFont.systemFont(ofSize: 10),
             .foregroundColor: textColor.withAlphaComponent(0.6)
         ]
-        "Character:".draw(at: NSPoint(x: startX, y: selectorY), withAttributes: labelAttr)
+        "Character:".draw(at: NSPoint(x: startX, y: baseY), withAttributes: labelAttr)
 
         var currentX = startX + 70
+        var currentY = baseY
         for (index, drift) in driftData.enumerated() {
             let isSelected = index == selectedCharacterIndex
             let buttonAttr: [NSAttributedString.Key: Any] = [
@@ -485,13 +518,22 @@ class LanguageDriftAnalysisView: NSView {
             let name = drift.characterName
             let size = name.size(withAttributes: buttonAttr)
 
+            // Wrap to the next row if this label would overflow.
+            if currentX + size.width + 8 > maxX {
+                currentX = startX + 70
+                currentY += rowHeight + rowSpacing
+            }
+
             if isSelected {
-                let bgRect = NSRect(x: currentX - 4, y: selectorY - 2, width: size.width + 8, height: size.height + 4)
+                let bgRect = NSRect(x: currentX - 4, y: currentY - 2, width: size.width + 8, height: size.height + 4)
                 NSColor.systemBlue.withAlphaComponent(0.1).setFill()
                 NSBezierPath(roundedRect: bgRect, xRadius: 4, yRadius: 4).fill()
             }
 
-            name.draw(at: NSPoint(x: currentX, y: selectorY), withAttributes: buttonAttr)
+            name.draw(at: NSPoint(x: currentX, y: currentY), withAttributes: buttonAttr)
+
+            let hitRect = NSRect(x: currentX - 4, y: currentY - 5, width: size.width + 8, height: 20)
+            characterSelectorHitRects.append(hitRect)
             currentX += size.width + 25
         }
     }
@@ -584,21 +626,13 @@ class LanguageDriftAnalysisView: NSView {
 
         // Check character selector clicks
         guard driftData.count > 1 else { return }
-        let selectorY: CGFloat = 25
-        let startX: CGFloat = 290
 
-        guard location.y >= selectorY - 5 && location.y <= selectorY + 20 else { return }
-
-        var currentX = startX
-        for (index, drift) in driftData.enumerated() {
-            let size = drift.characterName.size(withAttributes: [.font: NSFont.systemFont(ofSize: 10)])
-            let buttonRect = NSRect(x: currentX - 4, y: selectorY - 5, width: size.width + 8, height: 20)
-            if buttonRect.contains(location) {
+        for (index, rect) in characterSelectorHitRects.enumerated() {
+            if rect.contains(location) {
                 selectedCharacterIndex = index
                 needsDisplay = true
                 return
             }
-            currentX += size.width + 25
         }
     }
 }

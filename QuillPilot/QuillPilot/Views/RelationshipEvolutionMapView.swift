@@ -43,8 +43,21 @@ class RelationshipEvolutionMapView: NSView {
     private var networkRect: NSRect = .zero
 
     func setRelationships(nodes: [RelationshipNode], edges: [RelationshipEdge]) {
-        self.nodes = nodes
-        self.edges = edges
+        let libraryOrder = CharacterLibrary.shared.analysisCharacterKeys
+        let librarySet = Set(libraryOrder)
+
+        if !libraryOrder.isEmpty {
+            self.nodes = nodes
+                .filter { librarySet.contains($0.character) }
+                .sorted {
+                    (libraryOrder.firstIndex(of: $0.character) ?? Int.max) < (libraryOrder.firstIndex(of: $1.character) ?? Int.max)
+                }
+            let nodeNames = Set(self.nodes.map { $0.character })
+            self.edges = edges.filter { nodeNames.contains($0.from) && nodeNames.contains($0.to) }
+        } else {
+            self.nodes = nodes
+            self.edges = edges
+        }
         needsDisplay = true
     }
 

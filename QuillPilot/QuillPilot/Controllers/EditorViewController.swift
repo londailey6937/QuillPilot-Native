@@ -3911,6 +3911,61 @@ case "Book Subtitle":
         let styleName: String?
     }
 
+    func extractScreenplayCharacterCues(maxScanParagraphs: Int = 5000) -> [String] {
+        guard StyleCatalog.shared.currentTemplateName == "Screenplay" else { return [] }
+        guard let storage = textView.textStorage else { return [] }
+
+        let full = storage.string as NSString
+        var location = 0
+        var scanned = 0
+
+        var results: [String] = []
+        var seenUpper = Set<String>()
+
+        func normalizeCue(_ raw: String) -> [String] {
+            var s = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !s.isEmpty else { return [] }
+
+            // Remove parentheticals in cue lines: "JOHN (O.S.)" -> "JOHN"
+            if let idx = s.firstIndex(of: "(") {
+                s = String(s[..<idx]).trimmingCharacters(in: .whitespacesAndNewlines)
+            }
+
+            // Split dual dialogue cues: "JOHN/MIKE" -> ["JOHN", "MIKE"]
+            let parts = s.split(separator: "/").map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            let cleaned = parts
+                .map { $0.replacingOccurrences(of: "[^A-Za-z0-9 '\\-]", with: "", options: .regularExpression) }
+                .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+                .filter { !$0.isEmpty }
+
+            return cleaned
+        }
+
+        while location < full.length && scanned < maxScanParagraphs {
+            let paragraphRange = full.paragraphRange(for: NSRange(location: location, length: 0))
+            guard paragraphRange.length > 0 else { break }
+            scanned += 1
+
+            let styleName = storage.attribute(styleAttributeKey, at: paragraphRange.location, effectiveRange: nil) as? String
+            if styleName == "Screenplay — Character" {
+                let raw = full.substring(with: paragraphRange)
+                for cue in normalizeCue(raw) {
+                    let key = cue.uppercased()
+                    guard key.count >= 2 && key.count <= 40 else { continue }
+                    guard key.range(of: "[A-Z]", options: .regularExpression) != nil else { continue }
+                    if !seenUpper.contains(key) {
+                        seenUpper.insert(key)
+                        results.append(cue)
+                    }
+                }
+            }
+
+            location = NSMaxRange(paragraphRange)
+        }
+
+        return results
+    }
+
     func buildOutlineEntries() -> [OutlineEntry] {
         guard let storage = textView.textStorage, let layoutManager = textView.layoutManager, let textContainer = textView.textContainer else {
             DebugLog.log("📋🔍 buildOutlineEntries: Missing required components")

@@ -3104,6 +3104,24 @@ class ContentViewController: NSViewController {
             }
         }
 
+        // Determine character names on MAIN THREAD.
+        // Prefer the per-document CharacterLibrary; for Screenplay, fall back to extracting character cues.
+        let libraryCharacterNames = CharacterLibrary.shared.characters
+            .map { $0.fullName.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+
+        let isScreenplay = StyleCatalog.shared.currentTemplateName == "Screenplay"
+        let extractedScreenplayNames = isScreenplay ? editorViewController.extractScreenplayCharacterCues() : []
+
+        let characterNamesForAnalysis: [String]
+        if !libraryCharacterNames.isEmpty {
+            characterNamesForAnalysis = libraryCharacterNames
+        } else if !extractedScreenplayNames.isEmpty {
+            characterNamesForAnalysis = extractedScreenplayNames
+        } else {
+            characterNamesForAnalysis = []
+        }
+
         // Page mapping no longer needed - page numbers removed from Decision-Belief Loop display
         let pageMapping: [(location: Int, page: Int)] = []
 
@@ -3121,31 +3139,17 @@ class ContentViewController: NSViewController {
 
             var results = analysisEngine.analyzeText(text, outlineEntries: analysisOutlineEntries, pageMapping: pageMapping)
 
-            // Get character names from Character Library if available (override auto-detected characters)
-            let characterLibraryPath = Bundle.main.resourcePath.flatMap { URL(fileURLWithPath: $0).appendingPathComponent("character_library.json").path }
-                DebugLog.log("📚 Character library path: \(characterLibraryPath ?? "nil")")
-            if let path = characterLibraryPath, FileManager.default.fileExists(atPath: path),
-               let data = try? Data(contentsOf: URL(fileURLWithPath: path)),
-               let json = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]] {
-
-                let characterNames = json.compactMap { $0["name"] as? String }
-                DebugLog.log("📚 Found \(characterNames.count) characters in library")
-
-                if !characterNames.isEmpty {
-                    // Reuse already-converted outline entries instead of converting again
-                    DebugLog.log("📋 MainWindowController: Using character library with \(analysisOutlineEntries.count) outline entries")
-
-                    // Perform character arc analysis with Decision-Belief Loop Framework
-                    let (loops, interactions, presence) = analysisEngine.analyzeCharacterArcs(
-                        text: text,
-                        characterNames: characterNames,
-                        outlineEntries: analysisOutlineEntries,
-                        pageMapping: pageMapping
-                    )
-                    results.decisionBeliefLoops = loops
-                    results.characterInteractions = interactions
-                    results.characterPresence = presence
-                }
+            if !characterNamesForAnalysis.isEmpty {
+                DebugLog.log("📋 MainWindowController: Analyzing characters: \(characterNamesForAnalysis.count)")
+                let (loops, interactions, presence) = analysisEngine.analyzeCharacterArcs(
+                    text: text,
+                    characterNames: characterNamesForAnalysis,
+                    outlineEntries: analysisOutlineEntries,
+                    pageMapping: pageMapping
+                )
+                results.decisionBeliefLoops = loops
+                results.characterInteractions = interactions
+                results.characterPresence = presence
             }
 
             DebugLog.log("📊 Analysis results: \(results.wordCount) words, \(results.sentenceCount) sentences, \(results.paragraphCount) paragraphs")

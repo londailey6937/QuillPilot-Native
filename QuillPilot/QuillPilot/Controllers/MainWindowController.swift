@@ -1882,6 +1882,9 @@ extension MainWindowController {
         if StyleCatalog.shared.currentTemplateName == "Screenplay" && CharacterLibrary.shared.characters.isEmpty {
             let cues = mainContentViewController.editorViewController.extractScreenplayCharacterCues()
             CharacterLibrary.shared.seedCharactersIfEmpty(cues)
+        } else if CharacterLibrary.shared.characters.isEmpty {
+            let cues = mainContentViewController.editorViewController.extractFictionCharacterCues()
+            CharacterLibrary.shared.seedCharactersIfEmpty(cues)
         }
 
         // Ensure TOC/Index paragraphs keep right-tab alignment after DOCX/RTF imports.

@@ -72,7 +72,7 @@ class RelationshipEvolutionMapView: NSView {
         dirtyRect.fill()
 
         let padding: CGFloat = 60
-        let topPadding: CGFloat = 0
+        let topPadding: CGFloat = 10
         let bottomPadding: CGFloat = 80
         let networkWidth = bounds.width - (padding * 2)
         let networkHeight = bounds.height - topPadding - bottomPadding - 45  // 45 for header
@@ -220,8 +220,8 @@ class RelationshipEvolutionMapView: NSView {
         )
 
         // Draw background for label with theme support
-        let isDarkMode = ThemeManager.shared.isDarkMode
-        let labelBgColor = isDarkMode ? NSColor.black.withAlphaComponent(0.7) : NSColor.white.withAlphaComponent(0.8)
+        let theme = ThemeManager.shared.currentTheme
+        let labelBgColor = theme.pageAround.withAlphaComponent(0.85)
         labelBgColor.setFill()
         NSBezierPath(roundedRect: labelRect.insetBy(dx: -3, dy: -1), xRadius: 3, yRadius: 3).fill()
 
@@ -369,7 +369,7 @@ class RelationshipEvolutionMapView: NSView {
         )
 
         // Draw background for name with theme support
-        let nameBgColor = isDarkMode ? NSColor.black.withAlphaComponent(0.8) : NSColor.white.withAlphaComponent(0.9)
+        let nameBgColor = ThemeManager.shared.currentTheme.pageAround.withAlphaComponent(0.9)
         nameBgColor.setFill()
         NSBezierPath(roundedRect: nameRect.insetBy(dx: -4, dy: -2), xRadius: 4, yRadius: 4).fill()
 
@@ -449,7 +449,7 @@ class RelationshipEvolutionMapView: NSView {
         let insight = "💡 Character growth is\nrelationship reconfiguration"
         let insightAttributes: [NSAttributedString.Key: Any] = [
             .font: NSFont.systemFont(ofSize: 9, weight: .medium),
-            .foregroundColor: NSColor.systemPurple.withAlphaComponent(0.8)
+            .foregroundColor: textColor.withAlphaComponent(0.8)
         ]
         let insightRect = NSRect(x: legendX, y: currentY, width: 180, height: 30)
         insight.draw(in: insightRect, withAttributes: insightAttributes)

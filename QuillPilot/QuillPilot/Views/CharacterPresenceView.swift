@@ -14,6 +14,71 @@ class CharacterPresenceView: NSView {
 
     private var presence: [CharacterPresence] = []
 
+    private let legendWidth: CGFloat = 180
+    private let legendScrollView = NSScrollView()
+    private let legendStack = NSStackView()
+    private var legendCharacters: [String] = []
+    private var legendColors: [NSColor] = []
+    private var themeObserver: NSObjectProtocol?
+
+    override init(frame frameRect: NSRect) {
+        super.init(frame: frameRect)
+        setupLegendViews()
+        startObservingTheme()
+    }
+
+    required init?(coder: NSCoder) {
+        super.init(coder: coder)
+        setupLegendViews()
+        startObservingTheme()
+    }
+
+    deinit {
+        if let themeObserver {
+            NotificationCenter.default.removeObserver(themeObserver)
+        }
+    }
+
+    private func setupLegendViews() {
+        legendStack.orientation = .vertical
+        legendStack.alignment = .leading
+        legendStack.spacing = 8
+        legendStack.edgeInsets = NSEdgeInsets(top: 10, left: 10, bottom: 10, right: 10)
+
+        legendScrollView.documentView = legendStack
+        legendScrollView.hasVerticalScroller = true
+        legendScrollView.autohidesScrollers = true
+        legendScrollView.drawsBackground = false
+        legendScrollView.borderType = .noBorder
+
+        addSubview(legendScrollView)
+    }
+
+    private func startObservingTheme() {
+        themeObserver = NotificationCenter.default.addObserver(
+            forName: .themeDidChange,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            self?.applyThemeToLegend()
+            self?.needsDisplay = true
+        }
+    }
+
+    override func layout() {
+        super.layout()
+
+        let topPadding: CGFloat = 70
+        let bottomPadding: CGFloat = 100
+
+        let chartHeight = bounds.height - topPadding - bottomPadding
+        let legendX = bounds.width - legendWidth - 10
+        legendScrollView.frame = NSRect(x: legendX, y: bottomPadding, width: legendWidth, height: chartHeight)
+
+        // Size stack for scroll.
+        legendStack.frame = NSRect(x: 0, y: 0, width: legendWidth, height: legendStack.fittingSize.height)
+    }
+
     func setPresence(_ presence: [CharacterPresence]) {
         self.presence = presence
         needsDisplay = true
@@ -54,7 +119,6 @@ class CharacterPresenceView: NSView {
         let padding: CGFloat = 60
         let topPadding: CGFloat = 70
         let bottomPadding: CGFloat = 100
-        let legendWidth: CGFloat = 150
 
         let chartWidth = bounds.width - padding - legendWidth - 20
         let chartHeight = bounds.height - topPadding - bottomPadding
@@ -88,6 +152,10 @@ class CharacterPresenceView: NSView {
         let barGroupWidth = chartWidth / CGFloat(chapters.count)
         let barWidth = min(25, (barGroupWidth - 10) / CGFloat(characters.count))
         let colors = generateColors(count: characters.count)
+
+        if legendCharacters != characters || legendColors.count != colors.count {
+            rebuildLegend(characters: characters, colors: colors)
+        }
 
         for (chapterIndex, chapter) in chapters.enumerated() {
             let groupX = chartRect.minX + (CGFloat(chapterIndex) * barGroupWidth) + (barGroupWidth - CGFloat(characters.count) * barWidth) / 2
@@ -130,9 +198,6 @@ class CharacterPresenceView: NSView {
             let labelX = chartRect.minX + (CGFloat(chapterIndex) * barGroupWidth) + (barGroupWidth - labelSize.width) / 2
             chapterLabel.draw(at: NSPoint(x: labelX, y: chartRect.minY - 20), withAttributes: labelAttrs)
         }
-
-        // Draw legend
-        drawLegend(characters: characters, colors: colors, at: NSPoint(x: bounds.width - legendWidth - 10, y: chartRect.minY + chartRect.height - 20), textColor: textColor)
 
         // Draw axis labels
         let xAxisLabel = "Chapter"
@@ -196,32 +261,59 @@ class CharacterPresenceView: NSView {
         }
     }
 
-    private func drawLegend(characters: [String], colors: [NSColor], at point: NSPoint, textColor: NSColor) {
-        var y = point.y
+    private func rebuildLegend(characters: [String], colors: [NSColor]) {
+        legendCharacters = characters
+        legendColors = colors
 
-        let headerAttrs: [NSAttributedString.Key: Any] = [
-            .font: NSFont.boldSystemFont(ofSize: 11),
-            .foregroundColor: textColor
-        ]
-        "Characters".draw(at: NSPoint(x: point.x, y: y), withAttributes: headerAttrs)
-        y -= 20
+        legendStack.arrangedSubviews.forEach { sub in
+            legendStack.removeArrangedSubview(sub)
+            sub.removeFromSuperview()
+        }
 
-        let labelAttrs: [NSAttributedString.Key: Any] = [
-            .font: NSFont.systemFont(ofSize: 10),
-            .foregroundColor: textColor
-        ]
+        let header = NSTextField(labelWithString: "Characters")
+        header.font = NSFont.boldSystemFont(ofSize: 11)
+        legendStack.addArrangedSubview(header)
 
         for (index, character) in characters.enumerated() {
-            // Color box
-            let colorRect = NSRect(x: point.x, y: y + 2, width: 12, height: 12)
-            colors[index].setFill()
-            NSBezierPath(roundedRect: colorRect, xRadius: 2, yRadius: 2).fill()
+            let row = NSStackView()
+            row.orientation = .horizontal
+            row.alignment = .centerY
+            row.spacing = 8
 
-            // Character name
-            let truncatedName = character.count > 15 ? String(character.prefix(15)) + "…" : character
-            truncatedName.draw(at: NSPoint(x: point.x + 18, y: y), withAttributes: labelAttrs)
+            let swatch = NSView(frame: NSRect(x: 0, y: 0, width: 12, height: 12))
+            swatch.wantsLayer = true
+            swatch.layer?.cornerRadius = 2
+            swatch.layer?.backgroundColor = colors[index].cgColor
 
-            y -= 18
+            let label = NSTextField(labelWithString: character)
+            label.font = NSFont.systemFont(ofSize: 10)
+            label.lineBreakMode = .byTruncatingTail
+            label.maximumNumberOfLines = 1
+
+            row.addArrangedSubview(swatch)
+            row.addArrangedSubview(label)
+
+            legendStack.addArrangedSubview(row)
+        }
+
+        applyThemeToLegend()
+        needsLayout = true
+    }
+
+    private func applyThemeToLegend() {
+        let theme = ThemeManager.shared.currentTheme
+        let textColor = theme.textColor
+
+        for view in legendStack.arrangedSubviews {
+            if let label = view as? NSTextField {
+                label.textColor = textColor
+            } else if let row = view as? NSStackView {
+                for sub in row.arrangedSubviews {
+                    if let label = sub as? NSTextField {
+                        label.textColor = textColor
+                    }
+                }
+            }
         }
     }
 

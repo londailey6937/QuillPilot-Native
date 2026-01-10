@@ -227,6 +227,26 @@ final class StyleCatalog {
                 }
             }
 
+            // Optional semantic style used by some importers/flows to mark character cue lines
+            // (primarily for fiction/prose workflows).
+            if merged["Fiction — Character"] == nil {
+                merged["Fiction — Character"] = baseDefinition(
+                    font: font,
+                    size: baseSize,
+                    bold: true,
+                    italic: false,
+                    color: color,
+                    background: background,
+                    alignment: .left,
+                    lineHeight: 1.2,
+                    before: 12,
+                    after: 0,
+                    headIndent: 0,
+                    firstLine: 0,
+                    tailIndent: 0
+                )
+            }
+
             return merged
         }
 

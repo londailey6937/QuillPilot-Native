@@ -3320,9 +3320,11 @@ extension AnalysisViewController {
         beliefMatrixItem.target = self
         menu.addItem(beliefMatrixItem)
 
-        let chainItem = NSMenuItem(title: "⛓️ Decision-Consequence Chains", action: #selector(showDecisionConsequenceChains), keyEquivalent: "")
-        chainItem.target = self
-        menu.addItem(chainItem)
+        if StyleCatalog.shared.currentTemplateName != "Screenplay" {
+            let chainItem = NSMenuItem(title: "⛓️ Decision-Consequence Chains", action: #selector(showDecisionConsequenceChains), keyEquivalent: "")
+            chainItem.target = self
+            menu.addItem(chainItem)
+        }
 
         let relationshipMapItem = NSMenuItem(title: "🔗 Relationship Evolution Maps", action: #selector(showRelationshipEvolutionMaps), keyEquivalent: "")
         relationshipMapItem.target = self

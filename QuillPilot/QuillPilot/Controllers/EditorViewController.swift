@@ -3922,6 +3922,39 @@ case "Book Subtitle":
         var results: [String] = []
         var seenUpper = Set<String>()
 
+        func isEffectivelyEmptyParagraph(_ range: NSRange) -> Bool {
+            full.substring(with: range).trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        }
+
+        func styleName(atParagraphStart range: NSRange) -> String? {
+            storage.attribute(styleAttributeKey, at: range.location, effectiveRange: nil) as? String
+        }
+
+        func isDialogueFollowingCharacterCue(startingAfter range: NSRange, maxLookaheadParagraphs: Int = 6) -> Bool {
+            var nextLocation = NSMaxRange(range)
+            var looked = 0
+            while nextLocation < full.length, looked < maxLookaheadParagraphs {
+                let nextRange = full.paragraphRange(for: NSRange(location: nextLocation, length: 0))
+                guard nextRange.length > 0 else { break }
+                looked += 1
+
+                if isEffectivelyEmptyParagraph(nextRange) {
+                    nextLocation = NSMaxRange(nextRange)
+                    continue
+                }
+
+                let nextStyle = styleName(atParagraphStart: nextRange) ?? ""
+                if nextStyle == "Screenplay — Parenthetical" || nextStyle == "Screenplay — Dialogue" {
+                    return true
+                }
+
+                // If the next non-empty paragraph is something else (action/slugline/transition),
+                // treat this as a non-speaking cue (often mis-styled locations).
+                return false
+            }
+            return false
+        }
+
         func normalizeCue(_ raw: String) -> [String] {
             var s = raw.trimmingCharacters(in: .whitespacesAndNewlines)
             guard !s.isEmpty else { return [] }
@@ -3929,6 +3962,18 @@ case "Book Subtitle":
             // Remove parentheticals in cue lines: "JOHN (O.S.)" -> "JOHN"
             if let idx = s.firstIndex(of: "(") {
                 s = String(s[..<idx]).trimmingCharacters(in: .whitespacesAndNewlines)
+            }
+
+            // Remove common continuation suffixes if they appear outside parentheses.
+            // Examples: "JOHN CONT'D" / "JOHN CONT'D." / "JOHN CONTINUED"
+            s = s.replacingOccurrences(of: "\\s+CONT'?D\\.?$", with: "", options: .regularExpression)
+            s = s.replacingOccurrences(of: "\\s+CONTINUED\\.?$", with: "", options: .regularExpression)
+
+            // Filter obvious transitions that sometimes get mis-styled.
+            let upper = s.uppercased()
+            let transitionPrefixes = ["FADE IN", "FADE OUT", "CUT TO", "SMASH CUT", "DISSOLVE TO", "MATCH CUT", "WIPE TO"]
+            if transitionPrefixes.contains(where: { upper.hasPrefix($0) }) {
+                return []
             }
 
             // Split dual dialogue cues: "JOHN/MIKE" -> ["JOHN", "MIKE"]
@@ -3948,6 +3993,11 @@ case "Book Subtitle":
 
             let styleName = storage.attribute(styleAttributeKey, at: paragraphRange.location, effectiveRange: nil) as? String
             if styleName == "Screenplay — Character" {
+                // Only treat this as a character cue if it actually introduces dialogue.
+                guard isDialogueFollowingCharacterCue(startingAfter: paragraphRange) else {
+                    location = NSMaxRange(paragraphRange)
+                    continue
+                }
                 let raw = full.substring(with: paragraphRange)
                 for cue in normalizeCue(raw) {
                     let key = cue.uppercased()
@@ -3955,6 +4005,65 @@ case "Book Subtitle":
                     guard key.range(of: "[A-Z]", options: .regularExpression) != nil else { continue }
                     if !seenUpper.contains(key) {
                         seenUpper.insert(key)
+                        results.append(cue)
+                    }
+                }
+            }
+
+            location = NSMaxRange(paragraphRange)
+        }
+
+        return results
+    }
+
+    func extractFictionCharacterCues(maxScanParagraphs: Int = 5000) -> [String] {
+        guard StyleCatalog.shared.currentTemplateName != "Screenplay" else { return [] }
+        guard let storage = textView.textStorage else { return [] }
+
+        let full = storage.string as NSString
+        var location = 0
+        var scanned = 0
+
+        var results: [String] = []
+        var seenLower = Set<String>()
+
+        func normalizeCue(_ raw: String) -> [String] {
+            var s = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !s.isEmpty else { return [] }
+
+            // If someone styled a whole line like "John (nervous)", keep just the name.
+            if let idx = s.firstIndex(of: "(") {
+                s = String(s[..<idx]).trimmingCharacters(in: .whitespacesAndNewlines)
+            }
+
+            // Allow multiple names separated by common delimiters.
+            let parts = s
+                .replacingOccurrences(of: "&", with: "/")
+                .split(whereSeparator: { $0 == "/" || $0 == "," })
+                .map { String($0).trimmingCharacters(in: .whitespacesAndNewlines) }
+
+            let cleaned = parts
+                .map { $0.replacingOccurrences(of: "[^A-Za-z0-9 '\\-]", with: "", options: .regularExpression) }
+                .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+                .filter { !$0.isEmpty }
+
+            return cleaned
+        }
+
+        while location < full.length && scanned < maxScanParagraphs {
+            let paragraphRange = full.paragraphRange(for: NSRange(location: location, length: 0))
+            guard paragraphRange.length > 0 else { break }
+            scanned += 1
+
+            let styleName = storage.attribute(styleAttributeKey, at: paragraphRange.location, effectiveRange: nil) as? String
+            if styleName == "Fiction — Character" {
+                let raw = full.substring(with: paragraphRange)
+                for cue in normalizeCue(raw) {
+                    let key = cue.lowercased()
+                    guard key.count >= 2 && key.count <= 60 else { continue }
+                    guard key.range(of: "[A-Za-z]", options: .regularExpression) != nil else { continue }
+                    if !seenLower.contains(key) {
+                        seenLower.insert(key)
                         results.append(cue)
                     }
                 }

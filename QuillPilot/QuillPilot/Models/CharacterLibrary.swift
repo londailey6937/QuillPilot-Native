@@ -170,6 +170,12 @@ class CharacterLibrary {
         currentDocumentURL = url
         if let url = url {
             DebugLog.log("📚 Document URL updated to \(url.lastPathComponent)")
+
+            // If we already have characters in memory (e.g., seeded on import for an unsaved document),
+            // persist them now that we have a concrete location.
+            if !characters.isEmpty {
+                saveCharacters()
+            }
         }
     }
 
@@ -212,10 +218,6 @@ class CharacterLibrary {
 
         guard !cleaned.isEmpty else { return }
         guard characters.isEmpty else { return }
-        guard currentDocumentURL != nil else {
-            DebugLog.log("⚠️ Cannot seed characters - no document URL set")
-            return
-        }
 
         characters = cleaned.map { name in
             CharacterProfile(
@@ -225,7 +227,11 @@ class CharacterLibrary {
             )
         }
 
-        saveCharacters()
+        if currentDocumentURL != nil {
+            saveCharacters()
+        } else {
+            DebugLog.log("📚 Seeded \(characters.count) characters in memory (no document URL yet)")
+        }
         NotificationCenter.default.post(name: .characterLibraryDidChange, object: nil)
     }
 

@@ -1322,6 +1322,56 @@ class AnalysisViewController: NSViewController, NSWindowDelegate {
 
     var latestAnalysisResults: AnalysisResults?
 
+    private func significantCharacterNameSet(presence: [CharacterPresence]?, interactions: [CharacterInteraction]?) -> Set<String> {
+        let maxKeep = 15
+        let minKeep = 5
+
+        if let presence, !presence.isEmpty {
+            let totals: [(name: String, total: Int)] = presence.map { entry in
+                let totalMentions = entry.chapterPresence.values.reduce(0, +)
+                return (entry.characterName, totalMentions)
+            }
+            let sorted = totals.sorted { $0.total > $1.total }
+
+            // Prefer dropping one-off/minor characters, but keep at least a few.
+            var kept = sorted.filter { $0.total >= 3 }.map { $0.name }
+            if kept.count < minKeep {
+                kept = Array(sorted.prefix(minKeep)).map { $0.name }
+            }
+            if kept.count > maxKeep {
+                kept = Array(kept.prefix(maxKeep))
+            }
+            return Set(kept)
+        }
+
+        if let interactions, !interactions.isEmpty {
+            var scores: [String: Int] = [:]
+            for i in interactions {
+                scores[i.character1, default: 0] += i.coAppearances
+                scores[i.character2, default: 0] += i.coAppearances
+            }
+            let sorted = scores.map { (name: $0.key, total: $0.value) }.sorted { $0.total > $1.total }
+            var kept = sorted.filter { $0.total >= 2 }.map { $0.name }
+            if kept.count < minKeep {
+                kept = Array(sorted.prefix(minKeep)).map { $0.name }
+            }
+            if kept.count > maxKeep {
+                kept = Array(kept.prefix(maxKeep))
+            }
+            return Set(kept)
+        }
+
+        return []
+    }
+
+    private func currentSignificantCharacterNameSet(fallbackPresence: [CharacterPresence]? = nil, fallbackInteractions: [CharacterInteraction]? = nil) -> Set<String> {
+        if let results = latestAnalysisResults {
+            let set = significantCharacterNameSet(presence: results.characterPresence, interactions: results.characterInteractions)
+            if !set.isEmpty { return set }
+        }
+        return significantCharacterNameSet(presence: fallbackPresence, interactions: fallbackInteractions)
+    }
+
     func storeAnalysisResults(_ results: AnalysisResults) {
         latestAnalysisResults = results
     }
@@ -1705,8 +1755,11 @@ extension AnalysisViewController {
         let interactionsView = CharacterInteractionsView(frame: window.contentView!.bounds)
         interactionsView.autoresizingMask = [.width, .height]
 
+        let keep = currentSignificantCharacterNameSet(fallbackPresence: nil, fallbackInteractions: interactions)
+        let filtered = keep.isEmpty ? interactions : interactions.filter { keep.contains($0.character1) && keep.contains($0.character2) }
+
         // Convert CharacterInteraction to InteractionData
-        let interactionData = interactions.map { interaction in
+        let interactionData = filtered.map { interaction in
             CharacterInteractionsView.InteractionData(
                 character1: interaction.character1,
                 character2: interaction.character2,
@@ -1764,8 +1817,11 @@ extension AnalysisViewController {
         let mapView = RelationshipEvolutionMapView(frame: window.contentView!.bounds)
         mapView.autoresizingMask = [.width, .height]
 
+        let keep = currentSignificantCharacterNameSet()
+
         // Convert data to view format
-        let nodes = evolutionData.nodes.map { nodeData in
+        let filteredNodesData = keep.isEmpty ? evolutionData.nodes : evolutionData.nodes.filter { keep.contains($0.character) }
+        let nodes = filteredNodesData.map { nodeData in
             RelationshipEvolutionMapView.RelationshipNode(
                 character: nodeData.character,
                 emotionalInvestment: nodeData.emotionalInvestment,
@@ -1773,7 +1829,8 @@ extension AnalysisViewController {
             )
         }
 
-        let edges = evolutionData.edges.map { edgeData in
+        let filteredEdgesData = keep.isEmpty ? evolutionData.edges : evolutionData.edges.filter { keep.contains($0.from) && keep.contains($0.to) }
+        let edges = filteredEdgesData.map { edgeData in
             let powerDirection: RelationshipEvolutionMapView.PowerDirection
             switch edgeData.powerDirection {
             case "fromToTo":
@@ -2619,10 +2676,13 @@ extension AnalysisViewController {
         window.backgroundColor = theme.pageBackground
         window.appearance = NSAppearance(named: isDarkMode ? .darkAqua : .aqua)
 
+        let keep = currentSignificantCharacterNameSet(fallbackPresence: presence, fallbackInteractions: nil)
+        let filteredPresence = keep.isEmpty ? presence : presence.filter { keep.contains($0.characterName) }
+
         // Use AppKit view for proper theme support
         let presenceView = CharacterPresenceView(frame: window.contentView!.bounds)
         presenceView.autoresizingMask = [.width, .height]
-        presenceView.setPresence(presence)
+        presenceView.setPresence(filteredPresence)
 
         window.contentView = presenceView
         window.center()

@@ -242,6 +242,11 @@ final class StyleCatalog {
         let inter = StyleTemplate(name: "Inter", styles: ensureStandardStyles(rebaseFonts(baseManuscript, fontFamily: "Inter")))
         let helvetica = StyleTemplate(name: "Helvetica", styles: ensureStandardStyles(rebaseFonts(baseManuscript, fontFamily: "Helvetica")))
 
+        let poetry = StyleTemplate(
+            name: "Poetry",
+            styles: ensureStandardStyles(poetryStyles())
+        )
+
         let screenplay = StyleTemplate(
             name: "Screenplay",
             styles: ensureStandardStyles(screenplayStyles())
@@ -273,8 +278,70 @@ final class StyleCatalog {
 
         return [
             minionPro, arial, timesNewRoman, calibre, inter, helvetica,
-            screenplay, baskerville, garamond, palatino, hoefler, bradley, snell
+            poetry, screenplay, baskerville, garamond, palatino, hoefler, bradley, snell
         ]
+    }
+
+    private static func poetryStyles() -> [String: StyleDefinition] {
+        var styles: [String: StyleDefinition] = [:]
+        let font = "Times New Roman"
+
+        styles["Poetry — Title"] = baseDefinition(
+            font: font,
+            size: 22,
+            bold: true,
+            alignment: .center,
+            lineHeight: 1.15,
+            before: 72,
+            after: 12,
+            headIndent: 0,
+            firstLine: 0,
+            tailIndent: 0
+        )
+
+        styles["Poetry — Author"] = baseDefinition(
+            font: font,
+            size: 14,
+            alignment: .center,
+            lineHeight: 1.15,
+            before: 6,
+            after: 24,
+            headIndent: 0,
+            firstLine: 0,
+            tailIndent: 0
+        )
+
+        // Verse: preserve line breaks, no first-line indent.
+        styles["Poetry — Verse"] = baseDefinition(
+            font: font,
+            size: 14,
+            alignment: .left,
+            lineHeight: 1.25,
+            before: 0,
+            after: 0,
+            headIndent: 0,
+            firstLine: 0,
+            tailIndent: 0
+        )
+
+        // A stanza break is just extra vertical space.
+        styles["Poetry — Stanza Break"] = baseDefinition(
+            font: font,
+            size: 14,
+            alignment: .left,
+            lineHeight: 1.0,
+            before: 0,
+            after: 14,
+            headIndent: 0,
+            firstLine: 0,
+            tailIndent: 0
+        )
+
+        // Make the standard Body Text map to Verse so defaults behave as expected in the Poetry template.
+        styles["Body Text"] = styles["Poetry — Verse"]
+        styles["Body Text – No Indent"] = styles["Poetry — Verse"]
+
+        return styles
     }
 
     private static func baseDefinition(

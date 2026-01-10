@@ -2339,7 +2339,14 @@ class EditorViewController: NSViewController {
 
             // Plain-text and some conversions can arrive with missing font/paragraph style attributes.
             // Seed *only missing attributes* so rendering is stable, but do not force a style tag here.
-            let defaultSeedStyleName = (currentTemplate == "Screenplay") ? "Screenplay — Action" : "Body Text"
+            let defaultSeedStyleName: String
+            if currentTemplate == "Screenplay" {
+                defaultSeedStyleName = "Screenplay — Action"
+            } else if currentTemplate == "Poetry" {
+                defaultSeedStyleName = "Poetry — Verse"
+            } else {
+                defaultSeedStyleName = "Body Text"
+            }
             var effectiveFont = attrs[.font] as? NSFont
             var effectiveParagraphStyle = attrs[.paragraphStyle] as? NSParagraphStyle
 
@@ -3913,7 +3920,9 @@ case "Book Subtitle":
         DebugLog.log("📋🔍 buildOutlineEntries: Starting scan of \(storage.length) characters")
         DebugLog.log("📋🔍 styleAttributeKey: \(styleAttributeKey)")
 
-        let levels: [String: Int] = [
+        let isScreenplayTemplate = StyleCatalog.shared.currentTemplateName == "Screenplay"
+
+        var levels: [String: Int] = [
             "Part Title": 0,
             "Chapter Number": 1,
             "Chapter Title": 1,
@@ -3926,10 +3935,23 @@ case "Book Subtitle":
             "Appendix Title": 1
         ]
 
+        if isScreenplayTemplate {
+            // Screenplay outline should be driven by scene sluglines.
+            levels["Screenplay — Slugline"] = 1
+        }
+
         var results: [OutlineEntry] = []
         var stylesFound = Set<String>()
         var paragraphCount = 0
         let fullString = storage.string as NSString
+
+        func looksLikeScreenplaySlugline(_ text: String) -> Bool {
+            let upper = text.trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
+            guard !upper.isEmpty else { return false }
+            let prefixes = ["INT.", "EXT.", "INT/EXT.", "EXT/INT.", "I/E.", "EST."]
+            return prefixes.contains(where: { upper.hasPrefix($0) })
+        }
+
         var location = 0
         while location < fullString.length {
             let paragraphRange = fullString.paragraphRange(for: NSRange(location: location, length: 0))
@@ -3953,6 +3975,16 @@ case "Book Subtitle":
                             DebugLog.log("📋✅ Found: '\(rawTitle)' style='\(styleName)' level=\(level)")
                         }
                     }
+                }
+            } else if isScreenplayTemplate {
+                let rawTitle = fullString.substring(with: paragraphRange).trimmingCharacters(in: .whitespacesAndNewlines)
+                if looksLikeScreenplaySlugline(rawTitle) {
+                    let glyphRange = layoutManager.glyphRange(forCharacterRange: paragraphRange, actualCharacterRange: nil)
+                    let bounds = layoutManager.boundingRect(forGlyphRange: glyphRange, in: textContainer)
+                    let scaledPageHeight = pageHeight * editorZoom
+                    let pageGap: CGFloat = 20
+                    let pageIndex = max(0, Int(floor(bounds.midY / (scaledPageHeight + pageGap)))) + 1
+                    results.append(OutlineEntry(title: rawTitle, level: 1, range: paragraphRange, page: pageIndex, styleName: "Screenplay — Slugline"))
                 }
             }
 

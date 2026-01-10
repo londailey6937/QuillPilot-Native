@@ -948,6 +948,16 @@ extension MainWindowController {
         accessory.spacing = 8
         panel.accessoryView = accessory
 
+        // If we're showing Save As for an imported/unsaved document (e.g. .pages),
+        // prefill the filename from the current document title so the user doesn't
+        // have to re-enter it.
+        if panel.nameFieldStringValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            let title = headerView.documentTitle().trimmingCharacters(in: .whitespacesAndNewlines)
+            if !title.isEmpty {
+                panel.nameFieldStringValue = title
+            }
+        }
+
         func applySelection() {
             let format = ExportFormat.allCases[popup.indexOfSelectedItem]
             panel.allowedContentTypes = format.contentTypes
@@ -1479,8 +1489,8 @@ extension MainWindowController {
             // Import Word document
             let filename = url.deletingPathExtension().lastPathComponent
             headerView.setDocumentTitle(filename)
-            // Keep the original file untouched by clearing the URL; Save will prompt.
-            currentDocumentURL = nil
+            // Treat opened DOCX as the current document so Save overwrites without prompting.
+            currentDocumentURL = url
             currentDocumentFormat = .docx
             hasUnsavedChanges = false
             mainContentViewController.editorViewController.headerText = ""
@@ -1769,7 +1779,12 @@ extension MainWindowController {
                         )
                     case "txt", "md", "markdown":
                         let text = try self?.readTextFromFile(at: url) ?? ""
-                        if StyleCatalog.shared.currentTemplateName == "Screenplay" {
+                        // Poetry auto-detection is only applied to plain-text/markdown imports.
+                        // Leave rich formats (.docx/.pages) alone for now.
+                        if PoetryImporter.looksLikePoetry(text) {
+                            self?.toolbarView.selectTemplateProgrammatically("Poetry")
+                            attributed = PoetryImporter.attributedString(fromPlainText: text)
+                        } else if StyleCatalog.shared.currentTemplateName == "Screenplay" {
                             attributed = ScreenplayImporter.attributedString(fromPlainText: text)
                         } else {
                             attributed = NSAttributedString(string: text)
@@ -5782,6 +5797,8 @@ class SearchPanelController: NSWindowController {
     private var replaceAllButton: NSButton!
     private var statusLabel: NSTextField!
 
+    private var themeObserver: Any?
+
     // Go to Page controls
     private var pageNumberField: NSTextField!
     private var goToPageButton: NSButton!
@@ -5803,6 +5820,16 @@ class SearchPanelController: NSWindowController {
         self.init(window: panel)
         setupUI()
         applyTheme()
+
+        themeObserver = NotificationCenter.default.addObserver(forName: .themeDidChange, object: nil, queue: .main) { [weak self] _ in
+            self?.applyTheme()
+        }
+    }
+
+    deinit {
+        if let themeObserver {
+            NotificationCenter.default.removeObserver(themeObserver)
+        }
     }
 
     private func setupUI() {
@@ -5908,8 +5935,23 @@ class SearchPanelController: NSWindowController {
 
         let theme = ThemeManager.shared.currentTheme
 
+        // Ensure native controls render appropriately for dark/light modes.
+        let isDarkMode = ThemeManager.shared.isDarkMode
+        panel.appearance = NSAppearance(named: isDarkMode ? .darkAqua : .aqua)
+
         // Apply background color
-        contentView.layer?.backgroundColor = theme.toolbarBackground.cgColor
+        contentView.layer?.backgroundColor = theme.popoutBackground.cgColor
+
+        let inputFields: [NSTextField] = [searchField, replaceField, pageNumberField].compactMap { $0 }
+        for field in inputFields {
+            field.textColor = theme.textColor
+            field.drawsBackground = true
+            field.backgroundColor = theme.pageBackground
+        }
+
+        let checkboxTitleAttributes: [NSAttributedString.Key: Any] = [.foregroundColor: theme.textColor]
+        caseSensitiveCheckbox.attributedTitle = NSAttributedString(string: caseSensitiveCheckbox.title, attributes: checkboxTitleAttributes)
+        wholeWordsCheckbox.attributedTitle = NSAttributedString(string: wholeWordsCheckbox.title, attributes: checkboxTitleAttributes)
 
         // Apply text colors to labels
         contentView.subviews.forEach { view in
@@ -6047,6 +6089,7 @@ class SearchPanelController: NSWindowController {
 
     override func showWindow(_ sender: Any?) {
         super.showWindow(sender)
+        applyTheme()
         updatePageInfo()
         // Make the search field first responder to accept input immediately
         window?.makeFirstResponder(searchField)

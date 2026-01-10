@@ -1246,6 +1246,7 @@ Current templates:
 • Calibre
 • Inter
 • Helvetica
+• Poetry
 • Screenplay
 • Baskerville Classic
 • Garamond Elegant
@@ -1262,6 +1263,7 @@ How to switch templates:
 Notes:
 • Switching templates changes which style definitions are available; it doesn’t automatically rewrite existing paragraphs unless you apply styles.
 • TOC/Index insertion uses your current template’s typography.
+• Import note: Import justification can depend on the active template when the imported text doesn’t include reliable paragraph styles. In those cases, QuillPilot fills the gaps using the current template’s defaults.
 """, color: bodyColor))
         content.append(makeNewline())
 

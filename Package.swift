@@ -37,6 +37,7 @@ let package = Package(
                 "Utilities/StyleCatalog.swift",
                 "Utilities/RecentDocuments.swift",
                 "Utilities/ScreenplayImporter.swift",
+                "Utilities/PoetryImporter.swift",
                 "Utilities/FadeInImporter.swift",
                 "Extensions/NSColor+Hex.swift",
                 "Extensions/NSAlert+Themed.swift",

@@ -1877,6 +1877,13 @@ extension MainWindowController {
         mainContentViewController.editorViewController.setAttributedContentDirect(attributed)
         mainContentViewController.editorViewController.applyTheme(ThemeManager.shared.currentTheme)
 
+        // If this is a screenplay and the Character Library is empty for this document,
+        // auto-seed it from styled character cue lines so a sidecar is created on first import.
+        if StyleCatalog.shared.currentTemplateName == "Screenplay" && CharacterLibrary.shared.characters.isEmpty {
+            let cues = mainContentViewController.editorViewController.extractScreenplayCharacterCues()
+            CharacterLibrary.shared.seedCharactersIfEmpty(cues)
+        }
+
         // Ensure TOC/Index paragraphs keep right-tab alignment after DOCX/RTF imports.
         // Some importers drop paragraph tab stops; we repair based on QuillStyleName.
         DispatchQueue.main.async { [weak self] in

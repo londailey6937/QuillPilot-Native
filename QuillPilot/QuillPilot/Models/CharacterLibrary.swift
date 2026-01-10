@@ -201,6 +201,34 @@ class CharacterLibrary {
         )
     }
 
+    /// Seed the character library once when opening/importing a document.
+    ///
+    /// This is primarily used for Screenplay imports where character cues are reliably styled
+    /// but no sidecar `.characters.json` exists yet.
+    func seedCharactersIfEmpty(_ names: [String]) {
+        let cleaned = names
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+
+        guard !cleaned.isEmpty else { return }
+        guard characters.isEmpty else { return }
+        guard currentDocumentURL != nil else {
+            DebugLog.log("⚠️ Cannot seed characters - no document URL set")
+            return
+        }
+
+        characters = cleaned.map { name in
+            CharacterProfile(
+                fullName: name,
+                role: .supporting,
+                isSampleCharacter: false
+            )
+        }
+
+        saveCharacters()
+        NotificationCenter.default.post(name: .characterLibraryDidChange, object: nil)
+    }
+
     /// Clear all characters for a new document (for backward compatibility)
     func clearForNewDocument() {
         DebugLog.log("📚 CharacterLibrary: Clearing characters for new document")

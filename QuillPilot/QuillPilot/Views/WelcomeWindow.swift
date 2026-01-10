@@ -179,7 +179,7 @@ class WelcomeWindowController: NSWindowController {
     }
 
     private func loadRecentFiles() {
-        recentFiles = NSDocumentController.shared.recentDocumentURLs
+        recentFiles = RecentDocuments.shared.recentURLs()
         recentFilesTableView?.reloadData()
     }
 

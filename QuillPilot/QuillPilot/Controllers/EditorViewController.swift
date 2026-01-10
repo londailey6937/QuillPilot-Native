@@ -2319,6 +2319,14 @@ class EditorViewController: NSViewController {
         let mutable = NSMutableAttributedString(attributedString: attributed)
         let fullString = mutable.string as NSString
 
+        let currentTemplate = StyleCatalog.shared.currentTemplateName
+
+        // Stateful screenplay inference when formatting is missing/ambiguous.
+        var screenplayInTitlePage = true
+        var screenplaySawTitleLine = false
+        var screenplaySawAuthorLine = false
+        var screenplayExpectingDialogue = false
+
         var location = 0
         while location < fullString.length {
             let paragraphRange = fullString.paragraphRange(for: NSRange(location: location, length: 0))
@@ -2329,39 +2337,139 @@ class EditorViewController: NSViewController {
             // Get paragraph text to help with content-based style detection
             let paragraphText = fullString.substring(with: paragraphRange).trimmingCharacters(in: .whitespacesAndNewlines)
 
-            // Plain-text imports often arrive with no explicit font/paragraph style attributes.
-            // If we don't seed those, the text view may render using stale defaults (e.g. centered title style).
-            // Seed with a template-appropriate default so the rest of inference is stable.
-            if (attrs[.font] as? NSFont) == nil || (attrs[.paragraphStyle] as? NSParagraphStyle) == nil {
-                let defaultStyleName = (StyleCatalog.shared.currentTemplateName == "Screenplay")
-                    ? "Screenplay — Action"
-                    : "Body Text"
+            // Plain-text and some conversions can arrive with missing font/paragraph style attributes.
+            // Seed *only missing attributes* so rendering is stable, but do not force a style tag here.
+            let defaultSeedStyleName = (currentTemplate == "Screenplay") ? "Screenplay — Action" : "Body Text"
+            var effectiveFont = attrs[.font] as? NSFont
+            var effectiveParagraphStyle = attrs[.paragraphStyle] as? NSParagraphStyle
 
-                if let definition = StyleCatalog.shared.style(named: defaultStyleName) {
-                    let catalogParagraph = self.paragraphStyle(from: definition)
-                    let catalogFont = self.font(from: definition)
+            if effectiveFont == nil || effectiveParagraphStyle == nil,
+               let definition = StyleCatalog.shared.style(named: defaultSeedStyleName) {
+                let seedParagraph = self.paragraphStyle(from: definition)
+                let seedFont = self.font(from: definition)
 
-                    mutable.addAttribute(styleAttributeKey, value: defaultStyleName, range: paragraphRange)
-                    mutable.addAttribute(.paragraphStyle, value: catalogParagraph, range: paragraphRange)
-                    mutable.addAttribute(.font, value: catalogFont, range: paragraphRange)
-
-                    if attrs[.foregroundColor] == nil {
-                        mutable.addAttribute(.foregroundColor, value: currentTheme.textColor, range: paragraphRange)
-                    }
+                if effectiveParagraphStyle == nil {
+                    mutable.addAttribute(.paragraphStyle, value: seedParagraph, range: paragraphRange)
+                    effectiveParagraphStyle = seedParagraph
                 }
+                if effectiveFont == nil {
+                    mutable.addAttribute(.font, value: seedFont, range: paragraphRange)
+                    effectiveFont = seedFont
+                }
+                if attrs[.foregroundColor] == nil {
+                    mutable.addAttribute(.foregroundColor, value: currentTheme.textColor, range: paragraphRange)
+                }
+            }
 
+            guard let font = effectiveFont,
+                  let paragraphStyle = effectiveParagraphStyle else {
                 location = NSMaxRange(paragraphRange)
                 continue
             }
 
-            guard let font = attrs[.font] as? NSFont,
-                  let paragraphStyle = attrs[.paragraphStyle] as? NSParagraphStyle else {
-                location = NSMaxRange(paragraphRange)
-                continue
-            }
+            // If the paragraph already has a valid Quill style tag (common for our own imports),
+            // trust it. This avoids ambiguous re-inference when multiple styles share identical
+            // formatting (e.g., Screenplay sluglines vs action).
+            let existingTaggedStyle = attrs[styleAttributeKey] as? String
+            let styleName: String
+            if let existingTaggedStyle,
+               StyleCatalog.shared.style(named: existingTaggedStyle) != nil {
+                styleName = existingTaggedStyle
+            } else {
+                if currentTemplate == "Screenplay" {
+                    // Content-based screenplay inference (robust even when all paragraphs share the same formatting).
+                    let trimmed = paragraphText.trimmingCharacters(in: .whitespacesAndNewlines)
+                    let upper = trimmed.uppercased()
 
-            // Infer style based on font, paragraph attributes, and text content
-            let styleName = inferStyle(font: font, paragraphStyle: paragraphStyle, text: paragraphText)
+                    func isSlugline(_ upper: String) -> Bool {
+                        let prefixes = ["INT.", "EXT.", "INT/EXT.", "EXT/INT.", "I/E.", "EST."]
+                        return prefixes.first(where: { upper.hasPrefix($0) }) != nil
+                    }
+
+                    func isParenthetical(_ trimmed: String) -> Bool {
+                        trimmed.hasPrefix("(") && trimmed.contains(")")
+                    }
+
+                    func isTransition(_ upper: String) -> Bool {
+                        if upper.hasSuffix("TO:") { return true }
+                        let known = [
+                            "CUT TO:", "SMASH CUT TO:", "DISSOLVE TO:", "MATCH CUT TO:",
+                            "FADE IN:", "FADE OUT.", "FADE OUT:", "FADE TO BLACK.", "FADE TO BLACK:",
+                            "WIPE TO:", "JUMP CUT TO:"
+                        ]
+                        if known.contains(upper) { return true }
+                        if upper.count <= 30 && upper.hasSuffix(":") { return true }
+                        return false
+                    }
+
+                    func isShot(_ upper: String) -> Bool {
+                        let prefixes = [
+                            "ANGLE ON", "CLOSE ON", "CLOSE-UP", "CU ", "WIDE SHOT", "ESTABLISHING", "INSERT", "CUTAWAY",
+                            "POV", "TRACKING", "DOLLY", "PAN", "TILT", "OVER", "ON "
+                        ]
+                        return prefixes.first(where: { upper.hasPrefix($0) }) != nil
+                    }
+
+                    func isCharacter(_ trimmed: String, upper: String) -> Bool {
+                        if isSlugline(upper) || isTransition(upper) || isShot(upper) { return false }
+                        let plain = trimmed.trimmingCharacters(in: .whitespaces)
+                        guard !plain.isEmpty, plain.count <= 35 else { return false }
+                        let allowed = CharacterSet(charactersIn: "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789 .'-()")
+                        let scalars = plain.unicodeScalars
+                        guard scalars.allSatisfy({ allowed.contains($0) }) else { return false }
+                        guard scalars.contains(where: { CharacterSet.uppercaseLetters.contains($0) }) else { return false }
+                        return plain == upper
+                    }
+
+                    if trimmed.isEmpty {
+                        styleName = "Screenplay — Action"
+                        screenplayExpectingDialogue = false
+                    } else if screenplayInTitlePage {
+                        if isSlugline(upper) {
+                            screenplayInTitlePage = false
+                            screenplayExpectingDialogue = false
+                            styleName = "Screenplay — Slugline"
+                        } else {
+                            let lower = trimmed.lowercased()
+                            if lower.contains("contact") || lower.contains("@") || lower.contains("tel") || lower.contains("phone") {
+                                styleName = "Screenplay — Contact"
+                            } else if lower.contains("draft") || lower.contains("copyright") || lower.contains("(c)") {
+                                styleName = "Screenplay — Draft"
+                            } else if !screenplaySawTitleLine {
+                                screenplaySawTitleLine = true
+                                styleName = "Screenplay — Title"
+                            } else if !screenplaySawAuthorLine {
+                                screenplaySawAuthorLine = true
+                                styleName = "Screenplay — Author"
+                            } else {
+                                styleName = "Screenplay — Author"
+                            }
+                        }
+                    } else if isSlugline(upper) {
+                        screenplayExpectingDialogue = false
+                        styleName = "Screenplay — Slugline"
+                    } else if isTransition(upper) {
+                        screenplayExpectingDialogue = false
+                        styleName = "Screenplay — Transition"
+                    } else if isShot(upper) {
+                        screenplayExpectingDialogue = false
+                        styleName = "Screenplay — Shot"
+                    } else if isCharacter(trimmed, upper: upper) {
+                        screenplayExpectingDialogue = true
+                        styleName = "Screenplay — Character"
+                    } else if screenplayExpectingDialogue && isParenthetical(trimmed) {
+                        screenplayExpectingDialogue = true
+                        styleName = "Screenplay — Parenthetical"
+                    } else if screenplayExpectingDialogue {
+                        styleName = "Screenplay — Dialogue"
+                    } else {
+                        styleName = "Screenplay — Action"
+                    }
+                } else {
+                    // Infer style based on font, paragraph attributes, and text content
+                    styleName = inferStyle(font: font, paragraphStyle: paragraphStyle, text: paragraphText)
+                }
+            }
 
             // Tag the paragraph with the style name
             mutable.addAttribute(styleAttributeKey, value: styleName, range: paragraphRange)
@@ -2383,8 +2491,14 @@ class EditorViewController: NSViewController {
                 let textColor = self.color(fromHex: definition.textColorHex, fallback: currentTheme.textColor)
                 let backgroundColor = definition.backgroundColorHex.flatMap { self.color(fromHex: $0, fallback: .clear) }
 
-                // Merge paragraph style to preserve manual alignment overrides
-                let finalParagraph = mergedParagraphStyle(existing: paragraphStyle, style: catalogParagraph)
+                // Screenplay styles are layout-sensitive; don't preserve imported/manual alignment overrides
+                // that can accidentally center an entire document.
+                let finalParagraph: NSParagraphStyle
+                if currentTemplate == "Screenplay", styleName.hasPrefix("Screenplay —") {
+                    finalParagraph = catalogParagraph
+                } else {
+                    finalParagraph = mergedParagraphStyle(existing: paragraphStyle, style: catalogParagraph)
+                }
                 mutable.addAttribute(.paragraphStyle, value: finalParagraph, range: paragraphRange)
 
                 // Apply font per run to preserve inline formatting (bold, italic, size changes)

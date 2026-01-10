@@ -255,6 +255,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc private func clearRecentDocuments(_ sender: Any?) {
         NSDocumentController.shared.clearRecentDocuments(sender)
+        RecentDocuments.shared.clear()
         recentlyOpenedMenu?.removeAllItems()
     }
 
@@ -591,7 +592,8 @@ extension AppDelegate: NSMenuDelegate {
 
         menu.removeAllItems()
 
-        let recents = NSDocumentController.shared.recentDocumentURLs
+        // Prefer app-managed recents (works even if system recents are disabled).
+        let recents = RecentDocuments.shared.recentURLs()
         guard !recents.isEmpty else {
             let none = NSMenuItem(title: "No Recent Documents", action: nil, keyEquivalent: "")
             none.isEnabled = false

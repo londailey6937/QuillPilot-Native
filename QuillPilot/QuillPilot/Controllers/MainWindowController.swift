@@ -1067,6 +1067,7 @@ extension MainWindowController {
 
             // Ensure Welcome recents are populated (this app is not NSDocument-based).
             NSDocumentController.shared.noteNewRecentDocumentURL(url)
+            RecentDocuments.shared.note(url)
             hasUnsavedChanges = false
         } catch {
             debugLog("❌ Save failed: \(error.localizedDescription)")
@@ -1815,10 +1816,16 @@ extension MainWindowController {
         let inPath = escapeForAppleScript(pagesURL.path)
         let outPath = escapeForAppleScript(outURL.path)
 
+        // Pages scripting dictionary uses export format enumerator name "formatted text" for RTF.
+        // (Using "RTF" or "Rich Text" can fail with -2753/-1700 depending on Pages version.)
         let script = """
-        tell application \"Pages\"
-            set theDoc to open POSIX file \"\(inPath)\"
-            export theDoc to POSIX file \"\(outPath)\" as RTF
+        tell application "Pages"
+            launch
+            try
+                set visible to false
+            end try
+            set theDoc to open POSIX file "\(inPath)"
+            export theDoc to POSIX file "\(outPath)" as formatted text
             close theDoc saving no
         end tell
         """
@@ -1874,6 +1881,7 @@ extension MainWindowController {
 
         // Ensure Welcome recents are populated (this app is not NSDocument-based).
         NSDocumentController.shared.noteNewRecentDocumentURL(url)
+        RecentDocuments.shared.note(url)
     }
 
     private enum AssociatedKeys {

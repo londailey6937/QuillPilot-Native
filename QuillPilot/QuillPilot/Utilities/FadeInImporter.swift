@@ -28,12 +28,33 @@ struct FadeInImporter {
             let styleName = mapToQuillStyle(baseStyle: paragraph.baseStyle, align: paragraph.align)
             let baseAttributes = attributesForStyle(named: styleName)
 
-            let paragraphText = paragraph.runs.map { $0.text }.joined()
+            // Fade In stores style intent separately from text casing. For common screenplay elements,
+            // normalize to all-caps so QuillPilot's screenplay styles match expectations.
+            var runs = paragraph.runs
+            if styleName == "Screenplay — Slugline" ||
+                styleName == "Screenplay — Character" ||
+                styleName == "Screenplay — Transition" ||
+                styleName == "Screenplay — Shot" {
+                runs = runs.map {
+                    var r = $0
+                    r.text = r.text.uppercased()
+                    return r
+                }
+            }
+            if styleName == "Screenplay — Slugline" {
+                runs = runs.map {
+                    var r = $0
+                    r.text = r.text.replacingOccurrences(of: " - ", with: " – ")
+                    return r
+                }
+            }
+
+            let paragraphText = runs.map { $0.text }.joined()
             let paraAttributed = NSMutableAttributedString(string: paragraphText, attributes: baseAttributes)
 
             // Apply run-level formatting when present.
             var cursor = 0
-            for run in paragraph.runs {
+            for run in runs {
                 let length = (run.text as NSString).length
                 let range = NSRange(location: cursor, length: length)
                 cursor += length

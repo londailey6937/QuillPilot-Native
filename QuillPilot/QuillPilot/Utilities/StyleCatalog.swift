@@ -151,7 +151,7 @@ final class StyleCatalog {
             return rebased
         }
 
-        func ensureStandardStyles(_ styles: [String: StyleDefinition]) -> [String: StyleDefinition] {
+        func ensureStandardStyles(_ styles: [String: StyleDefinition], includePartStyles: Bool = true) -> [String: StyleDefinition] {
             var merged = styles
 
             let baseStyle: StyleDefinition? =
@@ -170,6 +170,67 @@ final class StyleCatalog {
             let h2Size = max(11, baseSize - 1)
             let h3Size = max(10, baseSize - 2)
             let captionSize = max(10, baseSize - 3)
+
+            if includePartStyles {
+                // Ensure “Part …” structural styles exist across prose/manuscript templates.
+                let partNumberSize = max(11, baseSize)
+                let partTitleSize = max(16, baseSize + 6)
+                let partSubtitleSize = max(11, baseSize)
+
+                if merged["Part Number"] == nil {
+                    merged["Part Number"] = baseDefinition(
+                        font: font,
+                        size: partNumberSize,
+                        bold: true,
+                        italic: false,
+                        color: color,
+                        background: background,
+                        alignment: .center,
+                        lineHeight: 1.1,
+                        before: 24,
+                        after: 6,
+                        headIndent: 0,
+                        firstLine: 0,
+                        tailIndent: 0
+                    )
+                }
+
+                if merged["Part Title"] == nil {
+                    merged["Part Title"] = baseDefinition(
+                        font: font,
+                        size: partTitleSize,
+                        bold: false,
+                        italic: false,
+                        color: color,
+                        background: background,
+                        alignment: .center,
+                        lineHeight: 1.15,
+                        before: 24,
+                        after: 18,
+                        headIndent: 0,
+                        firstLine: 0,
+                        tailIndent: 0
+                    )
+                }
+
+                if merged["Part Subtitle"] == nil {
+                    merged["Part Subtitle"] = baseDefinition(
+                        font: font,
+                        size: partSubtitleSize,
+                        bold: false,
+                        italic: false,
+                        color: color,
+                        background: background,
+                        alignment: .center,
+                        lineHeight: 1.15,
+                        before: 0,
+                        after: 18,
+                        headIndent: 0,
+                        firstLine: 0,
+                        tailIndent: 0
+                    )
+                }
+            }
 
             if merged["Heading 1"] == nil {
                 merged["Heading 1"] = baseDefinition(
@@ -275,45 +336,45 @@ final class StyleCatalog {
         // but allow users to pick a font family directly via templates.
         let baseManuscript = fictionStyles()
 
-        let minionPro = StyleTemplate(name: "Minion Pro", styles: ensureStandardStyles(rebaseFonts(baseManuscript, fontFamily: "Minion Pro")))
-        let arial = StyleTemplate(name: "Arial", styles: ensureStandardStyles(rebaseFonts(baseManuscript, fontFamily: "Arial")))
-        let timesNewRoman = StyleTemplate(name: "Times New Roman", styles: ensureStandardStyles(rebaseFonts(baseManuscript, fontFamily: "Times New Roman")))
-        let calibre = StyleTemplate(name: "Calibre", styles: ensureStandardStyles(rebaseFonts(baseManuscript, fontFamily: "Calibre")))
-        let inter = StyleTemplate(name: "Inter", styles: ensureStandardStyles(rebaseFonts(baseManuscript, fontFamily: "Inter")))
-        let helvetica = StyleTemplate(name: "Helvetica", styles: ensureStandardStyles(rebaseFonts(baseManuscript, fontFamily: "Helvetica")))
+        let minionPro = StyleTemplate(name: "Minion Pro", styles: ensureStandardStyles(rebaseFonts(baseManuscript, fontFamily: "Minion Pro"), includePartStyles: true))
+        let arial = StyleTemplate(name: "Arial", styles: ensureStandardStyles(rebaseFonts(baseManuscript, fontFamily: "Arial"), includePartStyles: true))
+        let timesNewRoman = StyleTemplate(name: "Times New Roman", styles: ensureStandardStyles(rebaseFonts(baseManuscript, fontFamily: "Times New Roman"), includePartStyles: true))
+        let calibre = StyleTemplate(name: "Calibre", styles: ensureStandardStyles(rebaseFonts(baseManuscript, fontFamily: "Calibre"), includePartStyles: true))
+        let inter = StyleTemplate(name: "Inter", styles: ensureStandardStyles(rebaseFonts(baseManuscript, fontFamily: "Inter"), includePartStyles: true))
+        let helvetica = StyleTemplate(name: "Helvetica", styles: ensureStandardStyles(rebaseFonts(baseManuscript, fontFamily: "Helvetica"), includePartStyles: true))
 
         let poetry = StyleTemplate(
             name: "Poetry",
-            styles: ensureStandardStyles(poetryStyles())
+            styles: ensureStandardStyles(poetryStyles(), includePartStyles: false)
         )
 
         let screenplay = StyleTemplate(
             name: "Screenplay",
-            styles: ensureStandardStyles(screenplayStyles())
+            styles: ensureStandardStyles(screenplayStyles(), includePartStyles: false)
         )
         let baskerville = StyleTemplate(
             name: "Baskerville Classic",
-            styles: ensureStandardStyles(baskervilleStyles())
+            styles: ensureStandardStyles(baskervilleStyles(), includePartStyles: true)
         )
         let garamond = StyleTemplate(
             name: "Garamond Elegant",
-            styles: ensureStandardStyles(garamondStyles())
+            styles: ensureStandardStyles(garamondStyles(), includePartStyles: true)
         )
         let palatino = StyleTemplate(
             name: "Palatino",
-            styles: ensureStandardStyles(palatinoStyles())
+            styles: ensureStandardStyles(palatinoStyles(), includePartStyles: true)
         )
         let hoefler = StyleTemplate(
             name: "Hoefler Text",
-            styles: ensureStandardStyles(hoeflerStyles())
+            styles: ensureStandardStyles(hoeflerStyles(), includePartStyles: true)
         )
         let bradley = StyleTemplate(
             name: "Bradley Hand (Script)",
-            styles: ensureStandardStyles(bradleyHandStyles())
+            styles: ensureStandardStyles(bradleyHandStyles(), includePartStyles: true)
         )
         let snell = StyleTemplate(
             name: "Snell Roundhand (Script)",
-            styles: ensureStandardStyles(snellRoundhandStyles())
+            styles: ensureStandardStyles(snellRoundhandStyles(), includePartStyles: true)
         )
 
         return [

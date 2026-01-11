@@ -38,15 +38,18 @@ final class SceneListWindowController: NSWindowController {
     }
 
     init() {
-        let window = NSWindow(
+        let window = NSPanel(
             contentRect: NSRect(x: 0, y: 0, width: 320, height: 480),
-            styleMask: [.titled, .closable, .resizable, .miniaturizable],
+            styleMask: [.titled, .closable, .resizable, .miniaturizable, .utilityWindow],
             backing: .buffered,
             defer: false
         )
         window.title = "Scenes"
         window.minSize = NSSize(width: 280, height: 300)
         window.isReleasedWhenClosed = false
+        // Treat as an in-app utility panel: stay above Quill Pilot windows, but hide when switching apps.
+        window.isFloatingPanel = true
+        window.hidesOnDeactivate = true
         window.collectionBehavior = [.moveToActiveSpace]
 
         // Set window appearance to match theme (light/dark mode)

@@ -289,6 +289,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         // App Menu
         let appMenuItem = NSMenuItem()
+        // This controls the app name shown in the menu bar (next to the  menu).
+        // Without setting it explicitly, AppKit can fall back to the process/bundle name ("QuillPilot").
+        appMenuItem.title = "Quill Pilot"
         mainMenu.addItem(appMenuItem)
 
         let appMenu = NSMenu()
@@ -482,6 +485,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         helpMenu.addItem(dialogueTipsItem)
 
         NSApp.mainMenu = mainMenu
+        // Safety net: AppKit sometimes uses the process/bundle name here.
+        // Force the displayed menu bar app title to match branding.
+        NSApp.mainMenu?.item(at: 0)?.title = "Quill Pilot"
         NSApp.windowsMenu = windowMenu
         NSApp.helpMenu = helpMenu
     }

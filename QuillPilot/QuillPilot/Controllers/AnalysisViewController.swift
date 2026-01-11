@@ -563,6 +563,9 @@ class AnalysisViewController: NSViewController, NSWindowDelegate {
             }
             sceneListWindow?.showWindow(nil)
             sceneListWindow?.window?.makeKeyAndOrderFront(nil)
+            if let parent = view.window, let child = sceneListWindow?.window, child.parent != parent {
+                parent.addChildWindow(child, ordered: .above)
+            }
             return
         }
 

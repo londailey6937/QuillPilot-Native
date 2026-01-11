@@ -294,7 +294,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let appMenu = NSMenu()
         appMenuItem.submenu = appMenu
 
-        appMenu.addItem(NSMenuItem(title: "About QuillPilot", action: #selector(showAboutWindow(_:)), keyEquivalent: ""))
+        appMenu.addItem(NSMenuItem(title: "About Quill Pilot", action: #selector(showAboutWindow(_:)), keyEquivalent: ""))
         appMenu.addItem(.separator())
 
         let prefs = NSMenuItem(title: "Preferences…", action: #selector(showPreferences(_:)), keyEquivalent: ",")
@@ -311,7 +311,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         appMenu.addItem(.separator())
 
-        appMenu.addItem(NSMenuItem(title: "Hide QuillPilot", action: #selector(NSApplication.hide(_:)), keyEquivalent: "h"))
+        appMenu.addItem(NSMenuItem(title: "Hide Quill Pilot", action: #selector(NSApplication.hide(_:)), keyEquivalent: "h"))
         let hideOthers = NSMenuItem(title: "Hide Others", action: #selector(NSApplication.hideOtherApplications(_:)), keyEquivalent: "h")
         hideOthers.keyEquivalentModifierMask = [.command, .option]
         appMenu.addItem(hideOthers)
@@ -319,7 +319,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         appMenu.addItem(.separator())
 
-        appMenu.addItem(NSMenuItem(title: "Quit QuillPilot", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q"))
+        appMenu.addItem(NSMenuItem(title: "Quit Quill Pilot", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q"))
 
         // File Menu
         let fileMenuItem = NSMenuItem()
@@ -473,7 +473,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let helpMenu = NSMenu(title: "Help")
         helpMenuItem.submenu = helpMenu
 
-        let documentationItem = NSMenuItem(title: "QuillPilot Help", action: #selector(showDocumentation(_:)), keyEquivalent: "?")
+        let documentationItem = NSMenuItem(title: "Quill Pilot Help", action: #selector(showDocumentation(_:)), keyEquivalent: "?")
         documentationItem.target = self
         helpMenu.addItem(documentationItem)
 
@@ -573,7 +573,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             backing: .buffered,
             defer: false
         )
-        window.title = "About QuillPilot"
+        window.title = "About Quill Pilot"
         window.isReleasedWhenClosed = false
 
         let contentView = NSView(frame: NSRect(origin: .zero, size: windowSize))
@@ -594,7 +594,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         contentView.addSubview(logoView)
 
         // App name
-        let nameLabel = NSTextField(labelWithString: "QuillPilot")
+        let nameLabel = NSTextField(labelWithString: "Quill Pilot")
         nameLabel.font = NSFont.systemFont(ofSize: 24, weight: .semibold)
         nameLabel.textColor = theme.textColor
         nameLabel.alignment = .center
@@ -621,7 +621,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         // Copyright
         let year = Calendar.current.component(.year, from: Date())
-        let copyrightLabel = NSTextField(labelWithString: "© \(year) QuillPilot. All rights reserved.")
+        let copyrightLabel = NSTextField(labelWithString: "© \(year) Quill Pilot. All rights reserved.")
         copyrightLabel.font = NSFont.systemFont(ofSize: 10)
         copyrightLabel.textColor = NSColor.tertiaryLabelColor
         copyrightLabel.alignment = .center

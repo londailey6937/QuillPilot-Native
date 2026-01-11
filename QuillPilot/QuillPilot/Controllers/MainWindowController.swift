@@ -81,7 +81,7 @@ class MainWindowController: NSWindowController {
             defer: false
         )
 
-        window.title = "QuillPilot"
+        window.title = "Quill Pilot"
         window.minSize = NSSize(width: 900, height: 650)
         window.isReleasedWhenClosed = false
         window.isRestorable = false
@@ -1414,7 +1414,7 @@ extension MainWindowController {
         // Reset the current file path and window title
         currentDocumentURL = nil
         hasUnsavedChanges = false
-        window?.title = "QuillPilot"
+        window?.title = "Quill Pilot"
         headerView.setDocumentTitle("")
         debugLog("🆕 NEW DOCUMENT: Complete")
     }
@@ -1536,7 +1536,7 @@ extension MainWindowController {
             domain: "QuillPilot.TextDecoding",
             code: 1,
             userInfo: [
-                NSLocalizedDescriptionKey: "QuillPilot couldn't determine this file's text encoding.",
+                NSLocalizedDescriptionKey: "Quill Pilot couldn't determine this file's text encoding.",
                 NSLocalizedRecoverySuggestionErrorKey: "Try re-saving/exporting it as UTF-8 or UTF-16, then import again."
             ]
         )
@@ -1717,7 +1717,7 @@ extension MainWindowController {
                     DispatchQueue.main.async {
                         self?.presentErrorAlert(
                             message: "Failed to open Pages document",
-                            details: "QuillPilot can import .pages using macOS conversion filters or Apple Pages.\n\nIf this fails, make sure Pages is installed and allow QuillPilot to control Pages when macOS asks for permission.\n\nDetails: \(error.localizedDescription)"
+                            details: "Quill Pilot can import .pages using macOS conversion filters or Apple Pages.\n\nIf this fails, make sure Pages is installed and allow Quill Pilot to control Pages when macOS asks for permission.\n\nDetails: \(error.localizedDescription)"
                         )
                     }
                 }
@@ -1886,7 +1886,7 @@ extension MainWindowController {
         default:
             presentErrorAlert(
                 message: "Unsupported format",
-                details: "QuillPilot opens .docx, .odt, .pages, .rtf, .rtfd, .txt, .md, .html, and .fadein documents.\n\nUse Export to save as Word (.docx), OpenDocument (.odt), RTF/RTFD, PDF, ePub, Kindle, HTML, or Text."
+                details: "Quill Pilot opens .docx, .odt, .pages, .rtf, .rtfd, .txt, .md, .html, and .fadein documents.\n\nUse Export to save as Word (.docx), OpenDocument (.odt), RTF/RTFD, PDF, ePub, Kindle, HTML, or Text."
             )
             return
         }

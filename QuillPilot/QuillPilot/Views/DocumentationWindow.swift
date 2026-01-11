@@ -22,7 +22,7 @@ class DocumentationWindowController: NSWindowController {
             backing: .buffered,
             defer: false
         )
-        window.title = "QuillPilot Help"
+        window.title = "Quill Pilot Help"
         window.minSize = NSSize(width: 700, height: 500)
 
         self.init(window: window)
@@ -43,7 +43,7 @@ class DocumentationWindowController: NSWindowController {
         tabView.tabViewType = .topTabsBezelBorder
 
         // Create tabs
-        createTab(title: "❓ Why QuillPilot?", identifier: "why")
+        createTab(title: "❓ Why Quill Pilot?", identifier: "why")
         createTab(title: "📊 Analysis Tools", identifier: "analysis")
         createTab(title: "👥 Character Features", identifier: "characters")
         createTab(title: "📖 Plot & Structure", identifier: "plot")
@@ -98,6 +98,11 @@ class DocumentationWindowController: NSWindowController {
         loadScenesTab()
         loadShortcutsTab()
     }
+
+        private func normalizeAppNameInDocumentation(_ content: NSMutableAttributedString) {
+                let fullRange = NSRange(location: 0, length: content.length)
+                _ = content.mutableString.replaceOccurrences(of: "QuillPilot", with: "Quill Pilot", options: [], range: fullRange)
+        }
 
         // MARK: - Tab: Why QuillPilot?
 
@@ -200,6 +205,7 @@ Mid-to-late career fiction writers benefit from tools that refine execution, mai
 QuillPilot is for the latter.
 """, color: bodyColor))
 
+        normalizeAppNameInDocumentation(content)
         textView.textStorage?.setAttributedString(content)
     }
 
@@ -312,6 +318,7 @@ Authenticity Score - sounds like real speech
 Balance - distribution among characters
 """, color: bodyColor))
 
+        normalizeAppNameInDocumentation(content)
         textView.textStorage?.setAttributedString(content)
     }
 
@@ -714,6 +721,7 @@ Interactive Features:
 • Badges highlight significant shifts
 """, color: bodyColor))
 
+        normalizeAppNameInDocumentation(content)
         textView.textStorage?.setAttributedString(content)
     }
 
@@ -829,6 +837,7 @@ Story Directions (🧭 in Navigator):
 • Plan story progression
 """, color: bodyColor))
 
+        normalizeAppNameInDocumentation(content)
         textView.textStorage?.setAttributedString(content)
     }
 
@@ -1151,6 +1160,7 @@ Q: How many scenes should I have?
 A: As many as your story needs. A 80,000-word novel might have 40-80 scenes, but there's no rule. Use what's useful.
 """, color: bodyColor))
 
+        normalizeAppNameInDocumentation(content)
         textView.textStorage?.setAttributedString(content)
     }
 
@@ -1307,6 +1317,7 @@ Tip: Auto-analyze behavior can be configured in Preferences.
 • Use ⌘F to quickly search your document
 """, color: bodyColor))
 
+        normalizeAppNameInDocumentation(content)
         textView.textStorage?.setAttributedString(content)
     }
 

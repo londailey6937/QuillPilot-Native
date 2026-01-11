@@ -24,7 +24,7 @@ class WelcomeWindowController: NSWindowController {
             backing: .buffered,
             defer: false
         )
-        window.title = "Welcome to QuillPilot"
+        window.title = "Welcome to Quill Pilot"
         window.center()
         window.isReleasedWhenClosed = false
 
@@ -53,7 +53,7 @@ class WelcomeWindowController: NSWindowController {
         leftPanel.addSubview(logoView)
 
         // App title
-        let titleLabel = NSTextField(labelWithString: "QuillPilot")
+        let titleLabel = NSTextField(labelWithString: "Quill Pilot")
         titleLabel.font = NSFont.systemFont(ofSize: 28, weight: .bold)
         titleLabel.textColor = NSColor(red: 0.17, green: 0.24, blue: 0.31, alpha: 1.0)
         titleLabel.alignment = .center
@@ -61,7 +61,7 @@ class WelcomeWindowController: NSWindowController {
         leftPanel.addSubview(titleLabel)
 
         // Tagline - Line 1
-        let tagline1 = NSTextField(labelWithString: "Your Complete Writing Tool")
+        let tagline1 = NSTextField(labelWithString: "Your Writing Tool")
         tagline1.font = NSFont.systemFont(ofSize: 13, weight: .regular)
         tagline1.textColor = NSColor(red: 0.4, green: 0.4, blue: 0.4, alpha: 1.0)
         tagline1.alignment = .center

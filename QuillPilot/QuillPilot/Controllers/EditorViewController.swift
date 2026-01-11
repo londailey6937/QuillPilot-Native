@@ -370,11 +370,13 @@ class EditorViewController: NSViewController {
 
         // Page container grows to fit all content (support up to 2000 pages)
         // 2000 pages × 792pt + 1999 gaps × 20pt = ~1,624,000pts
-        // Start with a reasonable initial size (10 pages) - will expand as needed
-        let initialHeight = pageHeight * editorZoom * 10
+        // Start with a reasonable initial size (10 pages) - will expand/shrink as needed
+        let initialPages = 10
+        let initialHeight = pageHeight * editorZoom * CGFloat(initialPages)
         let initialPageContainer = PageContainerView(frame: NSRect(x: 0, y: 0, width: 612 * editorZoom, height: initialHeight))
         initialPageContainer.pageHeight = pageHeight * editorZoom
         initialPageContainer.pageGap = 20
+        initialPageContainer.numPages = initialPages
         pageContainer = initialPageContainer
         // Disable layer backing to allow traditional view drawing for all pages
         // pageContainer.wantsLayer = true
@@ -383,7 +385,8 @@ class EditorViewController: NSViewController {
         // pageContainer.layer?.shadowOffset = NSSize(width: 0, height: 2)
         // pageContainer.layer?.shadowRadius = 10
 
-        // Create text view that grows with content
+        // Create text view. We manage its height via our page container sizing logic
+        // so it stays aligned with drawn page backgrounds.
         let textFrame = pageContainer.bounds.insetBy(dx: standardMargin * editorZoom, dy: standardMargin * editorZoom)
         let clickable = AttachmentClickableTextView(frame: textFrame)
         clickable.onMouseDownInTextView = { [weak self, weak clickable] point in
@@ -404,7 +407,7 @@ class EditorViewController: NSViewController {
         textView = clickable
         textView.minSize = NSSize(width: textFrame.width, height: textFrame.height)
         textView.maxSize = NSSize(width: textFrame.width, height: CGFloat.greatestFiniteMagnitude)
-        textView.isVerticallyResizable = true
+        textView.isVerticallyResizable = false
         textView.isHorizontallyResizable = false
         textView.autoresizingMask = []  // Remove autoresizing to prevent constraint conflicts
         textView.textContainer?.containerSize = NSSize(width: textFrame.width, height: CGFloat.greatestFiniteMagnitude)
@@ -475,26 +478,73 @@ class EditorViewController: NSViewController {
 
     /// Update the page container to accommodate all content with proper pagination
     func updatePageLayout() {
-        // Use estimated page count from text length to avoid forcing full layout
-        let charCount = textView.string.count
-        // Roughly 3000 chars per page at standard formatting
-        let estimatedPages = max(1, Int(ceil(Double(charCount) / 3000.0)))
+        guard let layoutManager = textView.layoutManager,
+              let textContainer = textView.textContainer else {
+            debugLog("📄 Pagination: missing layoutManager/textContainer; forcing 1 page")
+            setPageCount(1)
+            return
+        }
 
-        setPageCount(estimatedPages)
+        let textLength = textView.textStorage?.length ?? 0
+        debugLog("📄 Pagination.updatePageLayout: len=\(textLength) zoom=\(editorZoom) mainThread=\(Thread.isMainThread)")
+
+        // Force layout so usedRect reflects real rendered height (important for rich imports like RTF).
+        // `ensureLayout(for:)` can still under-measure if the text system hasn't finished laying out
+        // the full range yet, so for moderately-sized documents we ensure layout for the full range.
+        if let storage = textView.textStorage, storage.length > 0, storage.length <= 250_000 {
+            layoutManager.ensureLayout(forCharacterRange: NSRange(location: 0, length: storage.length))
+        } else {
+            layoutManager.ensureLayout(for: textContainer)
+        }
+
+        let usedRect = layoutManager.usedRect(for: textContainer)
+        let usedHeight = max(0, usedRect.height)
+        let scaledPageHeight = pageHeight * editorZoom
+        let gap: CGFloat = 20
+        let margin = standardMargin * editorZoom
+
+        // We need enough total container height so the text frame can contain `usedHeight`.
+        // textFrameHeight = totalHeight - 2*margin
+        // totalHeight(pages) = pages*(scaledPageHeight + gap) - gap
+        // Solve for minimal pages.
+        let denominator = max(1, scaledPageHeight + gap)
+        let numerator = usedHeight + (margin * 2) + gap
+        let neededPages = max(1, Int(ceil(numerator / denominator)))
+
+        debugLog(
+            "📄 Pagination.measure: usedRect=\(NSStringFromRect(usedRect)) usedH=\(usedHeight.rounded()) scaledPageH=\(scaledPageHeight.rounded()) neededPages=\(neededPages)"
+        )
+
+        setPageCount(neededPages)
     }
 
     /// Set exact page count and resize containers
     private func setPageCount(_ neededPages: Int) {
         guard let pageContainerView = pageContainer as? PageContainerView else { return }
-        guard pageContainerView.numPages != neededPages else { return }
 
         let scaledPageHeight = pageHeight * editorZoom
+        let desiredGap: CGFloat = 20
+        let totalHeight = CGFloat(neededPages) * (scaledPageHeight + desiredGap) - desiredGap
+        let containerWidth = pageWidth * editorZoom
+
+        // If nothing materially changes, skip work.
+        let heightMatches = abs(pageContainer.frame.height - totalHeight) < 0.5
+        let widthMatches = abs(pageContainer.frame.width - containerWidth) < 0.5
+        let pagesMatch = pageContainerView.numPages == neededPages
+        let pageHeightMatches = abs(pageContainerView.pageHeight - scaledPageHeight) < 0.5
+        let gapMatches = abs(pageContainerView.pageGap - desiredGap) < 0.5
+        if pagesMatch && pageHeightMatches && gapMatches && heightMatches && widthMatches {
+            debugLog("📄 Pagination.setPageCount: no-op (pages=\(neededPages), frame=\(NSStringFromRect(pageContainer.frame)))")
+            return
+        }
+
+        debugLog(
+            "📄 Pagination.setPageCount: pages \(pageContainerView.numPages)→\(neededPages) containerSize \(pageContainer.frame.size)→(\(containerWidth.rounded()), \(totalHeight.rounded()))"
+        )
+
         pageContainerView.numPages = neededPages
         pageContainerView.pageHeight = scaledPageHeight
-        pageContainerView.pageGap = 20
-
-        let totalHeight = CGFloat(neededPages) * (scaledPageHeight + pageContainerView.pageGap) - pageContainerView.pageGap
-        let containerWidth = pageWidth * editorZoom
+        pageContainerView.pageGap = desiredGap
         pageContainer.frame = NSRect(x: 0, y: 0, width: containerWidth, height: totalHeight)
 
         let textFrame = NSRect(
@@ -511,6 +561,10 @@ class EditorViewController: NSViewController {
         documentView.frame = NSRect(x: 0, y: 0, width: containerWidth, height: totalHeight)
         pageContainer.needsDisplay = true
         updatePageCentering()
+
+        debugLog(
+            "📄 Pagination.frames: pageContainer=\(NSStringFromRect(pageContainer.frame)) textView=\(NSStringFromRect(textView.frame)) documentView=\(NSStringFromRect(documentView.frame))"
+        )
     }
 
     // MARK: - Search and Replace
@@ -2041,6 +2095,8 @@ class EditorViewController: NSViewController {
     func setAttributedContentDirect(_ attributed: NSAttributedString) {
         delegate?.suspendAnalysisForLayout()
 
+        debugLog("📥 Import.setAttributedContentDirect: len=\(attributed.length) zoom=\(editorZoom)")
+
         // For large documents, defer layout to prevent UI freeze
         let isLargeDocument = attributed.length > 100_000
 
@@ -2072,6 +2128,7 @@ class EditorViewController: NSViewController {
             textView.layoutManager?.backgroundLayoutEnabled = true
             // Defer heavy layout work AND analysis until pages are ready
             DispatchQueue.main.async { [weak self] in
+                debugLog("📥 Import: running deferred updatePageLayout (large doc)")
                 self?.updatePageLayout()
                 self?.scrollToTop()
                 // Wait for layout to settle before triggering analysis
@@ -2080,8 +2137,19 @@ class EditorViewController: NSViewController {
                 }
             }
         } else {
+            debugLog("📥 Import: running immediate updatePageLayout")
             updatePageLayout()
             scrollToTop()
+            // For rich imports (RTF/RTFD/HTML/ODT), AppKit may continue layout asynchronously.
+            // Recompute pagination after a short delay so page backgrounds match the final flow.
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) { [weak self] in
+                debugLog("📥 Import: delayed updatePageLayout (+0.25s)")
+                self?.updatePageLayout()
+            }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.75) { [weak self] in
+                debugLog("📥 Import: delayed updatePageLayout (+0.75s)")
+                self?.updatePageLayout()
+            }
             delegate?.resumeAnalysisAfterLayout()
         }
     }
@@ -4460,52 +4528,10 @@ case "Book Subtitle":
         let scaledPageHeight = pageHeight * editorZoom
         let pageX = max((visibleWidth - scaledPageWidth) / 2, 0)
 
-        // Use fast estimation for page count to avoid expensive layout operations
-        var numPages = 1
-
-        // Estimate pages based on word/character count (much faster than full layout)
-        let textLength = textView.string.utf16.count
-        if textLength > 0 {
-            // Average ~250 words per page, ~5 chars per word = ~1250 chars per page
-            // Add some buffer for formatting, headers, etc.
-            let charsPerPageEstimate = 1200.0
-            numPages = max(1, Int(ceil(Double(textLength) / charsPerPageEstimate)))
-        }
-
-        // Skip expensive layout calculation if currently in columns or tables
-        // Modifying textContainer geometry while in a table/column can cause layout loops
-        let isInColumnsOrTables = isCurrentPositionInColumns() || isCurrentPositionInTable()
-
-        // Only do expensive full layout calculation if:
-        // - Document is very small (< 5 pages estimated)
-        // - NOT currently in columns or tables (to avoid layout loops)
-        if numPages < 5 && !isInColumnsOrTables,
-           let layoutManager = textView.layoutManager,
-           let textContainer = textView.textContainer {
-            // Headers/footers render inside the standard margins and do not reduce the text area.
-            let pageTextHeight = scaledPageHeight - (standardMargin * 2) * editorZoom
-            let textWidth = max(36, scaledPageWidth - (leftPageMargin + rightPageMargin) * editorZoom)
-
-            // Preserve current state
-            let oldSize = textContainer.size
-            let oldExclusions = textContainer.exclusionPaths
-
-            // Measure with clean container sized to single-page text area
-            textContainer.exclusionPaths = []
-            textContainer.size = NSSize(width: textWidth, height: CGFloat.greatestFiniteMagnitude)
-            layoutManager.textContainerChangedGeometry(textContainer)
-
-            // For small documents, do a quick layout without full invalidation
-            let usedHeight = layoutManager.usedRect(for: textContainer).height
-            let measuredPages = Int(ceil(usedHeight / pageTextHeight))
-
-            numPages = max(1, measuredPages)
-
-            // Restore container state
-            textContainer.size = oldSize
-            textContainer.exclusionPaths = oldExclusions
-            layoutManager.textContainerChangedGeometry(textContainer)
-        }
+        // IMPORTANT: Do not recompute the page count here.
+        // Pagination is owned by updatePageLayout() / setPageCount(), which measures the actual
+        // laid out text height. This method should only center horizontally and update frames.
+        let numPages = max(1, (pageContainer as? PageContainerView)?.numPages ?? 1)
 
         // Total height includes all pages plus gaps between them
         let pageGap: CGFloat = 20
@@ -4592,7 +4618,8 @@ case "Book Subtitle":
         updateShadowPath()
 
         let docWidth = max(visibleWidth, pageX + scaledPageWidth + 20)
-        let docHeight = max(totalHeight + 1000, 1650000 * editorZoom)  // Ensure enough space for large documents
+        // Keep the document view sized to the content (with a small bottom pad).
+        let docHeight = max(totalHeight + 200, scrollView.contentView.bounds.height + 20)
         documentView.frame = NSRect(x: 0, y: 0, width: docWidth, height: docHeight)
 
         // Restore cursor position AFTER layout changes

@@ -134,6 +134,7 @@ private extension NSImage {
 protocol EditorViewControllerDelegate: AnyObject {
     func textDidChange()
     func titleDidChange(_ title: String)
+    func authorDidChange(_ author: String)
     func selectionDidChange()
     func suspendAnalysisForLayout()
     func resumeAnalysisAfterLayout()
@@ -2229,10 +2230,17 @@ class EditorViewController: NSViewController {
     func setAttributedContent(_ attributed: NSAttributedString) {
         delegate?.suspendAnalysisForLayout()
 
+        // Reset manuscript metadata (prevents leaking across documents)
+        manuscriptTitle = "Untitled"
+        manuscriptAuthor = "Author Name"
+
         // Apply style retagging to infer paragraph styles
         let retagged = detectAndRetagStyles(in: attributed)
         textView.textStorage?.setAttributedString(retagged)
         textView.setSelectedRange(NSRange(location: 0, length: 0))
+
+        // Sync title/author from the first paragraph if tagged.
+        checkAndUpdateTitle()
 
         clampImportedImageAttachmentsToSafeBounds()
 
@@ -2249,6 +2257,10 @@ class EditorViewController: NSViewController {
     func setAttributedContentDirect(_ attributed: NSAttributedString) {
         delegate?.suspendAnalysisForLayout()
 
+        // Reset manuscript metadata (prevents leaking across documents)
+        manuscriptTitle = "Untitled"
+        manuscriptAuthor = "Author Name"
+
         debugLog("📥 Import.setAttributedContentDirect: len=\(attributed.length) zoom=\(editorZoom)")
 
         // For large documents, defer layout to prevent UI freeze
@@ -2263,6 +2275,9 @@ class EditorViewController: NSViewController {
         let retagged = detectAndRetagStyles(in: attributed)
         textView.textStorage?.setAttributedString(retagged)
         textView.setSelectedRange(NSRange(location: 0, length: 0))
+
+        // Sync title/author from the first paragraph if tagged.
+        checkAndUpdateTitle()
 
         clampImportedImageAttachmentsToSafeBounds()
 
@@ -2993,6 +3008,10 @@ class EditorViewController: NSViewController {
         // Reset to single column first
         setColumnCount(1)
 
+        // Reset manuscript metadata (prevents leaking across documents)
+        manuscriptTitle = "Untitled"
+        manuscriptAuthor = "Author Name"
+
         // Clear all text
         textView.string = ""
 
@@ -3408,12 +3427,22 @@ class EditorViewController: NSViewController {
     func applyStyle(named styleName: String) {
         let styledByCatalog = applyCatalogStyle(named: styleName)
         if styledByCatalog {
-            if styleName == "Book Title" {
+            if styleName == "Book Title" || styleName == "Poem Title" || styleName == "Poetry — Title" {
                 if let range = textView.selectedRanges.first as? NSRange, range.length == 0 {
                     let paragraphRange = (textView.string as NSString).paragraphRange(for: range)
                     let titleText = (textView.string as NSString).substring(with: paragraphRange).trimmingCharacters(in: .whitespacesAndNewlines)
                     if !titleText.isEmpty {
                         delegate?.titleDidChange(titleText)
+                    }
+                }
+            }
+
+            if styleName == "Author Name" || styleName == "Poetry — Author" || styleName == "Poet Name" {
+                if let range = textView.selectedRanges.first as? NSRange, range.length == 0 {
+                    let paragraphRange = (textView.string as NSString).paragraphRange(for: range)
+                    let authorText = (textView.string as NSString).substring(with: paragraphRange).trimmingCharacters(in: .whitespacesAndNewlines)
+                    if !authorText.isEmpty {
+                        delegate?.authorDidChange(authorText)
                     }
                 }
             }
@@ -6078,6 +6107,29 @@ extension EditorViewController: NSTextViewDelegate {
 
         // Get the current paragraph
         let paragraphRange = (textView.string as NSString).paragraphRange(for: selectedRange)
+
+        // Prefer explicit style tagging (more reliable than heuristics).
+        if let styleName = textStorage.attribute(styleAttributeKey, at: paragraphRange.location, effectiveRange: nil) as? String {
+            let trimmed = (textView.string as NSString)
+                .substring(with: paragraphRange)
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+
+            let isTitleStyle = (styleName == "Poem Title" || styleName == "Poetry — Title" || styleName == "Book Title")
+            let isAuthorStyle = (styleName == "Poetry — Author" || styleName == "Poet Name" || styleName == "Author Name")
+
+            if !trimmed.isEmpty {
+                if isTitleStyle {
+                    delegate?.titleDidChange(trimmed)
+                }
+                if isAuthorStyle {
+                    delegate?.authorDidChange(trimmed)
+                }
+            }
+
+            if isTitleStyle || isAuthorStyle {
+                return
+            }
+        }
 
         // Check if this paragraph has "Book Title" formatting (centered, 24pt Times New Roman)
         var isBookTitle = false

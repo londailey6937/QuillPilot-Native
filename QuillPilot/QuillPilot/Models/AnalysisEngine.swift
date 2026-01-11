@@ -124,10 +124,14 @@ struct PoetryInsights {
 
     struct EmotionalTrajectory {
         let lineScores: [Double] // -1..1 per analyzed line
+        let stanzaScores: [Double] // -1..1 per stanza (average of lineScores)
         let peakLine: Int?
         let troughLine: Int?
+        let peakStanza: Int?
+        let troughStanza: Int?
         let volatility: Double
         let notableShiftLines: [Int]
+        let notableShiftStanzas: [Int]
     }
 
     struct ThemeMotif {
@@ -143,6 +147,7 @@ struct PoetryInsights {
 
     enum PoetryMode: String {
         case lyric = "Lyric"
+        case contemplative = "Contemplative"
         case narrative = "Narrative"
         case hybrid = "Hybrid"
     }
@@ -592,14 +597,20 @@ class AnalysisEngine {
         // Voice & rhetoric
         let voice = analyzeVoiceAndRhetoric(lines: lines, tokensByLine: tokensByLine)
 
+        let stanzaLineCounts = stanzas.map { $0.count }
+
         // Emotional trajectory
-        let emotion = analyzePoetryEmotion(lines: lines, tokensByLine: tokensByLine, candidateVoltaLine: voice.candidateVoltaLine)
+        let emotion = analyzePoetryEmotion(
+            lines: lines,
+            tokensByLine: tokensByLine,
+            stanzaLineCounts: stanzaLineCounts,
+            candidateVoltaLine: voice.candidateVoltaLine
+        )
 
         // Motifs
         let motif = analyzeMotifs(tokensByLine: tokensByLine)
 
         // Macro structure
-        let stanzaLineCounts = stanzas.map { $0.count }
         let longest = stanzaLineCounts.enumerated().max(by: { $0.element < $1.element })?.offset
         let shortest = stanzaLineCounts.enumerated().min(by: { $0.element < $1.element })?.offset
         let structure = PoetryInsights.MacroStructure(stanzaLineCounts: stanzaLineCounts, longestStanzaIndex: longest, shortestStanzaIndex: shortest)
@@ -719,6 +730,10 @@ class AnalysisEngine {
     ) -> PoetryInsights.WritersAnalysis {
         let stop = poetryStopwords
 
+        func formatCounted(_ items: ArraySlice<PoetryInsights.CountedItem>, limit: Int) -> String {
+            items.prefix(limit).map { "\($0.text) (\($0.count)×)" }.joined(separator: ", ")
+        }
+
         func pct(_ value: Double) -> String { "\(Int(round(value * 100)))%" }
 
         // --- Mode classification (very lightweight heuristic)
@@ -803,7 +818,7 @@ class AnalysisEngine {
         }
 
         if !formal.notableAnaphora.isEmpty {
-            let top = formal.notableAnaphora.prefix(2).map { "\($0.text)×\($0.count)" }.joined(separator: ", ")
+            let top = formatCounted(formal.notableAnaphora.prefix(2), limit: 2)
             pressure.append("You establish a rule early (anaphora): \(top). Consider breaking it once for emphasis.")
         }
 
@@ -836,7 +851,7 @@ class AnalysisEngine {
             imageLogic.append("Dominant senses (start → middle → end): \(dominantSenses(for: first)) → \(dominantSenses(for: middle)) → \(dominantSenses(for: last)).")
         }
         if !motif.topMotifs.isEmpty {
-            let top = motif.topMotifs.prefix(6).map { "\($0.text)×\($0.count)" }.joined(separator: ", ")
+            let top = formatCounted(motif.topMotifs.prefix(6), limit: 6)
             imageLogic.append("Recurring image-words (motifs): \(top). Let order do the thinking—arrange these to escalate, soften, or turn uncanny.")
         }
 
@@ -844,11 +859,11 @@ class AnalysisEngine {
         var voiceMgmt: [String] = []
         voiceMgmt.append("Address mode: \(voice.likelyAddressMode). Pronouns (1st/2nd/3rd): \(voice.firstPersonPronouns)/\(voice.secondPersonPronouns)/\(voice.thirdPersonPronouns).")
         if !voice.modality.isEmpty {
-            let items = voice.modality.prefix(4).map { "\($0.text)×\($0.count)" }.joined(separator: ", ")
+            let items = formatCounted(voice.modality.prefix(4), limit: 4)
             voiceMgmt.append("Modality pressure (must/should/never/etc.): \(items). Use certainty to create authority—or remove it to create vulnerability.")
         }
         if !voice.hedges.isEmpty {
-            let items = voice.hedges.prefix(4).map { "\($0.text)×\($0.count)" }.joined(separator: ", ")
+            let items = formatCounted(voice.hedges.prefix(4), limit: 4)
             voiceMgmt.append("Hedges (maybe/seems/etc.): \(items). Strategic hedging can imply fear, irony, or self-protection.")
         }
         if voice.exclamations == 0 && voice.questions == 0 {
@@ -856,13 +871,44 @@ class AnalysisEngine {
         }
 
         // --- Emotional Arc
-        var emotionalArc: [String] = []
-        if let peak = emotion.peakLine { emotionalArc.append("Peak intensity around line \(peak).") }
-        if let trough = emotion.troughLine { emotionalArc.append("Lowest point around line \(trough).") }
-        if !emotion.notableShiftLines.isEmpty {
-            let shifts = emotion.notableShiftLines.prefix(6).map(String.init).joined(separator: ", ")
-            emotionalArc.append("Notable emotional turns near lines: \(shifts).")
+        func excerpt(lineNumber: Int, maxLen: Int = 80) -> String? {
+            let idx = lineNumber - 1
+            guard idx >= 0 && idx < lines.count else { return nil }
+            let raw = lines[idx].trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !raw.isEmpty else { return nil }
+            if raw.count <= maxLen { return raw }
+            let cutIdx = raw.index(raw.startIndex, offsetBy: maxLen)
+            return String(raw[..<cutIdx]) + "…"
         }
+
+        var emotionalArc: [String] = []
+
+        let isLong = lines.count >= 80 || stanzas.count >= 10
+        if isLong, !emotion.stanzaScores.isEmpty {
+            if let peakStanza = emotion.peakStanza { emotionalArc.append("Peak intensity around stanza \(peakStanza).") }
+            if let troughStanza = emotion.troughStanza { emotionalArc.append("Lowest point around stanza \(troughStanza).") }
+            if !emotion.notableShiftStanzas.isEmpty {
+                let shifts = emotion.notableShiftStanzas.prefix(6).map(String.init).joined(separator: ", ")
+                emotionalArc.append("Major emotional turns by stanza: \(shifts).")
+            }
+            if let peak = emotion.peakLine, let ex = excerpt(lineNumber: peak) {
+                emotionalArc.append("Example near the peak (line \(peak)): \"\(ex)\"")
+            }
+            if let trough = emotion.troughLine, let ex = excerpt(lineNumber: trough) {
+                emotionalArc.append("Example near the low point (line \(trough)): \"\(ex)\"")
+            }
+        } else {
+            if let peak = emotion.peakLine { emotionalArc.append("Peak intensity around line \(peak).") }
+            if let trough = emotion.troughLine { emotionalArc.append("Lowest point around line \(trough).") }
+            if !emotion.notableShiftLines.isEmpty {
+                let shifts = emotion.notableShiftLines.prefix(6).map(String.init).joined(separator: ", ")
+                emotionalArc.append("Notable emotional turns near lines: \(shifts).")
+            }
+            if let peak = emotion.peakLine, let ex = excerpt(lineNumber: peak) {
+                emotionalArc.append("Example near the peak: \"\(ex)\"")
+            }
+        }
+
         let endWindow = emotion.lineScores.suffix(3)
         let endAvg = endWindow.isEmpty ? 0.0 : (endWindow.reduce(0, +) / Double(endWindow.count))
         let endingPunct = lastLine.trimmingCharacters(in: .whitespacesAndNewlines).last
@@ -924,38 +970,73 @@ class AnalysisEngine {
     }
 
     private func classifyPoetryMode(lines: [String], tokensByLine: [[String]]) -> (mode: PoetryInsights.PoetryMode, rationale: String) {
-        // This is intentionally heuristic and writer-facing, not a scholarly classification.
+        // Intentionally heuristic and writer-facing (not a scholarly taxonomy).
+        // Key goal: avoid calling contemplative/ekphrastic poems “narrative” just because they use common verbs.
+
         let narrativeMarkers: Set<String> = [
-            "then", "when", "after", "before", "suddenly", "later", "once", "while", "as", "until",
-            "walked", "ran", "went", "came", "said", "looked", "turned", "took", "gave", "made"
+            // temporal sequence
+            "then", "when", "after", "before", "suddenly", "later", "once", "while", "until",
+            // action/event verbs (very small sample)
+            "walk", "walked", "run", "ran", "went", "go", "came", "come", "turned", "turn", "took", "take", "gave", "give", "made", "make",
+            // report speech tends to imply scene
+            "said", "say", "told", "tell", "asked", "ask"
         ]
 
-        let lyricMarkers: Set<String> = [
-            "i", "me", "my", "you", "your", "feel", "felt", "think", "thought", "remember", "dream", "desire"
+        let addressMarkers: Set<String> = [
+            "you", "your", "yours", "thou", "thee", "thy", "thine", "ye", "o", "oh"
         ]
 
-        var narrativeScore = 0
-        var lyricScore = 0
+        let contemplationVerbs: Set<String> = [
+            "think", "thought", "know", "knew", "see", "saw", "seem", "seems", "remember", "imagine", "wonder", "ask", "tell", "consider"
+        ]
+
+        let abstractMarkers: Set<String> = [
+            "truth", "beauty", "time", "eternity", "forever", "still", "silence", "mind", "soul", "idea", "meaning"
+        ]
+
+        var actionScore = 0
+        var reflectionScore = 0
+        var addressScore = 0
+        var pastTenseScore = 0
 
         for tokens in tokensByLine {
             for t in tokens {
-                if narrativeMarkers.contains(t) { narrativeScore += 1 }
-                if lyricMarkers.contains(t) { lyricScore += 1 }
-                if t.hasSuffix("ed") && t.count > 3 { narrativeScore += 1 }
+                if narrativeMarkers.contains(t) { actionScore += 1 }
+                if addressMarkers.contains(t) { addressScore += 1 }
+                if contemplationVerbs.contains(t) { reflectionScore += 1 }
+                if abstractMarkers.contains(t) { reflectionScore += 1 }
+                if t.hasSuffix("ed") && t.count > 3 { pastTenseScore += 1 }
             }
         }
 
         // Dialogue-ish punctuation can push narrative a bit.
         let quoteCount = lines.reduce(0) { $0 + ($1.contains("\"") ? 1 : 0) }
-        narrativeScore += min(6, quoteCount)
+        actionScore += min(6, quoteCount)
+        actionScore += min(8, pastTenseScore)
 
-        if narrativeScore >= lyricScore + 6 {
-            return (.narrative, "Leans narrative: temporal/action markers outnumber direct address/reflection cues.")
+        let questionCount = lines.reduce(0) { $0 + ($1.contains("?") ? 1 : 0) }
+        // Questions are a strong contemplative signal.
+        let contemplationScore = reflectionScore + (addressScore / 2) + (questionCount * 2)
+
+        // Decide
+        if actionScore >= contemplationScore + 10 {
+            return (.narrative, "Leans narrative: action/sequence signals dominate (events/scenes implied).")
         }
-        if lyricScore >= narrativeScore + 6 {
-            return (.lyric, "Leans lyric: direct address/reflection cues outnumber action/sequence markers.")
+
+        if contemplationScore >= actionScore + 10 {
+            // Explicitly tell the writer what “happens” in this mode.
+            return (
+                .contemplative,
+                "Leans contemplative: direct address/questions/ideas outweigh event markers. Plot may stay static; what changes is the speaker’s stance or understanding."
+            )
         }
-        return (.hybrid, "Hybrid: voice cues and sequence cues are both present.")
+
+        // If neither dominates, fall back to lyric vs hybrid.
+        let lyricScore = reflectionScore + addressScore
+        if lyricScore >= actionScore + 4 {
+            return (.lyric, "Leans lyric: voice and interior pressure outweigh event markers.")
+        }
+        return (.hybrid, "Hybrid: voice cues and event cues are both present.")
     }
 
     private func analyzeImagery(tokensByLine: [[String]]) -> PoetryInsights.ImagerySensory {
@@ -1053,7 +1134,12 @@ class AnalysisEngine {
         )
     }
 
-    private func analyzePoetryEmotion(lines: [String], tokensByLine: [[String]], candidateVoltaLine: Int?) -> PoetryInsights.EmotionalTrajectory {
+    private func analyzePoetryEmotion(
+        lines: [String],
+        tokensByLine: [[String]],
+        stanzaLineCounts: [Int],
+        candidateVoltaLine: Int?
+    ) -> PoetryInsights.EmotionalTrajectory {
         let positive: Set<String> = ["love", "loved", "light", "bright", "warm", "hope", "joy", "gentle", "tender", "laugh", "smile", "grace", "bloom"]
         let negative: Set<String> = ["dark", "cold", "fear", "grief", "sad", "sorrow", "hate", "anger", "alone", "lonely", "hurt", "loss", "die", "dead", "empty"]
         let intensifiers: Set<String> = ["very", "so", "too", "utterly", "completely", "always", "never"]
@@ -1085,6 +1171,23 @@ class AnalysisEngine {
         let peak = scores.enumerated().max(by: { $0.element < $1.element })?.offset
         let trough = scores.enumerated().min(by: { $0.element < $1.element })?.offset
 
+        // Aggregate to stanza scores using stanza boundaries.
+        var stanzaScores: [Double] = []
+        stanzaScores.reserveCapacity(stanzaLineCounts.count)
+        var cursor = 0
+        for count in stanzaLineCounts {
+            guard count > 0 else { continue }
+            let end = min(scores.count, cursor + count)
+            if cursor >= scores.count { break }
+            let slice = scores[cursor..<end]
+            let avg = slice.isEmpty ? 0.0 : slice.reduce(0, +) / Double(slice.count)
+            stanzaScores.append(avg)
+            cursor = end
+        }
+
+        let peakStanza = stanzaScores.enumerated().max(by: { $0.element < $1.element })?.offset
+        let troughStanza = stanzaScores.enumerated().min(by: { $0.element < $1.element })?.offset
+
         var deltas: [Double] = []
         if scores.count >= 2 {
             for i in 1..<scores.count {
@@ -1100,18 +1203,55 @@ class AnalysisEngine {
             .map { $0.offset + 1 }
             .sorted()
 
+        // Notable stanza shifts (use stanza-level averages so long poems don't devolve into noise).
+        var stanzaShiftDeltas: [Double] = []
+        if stanzaScores.count >= 2 {
+            stanzaShiftDeltas.reserveCapacity(stanzaScores.count - 1)
+            for i in 1..<stanzaScores.count {
+                stanzaShiftDeltas.append(abs(stanzaScores[i] - stanzaScores[i - 1]))
+            }
+        }
+        let notableShiftStanzas: [Int] = stanzaShiftDeltas.enumerated()
+            .sorted(by: { $0.element > $1.element })
+            .prefix(3)
+            .map { $0.offset + 1 }
+            .sorted()
+
         // If we have a volta cue line, prefer highlighting it.
         var notableShiftLines = shiftLines
         if let volta = candidateVoltaLine, !notableShiftLines.contains(volta) {
             notableShiftLines = (notableShiftLines + [volta]).sorted()
         }
 
+        // If we have a volta cue line, prefer highlighting its stanza as well.
+        var notableShiftStanzasAdjusted = notableShiftStanzas
+        if let volta = candidateVoltaLine {
+            var lineCursor = 0
+            var voltaStanza: Int? = nil
+            for (idx, count) in stanzaLineCounts.enumerated() {
+                let startLine = lineCursor + 1
+                let endLine = lineCursor + count
+                if volta >= startLine && volta <= endLine {
+                    voltaStanza = idx + 1
+                    break
+                }
+                lineCursor += count
+            }
+            if let stanza = voltaStanza, !notableShiftStanzasAdjusted.contains(stanza) {
+                notableShiftStanzasAdjusted = (notableShiftStanzasAdjusted + [stanza]).sorted()
+            }
+        }
+
         return PoetryInsights.EmotionalTrajectory(
             lineScores: scores,
+            stanzaScores: stanzaScores,
             peakLine: peak.map { $0 + 1 },
             troughLine: trough.map { $0 + 1 },
+            peakStanza: peakStanza.map { $0 + 1 },
+            troughStanza: troughStanza.map { $0 + 1 },
             volatility: volatility,
-            notableShiftLines: notableShiftLines
+            notableShiftLines: notableShiftLines,
+            notableShiftStanzas: notableShiftStanzasAdjusted
         )
     }
 

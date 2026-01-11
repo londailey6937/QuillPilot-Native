@@ -330,6 +330,10 @@ extension SplitViewController: EditorViewControllerDelegate {
         // Title changed in editor
     }
 
+    func authorDidChange(_ author: String) {
+        // Author changed in editor
+    }
+
     func selectionDidChange() {
         // Selection changed in editor (not used in this view controller)
     }

@@ -22,6 +22,7 @@ extension NSImage {
 
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
+    private let brandedAppName = "Quill Pilot"
     private var mainWindowController: MainWindowController?
     private var documentationWindow: DocumentationWindowController?
     private var dialogueTipsWindow: DialogueTipsWindowController?
@@ -33,6 +34,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         setupMenuBar()
         NSApp.setActivationPolicy(.regular)
+
+        // Some systems can re-apply the process/bundle name after menu setup.
+        // Re-assert branding a couple of times to ensure consistency.
+        enforceBrandedAppMenuTitle()
+        Task { @MainActor in
+            enforceBrandedAppMenuTitle()
+        }
+        Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 250_000_000)
+            enforceBrandedAppMenuTitle()
+        }
 
         // Set dock icon programmatically
         NSApp.applicationIconImage = createAppIcon()
@@ -185,6 +197,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationDidBecomeActive(_ notification: Notification) {
+        enforceBrandedAppMenuTitle()
+
         // Keep welcome window in front until the user chooses an action
         if welcomeWindow?.window?.isVisible == true {
             return
@@ -228,6 +242,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc private func showFind(_ sender: Any?) {
         NotificationCenter.default.post(name: NSNotification.Name("ShowSearchPanel"), object: nil)
+    }
+
+    @objc private func toggleRulerVisibility(_ sender: Any?) {
+        mainWindowController?.toggleRulerVisibility(sender)
+    }
+
+    @objc private func showSpellingAndGrammar(_ sender: Any?) {
+        _ = NSApp.sendAction(Selector(("showGuessPanel:")), to: nil, from: sender)
     }
 
     @objc private func applyDropCap(_ sender: Any?) {
@@ -330,13 +352,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let appMenuItem = NSMenuItem()
         // This controls the app name shown in the menu bar (next to the  menu).
         // Without setting it explicitly, AppKit can fall back to the process/bundle name ("QuillPilot").
-        appMenuItem.title = "Quill Pilot"
+        appMenuItem.title = brandedAppName
         mainMenu.addItem(appMenuItem)
 
         let appMenu = NSMenu()
         appMenuItem.submenu = appMenu
 
-        appMenu.addItem(NSMenuItem(title: "About Quill Pilot", action: #selector(showAboutWindow(_:)), keyEquivalent: ""))
+        appMenu.addItem(NSMenuItem(title: "About \(brandedAppName)", action: #selector(showAboutWindow(_:)), keyEquivalent: ""))
         appMenu.addItem(.separator())
 
         let prefs = NSMenuItem(title: "Preferences…", action: #selector(showPreferences(_:)), keyEquivalent: ",")
@@ -353,7 +375,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         appMenu.addItem(.separator())
 
-        appMenu.addItem(NSMenuItem(title: "Hide Quill Pilot", action: #selector(NSApplication.hide(_:)), keyEquivalent: "h"))
+        appMenu.addItem(NSMenuItem(title: "Hide \(brandedAppName)", action: #selector(NSApplication.hide(_:)), keyEquivalent: "h"))
         let hideOthers = NSMenuItem(title: "Hide Others", action: #selector(NSApplication.hideOtherApplications(_:)), keyEquivalent: "h")
         hideOthers.keyEquivalentModifierMask = [.command, .option]
         appMenu.addItem(hideOthers)
@@ -361,7 +383,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         appMenu.addItem(.separator())
 
-        appMenu.addItem(NSMenuItem(title: "Quit Quill Pilot", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q"))
+        appMenu.addItem(NSMenuItem(title: "Quit \(brandedAppName)", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q"))
 
         // File Menu
         let fileMenuItem = NSMenuItem()
@@ -481,11 +503,29 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         restartCustom.target = self
         listsMenu.addItem(restartCustom)
 
+        // Tools Menu
+        let toolsMenuItem = NSMenuItem()
+        mainMenu.addItem(toolsMenuItem)
+        let toolsMenu = NSMenu(title: "Tools")
+        toolsMenuItem.submenu = toolsMenu
+
+        let spellingItem = NSMenuItem(title: "Spelling and Grammar…", action: #selector(showSpellingAndGrammar(_:)), keyEquivalent: ";")
+        spellingItem.keyEquivalentModifierMask = [.command]
+        spellingItem.target = self
+        toolsMenu.addItem(spellingItem)
+
         // View Menu
         let viewMenuItem = NSMenuItem()
         mainMenu.addItem(viewMenuItem)
         let viewMenu = NSMenu(title: "View")
         viewMenuItem.submenu = viewMenu
+
+        let toggleRulerItem = NSMenuItem(title: "Hide Ruler", action: #selector(toggleRulerVisibility(_:)), keyEquivalent: "r")
+        toggleRulerItem.keyEquivalentModifierMask = [.command]
+        toggleRulerItem.target = self
+        viewMenu.addItem(toggleRulerItem)
+
+        viewMenu.addItem(.separator())
 
         let headerFooterItem = NSMenuItem(title: "Header & Footer Settings…", action: #selector(showHeaderFooterSettings(_:)), keyEquivalent: "")
         headerFooterItem.target = self
@@ -547,11 +587,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         helpMenu.addItem(listNumberingHelpItem)
 
         NSApp.mainMenu = mainMenu
-        // Safety net: AppKit sometimes uses the process/bundle name here.
-        // Force the displayed menu bar app title to match branding.
-        NSApp.mainMenu?.item(at: 0)?.title = "Quill Pilot"
+        enforceBrandedAppMenuTitle()
         NSApp.windowsMenu = windowMenu
         NSApp.helpMenu = helpMenu
+    }
+
+    private func enforceBrandedAppMenuTitle() {
+        // The menu bar uses the title of the first item (Application menu).
+        NSApp.mainMenu?.item(at: 0)?.title = brandedAppName
     }
 
     @objc private func showPreferences(_ sender: Any?) {
@@ -716,6 +759,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         window.orderFrontRegardless()
         window.makeKeyAndOrderFront(orderingSource)
         NSApp.activate(ignoringOtherApps: true)
+
+        enforceBrandedAppMenuTitle()
+    }
+}
+
+extension AppDelegate: NSUserInterfaceValidations {
+    func validateUserInterfaceItem(_ item: NSValidatedUserInterfaceItem) -> Bool {
+        if item.action == #selector(toggleRulerVisibility(_:)) {
+            let visible = mainWindowController?.isRulerVisible ?? true
+            if let menuItem = item as? NSMenuItem {
+                menuItem.title = visible ? "Hide Ruler" : "Show Ruler"
+                menuItem.state = visible ? .on : .off
+            }
+            return true
+        }
+
+        return true
     }
 }
 

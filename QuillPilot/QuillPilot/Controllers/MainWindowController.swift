@@ -50,6 +50,7 @@ class MainWindowController: NSWindowController {
     private var headerView: HeaderView!
     private var toolbarView: FormattingToolbar!
     private var rulerView: EnhancedRulerView!
+    private var rulerHeightConstraint: NSLayoutConstraint?
     var mainContentViewController: ContentViewController!
     private var themeObserver: NSObjectProtocol?
     private var settingsObserver: NSObjectProtocol?
@@ -128,6 +129,9 @@ class MainWindowController: NSWindowController {
         mainContentViewController.onTitleChange = { [weak self] title in
             self?.headerView.setDocumentTitle(title)
         }
+        mainContentViewController.onAuthorChange = { [weak self] author in
+            self?.headerView.specsPanel.setAuthor(author)
+        }
         mainContentViewController.onStatsUpdate = { [weak self] text in
             self?.headerView.specsPanel.updateStats(text: text)
         }
@@ -174,6 +178,8 @@ class MainWindowController: NSWindowController {
             contentView.trailingAnchor.constraint(equalTo: containerView.trailingAnchor),
             contentView.bottomAnchor.constraint(equalTo: containerView.bottomAnchor)
         ]
+
+        rulerHeightConstraint = constraints.first(where: { $0.firstItem as AnyObject? === rulerView && $0.firstAttribute == .height })
 
         if let editorLeading = mainContentViewController.editorLeadingAnchor,
            let editorTrailing = mainContentViewController.editorTrailingAnchor {
@@ -225,6 +231,17 @@ class MainWindowController: NSWindowController {
 
         // Start auto-save timer (interval set in Preferences)
         startAutoSaveTimer()
+    }
+
+    var isRulerVisible: Bool {
+        !(rulerView?.isHidden ?? true) && ((rulerHeightConstraint?.constant ?? 0) > 0)
+    }
+
+    @objc func toggleRulerVisibility(_ sender: Any?) {
+        let shouldShow = !isRulerVisible
+        rulerView.isHidden = !shouldShow
+        rulerHeightConstraint?.constant = shouldShow ? 30 : 0
+        window?.layoutIfNeeded()
     }
 
     private func applyTheme(_ theme: AppTheme) {
@@ -302,7 +319,15 @@ class MainWindowController: NSWindowController {
         let printOperation = NSPrintOperation(view: pageContainer, printInfo: printInfoCopy)
         printOperation.showsPrintPanel = true
         printOperation.showsProgressPanel = true
-        printOperation.printPanel.options = [.showsPreview, .showsPrintSelection, .showsPageSetupAccessory, .showsOrientation, .showsPaperSize, .showsScaling]
+        printOperation.printPanel.options = [
+            .showsPreview,
+            .showsCopies,
+            .showsPageRange,
+            .showsPageSetupAccessory,
+            .showsOrientation,
+            .showsPaperSize,
+            .showsScaling
+        ]
 
         activePrintOperation = printOperation // keep alive while printing
         let printerName = printOperation.printInfo.printer.name
@@ -1416,6 +1441,7 @@ extension MainWindowController {
         hasUnsavedChanges = false
         window?.title = "Quill Pilot"
         headerView.setDocumentTitle("")
+        headerView.specsPanel.setAuthor("")
         debugLog("🆕 NEW DOCUMENT: Complete")
     }
 
@@ -2263,9 +2289,9 @@ class FormattingToolbar: NSView {
                 stylesMenu.addItem(.separator())
             }
 
-            addSection("Core", ["Poem", "Poem Title"])
+            addSection("Core", ["Poem", "Verse", "Poem Title", "Poet Name"])
             addSection("Structural", ["Section / Sequence Title", "Part Number"])
-            addSection("Auxiliary", ["Epigraph", "Dedication", "Notes"])
+            addSection("Auxiliary", ["Voice", "Epigraph", "Dedication", "Notes"])
             addSection("Editorial", ["Draft / Margin Note", "Revision Variant"])
 
             stylePopup.menu = stylesMenu
@@ -2983,6 +3009,7 @@ class FormattingToolbar: NSView {
 // MARK: - Content View Controller (3-column layout)
 class ContentViewController: NSViewController {
     var onTitleChange: ((String) -> Void)?
+    var onAuthorChange: ((String) -> Void)?
     var onStatsUpdate: ((String) -> Void)?
     var onSelectionChange: ((String?) -> Void)?
     var onTextChange: (() -> Void)?
@@ -3123,6 +3150,12 @@ class ContentViewController: NSViewController {
     /// Notify both sidebars that the document has changed
     func documentDidChange(url: URL?) {
         outlinePanelController?.documentDidChange(url: url)
+        analysisViewController?.documentDidChange(url: url)
+
+        // Reset manuscript metadata that can otherwise leak across documents.
+        editorViewController?.manuscriptTitle = "Untitled"
+        editorViewController?.manuscriptAuthor = "Author Name"
+        onAuthorChange?("")
     }
 
     func setRuler(_ ruler: EnhancedRulerView) {
@@ -5612,7 +5645,15 @@ extension ContentViewController: EditorViewControllerDelegate {
     }
 
     func titleDidChange(_ title: String) {
+        // Keep editor manuscript metadata consistent (used by headers/footers/printing)
+        editorViewController?.setManuscriptInfo(title: title, author: editorViewController?.manuscriptAuthor ?? "")
         onTitleChange?(title)
+    }
+
+    func authorDidChange(_ author: String) {
+        // Keep editor manuscript metadata consistent (used by headers/footers/printing)
+        editorViewController?.setManuscriptInfo(title: editorViewController?.manuscriptTitle ?? "", author: author)
+        onAuthorChange?(author)
     }
 
     func selectionDidChange() {

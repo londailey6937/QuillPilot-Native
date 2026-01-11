@@ -387,7 +387,8 @@ final class StyleCatalog {
         var styles: [String: StyleDefinition] = [:]
         let font = "Times New Roman"
 
-        // Poet-friendly baseline (no "Headings" language; preserve hard line breaks).
+        // Poet-friendly baseline with manuscript-leaning conventions.
+        // Keep legacy names/aliases for existing documents.
         // Core
         styles["Poem"] = baseDefinition(
             font: font,
@@ -401,14 +402,29 @@ final class StyleCatalog {
             tailIndent: 0
         )
 
+        // Industry term alias
+        styles["Verse"] = styles["Poem"]
+
         styles["Poem Title"] = baseDefinition(
             font: font,
             size: 24,
             bold: true,
-            alignment: .left,
+            alignment: .center,
             lineHeight: 1.15,
-            before: 48,
+            before: 24,
             after: 12,
+            headIndent: 0,
+            firstLine: 0,
+            tailIndent: 0
+        )
+
+        styles["Poet Name"] = baseDefinition(
+            font: font,
+            size: 20,
+            alignment: .center,
+            lineHeight: 1.15,
+            before: 0,
+            after: 18,
             headIndent: 0,
             firstLine: 0,
             tailIndent: 0
@@ -417,12 +433,12 @@ final class StyleCatalog {
         // Structural
         styles["Section / Sequence Title"] = baseDefinition(
             font: font,
-            size: 16,
+            size: 20,
             bold: true,
-            alignment: .left,
+            alignment: .center,
             lineHeight: 1.15,
             before: 18,
-            after: 6,
+            after: 12,
             headIndent: 0,
             firstLine: 0,
             tailIndent: 0
@@ -430,12 +446,26 @@ final class StyleCatalog {
 
         styles["Part Number"] = baseDefinition(
             font: font,
-            size: 14,
+            size: 20,
             bold: true,
-            alignment: .left,
+            alignment: .center,
             lineHeight: 1.1,
-            before: 12,
-            after: 6,
+            before: 24,
+            after: 12,
+            headIndent: 0,
+            firstLine: 0,
+            tailIndent: 0
+        )
+
+        // Inline persona / speaker voice (often used for rhetorical asides or stage-direction-like lines)
+        styles["Voice"] = baseDefinition(
+            font: font,
+            size: 20,
+            italic: true,
+            alignment: .left,
+            lineHeight: 1.5,
+            before: 0,
+            after: 0,
             headIndent: 0,
             firstLine: 0,
             tailIndent: 0
@@ -444,7 +474,7 @@ final class StyleCatalog {
         // Auxiliary
         styles["Epigraph"] = baseDefinition(
             font: font,
-            size: 16,
+            size: 20,
             italic: true,
             alignment: .left,
             lineHeight: 1.35,
@@ -457,9 +487,9 @@ final class StyleCatalog {
 
         styles["Dedication"] = baseDefinition(
             font: font,
-            size: 16,
+            size: 20,
             italic: true,
-            alignment: .left,
+            alignment: .center,
             lineHeight: 1.2,
             before: 12,
             after: 12,
@@ -525,8 +555,8 @@ final class StyleCatalog {
         )
         styles["Poetry — Author"] = baseDefinition(
             font: font,
-            size: 16,
-            alignment: .left,
+            size: 20,
+            alignment: .center,
             lineHeight: 1.15,
             before: 6,
             after: 18,
@@ -534,6 +564,10 @@ final class StyleCatalog {
             firstLine: 0,
             tailIndent: 0
         )
+
+        // More explicit alias (helps UI and importers)
+        styles["Author"] = styles["Poet Name"]
+        styles["Poetry — Poet Name"] = styles["Poet Name"]
 
         // Make the standard Body Text map to Poem so defaults behave as expected in the Poetry template.
         styles["Body Text"] = styles["Poem"]

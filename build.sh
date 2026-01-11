@@ -25,8 +25,9 @@ if [ ! -d "${APP_PATH}" ]; then
 fi
 
 echo "📦 Copying app to build/Release..."
-rm -rf build/Release/QuillPilot.app
 mkdir -p build/Release
+# Remove any previous app bundles (name may change based on PRODUCT_NAME)
+rm -rf build/Release/*.app
 cp -R "${APP_PATH}" build/Release/
 
-echo "✅ Build complete! App updated at: QuillPilot/build/Release/QuillPilot.app"
+echo "✅ Build complete! App updated at: QuillPilot/build/Release/${WRAPPER_NAME}"

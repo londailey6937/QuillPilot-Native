@@ -2942,20 +2942,20 @@ extension AnalysisViewController {
 
         // Helper functions for building UI elements in the popout
         func addHeader(_ text: String) {
-            let label = makeLabel(text, size: 14, bold: true)
+            let label = makeLabel(text, size: 16, bold: true)
             label.textColor = theme.popoutTextColor
             label.alignment = .center
             stack.addArrangedSubview(label)
         }
 
         func addStat(_ name: String, _ value: String) {
-            let label = makeLabel("\(name): \(value)", size: 12, bold: false)
+            let label = makeLabel("\(name): \(value)", size: 14, bold: false)
             label.textColor = theme.popoutSecondaryColor
             stack.addArrangedSubview(label)
         }
 
         func addWarning(_ text: String) {
-            let label = makeLabel(text, size: 12, bold: false)
+            let label = makeLabel(text, size: 14, bold: false)
             label.textColor = .systemOrange
             label.lineBreakMode = .byWordWrapping
             label.maximumNumberOfLines = 0
@@ -2963,13 +2963,13 @@ extension AnalysisViewController {
         }
 
         func addSuccess(_ text: String) {
-            let label = makeLabel(text, size: 12, bold: false)
+            let label = makeLabel(text, size: 14, bold: false)
             label.textColor = .systemGreen
             stack.addArrangedSubview(label)
         }
 
         func addDetail(_ text: String) {
-            let label = makeLabel(text, size: 11, bold: false)
+            let label = makeLabel(text, size: 13, bold: false)
             label.textColor = theme.popoutSecondaryColor
             label.lineBreakMode = .byWordWrapping
             label.maximumNumberOfLines = 0
@@ -2978,7 +2978,7 @@ extension AnalysisViewController {
 
         func addBullet(_ text: String) {
             let label = NSTextField(wrappingLabelWithString: "")
-            label.font = NSFont.systemFont(ofSize: 11)
+            label.font = NSFont.systemFont(ofSize: 13)
             label.textColor = theme.popoutSecondaryColor
             label.lineBreakMode = .byWordWrapping
             label.maximumNumberOfLines = 0
@@ -3013,7 +3013,7 @@ extension AnalysisViewController {
                 addStat("Words", "\(results.wordCount)")
                 addStat("Lines", "\(poetry.formal.lineCount)")
                 addStat("Stanzas", "\(poetry.formal.stanzaCount)")
-                addDetail("Mode: \(poetry.writers.mode.rawValue) — \(poetry.writers.modeRationale)")
+                addDetail("Poem Type: \(poetry.writers.mode.rawValue) — \(poetry.writers.modeRationale)")
 
                 func addBullets(_ items: [String]) {
                     for item in items {
@@ -3040,9 +3040,17 @@ extension AnalysisViewController {
                 addDivider()
                 addHeader("5. Emotional Arc (Invisible Plot)")
                 addBullets(poetry.writers.emotionalArc)
-                if !poetry.emotion.lineScores.isEmpty {
-                    let graph = createPoetryEmotionGraphForPopout(poetry.emotion.lineScores)
+                let isLongPoem = poetry.formal.lineCount >= 80 || poetry.formal.stanzaCount >= 10
+                let useStanzaCurve = isLongPoem && !poetry.emotion.stanzaScores.isEmpty
+                let curveScores = useStanzaCurve ? poetry.emotion.stanzaScores : poetry.emotion.lineScores
+                let curveShifts = useStanzaCurve ? poetry.emotion.notableShiftStanzas : poetry.emotion.notableShiftLines
+                if !curveScores.isEmpty {
+                    let caption = useStanzaCurve ? "Stanza-to-stanza affect (smoothed)" : "Line-by-line affect (smoothed)"
+                    let graph = createPoetryEmotionGraphForPopout(curveScores, shiftIndices: curveShifts, caption: caption)
                     stack.addArrangedSubview(graph)
+                    NSLayoutConstraint.activate([
+                        graph.widthAnchor.constraint(equalTo: stack.widthAnchor)
+                    ])
                 }
 
                 addDivider()
@@ -3292,10 +3300,179 @@ extension AnalysisViewController {
 
     }
 
-    private func createPoetryEmotionGraphForPopout(_ scores: [Double]) -> NSView {
-        // Fixed width for popout
+    private func createPoetryEmotionGraphForPopout(_ scores: [Double], shiftIndices: [Int], caption: String) -> NSView {
+        // Responsive: height is fixed; width is provided by the stack/window.
         let graphWidth: CGFloat = 560
-        let graphHeight: CGFloat = 150
+        let graphHeight: CGFloat = 170
+
+        final class PoetryEmotionChartView: NSView {
+            let rawScores: [Double]
+            let shiftIndices1Based: [Int]
+            let strokePos: NSColor
+            let strokeNeg: NSColor
+            let axisColor: NSColor
+
+            init(frame frameRect: NSRect, scores: [Double], shiftIndices1Based: [Int], strokePos: NSColor, strokeNeg: NSColor, axisColor: NSColor) {
+                self.rawScores = scores
+                self.shiftIndices1Based = shiftIndices1Based
+                self.strokePos = strokePos
+                self.strokeNeg = strokeNeg
+                self.axisColor = axisColor
+                super.init(frame: frameRect)
+                wantsLayer = false
+                translatesAutoresizingMaskIntoConstraints = false
+            }
+
+            required init?(coder: NSCoder) { nil }
+
+            override func setFrameSize(_ newSize: NSSize) {
+                super.setFrameSize(newSize)
+                needsDisplay = true
+            }
+
+            private func smooth(_ data: [Double], window: Int) -> [Double] {
+                guard data.count >= 3 else { return data }
+                let w = max(3, window | 1) // force odd
+                let half = w / 2
+                var out: [Double] = []
+                out.reserveCapacity(data.count)
+                for i in 0..<data.count {
+                    let a = max(0, i - half)
+                    let b = min(data.count - 1, i + half)
+                    var sum = 0.0
+                    var n = 0
+                    for j in a...b { sum += data[j]; n += 1 }
+                    out.append(sum / Double(max(1, n)))
+                }
+                return out
+            }
+
+            override func draw(_ dirtyRect: NSRect) {
+                super.draw(dirtyRect)
+                guard rawScores.count >= 2 else { return }
+
+                let inset: CGFloat = 12
+                // Reserve bottom space for legend + caption.
+                let chartRect = NSRect(x: inset, y: 40, width: bounds.width - inset * 2, height: bounds.height - 60)
+                guard chartRect.width > 10 && chartRect.height > 10 else { return }
+                let midY = chartRect.midY
+
+                // Midline
+                axisColor.withAlphaComponent(0.25).setStroke()
+                let midPath = NSBezierPath()
+                midPath.lineWidth = 1
+                midPath.move(to: NSPoint(x: chartRect.minX, y: midY))
+                midPath.line(to: NSPoint(x: chartRect.maxX, y: midY))
+                midPath.stroke()
+
+                // Smooth + sample if needed
+                let targetPoints = min(max(30, Int(chartRect.width)), 220)
+                let stride = max(1, rawScores.count / targetPoints)
+                let sampledRaw: [Double] = stride == 1 ? rawScores : rawScores.enumerated().compactMap { ($0.offset % stride == 0) ? $0.element : nil }
+                let window = max(3, min(9, sampledRaw.count / 10 * 2 + 1))
+                let data = smooth(sampledRaw, window: window)
+
+                func point(at index: Int, score: Double) -> NSPoint {
+                    let tX = CGFloat(index) / CGFloat(max(1, data.count - 1))
+                    let x = chartRect.minX + tX * chartRect.width
+                    let y = chartRect.minY + (CGFloat((score + 1.0) / 2.0) * chartRect.height)
+                    return NSPoint(x: x, y: y)
+                }
+
+                // Shift markers
+                let markerColor = axisColor.withAlphaComponent(0.18)
+                markerColor.setStroke()
+                for idx1 in shiftIndices1Based {
+                    let zeroBased = idx1 - 1
+                    guard zeroBased >= 0 && zeroBased < rawScores.count else { continue }
+                    let sampledIndex = stride == 1 ? zeroBased : Int(round(Double(zeroBased) / Double(stride)))
+                    guard sampledIndex >= 0 && sampledIndex < data.count else { continue }
+                    let p = point(at: sampledIndex, score: 0)
+                    let v = NSBezierPath()
+                    v.lineWidth = 1
+                    v.move(to: NSPoint(x: p.x, y: chartRect.minY))
+                    v.line(to: NSPoint(x: p.x, y: chartRect.maxY))
+                    v.stroke()
+                }
+
+                // Draw curve segments, color-coded above/below 0
+                func strokeSegment(from a: (i: Int, s: Double), to b: (i: Int, s: Double)) {
+                    let p0 = point(at: a.i, score: a.s)
+                    let p1 = point(at: b.i, score: b.s)
+
+                    let s0 = a.s
+                    let s1 = b.s
+                    if (s0 >= 0 && s1 >= 0) {
+                        strokePos.setStroke()
+                        let path = NSBezierPath()
+                        path.lineWidth = 2
+                        path.lineCapStyle = .round
+                        path.move(to: p0)
+                        path.line(to: p1)
+                        path.stroke()
+                        return
+                    }
+                    if (s0 <= 0 && s1 <= 0) {
+                        strokeNeg.setStroke()
+                        let path = NSBezierPath()
+                        path.lineWidth = 2
+                        path.lineCapStyle = .round
+                        path.move(to: p0)
+                        path.line(to: p1)
+                        path.stroke()
+                        return
+                    }
+
+                    // Crossing: split at score==0
+                    let denom = (s1 - s0)
+                    let t = abs(denom) < 0.000001 ? 0.5 : (0.0 - s0) / denom
+                    let tClamped = max(0.0, min(1.0, t))
+                    let x = p0.x + (p1.x - p0.x) * CGFloat(tClamped)
+                    let y = midY
+                    let mid = NSPoint(x: x, y: y)
+
+                    if s0 >= 0 {
+                        strokePos.setStroke()
+                    } else {
+                        strokeNeg.setStroke()
+                    }
+                    let pathA = NSBezierPath()
+                    pathA.lineWidth = 2
+                    pathA.lineCapStyle = .round
+                    pathA.move(to: p0)
+                    pathA.line(to: mid)
+                    pathA.stroke()
+
+                    if s1 >= 0 {
+                        strokePos.setStroke()
+                    } else {
+                        strokeNeg.setStroke()
+                    }
+                    let pathB = NSBezierPath()
+                    pathB.lineWidth = 2
+                    pathB.lineCapStyle = .round
+                    pathB.move(to: mid)
+                    pathB.line(to: p1)
+                    pathB.stroke()
+                }
+
+                for i in 1..<data.count {
+                    strokeSegment(from: (i: i - 1, s: data[i - 1]), to: (i: i, s: data[i]))
+                }
+
+                // Peak/trough markers
+                if let peak = data.enumerated().max(by: { $0.element < $1.element }), let trough = data.enumerated().min(by: { $0.element < $1.element }) {
+                    func drawMarker(at idx: Int, score: Double, color: NSColor) {
+                        let p = point(at: idx, score: score)
+                        color.withAlphaComponent(0.95).setFill()
+                        let r = NSRect(x: p.x - 3, y: p.y - 3, width: 6, height: 6)
+                        NSBezierPath(ovalIn: r).fill()
+                    }
+                    drawMarker(at: peak.offset, score: peak.element, color: strokePos)
+                    drawMarker(at: trough.offset, score: trough.element, color: strokeNeg)
+                }
+            }
+        }
 
         let container = NSView(frame: NSRect(x: 0, y: 0, width: graphWidth, height: graphHeight))
         container.wantsLayer = true
@@ -3309,69 +3486,68 @@ extension AnalysisViewController {
         container.layer?.borderColor = borderColor.cgColor
 
         NSLayoutConstraint.activate([
-            container.heightAnchor.constraint(equalToConstant: graphHeight),
-            container.widthAnchor.constraint(equalToConstant: graphWidth)
+            container.heightAnchor.constraint(equalToConstant: graphHeight)
         ])
 
         guard scores.count >= 2 else {
-            let label = NSTextField(labelWithString: "Not enough lines for a curve")
+            let label = NSTextField(labelWithString: "Not enough data for a curve")
             label.font = .systemFont(ofSize: 11)
             label.textColor = .tertiaryLabelColor
-            label.frame = NSRect(x: 10, y: graphHeight/2 - 10, width: graphWidth - 20, height: 20)
+            label.frame = NSRect(x: 10, y: graphHeight/2 - 10, width: container.bounds.width - 20, height: 20)
+            label.autoresizingMask = [.width]
             container.addSubview(label)
             return container
         }
 
         let inset: CGFloat = 12
-        let chartRect = NSRect(x: inset, y: 24, width: graphWidth - inset * 2, height: graphHeight - 44)
-        let midY = chartRect.midY
-
-        // Midline
-        let midline = NSView(frame: NSRect(x: chartRect.minX, y: midY, width: chartRect.width, height: 1))
-        midline.wantsLayer = true
-        midline.layer?.backgroundColor = currentTheme.popoutSecondaryColor.withAlphaComponent(0.25).cgColor
-        container.addSubview(midline)
-
-        // Polyline as small bars/points for reliability (no custom drawing)
-        let maxPoints = min(scores.count, 120)
-        let stride = max(1, scores.count / maxPoints)
-        let sampled: [Double] = stride == 1 ? scores : scores.enumerated().compactMap { ($0.offset % stride == 0) ? $0.element : nil }
-
-        let stepX = chartRect.width / CGFloat(max(1, sampled.count - 1))
-        for (i, s) in sampled.enumerated() {
-            let x = chartRect.minX + CGFloat(i) * stepX
-            let y = chartRect.minY + (CGFloat((s + 1.0) / 2.0) * chartRect.height)
-            let dot = NSView(frame: NSRect(x: x - 2, y: y - 2, width: 4, height: 4))
-            dot.wantsLayer = true
-            dot.layer?.cornerRadius = 2
-            dot.layer?.backgroundColor = (s >= 0 ? NSColor.systemPink : NSColor.systemBlue).withAlphaComponent(0.85).cgColor
-            container.addSubview(dot)
-        }
+        let chartView = PoetryEmotionChartView(
+            frame: NSRect(x: 0, y: 0, width: graphWidth, height: graphHeight),
+            scores: scores,
+            shiftIndices1Based: shiftIndices,
+            strokePos: NSColor.systemRed,
+            strokeNeg: NSColor.systemBlue,
+            axisColor: currentTheme.popoutSecondaryColor
+        )
+        container.addSubview(chartView)
+        NSLayoutConstraint.activate([
+            chartView.leadingAnchor.constraint(equalTo: container.leadingAnchor),
+            chartView.trailingAnchor.constraint(equalTo: container.trailingAnchor),
+            chartView.topAnchor.constraint(equalTo: container.topAnchor),
+            chartView.bottomAnchor.constraint(equalTo: container.bottomAnchor)
+        ])
 
         // Labels
         let labelTop = NSTextField(labelWithString: "↑")
         labelTop.font = .systemFont(ofSize: 10)
         labelTop.textColor = currentTheme.popoutSecondaryColor
-        labelTop.frame = NSRect(x: 6, y: chartRect.maxY - 6, width: 12, height: 12)
+        labelTop.frame = NSRect(x: 6, y: graphHeight - 44, width: 12, height: 12)
         container.addSubview(labelTop)
 
         let labelMid = NSTextField(labelWithString: "0")
         labelMid.font = .systemFont(ofSize: 10)
         labelMid.textColor = currentTheme.popoutSecondaryColor
-        labelMid.frame = NSRect(x: 6, y: midY - 6, width: 18, height: 12)
+        labelMid.frame = NSRect(x: 6, y: graphHeight/2 - 6, width: 18, height: 12)
         container.addSubview(labelMid)
 
         let labelBottom = NSTextField(labelWithString: "↓")
         labelBottom.font = .systemFont(ofSize: 10)
         labelBottom.textColor = currentTheme.popoutSecondaryColor
-        labelBottom.frame = NSRect(x: 6, y: chartRect.minY - 6, width: 12, height: 12)
+        labelBottom.frame = NSRect(x: 6, y: 20, width: 12, height: 12)
         container.addSubview(labelBottom)
 
-        let caption = NSTextField(labelWithString: "Line-by-line affect (rough)")
-        caption.font = .systemFont(ofSize: 10)
-        caption.textColor = currentTheme.popoutSecondaryColor.withAlphaComponent(0.75)
-        caption.frame = NSRect(x: inset, y: 6, width: graphWidth - inset * 2, height: 14)
-        container.addSubview(caption)
+        let legendLabel = NSTextField(labelWithString: "Legend: Red = above neutral (lift) • Blue = below neutral (darkening) • Faint vertical lines = major shifts")
+        legendLabel.font = .systemFont(ofSize: 10)
+        legendLabel.textColor = currentTheme.popoutSecondaryColor.withAlphaComponent(0.8)
+        legendLabel.frame = NSRect(x: inset, y: 22, width: container.bounds.width - inset * 2, height: 14)
+        legendLabel.autoresizingMask = [.width]
+        container.addSubview(legendLabel)
+
+        let captionLabel = NSTextField(labelWithString: caption)
+        captionLabel.font = .systemFont(ofSize: 11)
+        captionLabel.textColor = currentTheme.popoutSecondaryColor.withAlphaComponent(0.75)
+        captionLabel.frame = NSRect(x: inset, y: 6, width: container.bounds.width - inset * 2, height: 16)
+        captionLabel.autoresizingMask = [.width]
+        container.addSubview(captionLabel)
 
         return container
     }
@@ -3430,7 +3606,7 @@ extension AnalysisViewController {
         stack.orientation = .vertical
         stack.alignment = .leading
         stack.spacing = 12
-        stack.edgeInsets = NSEdgeInsets(top: 16, left: 16, bottom: 16, right: 16)
+        stack.edgeInsets = NSEdgeInsets(top: 0, left: 0, bottom: 0, right: 0)
         stack.translatesAutoresizingMaskIntoConstraints = false
 
         contentView.addSubview(stack)

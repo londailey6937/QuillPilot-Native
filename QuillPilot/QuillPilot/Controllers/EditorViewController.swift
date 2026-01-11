@@ -154,6 +154,10 @@ class EditorViewController: NSViewController {
     private var formatPainterActive: Bool = false
     private var copiedAttributes: [NSAttributedString.Key: Any]?
 
+    // When applying composite formatting operations (e.g. a catalog style), suppress sub-step
+    // undo labels so the menu shows a single meaningful action name.
+    private var suppressUndoActionNames: Bool = false
+
     // Flag to suppress text change notifications during programmatic edits
     private var suppressTextChangeNotifications: Bool = false
 
@@ -712,6 +716,8 @@ class EditorViewController: NSViewController {
             return
         }
 
+        guard textView.shouldChangeText(in: selectedRange, replacementString: nil) else { return }
+
         // Apply to selected text, preserving font size
         textStorage.beginEditing()
         textStorage.enumerateAttribute(.font, in: selectedRange, options: []) { value, range, _ in
@@ -723,6 +729,9 @@ class EditorViewController: NSViewController {
             textStorage.addAttribute(.font, value: newFont, range: range)
         }
         textStorage.endEditing()
+
+        textView.didChangeText()
+        textView.undoManager?.setActionName("Bold")
     }
 
     func toggleItalic() {
@@ -743,6 +752,8 @@ class EditorViewController: NSViewController {
             return
         }
 
+        guard textView.shouldChangeText(in: selectedRange, replacementString: nil) else { return }
+
         // Apply to selected text, preserving font size
         textStorage.beginEditing()
         textStorage.enumerateAttribute(.font, in: selectedRange, options: []) { value, range, _ in
@@ -754,6 +765,9 @@ class EditorViewController: NSViewController {
             textStorage.addAttribute(.font, value: newFont, range: range)
         }
         textStorage.endEditing()
+
+        textView.didChangeText()
+        textView.undoManager?.setActionName("Italic")
     }
 
     func toggleUnderline() {
@@ -766,6 +780,8 @@ class EditorViewController: NSViewController {
             textView.typingAttributes[.underlineStyle] = next == 0 ? nil : next
             return
         }
+
+        guard textView.shouldChangeText(in: selectedRange, replacementString: nil) else { return }
 
         var hasUnderline = false
         textStorage.enumerateAttribute(.underlineStyle, in: selectedRange, options: []) { value, _, stop in
@@ -782,6 +798,9 @@ class EditorViewController: NSViewController {
             textStorage.addAttribute(.underlineStyle, value: NSUnderlineStyle.single.rawValue, range: selectedRange)
         }
         textStorage.endEditing()
+
+        textView.didChangeText()
+        textView.undoManager?.setActionName("Underline")
     }
 
     func setAlignment(_ alignment: NSTextAlignment) {
@@ -3146,20 +3165,17 @@ class EditorViewController: NSViewController {
     private func applyFormatPainterToSelection() {
         guard formatPainterActive,
               let copiedAttrs = copiedAttributes,
-              let textStorage = textView.textStorage,
               let selectedRange = textView.selectedRanges.first?.rangeValue,
               selectedRange.length > 0 else { return }
 
-        textStorage.beginEditing()
-
-        // Apply all copied attributes except textBlocks (to preserve table/column structure)
-        for (key, value) in copiedAttrs {
-            if key != .attachment {  // Don't copy attachments
-                textStorage.addAttribute(key, value: value, range: selectedRange)
+        performUndoableTextStorageEdit(in: selectedRange, actionName: "Format Painter") { storage in
+            // Apply all copied attributes except attachments.
+            for (key, value) in copiedAttrs {
+                if key != .attachment {
+                    storage.addAttribute(key, value: value, range: selectedRange)
+                }
             }
         }
-
-        textStorage.endEditing()
 
         DebugLog.log("Format Painter applied to selection")
 
@@ -3737,7 +3753,9 @@ case "Book Subtitle":
 
         if let selected = textView.selectedRanges.first as? NSRange {
             let paragraphRange = (textView.string as NSString).paragraphRange(for: selected)
-            textView.textStorage?.addAttribute(styleAttributeKey, value: styleName, range: paragraphRange)
+            performUndoableTextStorageEdit(in: paragraphRange, actionName: "Apply Style") { storage in
+                storage.addAttribute(styleAttributeKey, value: styleName, range: paragraphRange)
+            }
         }
     }
 
@@ -3772,6 +3790,16 @@ case "Book Subtitle":
         let textColor = currentTheme.textColor
         let backgroundColor = definition.backgroundColorHex.flatMap { color(fromHex: $0, fallback: .clear) }
 
+        // Group paragraph + font/color changes into a single undo step.
+        let undoManager = textView.undoManager
+        undoManager?.beginUndoGrouping()
+        let previousSuppress = suppressUndoActionNames
+        suppressUndoActionNames = true
+        defer {
+            suppressUndoActionNames = previousSuppress
+            undoManager?.endUndoGrouping()
+        }
+
         applyParagraphEditsToSelectedParagraphs { style in
             style.setParagraphStyle(paragraph)
         }
@@ -3784,16 +3812,20 @@ case "Book Subtitle":
             let range = selection.length == 0 ? (textView.string as NSString).paragraphRange(for: selection) : selection
             let markerRanges = indexMarkerRanges(in: range, storage: storage)
 
-            for subrange in subrangesExcluding(markerRanges, from: range) {
-                storage.addAttribute(.font, value: font, range: subrange)
-                storage.addAttribute(.foregroundColor, value: textColor, range: subrange)
-                if let backgroundColor {
-                    storage.addAttribute(.backgroundColor, value: backgroundColor, range: subrange)
-                } else {
-                    storage.removeAttribute(.backgroundColor, range: subrange)
+            performUndoableTextStorageEdit(in: range, actionName: nil) { storage in
+                for subrange in subrangesExcluding(markerRanges, from: range) {
+                    storage.addAttribute(.font, value: font, range: subrange)
+                    storage.addAttribute(.foregroundColor, value: textColor, range: subrange)
+                    if let backgroundColor {
+                        storage.addAttribute(.backgroundColor, value: backgroundColor, range: subrange)
+                    } else {
+                        storage.removeAttribute(.backgroundColor, range: subrange)
+                    }
                 }
             }
         }
+
+        undoManager?.setActionName("Apply Style: \(styleName)")
 
         return true
     }
@@ -5559,24 +5591,24 @@ case "Book Subtitle":
         let fullText = (textStorage.string as NSString)
         let paragraphsRange = fullText.paragraphRange(for: selected)
 
-        textStorage.beginEditing()
-        textStorage.enumerateAttribute(.paragraphStyle, in: paragraphsRange, options: []) { value, range, _ in
-            let current = (value as? NSParagraphStyle) ?? textView.defaultParagraphStyle ?? NSParagraphStyle.default
-            guard let mutable = current.mutableCopy() as? NSMutableParagraphStyle else { return }
+        performUndoableTextStorageEdit(in: paragraphsRange, actionName: "Paragraph Formatting") { storage in
+            storage.enumerateAttribute(.paragraphStyle, in: paragraphsRange, options: []) { value, range, _ in
+                let current = (value as? NSParagraphStyle) ?? textView.defaultParagraphStyle ?? NSParagraphStyle.default
+                guard let mutable = current.mutableCopy() as? NSMutableParagraphStyle else { return }
 
-            // Preserve textBlocks (for tables/columns) before editing
-            let existingTextBlocks = current.textBlocks
+                // Preserve textBlocks (for tables/columns) before editing
+                let existingTextBlocks = current.textBlocks
 
-            edit(mutable)
+                edit(mutable)
 
-            // Restore textBlocks after editing to keep table/column structure
-            if !existingTextBlocks.isEmpty {
-                mutable.textBlocks = existingTextBlocks
+                // Restore textBlocks after editing to keep table/column structure
+                if !existingTextBlocks.isEmpty {
+                    mutable.textBlocks = existingTextBlocks
+                }
+
+                storage.addAttribute(.paragraphStyle, value: mutable.copy() as! NSParagraphStyle, range: range)
             }
-
-            textStorage.addAttribute(.paragraphStyle, value: mutable.copy() as! NSParagraphStyle, range: range)
         }
-        textStorage.endEditing()
     }
 
     private func refreshTypingAttributesUsingDefaultParagraphStyle() {
@@ -5604,21 +5636,37 @@ case "Book Subtitle":
 
         let markerRanges = indexMarkerRanges(in: targetRange, storage: textStorage)
 
-        textStorage.beginEditing()
-        textStorage.enumerateAttribute(.font, in: targetRange, options: []) { value, range, _ in
-            let current = (value as? NSFont) ?? baseFont
-            let newFont = transform(current)
+        performUndoableTextStorageEdit(in: targetRange, actionName: "Font Change") { storage in
+            storage.enumerateAttribute(.font, in: targetRange, options: []) { value, range, _ in
+                let current = (value as? NSFont) ?? baseFont
+                let newFont = transform(current)
 
-            for subrange in subrangesExcluding(markerRanges, from: range) {
-                textStorage.addAttribute(.font, value: newFont, range: subrange)
+                for subrange in subrangesExcluding(markerRanges, from: range) {
+                    storage.addAttribute(.font, value: newFont, range: subrange)
+                }
             }
         }
-        textStorage.endEditing()
 
         // Update typing attributes only for future typing at cursor position
         if selectedRange.length == 0 {
             let newTypingFont = transform(baseFont)
             textView.typingAttributes[.font] = newTypingFont
+        }
+    }
+
+    private func performUndoableTextStorageEdit(in range: NSRange, actionName: String?, _ edit: (NSTextStorage) -> Void) {
+        guard let storage = textView.textStorage else { return }
+        guard range.location != NSNotFound else { return }
+        guard range.length >= 0 else { return }
+        guard textView.shouldChangeText(in: range, replacementString: nil) else { return }
+
+        storage.beginEditing()
+        edit(storage)
+        storage.endEditing()
+
+        textView.didChangeText()
+        if let actionName, !suppressUndoActionNames {
+            textView.undoManager?.setActionName(actionName)
         }
     }
 

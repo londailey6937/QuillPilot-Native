@@ -42,6 +42,10 @@ class AnalysisViewController: NSViewController, NSWindowDelegate {
     private var currentCategory: AnalysisCategory = .basic
     private var isOutlineVisible = false
 
+    var isMenuSidebarHidden: Bool {
+        menuSidebar?.isHidden ?? true
+    }
+
     // Analysis popout windows
     private var outlinePopoutWindow: NSWindow?
     private var analysisPopoutWindow: NSWindow?
@@ -844,16 +848,31 @@ class AnalysisViewController: NSViewController, NSWindowDelegate {
     }
 
     // MARK: - Toggle Menu Sidebar
+    func setMenuSidebarHidden(_ hidden: Bool, animated: Bool = true) {
+        guard menuSidebar != nil, menuSeparator != nil else { return }
+
+        // If the template forces this chrome off (e.g. Poetry navigator), keep it hidden.
+        if isOutlinePanel, StyleCatalog.shared.isPoetryTemplate {
+            menuSidebar.isHidden = true
+            menuSeparator.isHidden = true
+            return
+        }
+
+        if animated {
+            NSAnimationContext.runAnimationGroup { context in
+                context.duration = 0.2
+                menuSidebar.animator().isHidden = hidden
+                menuSeparator.animator().isHidden = hidden
+            }
+        } else {
+            menuSidebar.isHidden = hidden
+            menuSeparator.isHidden = hidden
+        }
+    }
+
     func toggleMenuSidebar() {
         DebugLog.log("[DEBUG] toggleMenuSidebar called, isOutlinePanel: \(isOutlinePanel)")
-        DebugLog.log("[DEBUG] menuSidebar.isHidden: \(menuSidebar.isHidden)")
-        let isHidden = menuSidebar.isHidden
-        NSAnimationContext.runAnimationGroup { context in
-            context.duration = 0.2
-            menuSidebar.animator().isHidden = !isHidden
-            menuSeparator.animator().isHidden = !isHidden
-        }
-        DebugLog.log("[DEBUG] menuSidebar.isHidden after: \(menuSidebar.isHidden)")
+        setMenuSidebarHidden(!isMenuSidebarHidden)
     }
 
     func displayResults(_ results: AnalysisResults) {
@@ -1779,6 +1798,12 @@ extension AnalysisViewController: CharacterArcVisualizationDelegate {
 // MARK: - Character Analysis Popout Functions
 
 extension AnalysisViewController {
+    private func canonicalCharacterKey(_ name: String) -> String {
+        name
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased()
+    }
+
     func openDecisionBeliefPopout(loops: [DecisionBeliefLoop]) {
         // Close existing window if open
         emotionalJourneyPopoutWindow?.close()
@@ -1804,17 +1829,23 @@ extension AnalysisViewController {
         window.appearance = NSAppearance(named: isDarkMode ? .darkAqua : .aqua)
 
         let keep = StyleCatalog.shared.isScreenplayTemplate ? currentSignificantCharacterNameSet() : []
-        let libraryOrder = CharacterLibrary.shared.analysisCharacterKeys
-        let librarySet = Set(libraryOrder)
+        let keepCanon = Set(keep.map { canonicalCharacterKey($0) })
 
-        let filteredLoops = keep.isEmpty ? loops : loops.filter { keep.contains($0.characterName) }
+        let libraryOrder = CharacterLibrary.shared.analysisCharacterKeys
+        let canonicalOrderIndex: [String: Int] = Dictionary(
+            uniqueKeysWithValues: libraryOrder.enumerated().map { (canonicalCharacterKey($0.element), $0.offset) }
+        )
+
+        let keptLoops = keepCanon.isEmpty ? loops : loops.filter { keepCanon.contains(canonicalCharacterKey($0.characterName)) }
+        let filteredLoops = (!keepCanon.isEmpty && keptLoops.isEmpty) ? loops : keptLoops
+
         let displayLoops: [DecisionBeliefLoop]
         if !libraryOrder.isEmpty {
-            displayLoops = filteredLoops
-                .filter { librarySet.contains($0.characterName) }
-                .sorted {
-                    (libraryOrder.firstIndex(of: $0.characterName) ?? Int.max) < (libraryOrder.firstIndex(of: $1.characterName) ?? Int.max)
-                }
+            let orderFiltered = filteredLoops.filter { canonicalOrderIndex[canonicalCharacterKey($0.characterName)] != nil }
+            let base = orderFiltered.isEmpty ? filteredLoops : orderFiltered
+            displayLoops = base.sorted {
+                (canonicalOrderIndex[canonicalCharacterKey($0.characterName)] ?? Int.max) < (canonicalOrderIndex[canonicalCharacterKey($1.characterName)] ?? Int.max)
+            }
         } else {
             displayLoops = filteredLoops
         }
@@ -1925,7 +1956,9 @@ extension AnalysisViewController {
         let mapView = RelationshipEvolutionMapView(frame: window.contentView!.bounds)
         mapView.autoresizingMask = [.width, .height]
 
-        let keep = currentSignificantCharacterNameSet()
+        // Relationship maps are most useful when they include the full cast.
+        // Only apply the “significant characters” filter for screenplays to avoid unreadable maps.
+        let keep = StyleCatalog.shared.isScreenplayTemplate ? currentSignificantCharacterNameSet() : []
 
         // Convert data to view format
         let filteredNodesData = keep.isEmpty ? evolutionData.nodes : evolutionData.nodes.filter { keep.contains($0.character) }
@@ -2684,7 +2717,7 @@ extension AnalysisViewController {
             backing: .buffered,
             defer: false
         )
-        window.title = "Belief / Value Shift Matrices"
+        window.title = "Belief - Value Shift Matrices"
         window.minSize = NSSize(width: 1000, height: 600)
         window.isReleasedWhenClosed = false
         window.delegate = autoCloseDelegate
@@ -2694,23 +2727,28 @@ extension AnalysisViewController {
         window.appearance = NSAppearance(named: isDarkMode ? .darkAqua : .aqua)
 
         let keep = StyleCatalog.shared.isScreenplayTemplate ? currentSignificantCharacterNameSet() : []
+        let keepCanon = Set(keep.map { canonicalCharacterKey($0) })
+
         let libraryOrder = CharacterLibrary.shared.analysisCharacterKeys
-        let librarySet = Set(libraryOrder)
+        let canonicalOrderIndex: [String: Int] = Dictionary(
+            uniqueKeysWithValues: libraryOrder.enumerated().map { (canonicalCharacterKey($0.element), $0.offset) }
+        )
 
         let filteredMatrices: [BeliefShiftMatrix]
-        if keep.isEmpty {
+        if keepCanon.isEmpty {
             filteredMatrices = matrices
         } else {
-            let kept = matrices.filter { keep.contains($0.characterName) }
+            let kept = matrices.filter { keepCanon.contains(canonicalCharacterKey($0.characterName)) }
             filteredMatrices = kept.count >= 2 ? kept : matrices
         }
+
         let displayMatrices: [BeliefShiftMatrix]
         if !libraryOrder.isEmpty {
-            displayMatrices = filteredMatrices
-                .filter { librarySet.contains($0.characterName) }
-                .sorted {
-                    (libraryOrder.firstIndex(of: $0.characterName) ?? Int.max) < (libraryOrder.firstIndex(of: $1.characterName) ?? Int.max)
-                }
+            let orderFiltered = filteredMatrices.filter { canonicalOrderIndex[canonicalCharacterKey($0.characterName)] != nil }
+            let base = orderFiltered.isEmpty ? filteredMatrices : orderFiltered
+            displayMatrices = base.sorted {
+                (canonicalOrderIndex[canonicalCharacterKey($0.characterName)] ?? Int.max) < (canonicalOrderIndex[canonicalCharacterKey($1.characterName)] ?? Int.max)
+            }
         } else {
             displayMatrices = filteredMatrices
         }
@@ -2746,6 +2784,7 @@ extension AnalysisViewController {
     }
 
     func openDecisionConsequenceChainsPopout(chains: [DecisionConsequenceChain]) {
+        DebugLog.log("⛓️ Opening Decision-Consequence Chains popout with \(chains.count) chains")
         // Close existing window if open
         decisionConsequenceChainPopoutWindow?.close()
         decisionConsequenceChainPopoutWindow = nil
@@ -2765,18 +2804,24 @@ extension AnalysisViewController {
         let isDarkMode = ThemeManager.shared.isDarkMode
         window.appearance = NSAppearance(named: isDarkMode ? .darkAqua : .aqua)
 
-        let keep = StyleCatalog.shared.isScreenplayTemplate ? currentSignificantCharacterNameSet() : []
-        let libraryOrder = CharacterLibrary.shared.analysisCharacterKeys
-        let librarySet = Set(libraryOrder)
+        // Always show all chains in this popout; hiding characters is confusing.
+        let keepCanon: Set<String> = []
 
-        let filteredChains = keep.isEmpty ? chains : chains.filter { keep.contains($0.characterName) }
+        let libraryOrder = CharacterLibrary.shared.analysisCharacterKeys
+        let canonicalOrderIndex: [String: Int] = Dictionary(
+            uniqueKeysWithValues: libraryOrder.enumerated().map { (canonicalCharacterKey($0.element), $0.offset) }
+        )
+
+        let keptChains = keepCanon.isEmpty ? chains : chains.filter { keepCanon.contains(canonicalCharacterKey($0.characterName)) }
+        let filteredChains = (!keepCanon.isEmpty && keptChains.isEmpty) ? chains : keptChains
+
         let displayChains: [DecisionConsequenceChain]
         if !libraryOrder.isEmpty {
-            displayChains = filteredChains
-                .filter { librarySet.contains($0.characterName) }
-                .sorted {
-                    (libraryOrder.firstIndex(of: $0.characterName) ?? Int.max) < (libraryOrder.firstIndex(of: $1.characterName) ?? Int.max)
-                }
+            let orderFiltered = filteredChains.filter { canonicalOrderIndex[canonicalCharacterKey($0.characterName)] != nil }
+            let base = orderFiltered.isEmpty ? filteredChains : orderFiltered
+            displayChains = base.sorted {
+                (canonicalOrderIndex[canonicalCharacterKey($0.characterName)] ?? Int.max) < (canonicalOrderIndex[canonicalCharacterKey($1.characterName)] ?? Int.max)
+            }
         } else {
             displayChains = filteredChains
         }
@@ -3799,15 +3844,25 @@ extension AnalysisViewController {
             return
         }
 
-        if let results = latestAnalysisResults {
-            openDecisionConsequenceChainsPopout(chains: results.decisionConsequenceChains)
-        } else {
-            analyzeCallback?()
-            DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) { [weak self] in
-                if let results = self?.latestAnalysisResults {
-                    self?.openDecisionConsequenceChainsPopout(chains: results.decisionConsequenceChains)
+        DebugLog.log("⛓️ showDecisionConsequenceChains: triggering fresh analysis")
+        // Always trigger fresh analysis so the popout reflects the current document + library.
+        analyzeCallback?()
+
+        var attemptOpen: ((Int) -> Void)?
+        attemptOpen = { [weak self] remaining in
+            guard let self else { return }
+            if let results = self.latestAnalysisResults {
+                DebugLog.log("⛓️ showDecisionConsequenceChains: latest results chains=\(results.decisionConsequenceChains.count)")
+                self.openDecisionConsequenceChainsPopout(chains: results.decisionConsequenceChains)
+            } else if remaining > 0 {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
+                    attemptOpen?(remaining - 1)
                 }
             }
+        }
+
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) {
+            attemptOpen?(4)
         }
     }
 
@@ -3860,15 +3915,23 @@ extension AnalysisViewController {
             return
         }
 
-        if let results = latestAnalysisResults {
-            openRelationshipEvolutionMapPopout(evolutionData: results.relationshipEvolutionData)
-        } else {
-            analyzeCallback?()
-            DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) { [weak self] in
-                if let results = self?.latestAnalysisResults {
-                    self?.openRelationshipEvolutionMapPopout(evolutionData: results.relationshipEvolutionData)
+        // Always trigger fresh analysis so the popout reflects the current document + library.
+        analyzeCallback?()
+
+        var attemptOpen: ((Int) -> Void)?
+        attemptOpen = { [weak self] remaining in
+            guard let self else { return }
+            if let results = self.latestAnalysisResults {
+                self.openRelationshipEvolutionMapPopout(evolutionData: results.relationshipEvolutionData)
+            } else if remaining > 0 {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
+                    attemptOpen?(remaining - 1)
                 }
             }
+        }
+
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) {
+            attemptOpen?(4)
         }
     }
 

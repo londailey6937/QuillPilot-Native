@@ -17,7 +17,7 @@ struct BeliefShiftMatrixView: View {
             VStack(alignment: .leading, spacing: 20) {
                 // Header
                 VStack(alignment: .leading, spacing: 8) {
-                    Text("Belief / Value Shift Matrices")
+                    Text("Belief - Value Shift Matrices")
                         .font(.title)
                         .fontWeight(.bold)
                         .foregroundColor(.primary)

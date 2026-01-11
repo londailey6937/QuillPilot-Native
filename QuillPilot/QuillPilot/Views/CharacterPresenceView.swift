@@ -233,6 +233,18 @@ class CharacterPresenceView: NSView {
     private let chartScrollView = NSScrollView()
     private let chartView = CharacterPresenceChartView(frame: .zero)
     private var chartContentWidth: CGFloat = 0
+    private var desiredChartContentWidth: CGFloat = 0
+
+    // Always-visible horizontal scroll control.
+    // macOS can hide overlay scrollbars; using a slider guarantees an on-screen control.
+    private let hScrollSlider: NSSlider = {
+        let s = NSSlider(value: 0.0, minValue: 0.0, maxValue: 1.0, target: nil, action: nil)
+        s.isContinuous = true
+        s.controlSize = .small
+        s.sliderType = .linear
+        return s
+    }()
+    private var chartClipBoundsObserver: NSObjectProtocol?
 
     private let modeControl: NSSegmentedControl = {
         let control = NSSegmentedControl(labels: ["Scenes", "Acts"], trackingMode: .selectOne, target: nil, action: nil)
@@ -253,6 +265,7 @@ class CharacterPresenceView: NSView {
         setupChartViews()
         setupLegendViews()
         setupModeControl()
+        setupHorizontalSlider()
         startObservingTheme()
     }
 
@@ -261,6 +274,7 @@ class CharacterPresenceView: NSView {
         setupChartViews()
         setupLegendViews()
         setupModeControl()
+        setupHorizontalSlider()
         startObservingTheme()
     }
 
@@ -268,18 +282,37 @@ class CharacterPresenceView: NSView {
         if let themeObserver {
             NotificationCenter.default.removeObserver(themeObserver)
         }
+        if let chartClipBoundsObserver {
+            NotificationCenter.default.removeObserver(chartClipBoundsObserver)
+        }
     }
 
     private func setupChartViews() {
         chartScrollView.documentView = chartView
-        chartScrollView.hasHorizontalScroller = true
+        chartScrollView.hasHorizontalScroller = false
         chartScrollView.hasVerticalScroller = false
-        chartScrollView.autohidesScrollers = true
-        chartScrollView.drawsBackground = false
+        chartScrollView.drawsBackground = true
+        chartScrollView.backgroundColor = ThemeManager.shared.currentTheme.pageAround
         chartScrollView.borderType = .noBorder
+
+        chartScrollView.contentView.postsBoundsChangedNotifications = true
 
         chartView.wantsLayer = true
         addSubview(chartScrollView)
+    }
+
+    private func setupHorizontalSlider() {
+        hScrollSlider.target = self
+        hScrollSlider.action = #selector(hScrollSliderChanged)
+        addSubview(hScrollSlider)
+
+        chartClipBoundsObserver = NotificationCenter.default.addObserver(
+            forName: NSView.boundsDidChangeNotification,
+            object: chartScrollView.contentView,
+            queue: .main
+        ) { [weak self] _ in
+            self?.updateHorizontalSlider()
+        }
     }
 
     private func setupModeControl() {
@@ -310,8 +343,20 @@ class CharacterPresenceView: NSView {
             queue: .main
         ) { [weak self] _ in
             self?.applyThemeToLegend()
+            let theme = ThemeManager.shared.currentTheme
+            self?.chartScrollView.backgroundColor = theme.pageAround
             self?.needsDisplay = true
         }
+    }
+
+    private func computeDesiredChartWidth(chaptersCount: Int, charactersCount: Int) -> CGFloat {
+        // Match sizing logic in applyXAxisMode, but keep it independent of the view’s current bounds.
+        let minBarWidthPerCharacter: CGFloat = 16
+        let groupOuterPadding: CGFloat = 18
+        let minGroupWidth: CGFloat = 80
+        let groupWidth = max(minGroupWidth, CGFloat(charactersCount) * minBarWidthPerCharacter + groupOuterPadding)
+        let padding: CGFloat = 60
+        return padding * 2 + CGFloat(max(1, chaptersCount)) * groupWidth
     }
 
     override func layout() {
@@ -324,13 +369,20 @@ class CharacterPresenceView: NSView {
         let legendX = bounds.width - legendWidth - 10
         legendScrollView.frame = NSRect(x: legendX, y: bottomPadding, width: legendWidth, height: chartHeight)
 
+        let scrollerHeight: CGFloat = 18
+
         // Chart area takes the remaining space on the left.
         let chartAreaWidth = max(1, legendX - 10)
-        chartScrollView.frame = NSRect(x: 0, y: 0, width: chartAreaWidth, height: bounds.height)
+        chartScrollView.frame = NSRect(x: 0, y: scrollerHeight, width: chartAreaWidth, height: bounds.height - scrollerHeight)
+
+        hScrollSlider.frame = NSRect(x: 10, y: 0, width: max(1, chartAreaWidth - 20), height: scrollerHeight)
 
         // Keep the chart view tall; width can exceed the visible area for scrolling.
         if chartContentWidth <= 0 { chartContentWidth = chartAreaWidth }
-        chartView.frame = NSRect(x: 0, y: 0, width: chartContentWidth, height: bounds.height)
+        if desiredChartContentWidth > 0 {
+            chartContentWidth = max(chartAreaWidth, desiredChartContentWidth)
+        }
+        chartView.frame = NSRect(x: 0, y: 0, width: chartContentWidth, height: bounds.height - scrollerHeight)
         chartView.visibleWidth = chartScrollView.contentView.bounds.width
 
         modeControl.sizeToFit()
@@ -343,6 +395,31 @@ class CharacterPresenceView: NSView {
 
         // Size stack for scroll.
         legendStack.frame = NSRect(x: 0, y: 0, width: legendWidth, height: legendStack.fittingSize.height)
+
+        updateHorizontalSlider()
+    }
+
+    private func updateHorizontalSlider() {
+        let viewportWidth = max(1, chartScrollView.contentView.bounds.width)
+        let contentWidth = max(viewportWidth, chartView.bounds.width)
+        let maxOffset = max(0, contentWidth - viewportWidth)
+
+        hScrollSlider.isHidden = false
+        hScrollSlider.isEnabled = (maxOffset > 0.5)
+
+        let currentX = chartScrollView.contentView.bounds.origin.x
+        hScrollSlider.doubleValue = (maxOffset > 0.5) ? Double(currentX / maxOffset) : 0.0
+    }
+
+    @objc private func hScrollSliderChanged() {
+        let viewportWidth = max(1, chartScrollView.contentView.bounds.width)
+        let contentWidth = max(viewportWidth, chartView.bounds.width)
+        let maxOffset = max(0, contentWidth - viewportWidth)
+        guard maxOffset > 0 else { return }
+
+        let newX = CGFloat(hScrollSlider.doubleValue) * maxOffset
+        chartScrollView.contentView.scroll(to: NSPoint(x: newX, y: 0))
+        chartScrollView.reflectScrolledClipView(chartScrollView.contentView)
     }
 
     func setPresence(_ presence: [CharacterPresence]) {
@@ -387,15 +464,8 @@ class CharacterPresenceView: NSView {
             chartView.xTickPrefix = "Sc"
         }
 
-        // Make groups readable by giving each Scene/Act enough width for per-character bars.
-        // The chartView will scroll horizontally when this exceeds the visible width.
-        let minBarWidthPerCharacter: CGFloat = 16
-        let groupOuterPadding: CGFloat = 18
-        let minGroupWidth: CGFloat = 80
-        let groupWidth = max(minGroupWidth, CGFloat(characters.count) * minBarWidthPerCharacter + groupOuterPadding)
-        let padding: CGFloat = 60
-        let desiredChartWidth = padding * 2 + CGFloat(max(1, chapters.count)) * groupWidth
-        chartContentWidth = max(bounds.width - legendWidth - 20, desiredChartWidth)
+        desiredChartContentWidth = computeDesiredChartWidth(chaptersCount: chapters.count, charactersCount: characters.count)
+        chartContentWidth = max(bounds.width - legendWidth - 20, desiredChartContentWidth)
 
         rebuildLegend(characters: characters, colors: colors)
         needsLayout = true

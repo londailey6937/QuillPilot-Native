@@ -15,8 +15,11 @@ class DocumentInfoPanel: NSView {
     private var wordCountLabel: NSTextField!
     private var charactersLabel: NSTextField!
     private var readingLevelLabel: NSTextField!
+    private var autoSaveStatusLabel: NSTextField!
     private var stackView: NSStackView!
     private var statLabels: [NSTextField] = []
+
+    private var settingsObserver: NSObjectProtocol?
 
     var onTitleChanged: ((String) -> Void)?
     var onAuthorChanged: ((String) -> Void)?
@@ -25,10 +28,17 @@ class DocumentInfoPanel: NSView {
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
         setupUI()
+        startObservingSettings()
     }
 
     required init?(coder: NSCoder) {
         fatalError("init(coder:) has not been implemented")
+    }
+
+    deinit {
+        if let settingsObserver {
+            NotificationCenter.default.removeObserver(settingsObserver)
+        }
     }
 
     private func setupUI() {
@@ -70,8 +80,11 @@ class DocumentInfoPanel: NSView {
         // Reading level
         readingLevelLabel = createStatLabel("Reading Level: --")
 
-        // Horizontal stack for stats (word count | characters | reading level)
-        let statsStack = NSStackView(views: [wordCountLabel, charactersLabel, readingLevelLabel])
+        // Auto-save indicator (shows interval or Off)
+        autoSaveStatusLabel = createStatLabel("Auto-save: --")
+
+        // Horizontal stack for stats (word count | characters | reading level | optional auto-save status)
+        let statsStack = NSStackView(views: [wordCountLabel, charactersLabel, readingLevelLabel, autoSaveStatusLabel])
         statsStack.orientation = .horizontal
         statsStack.spacing = 16
         statsStack.distribution = .equalSpacing
@@ -119,6 +132,38 @@ class DocumentInfoPanel: NSView {
         readingLevelLabel.stringValue = "Reading Level: \(readingLevel)"
     }
 
+    private func startObservingSettings() {
+        settingsObserver = NotificationCenter.default.addObserver(forName: .quillPilotSettingsDidChange, object: nil, queue: .main) { [weak self] _ in
+            self?.refreshAutoSaveIndicator()
+        }
+        refreshAutoSaveIndicator()
+    }
+
+    private func refreshAutoSaveIndicator() {
+        let interval = QuillPilotSettings.autoSaveIntervalSeconds
+        let isOff = interval <= 0
+
+        if isOff {
+            autoSaveStatusLabel.stringValue = "Auto-save: Off"
+            autoSaveStatusLabel.textColor = NSColor.systemRed
+            return
+        }
+
+        autoSaveStatusLabel.stringValue = "Auto-save: \(formatAutoSaveInterval(seconds: interval))"
+        autoSaveStatusLabel.textColor = ThemeManager.shared.currentTheme.headerText.withAlphaComponent(0.85)
+    }
+
+    private func formatAutoSaveInterval(seconds: TimeInterval) -> String {
+        guard seconds > 0 else { return "Off" }
+
+        let roundedSeconds = Int(seconds.rounded())
+        if roundedSeconds >= 60, roundedSeconds % 60 == 0 {
+            let minutes = roundedSeconds / 60
+            return minutes == 1 ? "1m" : "\(minutes)m"
+        }
+        return "\(max(1, roundedSeconds))s"
+    }
+
     func setTitle(_ title: String) {
         titleField.stringValue = title
     }
@@ -140,6 +185,7 @@ class DocumentInfoPanel: NSView {
         authorField.textColor = theme.headerText
         let statsColor = theme.headerText.withAlphaComponent(0.85)
         statLabels.forEach { $0.textColor = statsColor }
+        refreshAutoSaveIndicator()
         let placeholderText = titleField.placeholderAttributedString?.string ?? titleField.placeholderString
         if let placeholder = placeholderText {
             let centered = NSMutableParagraphStyle()

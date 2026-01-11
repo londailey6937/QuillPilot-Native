@@ -171,6 +171,33 @@ struct PoetryInsights {
 
 class AnalysisEngine {
 
+    private func normalizedCharacterKey(_ name: String) -> String {
+        name.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+    }
+
+    private func libraryValidatedCharacterNames(from input: [String]) -> [String] {
+        let library = CharacterLibrary.shared
+        guard !library.characters.isEmpty else { return [] }
+
+        // Map normalized keys back to the library’s canonical display/analysis key.
+        let libraryKeys = library.analysisCharacterKeys
+        var normalizedToLibraryKey: [String: String] = [:]
+        for key in libraryKeys {
+            normalizedToLibraryKey[normalizedCharacterKey(key)] = key
+        }
+
+        var seen: Set<String> = []
+        var out: [String] = []
+        for name in input {
+            let normalized = normalizedCharacterKey(name)
+            guard let libraryKey = normalizedToLibraryKey[normalized] else { continue }
+            if seen.insert(libraryKey).inserted {
+                out.append(libraryKey)
+            }
+        }
+        return out
+    }
+
     // Passive voice patterns
     private static let passiveVoicePatterns = [
         "was \\w+ed", "were \\w+ed", "is \\w+ed", "are \\w+ed",
@@ -1600,13 +1627,11 @@ class AnalysisEngine {
         DebugLog.log("📊 analyzeCharacterArcs: Library has \(library.characters.count) characters")
 
         if !library.characters.isEmpty {
-            // Filter to only include analysis-eligible characters that exist in the library
             let libraryKeys = library.analysisCharacterKeys
             DebugLog.log("📊 analyzeCharacterArcs: Library analysis keys = \(libraryKeys)")
-            validCharacterNames = characterNames.filter { libraryKeys.contains($0) }
+            validCharacterNames = libraryValidatedCharacterNames(from: characterNames)
             DebugLog.log("📊 analyzeCharacterArcs: Valid character names after filtering = \(validCharacterNames)")
         } else {
-            // No library = no character analysis
             validCharacterNames = []
             DebugLog.log("📊 analyzeCharacterArcs: No library characters, returning empty")
         }
@@ -1630,17 +1655,10 @@ class AnalysisEngine {
     }
 
     func generateBeliefShiftMatrices(text: String, characterNames: [String], outlineEntries: [DecisionBeliefLoopAnalyzer.OutlineEntry]? = nil) -> [BeliefShiftMatrix] {
-        // Validate against Character Library
-        let library = CharacterLibrary.shared
-        let validCharacterNames: [String]
-        if !library.characters.isEmpty {
-            let libraryKeys = library.analysisCharacterKeys
-            validCharacterNames = characterNames.filter { libraryKeys.contains($0) }
-        } else {
-            return [] // No library = no analysis
-        }
-
+        let validCharacterNames = libraryValidatedCharacterNames(from: characterNames)
         guard !validCharacterNames.isEmpty else { return [] }
+
+        let library = CharacterLibrary.shared
 
         var matrices: [BeliefShiftMatrix] = []
 
@@ -1693,10 +1711,10 @@ class AnalysisEngine {
         let counterpressureIndicators = ["but", "however", "challenged", "questioned", "opposed", "confronted", "despite", "although", "forced", "pressured"]
 
         func aliases(for analysisKey: String) -> [String] {
-            guard !analysisKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return [] }
+            guard !analysisKey.trimmingCharacters(in: CharacterSet.whitespacesAndNewlines).isEmpty else { return [] }
             if let profile = library.characters.first(where: { $0.analysisKey == analysisKey }) {
                 var values: [String] = [analysisKey]
-                let nick = profile.nickname.trimmingCharacters(in: .whitespacesAndNewlines)
+                let nick = profile.nickname.trimmingCharacters(in: CharacterSet.whitespacesAndNewlines)
                 if !nick.isEmpty { values.append(nick) }
                 return Array(Set(values)).filter { !$0.isEmpty }
             }
@@ -1876,17 +1894,10 @@ class AnalysisEngine {
     }
 
     func generateDecisionConsequenceChains(text: String, characterNames: [String], outlineEntries: [DecisionBeliefLoopAnalyzer.OutlineEntry]? = nil) -> [DecisionConsequenceChain] {
-        // Validate against Character Library
-        let library = CharacterLibrary.shared
-        let validCharacterNames: [String]
-        if !library.characters.isEmpty {
-            let libraryKeys = library.analysisCharacterKeys
-            validCharacterNames = characterNames.filter { libraryKeys.contains($0) }
-        } else {
-            return [] // No library = no analysis
-        }
-
+        let validCharacterNames = libraryValidatedCharacterNames(from: characterNames)
         guard !validCharacterNames.isEmpty else { return [] }
+
+        let library = CharacterLibrary.shared
 
         var chains: [DecisionConsequenceChain] = []
 
@@ -1938,26 +1949,67 @@ class AnalysisEngine {
         let outcomeIndicators = ["resulted", "consequence", "outcome", "happened", "led to", "caused", "as a result", "therefore", "thus"]
         let effectIndicators = ["changed", "shaped", "influenced", "affected", "transformed", "learned", "realized", "became"]
 
+        func aliases(for analysisKey: String) -> [String] {
+            let trimmed = analysisKey.trimmingCharacters(in: CharacterSet.whitespacesAndNewlines)
+            guard !trimmed.isEmpty else { return [] }
+            if let profile = library.characters.first(where: { $0.analysisKey == analysisKey }) {
+                var values: [String] = [analysisKey]
+                let nick = profile.nickname.trimmingCharacters(in: CharacterSet.whitespacesAndNewlines)
+                if !nick.isEmpty { values.append(nick) }
+                return Array(Set(values)).filter { !$0.isEmpty }
+            }
+            return [analysisKey]
+        }
+
+        func aliasRegexes(for aliases: [String]) -> [NSRegularExpression] {
+            aliases.compactMap {
+                let pattern = "\\b" + NSRegularExpression.escapedPattern(for: $0) + "\\b"
+                return try? NSRegularExpression(pattern: pattern, options: .caseInsensitive)
+            }
+        }
+
+        func matchesAnyAlias(_ regexes: [NSRegularExpression], in text: String) -> Bool {
+            let range = NSRange(text.startIndex..., in: text)
+            for regex in regexes {
+                if regex.firstMatch(in: text, range: range) != nil {
+                    return true
+                }
+            }
+            return false
+        }
+
         for characterName in validCharacterNames {
             var entries: [DecisionConsequenceChain.ChainEntry] = []
 
-            // Sample key chapters (beginning, early-middle, late-middle, end)
-            let sampleIndices: [Int]
-            if chapters.count >= 4 {
-                sampleIndices = [0, chapters.count / 3, (chapters.count * 2) / 3, chapters.count - 1]
+            // Scan enough chapters to actually find decisions, but cap work for large documents.
+            let maxChaptersToScan = min(chapters.count, 18)
+            let chapterIndices: [Int]
+            if chapters.count <= maxChaptersToScan {
+                chapterIndices = Array(0..<chapters.count)
+            } else if maxChaptersToScan <= 1 {
+                chapterIndices = [0]
             } else {
-                sampleIndices = Array(0..<chapters.count)
+                let step = Double(chapters.count - 1) / Double(maxChaptersToScan - 1)
+                var idxs: [Int] = []
+                var seen: Set<Int> = []
+                for i in 0..<maxChaptersToScan {
+                    let idx = min(chapters.count - 1, max(0, Int(round(Double(i) * step))))
+                    if seen.insert(idx).inserted {
+                        idxs.append(idx)
+                    }
+                }
+                chapterIndices = idxs
             }
 
-            for index in sampleIndices {
+            let maxEntriesPerCharacter = 6
+            let characterAliases = aliases(for: characterName)
+            let chapterAliasRegexes = aliasRegexes(for: characterAliases)
+
+            for index in chapterIndices {
                 let chapter = chapters[index]
 
-                // Only analyze chapters where character appears
-                let pattern = "\\b" + NSRegularExpression.escapedPattern(for: characterName) + "\\b"
-                guard let regex = try? NSRegularExpression(pattern: pattern, options: .caseInsensitive),
-                      regex.firstMatch(in: chapter.text, range: NSRange(chapter.text.startIndex..., in: chapter.text)) != nil else {
-                    continue
-                }
+                // Only analyze chapters where character appears (allow nickname/aliases).
+                guard matchesAnyAlias(chapterAliasRegexes, in: chapter.text) else { continue }
 
                 // Extract decision
                 let decision = extractDecision(from: chapter.text, character: characterName, indicators: decisionIndicators)
@@ -1981,12 +2033,30 @@ class AnalysisEngine {
                 )
 
                 entries.append(entry)
+
+                if entries.count >= maxEntriesPerCharacter {
+                    break
+                }
             }
 
-            // Only add chain if we found at least one decision
-            if !entries.isEmpty {
-                chains.append(DecisionConsequenceChain(characterName: characterName, entries: entries))
+            // Always include the character so the popout shows the full cast.
+            // If we couldn't find an explicit "decision" keyword match, emit a single placeholder entry.
+            if entries.isEmpty {
+                let fallbackChapter = chapters.first?.number ?? 1
+                entries.append(
+                    DecisionConsequenceChain.ChainEntry(
+                        chapter: fallbackChapter,
+                        chapterPage: 0,
+                        decision: "No explicit decision keyword found",
+                        decisionPage: 0,
+                        immediateOutcome: "Direct consequences unfold",
+                        immediateOutcomePage: 0,
+                        longTermEffect: "Character trajectory shifts",
+                        longTermEffectPage: 0
+                    )
+                )
             }
+            chains.append(DecisionConsequenceChain(characterName: characterName, entries: entries))
         }
 
         return chains

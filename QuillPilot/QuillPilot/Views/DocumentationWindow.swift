@@ -43,7 +43,7 @@ class DocumentationWindowController: NSWindowController {
         tabView.tabViewType = .topTabsBezelBorder
 
         // Create tabs
-        createTab(title: "� Why QuillPilot?", identifier: "why")
+        createTab(title: "❓ Why QuillPilot?", identifier: "why")
         createTab(title: "📊 Analysis Tools", identifier: "analysis")
         createTab(title: "👥 Character Features", identifier: "characters")
         createTab(title: "📖 Plot & Structure", identifier: "plot")
@@ -1175,10 +1175,11 @@ A: As many as your story needs. A 80,000-word novel might have 40-80 scenes, but
 ⌘O - Open document
 ⌘S - Save document
 ⌘⇧S - Save As (choose new location/format)
+File > Export… - Export without changing the document’s identity
 ⌘P - Print
 ⌘W - Close window
 
-Note: Auto-save runs every 30 seconds for saved documents.
+Note: Auto-save runs periodically for saved documents (default ~30 seconds; configurable in Preferences).
 """, color: bodyColor))
         content.append(makeNewline())
 
@@ -1284,7 +1285,16 @@ Add ⇧ (Shift) to select while moving
         content.append(makeBody("""
 ⌘M - Minimize window
 ⌘` - Cycle through windows
+⌘, - Preferences
 ⌘? - Show this help (QuillPilot Help)
+""", color: bodyColor))
+        content.append(makeNewline())
+
+        content.append(makeHeading("🧠 Analysis", color: headingColor))
+        content.append(makeBody("""
+⌘⇧A - Analyze document now
+
+Tip: Auto-analyze behavior can be configured in Preferences.
 """, color: bodyColor))
         content.append(makeNewline())
 

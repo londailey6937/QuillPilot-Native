@@ -52,6 +52,7 @@ class MainWindowController: NSWindowController {
     private var rulerView: EnhancedRulerView!
     var mainContentViewController: ContentViewController!
     private var themeObserver: NSObjectProtocol?
+    private var settingsObserver: NSObjectProtocol?
     private var headerFooterSettingsWindow: HeaderFooterSettingsWindow?
     private var styleEditorWindow: StyleEditorWindowController?
     private var tocIndexWindow: TOCIndexWindowController?
@@ -199,6 +200,10 @@ class MainWindowController: NSWindowController {
             self.applyTheme(theme)
         }
 
+        settingsObserver = NotificationCenter.default.addObserver(forName: .quillPilotSettingsDidChange, object: nil, queue: .main) { [weak self] _ in
+            self?.startAutoSaveTimer()
+        }
+
         // Initialize scene list with no document (clears any persisted scenes)
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { [weak self] in
             self?.mainContentViewController?.documentDidChange(url: nil)
@@ -218,7 +223,7 @@ class MainWindowController: NSWindowController {
             self.headerView.specsPanel.updateStats(text: text)
         }
 
-        // Start auto-save timer (saves every 30 seconds if changes detected)
+        // Start auto-save timer (interval set in Preferences)
         startAutoSaveTimer()
     }
 
@@ -376,6 +381,9 @@ class MainWindowController: NSWindowController {
         autoSaveTimer = nil
         if let themeObserver {
             NotificationCenter.default.removeObserver(themeObserver)
+        }
+        if let settingsObserver {
+            NotificationCenter.default.removeObserver(settingsObserver)
         }
     }
 }
@@ -927,6 +935,11 @@ extension MainWindowController {
         performSaveAs(sender)
     }
 
+    @MainActor
+    func performExportDocument(_ sender: Any?) {
+        performExportAs(sender)
+    }
+
     func performSaveAs(_ sender: Any?) {
         guard let window else { return }
 
@@ -938,8 +951,8 @@ extension MainWindowController {
         let popup = NSPopUpButton(frame: .zero, pullsDown: false)
         ExportFormat.allCases.forEach { popup.addItem(withTitle: $0.displayName) }
 
-        // Default new documents to DOCX. Existing documents keep their current format.
-        let defaultFormat: ExportFormat = (currentDocumentURL == nil) ? .docx : currentDocumentFormat
+        // Default new documents to the Preferences format. Existing documents keep their current format.
+        let defaultFormat: ExportFormat = (currentDocumentURL == nil) ? QuillPilotSettings.defaultExportFormat : currentDocumentFormat
         let defaultIndex = ExportFormat.allCases.firstIndex(of: defaultFormat) ?? 0
         popup.selectItem(at: defaultIndex)
 
@@ -988,91 +1001,149 @@ extension MainWindowController {
         }
     }
 
+    func performExportAs(_ sender: Any?) {
+        guard let window else { return }
+
+        let panel = NSSavePanel()
+        panel.canCreateDirectories = true
+        panel.isExtensionHidden = false
+        panel.title = "Export"
+
+        let popup = NSPopUpButton(frame: .zero, pullsDown: false)
+        ExportFormat.allCases.forEach { popup.addItem(withTitle: $0.displayName) }
+
+        let defaultFormat = QuillPilotSettings.defaultExportFormat
+        let defaultIndex = ExportFormat.allCases.firstIndex(of: defaultFormat) ?? 0
+        popup.selectItem(at: defaultIndex)
+
+        let accessory = NSStackView(views: [NSTextField(labelWithString: "Format:"), popup])
+        accessory.orientation = .horizontal
+        accessory.spacing = 8
+        panel.accessoryView = accessory
+
+        if panel.nameFieldStringValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            let title = headerView.documentTitle().trimmingCharacters(in: .whitespacesAndNewlines)
+            if !title.isEmpty {
+                panel.nameFieldStringValue = title
+            }
+        }
+
+        func applySelection() {
+            let format = ExportFormat.allCases[popup.indexOfSelectedItem]
+            panel.allowedContentTypes = format.contentTypes
+            let baseName: String
+            if let existingDot = panel.nameFieldStringValue.lastIndex(of: ".") {
+                baseName = String(panel.nameFieldStringValue[..<existingDot])
+            } else if panel.nameFieldStringValue.isEmpty {
+                baseName = "Untitled"
+            } else {
+                baseName = panel.nameFieldStringValue
+            }
+            panel.nameFieldStringValue = baseName + "." + format.fileExtension
+        }
+
+        applySelection()
+        popup.target = self
+        popup.action = #selector(_saveFormatChanged(_:))
+        objc_setAssociatedObject(popup, &AssociatedKeys.savePanelKey, panel, .OBJC_ASSOCIATION_RETAIN_NONATOMIC)
+
+        panel.beginSheetModal(for: window) { response in
+            guard response == .OK, let url = panel.url else { return }
+            let format = ExportFormat.allCases[popup.indexOfSelectedItem]
+            self.exportToURL(url, format: format)
+        }
+    }
+
+    private func writeDocument(to url: URL, format: ExportFormat) throws {
+        switch format {
+        case .docx:
+            let stamped = stampImageSizes(in: mainContentViewController.editorExportReadyAttributedContent())
+            let data = try DocxBuilder.makeDocxData(from: stamped)
+            try data.write(to: url, options: .atomic)
+            debugLog("✅ DOCX exported to \(url.path)")
+
+        case .rtf:
+            let content = mainContentViewController.editorExportReadyAttributedContent()
+            let fullRange = NSRange(location: 0, length: content.length)
+            let data = try content.data(from: fullRange, documentAttributes: [.documentType: NSAttributedString.DocumentType.rtf])
+            try data.write(to: url, options: .atomic)
+            debugLog("✅ RTF exported to \(url.path)")
+
+        case .rtfd:
+            let content = mainContentViewController.editorExportReadyAttributedContent()
+            let fullRange = NSRange(location: 0, length: content.length)
+            let wrapper = try content.fileWrapper(
+                from: fullRange,
+                documentAttributes: [.documentType: NSAttributedString.DocumentType.rtfd]
+            )
+
+            if FileManager.default.fileExists(atPath: url.path) {
+                try? FileManager.default.removeItem(at: url)
+            }
+            try wrapper.write(to: url, options: .atomic, originalContentsURL: nil)
+            debugLog("✅ RTFD exported to \(url.path)")
+
+        case .odt:
+            let content = mainContentViewController.editorExportReadyAttributedContent()
+            let fullRange = NSRange(location: 0, length: content.length)
+            let data = try content.data(from: fullRange, documentAttributes: [.documentType: NSAttributedString.DocumentType.openDocument])
+            try data.write(to: url, options: Data.WritingOptions.atomic)
+            debugLog("✅ ODT exported to \(url.path)")
+
+        case .txt:
+            let text = mainContentViewController.editorViewController.plainTextContent()
+            try text.write(to: url, atomically: true, encoding: .utf8)
+            debugLog("✅ TXT exported to \(url.path)")
+
+        case .markdown:
+            let text = mainContentViewController.editorViewController.plainTextContent()
+            try text.write(to: url, atomically: true, encoding: .utf8)
+            debugLog("✅ Markdown exported to \(url.path)")
+
+        case .html:
+            let content = mainContentViewController.editorExportReadyAttributedContent()
+            let fullRange = NSRange(location: 0, length: content.length)
+            let data = try content.data(from: fullRange, documentAttributes: [.documentType: NSAttributedString.DocumentType.html])
+            try data.write(to: url, options: .atomic)
+            debugLog("✅ HTML exported to \(url.path)")
+
+        case .pdf:
+            let data = mainContentViewController.editorPDFData()
+            try data.write(to: url, options: .atomic)
+            debugLog("✅ PDF exported to \(url.path)")
+
+        case .epub:
+            let content = mainContentViewController.editorExportReadyAttributedContent()
+            let epubData = try self.generateEPub(from: content, url: url)
+            try epubData.write(to: url, options: Data.WritingOptions.atomic)
+            debugLog("✅ ePub exported to \(url.path)")
+
+        case .mobi:
+            let content = mainContentViewController.editorExportReadyAttributedContent()
+            let mobiData = try self.generateMobi(from: content, url: url)
+            try mobiData.write(to: url, options: Data.WritingOptions.atomic)
+            debugLog("✅ Mobi exported to \(url.path)")
+        }
+    }
+
+    private func exportToURL(_ url: URL, format: ExportFormat) {
+        do {
+            try writeDocument(to: url, format: format)
+            NSDocumentController.shared.noteNewRecentDocumentURL(url)
+            RecentDocuments.shared.note(url)
+        } catch {
+            debugLog("❌ Export failed: \(error.localizedDescription)")
+            self.presentErrorAlert(message: "Export failed", details: error.localizedDescription)
+        }
+    }
+
     private func saveToURL(_ url: URL, format: ExportFormat) {
         do {
-            switch format {
-            case .docx:
-                // Export to DOCX
-                let stamped = stampImageSizes(in: mainContentViewController.editorExportReadyAttributedContent())
-                let data = try DocxBuilder.makeDocxData(from: stamped)
-                try data.write(to: url, options: .atomic)
-                debugLog("✅ DOCX exported to \(url.path)")
+            try writeDocument(to: url, format: format)
 
-                // Update document URL for character library (but don't auto-save)
+            if format == .docx {
+                // Primary document save: attach sidecars (character library) to this URL.
                 CharacterLibrary.shared.setDocumentURL(url)
-
-            case .rtf:
-                // Export to RTF (text only, images stripped)
-                let content = mainContentViewController.editorExportReadyAttributedContent()
-                let fullRange = NSRange(location: 0, length: content.length)
-                let data = try content.data(from: fullRange, documentAttributes: [.documentType: NSAttributedString.DocumentType.rtf])
-                try data.write(to: url, options: .atomic)
-                debugLog("✅ RTF exported to \(url.path)")
-
-            case .rtfd:
-                // Export to RTFD as a real .rtfd package (directory wrapper).
-                // Writing flat Data to a .rtfd path can produce a file that doesn't register as UTType.rtfd,
-                // which makes it disappear from Open dialogs filtered by content type.
-                let content = mainContentViewController.editorExportReadyAttributedContent()
-                let fullRange = NSRange(location: 0, length: content.length)
-                let wrapper = try content.fileWrapper(
-                    from: fullRange,
-                    documentAttributes: [.documentType: NSAttributedString.DocumentType.rtfd]
-                )
-
-                if FileManager.default.fileExists(atPath: url.path) {
-                    try? FileManager.default.removeItem(at: url)
-                }
-                try wrapper.write(to: url, options: .atomic, originalContentsURL: nil)
-                debugLog("✅ RTFD exported to \(url.path)")
-
-            case .odt:
-                // Export to OpenDocument Text (.odt) for LibreOffice.
-                let content = mainContentViewController.editorExportReadyAttributedContent()
-                let fullRange = NSRange(location: 0, length: content.length)
-                let data = try content.data(from: fullRange, documentAttributes: [.documentType: NSAttributedString.DocumentType.openDocument])
-                try data.write(to: url, options: Data.WritingOptions.atomic)
-                debugLog("✅ ODT exported to \(url.path)")
-
-            case .txt:
-                // Export to plain text
-                let text = mainContentViewController.editorViewController.plainTextContent()
-                try text.write(to: url, atomically: true, encoding: .utf8)
-                debugLog("✅ TXT exported to \(url.path)")
-
-            case .markdown:
-                // Export to Markdown (currently plain-text export)
-                let text = mainContentViewController.editorViewController.plainTextContent()
-                try text.write(to: url, atomically: true, encoding: .utf8)
-                debugLog("✅ Markdown exported to \(url.path)")
-
-            case .html:
-                // Export to HTML
-                let content = mainContentViewController.editorExportReadyAttributedContent()
-                let fullRange = NSRange(location: 0, length: content.length)
-                let data = try content.data(from: fullRange, documentAttributes: [.documentType: NSAttributedString.DocumentType.html])
-                try data.write(to: url, options: .atomic)
-                debugLog("✅ HTML exported to \(url.path)")
-
-            case .pdf:
-                // Export to PDF
-                let data = mainContentViewController.editorPDFData()
-                try data.write(to: url, options: .atomic)
-                debugLog("✅ PDF exported to \(url.path)")
-
-            case .epub:
-                // Export to ePub
-                let content = mainContentViewController.editorExportReadyAttributedContent()
-                let epubData = try self.generateEPub(from: content, url: url)
-                try epubData.write(to: url, options: Data.WritingOptions.atomic)
-                debugLog("✅ ePub exported to \(url.path)")
-
-            case .mobi:
-                // Export to Mobi (Kindle format)
-                let content = mainContentViewController.editorExportReadyAttributedContent()
-                let mobiData = try self.generateMobi(from: content, url: url)
-                try mobiData.write(to: url, options: Data.WritingOptions.atomic)
-                debugLog("✅ Mobi exported to \(url.path)")
             }
 
             // Ensure Welcome recents are populated (this app is not NSDocument-based).
@@ -1088,7 +1159,14 @@ extension MainWindowController {
     // MARK: - Auto-Save
     private func startAutoSaveTimer() {
         autoSaveTimer?.invalidate()
-        autoSaveTimer = Timer.scheduledTimer(withTimeInterval: 30.0, repeats: true) { [weak self] _ in
+        autoSaveTimer = nil
+
+        let interval = QuillPilotSettings.autoSaveIntervalSeconds
+        guard interval > 0 else {
+            return
+        }
+
+        autoSaveTimer = Timer.scheduledTimer(withTimeInterval: interval, repeats: true) { [weak self] _ in
             self?.performAutoSave()
         }
     }
@@ -1337,6 +1415,7 @@ extension MainWindowController {
         currentDocumentURL = nil
         hasUnsavedChanges = false
         window?.title = "QuillPilot"
+        headerView.setDocumentTitle("")
         debugLog("🆕 NEW DOCUMENT: Complete")
     }
 
@@ -1908,7 +1987,9 @@ extension MainWindowController {
             headerView.specsPanel.updateStats(text: text)
         }
 
-        mainContentViewController.performAnalysis()
+        if QuillPilotSettings.autoAnalyzeOnOpen {
+            mainContentViewController.performAnalysis()
+        }
         NotificationCenter.default.post(name: Notification.Name("QuillPilotOutlineRefresh"), object: nil)
 
         // Ensure Welcome recents are populated (this app is not NSDocument-based).
@@ -2267,17 +2348,20 @@ class FormattingToolbar: NSView {
         stylePopup.target = self
         stylePopup.action = #selector(styleChanged(_:))
         stylePopup.toolTip = "Paragraph Style"
+        stylePopup.setAccessibilityLabel("Paragraph Style")
 
         editStylesButton = createToolbarButton("Edit…")
         editStylesButton.target = self
         editStylesButton.action = #selector(openStyleEditorTapped)
         editStylesButton.toolTip = "Open Style Editor"
+        editStylesButton.setAccessibilityLabel("Open Style Editor")
 
         // Format painter button
         let formatPainterBtn = createToolbarButton("🖌️")
         formatPainterBtn.target = self
         formatPainterBtn.action = #selector(formatPainterTapped)
         formatPainterBtn.toolTip = "Format Painter (Copy Style)"
+        formatPainterBtn.setAccessibilityLabel("Format Painter")
 
         // Template popup
         templatePopup = registerControl(NSPopUpButton(frame: .zero, pullsDown: false))
@@ -2287,18 +2371,22 @@ class FormattingToolbar: NSView {
         templatePopup.target = self
         templatePopup.action = #selector(templateChanged(_:))
         templatePopup.toolTip = "Template"
+        templatePopup.setAccessibilityLabel("Template")
 
         // Font size controls
         let decreaseSizeBtn = registerControl(NSButton(title: "−", target: self, action: #selector(decreaseFontSizeTapped)))
         decreaseSizeBtn.toolTip = "Decrease Font Size"
+        decreaseSizeBtn.setAccessibilityLabel("Decrease Font Size")
         sizePopup = registerControl(NSPopUpButton(frame: .zero, pullsDown: false))
         sizePopup.addItems(withTitles: ["8", "9", "10", "11", "12", "14", "16", "18", "20", "24", "28", "32"])
         sizePopup.selectItem(withTitle: "20")
         sizePopup.target = self
         sizePopup.action = #selector(fontSizeChanged(_:))
         sizePopup.toolTip = "Font Size"
+        sizePopup.setAccessibilityLabel("Font Size")
         let increaseSizeBtn = registerControl(NSButton(title: "+", target: self, action: #selector(increaseFontSizeTapped)))
         increaseSizeBtn.toolTip = "Increase Font Size"
+        increaseSizeBtn.setAccessibilityLabel("Increase Font Size")
 
         // Text styling
         let boldBtn = createToolbarButton("B", weight: .bold)
@@ -2307,12 +2395,15 @@ class FormattingToolbar: NSView {
         boldBtn.target = self
         boldBtn.action = #selector(boldTapped)
         boldBtn.toolTip = "Bold"
+        boldBtn.setAccessibilityLabel("Bold")
         italicBtn.target = self
         italicBtn.action = #selector(italicTapped)
         italicBtn.toolTip = "Italic"
+        italicBtn.setAccessibilityLabel("Italic")
         underlineBtn.target = self
         underlineBtn.action = #selector(underlineTapped)
         underlineBtn.toolTip = "Underline"
+        underlineBtn.setAccessibilityLabel("Underline")
 
         // Alignment
                 let alignLeftBtn = createToolbarButton("≡", fontSize: 20)
@@ -2322,15 +2413,19 @@ class FormattingToolbar: NSView {
                 alignLeftBtn.target = self
                 alignLeftBtn.action = #selector(alignLeftTapped)
                 alignLeftBtn.toolTip = "Align Left"
+                alignLeftBtn.setAccessibilityLabel("Align Left")
                 alignCenterBtn.target = self
                 alignCenterBtn.action = #selector(alignCenterTapped)
                 alignCenterBtn.toolTip = "Align Center"
+                alignCenterBtn.setAccessibilityLabel("Align Center")
                 alignRightBtn.target = self
                 alignRightBtn.action = #selector(alignRightTapped)
                 alignRightBtn.toolTip = "Align Right"
+                alignRightBtn.setAccessibilityLabel("Align Right")
                 justifyBtn.target = self
                 justifyBtn.action = #selector(justifyTapped)
                 justifyBtn.toolTip = "Justify"
+                justifyBtn.setAccessibilityLabel("Justify")
 
         // Lists
         let bulletsBtn = createToolbarButton("•")
@@ -2338,9 +2433,11 @@ class FormattingToolbar: NSView {
         bulletsBtn.target = self
         bulletsBtn.action = #selector(bulletsTapped)
         bulletsBtn.toolTip = "Bulleted List"
+        bulletsBtn.setAccessibilityLabel("Bulleted List")
         numberingBtn.target = self
         numberingBtn.action = #selector(numberingTapped)
         numberingBtn.toolTip = "Numbered List"
+        numberingBtn.setAccessibilityLabel("Numbered List")
 
         // Images
         if let baseSymbol = NSImage(systemSymbolName: "photo", accessibilityDescription: "Insert Image") {
@@ -2353,12 +2450,14 @@ class FormattingToolbar: NSView {
             btn.imagePosition = .imageOnly
             btn.title = ""
             btn.toolTip = "Insert Image"
+            btn.setAccessibilityLabel("Insert Image")
             imageButton = btn
         } else {
             imageButton = createToolbarButton("▭", fontSize: 18)
             imageButton.target = self
             imageButton.action = #selector(imageTapped)
             imageButton.toolTip = "Insert Image"
+            imageButton.setAccessibilityLabel("Insert Image")
         }
 
         // Layout
@@ -2368,29 +2467,35 @@ class FormattingToolbar: NSView {
         columnsBtn.target = self
         columnsBtn.action = #selector(columnsTapped)
         columnsBtn.toolTip = "Columns"
+        columnsBtn.setAccessibilityLabel("Columns")
         tableBtn.target = self
         tableBtn.action = #selector(tableTapped)
         tableBtn.toolTip = "Table Operations"
+        tableBtn.setAccessibilityLabel("Table Operations")
 
         // Search & Replace
         let searchBtn = createToolbarButton("🔍", fontSize: 16)
         searchBtn.target = self
         searchBtn.action = #selector(searchTapped)
         searchBtn.toolTip = "Find & Replace"
+        searchBtn.setAccessibilityLabel("Find & Replace")
 
         // Indentation
         let outdentBtn = registerControl(NSButton(title: "⇤", target: self, action: #selector(outdentTapped)))
         outdentBtn.bezelStyle = .texturedRounded
         outdentBtn.toolTip = "Decrease Indent"
+        outdentBtn.setAccessibilityLabel("Decrease Indent")
         let indentBtn = registerControl(NSButton(title: "⇥", target: self, action: #selector(indentTapped)))
         indentBtn.bezelStyle = .texturedRounded
         indentBtn.toolTip = "Increase Indent"
+        indentBtn.setAccessibilityLabel("Increase Indent")
 
         // Sidebar toggle button
         let sidebarBtn = createToolbarButton("◨", fontSize: 18)
         sidebarBtn.target = self
         sidebarBtn.action = #selector(sidebarToggleTapped)
         sidebarBtn.toolTip = "Toggle Sidebars"
+        sidebarBtn.setAccessibilityLabel("Toggle Sidebars")
 
         // Add all to stack view (all aligned left)
         let toolbarStack = NSStackView(views: [
@@ -2918,8 +3023,14 @@ class ContentViewController: NSViewController {
         DebugLog.log("[DEBUG] ContentViewController.viewDidLoad - adding observer for ToggleSidebars")
         NotificationCenter.default.addObserver(forName: Notification.Name("ToggleSidebars"), object: nil, queue: .main) { [weak self] _ in
             DebugLog.log("[DEBUG] ContentViewController received ToggleSidebars notification")
-            self?.outlinePanelController?.toggleMenuSidebar()
-            self?.analysisViewController?.toggleMenuSidebar()
+            guard let self else { return }
+            guard let outline = self.outlinePanelController, let analysis = self.analysisViewController else { return }
+
+            // Keep both panels in the same state.
+            // If either is visible, hide both; otherwise show both.
+            let anyVisible = !outline.isMenuSidebarHidden || !analysis.isMenuSidebarHidden
+            outline.setMenuSidebarHidden(anyVisible)
+            analysis.setMenuSidebarHidden(anyVisible)
         }
 
         refreshOutline()
@@ -2961,6 +3072,7 @@ class ContentViewController: NSViewController {
         // Set up analysis callback
         analysisViewController.analyzeCallback = { [weak self] in
             DebugLog.log("🔗 Analysis callback triggered")
+            guard QuillPilotSettings.autoAnalyzeOnOpen else { return }
             self?.performAnalysis()
         }
 
@@ -3176,9 +3288,9 @@ class ContentViewController: NSViewController {
 
         // Determine character names on MAIN THREAD.
         // Prefer the per-document CharacterLibrary; for Screenplay, fall back to extracting character cues.
-        let libraryCharacterNames = CharacterLibrary.shared.characters
-            .map { $0.fullName.trimmingCharacters(in: .whitespacesAndNewlines) }
-            .filter { !$0.isEmpty }
+        // Use canonical analysis keys so AnalysisEngine's CharacterLibrary validation doesn't drop everyone
+        // (analysis keys are typically the first token of the character's full name).
+        let libraryCharacterNames = CharacterLibrary.shared.analysisCharacterKeys
 
         let isScreenplay = StyleCatalog.shared.currentTemplateName == "Screenplay"
         let extractedScreenplayNames = isScreenplay ? editorViewController.extractScreenplayCharacterCues() : []
@@ -3220,6 +3332,18 @@ class ContentViewController: NSViewController {
                 results.decisionBeliefLoops = loops
                 results.characterInteractions = interactions
                 results.characterPresence = presence
+
+                // Populate additional character-centric outputs used by popouts.
+                results.beliefShiftMatrices = analysisEngine.generateBeliefShiftMatrices(
+                    text: text,
+                    characterNames: characterNamesForAnalysis,
+                    outlineEntries: analysisOutlineEntries
+                )
+                results.decisionConsequenceChains = analysisEngine.generateDecisionConsequenceChains(
+                    text: text,
+                    characterNames: characterNamesForAnalysis,
+                    outlineEntries: analysisOutlineEntries
+                )
             }
 
             DebugLog.log("📊 Analysis results: \(results.wordCount) words, \(results.sentenceCount) sentences, \(results.paragraphCount) paragraphs")
@@ -3511,17 +3635,17 @@ extension OutlineViewController: NSOutlineViewDataSource, NSOutlineViewDelegate 
 }
 
 // MARK: - Export Formats
-private enum ExportFormat: CaseIterable {
-    case docx       // Full support (save + open)
-    case rtf        // Export only
-    case rtfd       // Export + open
-    case odt        // Export only (LibreOffice)
-    case txt        // Export + open
-    case markdown   // Export + open
-    case html       // Export + open
-    case pdf        // Export only
-    case epub       // Export only
-    case mobi       // Export only (Kindle)
+enum ExportFormat: String, CaseIterable {
+    case docx = "docx"       // Full support (save + open)
+    case rtf = "rtf"         // Export only
+    case rtfd = "rtfd"       // Export + open
+    case odt = "odt"         // Export only (LibreOffice)
+    case txt = "txt"         // Export + open
+    case markdown = "md"     // Export + open
+    case html = "html"       // Export + open
+    case pdf = "pdf"         // Export only
+    case epub = "epub"       // Export only
+    case mobi = "mobi"       // Export only (Kindle)
 
     var displayName: String {
         switch self {
@@ -3538,20 +3662,7 @@ private enum ExportFormat: CaseIterable {
         }
     }
 
-    var fileExtension: String {
-        switch self {
-        case .docx: return "docx"
-        case .rtf: return "rtf"
-        case .rtfd: return "rtfd"
-        case .odt: return "odt"
-        case .txt: return "txt"
-        case .markdown: return "md"
-        case .html: return "html"
-        case .pdf: return "pdf"
-        case .epub: return "epub"
-        case .mobi: return "mobi"
-        }
-    }
+    var fileExtension: String { rawValue }
 
     var contentTypes: [UTType] {
         switch self {
@@ -5481,9 +5592,11 @@ extension ContentViewController: EditorViewControllerDelegate {
         perform(#selector(updateStatsDelayed), with: nil, afterDelay: statsDelay)
         perform(#selector(refreshOutlineDelayed), with: nil, afterDelay: outlineDelay)
 
-        // Trigger auto-analysis after a longer delay
-        NSObject.cancelPreviousPerformRequests(withTarget: self, selector: #selector(performAnalysisDelayed), object: nil)
-        perform(#selector(performAnalysisDelayed), with: nil, afterDelay: analysisDelay)
+        if QuillPilotSettings.autoAnalyzeWhileTyping {
+            // Trigger auto-analysis after a longer delay
+            NSObject.cancelPreviousPerformRequests(withTarget: self, selector: #selector(performAnalysisDelayed), object: nil)
+            perform(#selector(performAnalysisDelayed), with: nil, afterDelay: analysisDelay)
+        }
     }
 
     func suspendAnalysisForLayout() {

@@ -10,6 +10,11 @@ QuillPilot now includes powerful visualization tools to help you understand your
 2. In the right-side Analysis panel, click **📖 Plot Structure** or **👥 Characters**
 3. If results aren’t available yet, QuillPilot runs analysis automatically when you open an analysis view
 
+Notes:
+
+- **Auto-save** runs periodically for saved documents when changes are detected (default ~30 seconds; configurable in Preferences).
+- **Save As…** supports exporting to DOCX, RTF, RTFD, ODT, TXT, Markdown, HTML, PDF, ePub, and Mobi.
+
 ## Plot Point Visualization
 
 ### What It Shows

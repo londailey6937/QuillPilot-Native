@@ -9,6 +9,8 @@ A powerful native macOS writing application with advanced story analysis, plot v
 - **Native Text Editing**: Rock-solid NSTextView with undo/redo
 - **Rich Text Formatting**: Bold, italic, fonts, colors
 - **Document Management**: New, open, save, save as
+- **Auto-save (saved documents)**: Saves periodically when changes are detected (default ~30 seconds; configurable in Preferences)
+- **Export Formats (via Save As…)**: DOCX, RTF, RTFD, ODT, TXT, Markdown, HTML, PDF, ePub, Mobi
 - **Split View Interface**: Editor + analysis sidebar
 
 ### 🎭 Templates (Screenplay + Poetry)
@@ -102,6 +104,14 @@ Three powerful visualization modes:
 - **QuillPilot Help**: Comprehensive feature guide
 - **Dialogue Writing Tips**: 10 professional tips with examples
 
+### 🧰 Editor Utilities (Menus)
+
+- **Edit → Find Invisible Characters…**: Highlights non-printing/invisible characters
+- **Edit → Remove Extra Blank Lines**: Collapses excessive empty paragraphs
+- **Format → Typography**: Drop caps, old-style numerals, optical kerning
+- **View → Header & Footer Settings…**: Configure running headers/footers
+- **View → Table of Contents & Index… (⌘⇧T)**: Insert/manage TOC and index entries
+
 ## 🖥️ System Requirements
 
 - macOS 13.0 (Ventura) or later
@@ -117,7 +127,7 @@ Three powerful visualization modes:
 
    ```bash
    git clone https://github.com/londailey6937/QuillPilot-Native.git
-   cd QuillPilot
+   cd QuillPilot-Native
    ```
 
 2. **Build with Swift Package Manager**:
@@ -172,7 +182,6 @@ Three powerful visualization modes:
 - **Emotional Journey**: Track each character's sentiment
 - **Character Network**: See who appears with whom
 - **Presence Heatmap**: View character distribution by section (scenes/acts for screenplays)
-- **Presence Heatmap**: View character distribution by scene (and optionally acts for screenplays)
 
 ### Poetry Analysis
 

@@ -598,7 +598,8 @@ struct PlotPointRow: View {
                     // Analysis question
                     Text(plotPoint.analysisQuestion)
                         .font(.caption2)
-                        .foregroundColor(.blue)
+                        // Rows have a dark background; use light text for readability.
+                        .foregroundColor(secondaryTextColor)
                         .italic()
 
                     if let improvement = plotPoint.suggestedImprovement {

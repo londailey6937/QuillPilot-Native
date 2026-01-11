@@ -25,6 +25,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var mainWindowController: MainWindowController?
     private var documentationWindow: DocumentationWindowController?
     private var dialogueTipsWindow: DialogueTipsWindowController?
+    private var preferencesWindow: PreferencesWindowController?
     private var aboutWindow: NSWindow?
     private var welcomeWindow: WelcomeWindowController?
     private var recentlyOpenedMenu: NSMenu?
@@ -295,8 +296,29 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         appMenu.addItem(NSMenuItem(title: "About QuillPilot", action: #selector(showAboutWindow(_:)), keyEquivalent: ""))
         appMenu.addItem(.separator())
-        appMenu.addItem(NSMenuItem(title: "Hide QuillPilot", action: #selector(NSApplication.hide(_:)), keyEquivalent: "h"))
+
+        let prefs = NSMenuItem(title: "Preferences…", action: #selector(showPreferences(_:)), keyEquivalent: ",")
+        prefs.target = self
+        appMenu.addItem(prefs)
+
         appMenu.addItem(.separator())
+
+        let servicesItem = NSMenuItem(title: "Services", action: nil, keyEquivalent: "")
+        let servicesMenu = NSMenu(title: "Services")
+        servicesItem.submenu = servicesMenu
+        appMenu.addItem(servicesItem)
+        NSApp.servicesMenu = servicesMenu
+
+        appMenu.addItem(.separator())
+
+        appMenu.addItem(NSMenuItem(title: "Hide QuillPilot", action: #selector(NSApplication.hide(_:)), keyEquivalent: "h"))
+        let hideOthers = NSMenuItem(title: "Hide Others", action: #selector(NSApplication.hideOtherApplications(_:)), keyEquivalent: "h")
+        hideOthers.keyEquivalentModifierMask = [.command, .option]
+        appMenu.addItem(hideOthers)
+        appMenu.addItem(NSMenuItem(title: "Show All", action: #selector(NSApplication.unhideAllApplications(_:)), keyEquivalent: ""))
+
+        appMenu.addItem(.separator())
+
         appMenu.addItem(NSMenuItem(title: "Quit QuillPilot", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q"))
 
         // File Menu
@@ -329,6 +351,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let saveAsItem = NSMenuItem(title: "Save As…", action: #selector(saveDocumentAs(_:)), keyEquivalent: "S")
         saveAsItem.target = self
         fileMenu.addItem(saveAsItem)
+
+        let exportItem = NSMenuItem(title: "Export…", action: #selector(exportDocument(_:)), keyEquivalent: "")
+        exportItem.target = self
+        fileMenu.addItem(exportItem)
 
         fileMenu.addItem(.separator())
 
@@ -411,6 +437,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         tocIndexItem.target = self
         viewMenu.addItem(tocIndexItem)
 
+        viewMenu.addItem(.separator())
+
+        let analyzeNowItem = NSMenuItem(title: "Analyze Document Now", action: #selector(analyzeDocumentNow(_:)), keyEquivalent: "a")
+        analyzeNowItem.keyEquivalentModifierMask = [.command, .shift]
+        analyzeNowItem.target = self
+        viewMenu.addItem(analyzeNowItem)
+
+        viewMenu.addItem(.separator())
+
+        let autoAnalyzeOpenItem = NSMenuItem(title: "Auto-Analyze on Open", action: #selector(toggleAutoAnalyzeOnOpen(_:)), keyEquivalent: "")
+        autoAnalyzeOpenItem.target = self
+        viewMenu.addItem(autoAnalyzeOpenItem)
+
+        let autoAnalyzeTypingItem = NSMenuItem(title: "Auto-Analyze While Typing", action: #selector(toggleAutoAnalyzeWhileTyping(_:)), keyEquivalent: "")
+        autoAnalyzeTypingItem.target = self
+        viewMenu.addItem(autoAnalyzeTypingItem)
+
         // Window Menu
         let windowMenuItem = NSMenuItem()
         mainMenu.addItem(windowMenuItem)
@@ -420,6 +463,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         windowMenu.addItem(NSMenuItem(title: "Minimize", action: #selector(NSWindow.miniaturize(_:)), keyEquivalent: "m"))
         windowMenu.addItem(NSMenuItem(title: "Zoom", action: #selector(NSWindow.zoom(_:)), keyEquivalent: ""))
+        windowMenu.addItem(.separator())
+        windowMenu.addItem(NSMenuItem(title: "Bring All to Front", action: #selector(NSApplication.arrangeInFront(_:)), keyEquivalent: ""))
 
         // Help Menu
         let helpMenuItem = NSMenuItem()
@@ -438,6 +483,42 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         NSApp.mainMenu = mainMenu
         NSApp.windowsMenu = windowMenu
+        NSApp.helpMenu = helpMenu
+    }
+
+    @objc private func showPreferences(_ sender: Any?) {
+        if preferencesWindow == nil {
+            preferencesWindow = PreferencesWindowController()
+        }
+        preferencesWindow?.showWindow(nil)
+        preferencesWindow?.window?.makeKeyAndOrderFront(nil)
+        NSApp.activate(ignoringOtherApps: true)
+    }
+
+    @objc private func exportDocument(_ sender: Any?) {
+        mainWindowController?.performExportDocument(sender)
+    }
+
+    @objc private func analyzeDocumentNow(_ sender: Any?) {
+        // If the user is on the Welcome window, the shortcut should still visibly do something.
+        // Bring the main window forward, then run analysis.
+        if mainWindowController == nil {
+            mainWindowController = MainWindowController()
+        }
+
+        presentMainWindow(orderingSource: sender)
+
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { [weak self] in
+            self?.mainWindowController?.mainContentViewController.performAnalysis()
+        }
+    }
+
+    @objc private func toggleAutoAnalyzeOnOpen(_ sender: Any?) {
+        QuillPilotSettings.autoAnalyzeOnOpen.toggle()
+    }
+
+    @objc private func toggleAutoAnalyzeWhileTyping(_ sender: Any?) {
+        QuillPilotSettings.autoAnalyzeWhileTyping.toggle()
     }
 
     @objc private func showHeaderFooterSettings(_ sender: Any?) {
@@ -573,14 +654,40 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 // MARK: - Menu Item Validation
 extension AppDelegate: NSMenuItemValidation {
     func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
-        if menuItem.action == #selector(printDocument(_:)) {
-            let isValid = mainWindowController != nil
-            DebugLog.log("Validating Print menu item: \(isValid)")
-            return isValid
+        if menuItem.action == #selector(showPreferences(_:)) {
+            return true
         }
-        if menuItem.action == #selector(saveDocument(_:)) || menuItem.action == #selector(openDocument(_:)) {
+
+        if menuItem.action == #selector(toggleAutoAnalyzeOnOpen(_:)) {
+            menuItem.state = QuillPilotSettings.autoAnalyzeOnOpen ? .on : .off
+            return true
+        }
+        if menuItem.action == #selector(toggleAutoAnalyzeWhileTyping(_:)) {
+            menuItem.state = QuillPilotSettings.autoAnalyzeWhileTyping ? .on : .off
+            return true
+        }
+
+        let requiresWindow: Set<Selector> = [
+            #selector(printDocument(_:)),
+            #selector(saveDocument(_:)),
+            #selector(saveDocumentAs(_:)),
+            #selector(openDocument(_:)),
+            #selector(exportDocument(_:)),
+            #selector(showHeaderFooterSettings(_:)),
+            #selector(showTOCIndex(_:)),
+            #selector(showFind(_:)),
+            #selector(findInvisibleCharacters(_:)),
+            #selector(removeExtraBlankLines(_:)),
+            #selector(applyDropCap(_:)),
+            #selector(applyOldStyleNumerals(_:)),
+            #selector(applyOpticalKerning(_:)),
+            #selector(analyzeDocumentNow(_:))
+        ]
+
+        if let action = menuItem.action, requiresWindow.contains(action) {
             return mainWindowController != nil
         }
+
         return true
     }
 }

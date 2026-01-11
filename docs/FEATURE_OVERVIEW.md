@@ -2,6 +2,15 @@
 
 ## 🎯 What You Can Do Now
 
+## 🗂️ Document, Export, and Editing Tools
+
+- **Auto-save (saved documents)**: QuillPilot auto-saves periodically when changes are detected (default ~30 seconds; configurable in Preferences). New/unsaved documents won’t auto-save until you choose File → Save / Save As.
+- **Export formats (File → Save As…)**: DOCX, RTF, RTFD, ODT, TXT, Markdown, HTML, PDF, ePub, Mobi.
+- **Table of Contents & Index (View → Table of Contents & Index… / ⌘⇧T)**: Insert/manage TOC entries and index markers.
+- **Header & Footer Settings (View → Header & Footer Settings…)**: Configure running headers/footers.
+- **Typography tools (Format → Typography)**: Drop caps, old-style numerals, optical kerning.
+- **Cleanup tools (Edit)**: Find Invisible Characters… and Remove Extra Blank Lines.
+
 ### 1. Analyze Your Manuscript Structure
 
 When you open an analysis view from the right-side Analysis panel (📊 / 📖 / 👥), QuillPilot provides THREE types of analysis:

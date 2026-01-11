@@ -4,13 +4,15 @@ final class PreferencesWindowController: NSWindowController {
     private var themePopup: NSPopUpButton!
     private var autoSavePopup: NSPopUpButton!
     private var defaultExportPopup: NSPopUpButton!
+    private var numberingSchemePopup: NSPopUpButton!
+    private var autoNumberOnReturnCheckbox: NSButton!
     private var autoAnalyzeOnOpenCheckbox: NSButton!
     private var autoAnalyzeWhileTypingCheckbox: NSButton!
     private var resetTemplateOverridesButton: NSButton!
 
     convenience init() {
         let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 520, height: 320),
+            contentRect: NSRect(x: 0, y: 0, width: 520, height: 380),
             styleMask: [.titled, .closable, .miniaturizable],
             backing: .buffered,
             defer: false
@@ -60,6 +62,14 @@ final class PreferencesWindowController: NSWindowController {
         defaultExportPopup.target = self
         defaultExportPopup.action = #selector(defaultExportFormatChanged(_:))
 
+        // Numbering
+        numberingSchemePopup = NSPopUpButton(frame: .zero, pullsDown: false)
+        QuillPilotSettings.NumberingScheme.allCases.forEach { numberingSchemePopup.addItem(withTitle: $0.displayName) }
+        numberingSchemePopup.target = self
+        numberingSchemePopup.action = #selector(numberingSchemeChanged(_:))
+
+        autoNumberOnReturnCheckbox = NSButton(checkboxWithTitle: "Auto-number lists on Return", target: self, action: #selector(numberingTogglesChanged(_:)))
+
         // Analysis toggles
         autoAnalyzeOnOpenCheckbox = NSButton(checkboxWithTitle: "Auto-run analysis when opening documents/tools", target: self, action: #selector(analysisTogglesChanged(_:)))
         autoAnalyzeWhileTypingCheckbox = NSButton(checkboxWithTitle: "Auto-run analysis while typing", target: self, action: #selector(analysisTogglesChanged(_:)))
@@ -67,7 +77,8 @@ final class PreferencesWindowController: NSWindowController {
         let grid = NSGridView(views: [
             [label("Theme"), themePopup],
             [label("Auto-save"), autoSavePopup],
-            [label("Default Save As format"), defaultExportPopup]
+            [label("Default Save As format"), defaultExportPopup],
+            [label("Numbering style"), numberingSchemePopup]
         ])
         grid.rowSpacing = 12
         grid.columnSpacing = 12
@@ -76,6 +87,7 @@ final class PreferencesWindowController: NSWindowController {
 
         container.addArrangedSubview(grid)
         container.addArrangedSubview(NSView())
+        container.addArrangedSubview(autoNumberOnReturnCheckbox)
         container.addArrangedSubview(autoAnalyzeOnOpenCheckbox)
         container.addArrangedSubview(autoAnalyzeWhileTypingCheckbox)
 
@@ -157,6 +169,12 @@ final class PreferencesWindowController: NSWindowController {
             defaultExportPopup.selectItem(at: idx)
         }
 
+        // Numbering
+        if let idx = QuillPilotSettings.NumberingScheme.allCases.firstIndex(of: QuillPilotSettings.numberingScheme) {
+            numberingSchemePopup.selectItem(at: idx)
+        }
+        autoNumberOnReturnCheckbox.state = QuillPilotSettings.autoNumberOnReturn ? .on : .off
+
         autoAnalyzeOnOpenCheckbox.state = QuillPilotSettings.autoAnalyzeOnOpen ? .on : .off
         autoAnalyzeWhileTypingCheckbox.state = QuillPilotSettings.autoAnalyzeWhileTyping ? .on : .off
     }
@@ -183,6 +201,16 @@ final class PreferencesWindowController: NSWindowController {
         let idx = defaultExportPopup.indexOfSelectedItem
         guard idx >= 0, idx < ExportFormat.allCases.count else { return }
         QuillPilotSettings.defaultExportFormat = ExportFormat.allCases[idx]
+    }
+
+    @objc private func numberingSchemeChanged(_ sender: Any?) {
+        let idx = numberingSchemePopup.indexOfSelectedItem
+        guard idx >= 0, idx < QuillPilotSettings.NumberingScheme.allCases.count else { return }
+        QuillPilotSettings.numberingScheme = QuillPilotSettings.NumberingScheme.allCases[idx]
+    }
+
+    @objc private func numberingTogglesChanged(_ sender: Any?) {
+        QuillPilotSettings.autoNumberOnReturn = (autoNumberOnReturnCheckbox.state == .on)
     }
 
     @objc private func analysisTogglesChanged(_ sender: Any?) {

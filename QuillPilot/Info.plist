@@ -11,7 +11,7 @@
 	<key>CFBundleInfoDictionaryVersion</key>
 	<string>6.0</string>
 	<key>CFBundleName</key>
-	<string>$(PRODUCT_NAME)</string>
+	<string>Quill Pilot</string>
 	<key>CFBundleDisplayName</key>
 	<string>Quill Pilot</string>
 	<key>CFBundlePackageType</key>

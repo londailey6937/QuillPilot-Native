@@ -242,6 +242,45 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         mainWindowController?.mainContentViewController?.editorViewController.applyOpticalKerning(to: nil)
     }
 
+    @MainActor
+    @objc private func restartNumberingPrompt(_ sender: Any?) {
+        guard let editor = mainWindowController?.mainContentViewController?.editorViewController else {
+            return
+        }
+
+        let alert = NSAlert()
+        alert.messageText = "Restart Numbering"
+        alert.informativeText = "Choose the starting number for this list level."
+        alert.addButton(withTitle: "Restart")
+        alert.addButton(withTitle: "Cancel")
+
+        let field = NSTextField(string: "1")
+        field.placeholderString = "1"
+        field.alignment = .center
+        field.frame = NSRect(x: 0, y: 0, width: 120, height: 24)
+        alert.accessoryView = field
+
+        let response = alert.runModal()
+        guard response == .alertFirstButtonReturn else { return }
+
+        let startAt = Int(field.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)) ?? 1
+        editor.restartNumbering(startAt: startAt)
+    }
+
+    @MainActor
+    @objc private func showListNumberingHelp(_ sender: Any?) {
+        let alert = NSAlert()
+        alert.messageText = "List Numbering Help"
+        alert.informativeText = "\nNumbering style: 1.1.1\n\n• Numbered List: Format → Lists → Numbered List\n• Auto-number on Return: enabled in Preferences (can be turned off)\n• Tab: indent a numbered item (adds a sub-level, e.g. 2. → 2.1.)\n• Shift-Tab: outdent a numbered item (removes a sub-level)\n• Restart numbering: Format → Lists → Restart Numbering…\n\nTip: If a numbered item is empty, pressing Return ends the list."
+        alert.addButton(withTitle: "OK")
+        alert.addButton(withTitle: "Open Preferences")
+
+        let response = alert.runModal()
+        if response == .alertSecondButtonReturn {
+            showPreferences(nil)
+        }
+    }
+
     @objc private func openDocument(_ sender: Any?) {
         Task { @MainActor [weak self] in
             self?.mainWindowController?.performOpenDocument(sender)
@@ -425,6 +464,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         infoItem.isEnabled = false
         typographyMenu.addItem(infoItem)
 
+        formatMenu.addItem(.separator())
+
+        // Lists submenu
+        let listsItem = NSMenuItem(title: "Lists", action: nil, keyEquivalent: "")
+        let listsMenu = NSMenu(title: "Lists")
+        listsItem.submenu = listsMenu
+        formatMenu.addItem(listsItem)
+
+        // Route these through the responder chain (first responder is the editor text view).
+        listsMenu.addItem(NSMenuItem(title: "Bulleted List", action: Selector(("qpToggleBulletedList:")), keyEquivalent: ""))
+        listsMenu.addItem(NSMenuItem(title: "Numbered List", action: Selector(("qpToggleNumberedList:")), keyEquivalent: ""))
+        listsMenu.addItem(.separator())
+        listsMenu.addItem(NSMenuItem(title: "Restart Numbering at 1", action: Selector(("qpRestartNumbering:")), keyEquivalent: ""))
+        let restartCustom = NSMenuItem(title: "Restart Numbering…", action: #selector(restartNumberingPrompt(_:)), keyEquivalent: "")
+        restartCustom.target = self
+        listsMenu.addItem(restartCustom)
+
         // View Menu
         let viewMenuItem = NSMenuItem()
         mainMenu.addItem(viewMenuItem)
@@ -483,6 +539,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let dialogueTipsItem = NSMenuItem(title: "Dialogue Writing Tips", action: #selector(showDialogueTips(_:)), keyEquivalent: "")
         dialogueTipsItem.target = self
         helpMenu.addItem(dialogueTipsItem)
+
+        helpMenu.addItem(.separator())
+
+        let listNumberingHelpItem = NSMenuItem(title: "List Numbering Help", action: #selector(showListNumberingHelp(_:)), keyEquivalent: "")
+        listNumberingHelpItem.target = self
+        helpMenu.addItem(listNumberingHelpItem)
 
         NSApp.mainMenu = mainMenu
         // Safety net: AppKit sometimes uses the process/bundle name here.

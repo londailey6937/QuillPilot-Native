@@ -12,6 +12,23 @@ import ImageIO
 private final class AttachmentClickableTextView: NSTextView {
     var onMouseDownInTextView: ((NSPoint) -> Void)?
 
+    // Menu/command hooks (handled by the owning editor).
+    var onToggleBulletedList: (() -> Void)?
+    var onToggleNumberedList: (() -> Void)?
+    var onRestartNumbering: (() -> Void)?
+
+    @objc func qpToggleBulletedList(_ sender: Any?) {
+        onToggleBulletedList?()
+    }
+
+    @objc func qpToggleNumberedList(_ sender: Any?) {
+        onToggleNumberedList?()
+    }
+
+    @objc func qpRestartNumbering(_ sender: Any?) {
+        onRestartNumbering?()
+    }
+
     override func mouseDown(with event: NSEvent) {
         let point = convert(event.locationInWindow, from: nil)
         onMouseDownInTextView?(point)
@@ -389,6 +406,15 @@ class EditorViewController: NSViewController {
         // so it stays aligned with drawn page backgrounds.
         let textFrame = pageContainer.bounds.insetBy(dx: standardMargin * editorZoom, dy: standardMargin * editorZoom)
         let clickable = AttachmentClickableTextView(frame: textFrame)
+        clickable.onToggleBulletedList = { [weak self] in
+            self?.toggleBulletedList()
+        }
+        clickable.onToggleNumberedList = { [weak self] in
+            self?.toggleNumberedList()
+        }
+        clickable.onRestartNumbering = { [weak self] in
+            self?.restartNumberingAtCursor()
+        }
         clickable.onMouseDownInTextView = { [weak self, weak clickable] point in
             guard let self, let textView = clickable else { return }
             guard let layoutManager = textView.layoutManager, let textContainer = textView.textContainer else { return }
@@ -941,6 +967,128 @@ class EditorViewController: NSViewController {
         )
     }
 
+    private func parseNumberPrefix(in line: String) -> (components: [Int], prefixLength: Int, hasTabAfter: Bool)? {
+        // Accept: "1. ", "1.\t", "1.2. ", "1.2.\t".
+        // We treat a trailing dot before whitespace/tab as required.
+        var idx = line.startIndex
+        var components: [Int] = []
+
+        func readInt() -> Int? {
+            let start = idx
+            while idx < line.endIndex, line[idx].isNumber {
+                idx = line.index(after: idx)
+            }
+            if start == idx { return nil }
+            return Int(line[start..<idx])
+        }
+
+        guard let first = readInt() else { return nil }
+        components.append(first)
+
+        // Read zero or more ".<int>" components.
+        while idx < line.endIndex, line[idx] == "." {
+            let nextIndex = line.index(after: idx)
+            // If dot is followed by whitespace/tab, that's the final terminator.
+            if nextIndex >= line.endIndex {
+                return nil
+            }
+            let ch = line[nextIndex]
+            if ch == " " || ch == "\t" {
+                // Terminator dot.
+                idx = nextIndex
+                break
+            }
+            // Otherwise expect another integer component.
+            idx = nextIndex
+            guard let n = readInt() else { return nil }
+            components.append(n)
+        }
+
+        // Require whitespace/tab after the terminator dot.
+        guard idx < line.endIndex else { return nil }
+        var hasTabAfter = false
+        if line[idx] == "\t" {
+            hasTabAfter = true
+        } else if line[idx] == " " {
+            // consume spaces until optional tab
+            while idx < line.endIndex, line[idx] == " " {
+                idx = line.index(after: idx)
+            }
+            if idx < line.endIndex, line[idx] == "\t" {
+                hasTabAfter = true
+            }
+        } else {
+            return nil
+        }
+
+        let prefixLength = line.distance(from: line.startIndex, to: idx)
+        return (components, prefixLength, hasTabAfter)
+    }
+
+    private func makeNumberPrefix(from components: [Int]) -> String {
+        components.map(String.init).joined(separator: ".") + ". "
+    }
+
+    private func restartNumberingAtCursor() {
+        restartNumbering(atCursorStartingAt: 1)
+    }
+
+    func restartNumbering(startAt: Int) {
+        let start = max(1, startAt)
+        restartNumbering(atCursorStartingAt: start)
+    }
+
+    private func restartNumbering(atCursorStartingAt startAt: Int) {
+        guard let storage = textView.textStorage else { return }
+        let selection = textView.selectedRange()
+        guard selection.location <= storage.length else { return }
+
+        let full = storage.string as NSString
+        let paragraphRange = full.paragraphRange(for: NSRange(location: selection.location, length: 0))
+        let paragraphText = full.substring(with: paragraphRange)
+        guard let parsed = parseNumberPrefix(in: paragraphText) else { return }
+
+        let levelCount = parsed.components.count
+        var baseComponents = parsed.components
+        baseComponents[levelCount - 1] = startAt
+
+        // Collect contiguous paragraphs of the same level directly following this one.
+        var targetParagraphs: [(range: NSRange, existingPrefixLen: Int, hasTab: Bool)] = []
+        var cursor = paragraphRange.location
+        let running = 0
+
+        while cursor < full.length {
+            let pr = full.paragraphRange(for: NSRange(location: cursor, length: 0))
+            let text = full.substring(with: pr)
+            guard let p = parseNumberPrefix(in: text) else { break }
+            guard p.components.count == levelCount else { break }
+            targetParagraphs.append((pr, p.prefixLength, p.hasTabAfter))
+            cursor = NSMaxRange(pr)
+        }
+
+        guard !targetParagraphs.isEmpty else { return }
+
+        // Apply changes from bottom-up so ranges remain valid.
+        storage.beginEditing()
+        defer { storage.endEditing() }
+
+        for (idx, item) in targetParagraphs.enumerated().reversed() {
+            let n = startAt + running + idx
+            var comps = baseComponents
+            comps[levelCount - 1] = n
+            let prefix = makeNumberPrefix(from: comps)
+            // Replace the prefix (and optional tab that follows it).
+            let replaceLen = item.existingPrefixLen + (item.hasTab ? 1 : 0)
+            let replaceRange = NSRange(location: item.range.location, length: min(replaceLen, item.range.length))
+            storage.replaceCharacters(in: replaceRange, with: prefix + (item.hasTab ? "\t" : ""))
+        }
+
+        // Keep caret at original logical position if possible.
+        textView.didChangeText()
+        // Trigger relayout so page backgrounds stay in sync.
+        updatePageLayout()
+    }
+
     func insertColumnBreak() {
         guard let textStorage = textView.textStorage else { return }
         let range = textView.selectedRange()
@@ -1051,15 +1199,19 @@ class EditorViewController: NSViewController {
 
         replaceCharacters(in: insertionRange, with: finalImageString, undoPlaceholder: "\u{FFFC}")
 
-        // Update page layout to account for the new image
-        updatePageCentering()
-
-        // Force layout to complete before positioning the caret and scrolling
-        textView.layoutManager?.ensureLayout(for: textView.textContainer!)
+        // Images can change layout height significantly; recompute pagination now,
+        // and repeat shortly after to catch any async attachment/layout settling.
+        updatePageLayout()
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { [weak self] in
+            self?.updatePageLayout()
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.65) { [weak self] in
+            self?.updatePageLayout()
+        }
 
         // Place caret after the attachment
         let attachmentPos = insertionRange.location
-        textView.setSelectedRange(NSRange(location: attachmentPos, length: 0))
+        textView.setSelectedRange(NSRange(location: min(attachmentPos + 1, (textView.textStorage?.length ?? 0)), length: 0))
 
         // Scroll to make the inserted image visible
         textView.scrollRangeToVisible(NSRange(location: attachmentPos, length: 1))
@@ -1779,10 +1931,12 @@ class EditorViewController: NSViewController {
     }
 
     func indent() {
+        _ = adjustNumberingLevelInSelection(by: 1)
         adjustIndent(by: standardIndentStep)
     }
 
     func outdent() {
+        _ = adjustNumberingLevelInSelection(by: -1)
         adjustIndent(by: -standardIndentStep)
     }
 
@@ -5773,6 +5927,60 @@ case "Book Subtitle":
 }
 
 extension EditorViewController: NSTextViewDelegate {
+    func textView(_ textView: NSTextView, doCommandBy commandSelector: Selector) -> Bool {
+        guard let storage = textView.textStorage else { return false }
+        let sel = textView.selectedRange()
+        guard sel.length == 0 else { return false }
+        guard sel.location <= storage.length else { return false }
+
+        // Avoid interfering with complex structures.
+        if isCurrentPositionInTable() || isCurrentPositionInColumns() {
+            return false
+        }
+
+        let full = storage.string as NSString
+        let paragraphRange = full.paragraphRange(for: NSRange(location: sel.location, length: 0))
+        let paragraphText = full.substring(with: paragraphRange)
+
+        if commandSelector == #selector(insertTab(_:)) {
+            // Tab indents numbered list items (adds a sub-level: 1. -> 1.1.).
+            guard QuillPilotSettings.numberingScheme == .decimalDotted else { return false }
+            guard parseNumberPrefix(in: paragraphText) != nil else { return false }
+            indent()
+            return true
+        }
+
+        if commandSelector == #selector(insertBacktab(_:)) {
+            // Shift-Tab outdents numbered list items (removes a sub-level: 1.1. -> 1.).
+            guard QuillPilotSettings.numberingScheme == .decimalDotted else { return false }
+            guard parseNumberPrefix(in: paragraphText) != nil else { return false }
+            outdent()
+            return true
+        }
+
+        guard commandSelector == #selector(insertNewline(_:)) else { return false }
+        guard QuillPilotSettings.autoNumberOnReturn else { return false }
+
+        guard let parsed = parseNumberPrefix(in: paragraphText) else { return false }
+
+        // If the list item is empty (only a prefix), pressing Return should end the list.
+        let contentStart = min(paragraphText.count, parsed.prefixLength + (parsed.hasTabAfter ? 1 : 0))
+        let remainder = String(paragraphText.dropFirst(contentStart)).trimmingCharacters(in: .whitespacesAndNewlines)
+        if remainder.isEmpty {
+            // Remove prefix and let AppKit insert a normal newline.
+            let deleteLen = parsed.prefixLength + (parsed.hasTabAfter ? 1 : 0)
+            storage.replaceCharacters(in: NSRange(location: paragraphRange.location, length: min(deleteLen, paragraphRange.length)), with: "")
+            return false
+        }
+
+        // Insert a newline plus the next number prefix.
+        var next = parsed.components
+        next[next.count - 1] += 1
+        let nextPrefix = makeNumberPrefix(from: next) + (parsed.hasTabAfter ? "\t" : "")
+        textView.insertText("\n" + nextPrefix, replacementRange: sel)
+        return true
+    }
+
     func textDidChange(_ notification: Notification) {
         // Skip notification if we're suppressing changes (e.g., during column insertion)
         guard !suppressTextChangeNotifications else { return }
@@ -5912,5 +6120,46 @@ extension EditorViewController: NSTextViewDelegate {
 
         // Notify delegate that selection changed (for updating style dropdown)
         delegate?.selectionDidChange()
+    }
+}
+
+private extension EditorViewController {
+    func adjustNumberingLevelInSelection(by delta: Int) -> Bool {
+        guard delta != 0 else { return false }
+        guard QuillPilotSettings.numberingScheme == .decimalDotted else { return false }
+        guard let textStorage = textView.textStorage else { return false }
+        guard let selectedRange = textView.selectedRanges.first?.rangeValue else { return false }
+
+        let fullText = textStorage.string as NSString
+        let paragraphsRange = fullText.paragraphRange(for: selectedRange)
+
+        var paragraphs: [(range: NSRange, text: String)] = []
+        fullText.enumerateSubstrings(in: paragraphsRange, options: [.byParagraphs, .substringNotRequired]) { _, subrange, _, _ in
+            let text = fullText.substring(with: subrange)
+            paragraphs.append((subrange, text))
+        }
+
+        var anyChanged = false
+        performUndoableTextStorageEdit(in: paragraphsRange, actionName: delta > 0 ? "Indent" : "Outdent") { storage in
+            for para in paragraphs.reversed() {
+                guard let parsed = parseNumberPrefix(in: para.text) else { continue }
+                var nextComponents = parsed.components
+
+                if delta > 0 {
+                    nextComponents.append(1)
+                } else {
+                    guard nextComponents.count > 1 else { continue }
+                    nextComponents.removeLast()
+                }
+
+                let replaceLen = parsed.prefixLength + (parsed.hasTabAfter ? 1 : 0)
+                let replaceRange = NSRange(location: para.range.location, length: min(replaceLen, para.range.length))
+                let replacement = makeNumberPrefix(from: nextComponents) + (parsed.hasTabAfter ? "\t" : "")
+                storage.replaceCharacters(in: replaceRange, with: replacement)
+                anyChanged = true
+            }
+        }
+
+        return anyChanged
     }
 }

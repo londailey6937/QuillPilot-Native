@@ -6,6 +6,19 @@ enum QuillPilotSettings {
         static let defaultExportFormat = "QuillPilot.defaultExportFormat"
         static let autoAnalyzeOnOpen = "QuillPilot.autoAnalyzeOnOpen"
         static let autoAnalyzeWhileTyping = "QuillPilot.autoAnalyzeWhileTyping"
+        static let autoNumberOnReturn = "QuillPilot.autoNumberOnReturn"
+        static let numberingScheme = "QuillPilot.numberingScheme"
+    }
+
+    enum NumberingScheme: String, CaseIterable {
+        case decimalDotted = "decimalDotted"
+
+        var displayName: String {
+            switch self {
+            case .decimalDotted:
+                return "1.1.1"
+            }
+        }
     }
 
     static var autoSaveIntervalSeconds: TimeInterval {
@@ -54,6 +67,31 @@ enum QuillPilotSettings {
         }
         set {
             UserDefaults.standard.set(newValue, forKey: Keys.autoAnalyzeWhileTyping)
+            NotificationCenter.default.post(name: .quillPilotSettingsDidChange, object: nil)
+        }
+    }
+
+    static var autoNumberOnReturn: Bool {
+        get {
+            if UserDefaults.standard.object(forKey: Keys.autoNumberOnReturn) == nil { return true }
+            return UserDefaults.standard.bool(forKey: Keys.autoNumberOnReturn)
+        }
+        set {
+            UserDefaults.standard.set(newValue, forKey: Keys.autoNumberOnReturn)
+            NotificationCenter.default.post(name: .quillPilotSettingsDidChange, object: nil)
+        }
+    }
+
+    static var numberingScheme: NumberingScheme {
+        get {
+            if let raw = UserDefaults.standard.string(forKey: Keys.numberingScheme),
+               let scheme = NumberingScheme(rawValue: raw) {
+                return scheme
+            }
+            return .decimalDotted
+        }
+        set {
+            UserDefaults.standard.set(newValue.rawValue, forKey: Keys.numberingScheme)
             NotificationCenter.default.post(name: .quillPilotSettingsDidChange, object: nil)
         }
     }

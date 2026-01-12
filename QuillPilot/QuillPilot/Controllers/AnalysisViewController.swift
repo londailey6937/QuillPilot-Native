@@ -160,6 +160,10 @@ class AnalysisViewController: NSViewController, NSWindowDelegate {
     var analyzeCallback: (() -> Void)?
     var getOutlineEntriesCallback: (() -> [EditorViewController.OutlineEntry])?
 
+    /// Optional hook so the analysis UI can label the current document/poem.
+    /// Returns (title, author) if available.
+    var getManuscriptInfoCallback: (() -> (title: String, author: String)?)? = nil
+
     /// Called when a new document is loaded or created
     func documentDidChange(url: URL?) {
         DebugLog.log("📄 AnalysisViewController: documentDidChange called")
@@ -333,15 +337,33 @@ class AnalysisViewController: NSViewController, NSWindowDelegate {
             let categories: [NavigatorCategory] = isPoetry ? [] : NavigatorCategory.allCases
             for category in categories {
                 let button = NSButton(frame: NSRect(x: 0, y: 0, width: 44, height: 44))
-                button.title = category.icon
-                button.font = .systemFont(ofSize: 20)
+
+                // Prose templates: use the square-box outline toggle icon for the first (Outline) button.
+                // This replaces the previous 📝 icon so there is only one outline toggle.
+                if category == .basic {
+                    if #available(macOS 11.0, *) {
+                        let base = NSImage(systemSymbolName: "square", accessibilityDescription: "Toggle Outline") ?? NSImage()
+                        let config = NSImage.SymbolConfiguration(pointSize: 16, weight: .regular)
+                        button.image = base.withSymbolConfiguration(config) ?? base
+                        button.imagePosition = .imageOnly
+                        button.title = ""
+                    } else {
+                        button.title = "□"
+                        button.font = .systemFont(ofSize: 18)
+                    }
+                    button.toolTip = isOutlineVisible ? "Hide Document Outline" : "Show Document Outline"
+                } else {
+                    button.title = category.icon
+                    button.font = .systemFont(ofSize: 20)
+                    button.toolTip = category.rawValue
+                }
+
                 button.isBordered = false
                 button.bezelStyle = .rounded
                 button.target = self
                 button.action = #selector(navigatorButtonTapped(_:))
                 button.tag = NavigatorCategory.allCases.firstIndex(of: category) ?? 0
                 button.translatesAutoresizingMaskIntoConstraints = false
-                button.toolTip = category.rawValue
 
                 menuSidebar.addSubview(button)
                 menuButtons.append(button)
@@ -462,6 +484,15 @@ class AnalysisViewController: NSViewController, NSWindowDelegate {
 
             if analysisPopoutWindow == nil {
                 analysisPopoutWindow = createAnalysisPopoutWindow()
+            }
+
+            if StyleCatalog.shared.isPoetryTemplate, let info = getManuscriptInfoCallback?() {
+                let t = info.title.trimmingCharacters(in: CharacterSet.whitespacesAndNewlines)
+                if !t.isEmpty {
+                    analysisPopoutWindow?.title = "🪶 Poetry Analysis — \(t)"
+                } else {
+                    analysisPopoutWindow?.title = "🪶 Poetry Analysis"
+                }
             }
             refreshAnalysisPopoutContent()
             analysisPopoutWindow?.makeKeyAndOrderFront(nil)
@@ -615,6 +646,9 @@ class AnalysisViewController: NSViewController, NSWindowDelegate {
             outlineViewController?.view.isHidden = true
             scrollContainer.isHidden = false
             isOutlineVisible = false
+            if category == .basic {
+                sender.toolTip = "Show Document Outline"
+            }
             updateSelectedButton()
         } else {
             // Show it immediately without expensive operations
@@ -634,6 +668,9 @@ class AnalysisViewController: NSViewController, NSWindowDelegate {
             }
             isOutlineVisible = true
             currentCategory = .basic
+            if category == .basic {
+                sender.toolTip = "Hide Document Outline"
+            }
             updateSelectedButton()
             // Trigger refresh asynchronously to avoid blocking UI
             DispatchQueue.main.async {
@@ -1270,7 +1307,7 @@ class AnalysisViewController: NSViewController, NSWindowDelegate {
         container.layer?.backgroundColor = graphBackground.cgColor
         container.layer?.cornerRadius = 8
         container.layer?.borderWidth = 1.0
-        let borderColor = currentTheme == .day ? NSColor(red: 0.7, green: 0.65, blue: 0.6, alpha: 1.0) : NSColor(white: 0.3, alpha: 1.0)
+        let borderColor = currentTheme == .night ? NSColor(white: 0.3, alpha: 1.0) : currentTheme.pageBorder
         container.layer?.borderColor = borderColor.cgColor
 
         // Create bar chart
@@ -3009,6 +3046,18 @@ extension AnalysisViewController {
         // Poetry template: show poetry-focused insights (and hide fiction/screenplay-oriented sections)
         if StyleCatalog.shared.isPoetryTemplate {
             if let poetry = results.poetryInsights {
+                // Label the poem using current manuscript metadata if available.
+                if let info = getManuscriptInfoCallback?() {
+                    let t = info.title.trimmingCharacters(in: CharacterSet.whitespacesAndNewlines)
+                    let a = info.author.trimmingCharacters(in: CharacterSet.whitespacesAndNewlines)
+                    if !t.isEmpty {
+                        addStat("Poem", t)
+                    }
+                    if !a.isEmpty {
+                        addStat("Author", a)
+                    }
+                }
+
                 addHeader("🪶 Writer’s Poetry Analysis")
                 addStat("Words", "\(results.wordCount)")
                 addStat("Lines", "\(poetry.formal.lineCount)")
@@ -3358,7 +3407,7 @@ extension AnalysisViewController {
                 let midY = chartRect.midY
 
                 // Midline
-                axisColor.withAlphaComponent(0.25).setStroke()
+                axisColor.withAlphaComponent(0.42).setStroke()
                 let midPath = NSBezierPath()
                 midPath.lineWidth = 1
                 midPath.move(to: NSPoint(x: chartRect.minX, y: midY))
@@ -3380,7 +3429,7 @@ extension AnalysisViewController {
                 }
 
                 // Shift markers
-                let markerColor = axisColor.withAlphaComponent(0.18)
+                let markerColor = axisColor.withAlphaComponent(0.34)
                 markerColor.setStroke()
                 for idx1 in shiftIndices1Based {
                     let zeroBased = idx1 - 1
@@ -3389,7 +3438,7 @@ extension AnalysisViewController {
                     guard sampledIndex >= 0 && sampledIndex < data.count else { continue }
                     let p = point(at: sampledIndex, score: 0)
                     let v = NSBezierPath()
-                    v.lineWidth = 1
+                    v.lineWidth = 1.25
                     v.move(to: NSPoint(x: p.x, y: chartRect.minY))
                     v.line(to: NSPoint(x: p.x, y: chartRect.maxY))
                     v.stroke()
@@ -3482,7 +3531,7 @@ extension AnalysisViewController {
         container.layer?.backgroundColor = graphBackground.cgColor
         container.layer?.cornerRadius = 8
         container.layer?.borderWidth = 1.0
-        let borderColor = currentTheme == .day ? NSColor(red: 0.7, green: 0.65, blue: 0.6, alpha: 1.0) : NSColor(white: 0.3, alpha: 1.0)
+        let borderColor = currentTheme == .night ? NSColor(white: 0.3, alpha: 1.0) : currentTheme.pageBorder
         container.layer?.borderColor = borderColor.cgColor
 
         NSLayoutConstraint.activate([
@@ -3518,33 +3567,33 @@ extension AnalysisViewController {
 
         // Labels
         let labelTop = NSTextField(labelWithString: "↑")
-        labelTop.font = .systemFont(ofSize: 10)
+        labelTop.font = .systemFont(ofSize: 12, weight: .medium)
         labelTop.textColor = currentTheme.popoutSecondaryColor
         labelTop.frame = NSRect(x: 6, y: graphHeight - 44, width: 12, height: 12)
         container.addSubview(labelTop)
 
         let labelMid = NSTextField(labelWithString: "0")
-        labelMid.font = .systemFont(ofSize: 10)
+        labelMid.font = .systemFont(ofSize: 12, weight: .medium)
         labelMid.textColor = currentTheme.popoutSecondaryColor
         labelMid.frame = NSRect(x: 6, y: graphHeight/2 - 6, width: 18, height: 12)
         container.addSubview(labelMid)
 
         let labelBottom = NSTextField(labelWithString: "↓")
-        labelBottom.font = .systemFont(ofSize: 10)
+        labelBottom.font = .systemFont(ofSize: 12, weight: .medium)
         labelBottom.textColor = currentTheme.popoutSecondaryColor
         labelBottom.frame = NSRect(x: 6, y: 20, width: 12, height: 12)
         container.addSubview(labelBottom)
 
         let legendLabel = NSTextField(labelWithString: "Legend: Red = above neutral (lift) • Blue = below neutral (darkening) • Faint vertical lines = major shifts")
-        legendLabel.font = .systemFont(ofSize: 10)
-        legendLabel.textColor = currentTheme.popoutSecondaryColor.withAlphaComponent(0.8)
+        legendLabel.font = .systemFont(ofSize: 12)
+        legendLabel.textColor = currentTheme.popoutSecondaryColor.withAlphaComponent(0.9)
         legendLabel.frame = NSRect(x: inset, y: 22, width: container.bounds.width - inset * 2, height: 14)
         legendLabel.autoresizingMask = [.width]
         container.addSubview(legendLabel)
 
         let captionLabel = NSTextField(labelWithString: caption)
-        captionLabel.font = .systemFont(ofSize: 11)
-        captionLabel.textColor = currentTheme.popoutSecondaryColor.withAlphaComponent(0.75)
+        captionLabel.font = .systemFont(ofSize: 13)
+        captionLabel.textColor = currentTheme.popoutSecondaryColor.withAlphaComponent(0.85)
         captionLabel.frame = NSRect(x: inset, y: 6, width: container.bounds.width - inset * 2, height: 16)
         captionLabel.autoresizingMask = [.width]
         container.addSubview(captionLabel)
@@ -3684,7 +3733,7 @@ extension AnalysisViewController {
             backing: .buffered,
             defer: false
         )
-        window.title = StyleCatalog.shared.isPoetryTemplate ? "📝 Outline" : "📝 Document Outline"
+        window.title = StyleCatalog.shared.isPoetryTemplate ? "📝 Stanza Outline" : "📝 Document Outline"
         window.isReleasedWhenClosed = false
         window.hidesOnDeactivate = true
 
@@ -3706,16 +3755,14 @@ extension AnalysisViewController {
         stack.edgeInsets = NSEdgeInsets(top: 24, left: 24, bottom: 24, right: 24)
         stack.translatesAutoresizingMaskIntoConstraints = false
 
-        let header = NSTextField(labelWithString: "Document Outline")
+        let header = NSTextField(labelWithString: StyleCatalog.shared.isPoetryTemplate ? "Stanza Outline" : "Document Outline")
         header.font = NSFont.boldSystemFont(ofSize: 18)
-        // Poetry template hides this heading.
-        header.isHidden = StyleCatalog.shared.isPoetryTemplate
         stack.addArrangedSubview(header)
 
         // Get actual outline entries from editor
         if let entries = getOutlineEntriesCallback?(), !entries.isEmpty {
             for entry in entries {
-                let indent = String(repeating: "  ", count: entry.level - 1)
+                let indent = String(repeating: "  ", count: max(0, entry.level - 1))
                 let entryLabel = NSTextField(labelWithString: "\(indent)\(entry.title)")
                 entryLabel.font = NSFont.systemFont(ofSize: 13)
                 entryLabel.textColor = entry.level == 1 ? .labelColor : .secondaryLabelColor
@@ -3724,7 +3771,10 @@ extension AnalysisViewController {
                 stack.addArrangedSubview(entryLabel)
             }
         } else {
-            let info = NSTextField(labelWithString: "No outline entries found\n\nAdd headings to your document to see the outline")
+            let infoText = StyleCatalog.shared.isPoetryTemplate
+                ? "No stanzas found\n\nAdd verse lines (and stanza breaks) to see the stanza outline"
+                : "No outline entries found\n\nAdd headings to your document to see the outline"
+            let info = NSTextField(labelWithString: infoText)
             info.textColor = .secondaryLabelColor
             info.maximumNumberOfLines = 0
             stack.addArrangedSubview(info)

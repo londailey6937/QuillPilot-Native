@@ -119,18 +119,16 @@ class SplitViewController: NSSplitViewController {
     }
 
     @objc override func toggleSidebar(_ sender: Any?) {
-        if let analysisItem = splitViewItems.last {
-            analysisItem.animator().isCollapsed = !analysisItem.isCollapsed
-        }
+        // Match the app's expected behavior: Toggle Sidebar should toggle *all* sidebars.
+        toggleAllSidebars()
     }
 
     @objc func toggleAllSidebars() {
-        // Toggle the icon menu sidebars on both outline (left) and analysis (right) panels
-        DebugLog.log("[DEBUG] toggleAllSidebars called")
-        DebugLog.log("[DEBUG] outlinePanelController: \(outlinePanelController != nil)")
-        DebugLog.log("[DEBUG] analysisViewController: \(analysisViewController != nil)")
-        outlinePanelController.toggleMenuSidebar()
-        analysisViewController.toggleMenuSidebar()
+        // Toggle both sidebar *panels* together.
+        guard let outlineItem = splitViewItems.first, let analysisItem = splitViewItems.last else { return }
+        let anyVisible = !outlineItem.isCollapsed || !analysisItem.isCollapsed
+        outlineItem.animator().isCollapsed = anyVisible
+        analysisItem.animator().isCollapsed = anyVisible
     }
 
     // MARK: - Analysis

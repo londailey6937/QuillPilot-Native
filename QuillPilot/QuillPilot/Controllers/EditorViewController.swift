@@ -181,6 +181,33 @@ class EditorViewController: NSViewController {
 
     // Work items to hide temporary column outlines (keyed by table identity)
     private var columnOutlineHideWorkItems: [ObjectIdentifier: DispatchWorkItem] = [:]
+    private var outlineFlashWorkItem: DispatchWorkItem?
+    private var outlineFlashRange: NSRange?
+    private var outlineFlashOverlay: OutlineFlashOverlayView?
+
+    private final class OutlineFlashOverlayView: NSView {
+        var rects: [NSRect] = []
+        var strokeColor: NSColor = .secondaryLabelColor
+        var lineWidth: CGFloat = 1.5
+        var cornerRadius: CGFloat = 6
+
+        override var isFlipped: Bool { true }
+
+        override func hitTest(_ point: NSPoint) -> NSView? {
+            nil
+        }
+
+        override func draw(_ dirtyRect: NSRect) {
+            super.draw(dirtyRect)
+            guard !rects.isEmpty else { return }
+            strokeColor.setStroke()
+            for rect in rects {
+                let path = NSBezierPath(roundedRect: rect, xRadius: cornerRadius, yRadius: cornerRadius)
+                path.lineWidth = lineWidth
+                path.stroke()
+            }
+        }
+    }
 
     func repairTOCAndIndexFormattingAfterImport() {
         guard let storage = textView.textStorage, storage.length > 0 else { return }
@@ -601,7 +628,6 @@ class EditorViewController: NSViewController {
     ///   - searchText: The text to search for
     ///   - caseSensitive: Whether the search should be case sensitive
     ///   - wholeWords: Whether to match whole words only
-    /// - Returns: Array of NSRange objects representing match locations
     func findAll(_ searchText: String, caseSensitive: Bool = false, wholeWords: Bool = false) -> [NSRange] {
         guard !searchText.isEmpty else { return [] }
 
@@ -2676,7 +2702,7 @@ class EditorViewController: NSViewController {
             if currentTemplate == "Screenplay" {
                 defaultSeedStyleName = "Screenplay — Action"
             } else if currentTemplate == "Poetry" {
-                defaultSeedStyleName = "Poetry — Verse"
+                defaultSeedStyleName = "Stanza"
             } else {
                 defaultSeedStyleName = "Body Text"
             }
@@ -3425,6 +3451,88 @@ class EditorViewController: NSViewController {
     }
 
     func applyStyle(named styleName: String) {
+        if StyleCatalog.shared.isPoetryTemplate && (styleName == "Stanza" || styleName == "Verse" || styleName == "Poetry — Stanza" || styleName == "Poetry — Verse") {
+            guard let storage = textView.textStorage else { return }
+            guard let selected = textView.selectedRanges.first?.rangeValue else { return }
+
+            let canonical = "Stanza"
+
+            // If the user selected a range, apply the canonical stanza style to that selection.
+            if selected.length > 0 {
+                let styledByCatalog = applyCatalogStyle(named: canonical)
+                if styledByCatalog {
+                    applyStyleAttribute(canonical)
+                }
+                DispatchQueue.main.async {
+                    NotificationCenter.default.post(name: Notification.Name("QuillPilotOutlineRefresh"), object: nil)
+                }
+                return
+            }
+
+            let full = storage.string as NSString
+            if full.length == 0 { return }
+            if selected.location >= full.length { return }
+
+            func paragraphRange(at location: Int) -> NSRange {
+                let clamped = max(0, min(location, max(0, full.length - 1)))
+                return full.paragraphRange(for: NSRange(location: clamped, length: 0))
+            }
+
+            func isStanzaSeparator(_ paragraphRange: NSRange) -> Bool {
+                let raw = full.substring(with: paragraphRange)
+                if raw.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { return true }
+                let style = storage.attribute(styleAttributeKey, at: paragraphRange.location, effectiveRange: nil) as? String
+                return style == "Poetry — Stanza Break"
+            }
+
+            // Find the first non-separator paragraph at/after insertion point.
+            var startPara = paragraphRange(at: selected.location)
+            var scanLoc = startPara.location
+            while isStanzaSeparator(startPara) && NSMaxRange(startPara) < full.length {
+                scanLoc = NSMaxRange(startPara)
+                startPara = paragraphRange(at: scanLoc)
+            }
+            if isStanzaSeparator(startPara) {
+                return
+            }
+
+            // Expand forward until blank line / stanza break.
+            let start = startPara.location
+            var end = NSMaxRange(startPara)
+            var nextLoc = end
+            while nextLoc < full.length {
+                let nextPara = paragraphRange(at: nextLoc)
+                if isStanzaSeparator(nextPara) { break }
+                end = NSMaxRange(nextPara)
+                nextLoc = end
+            }
+            let stanzaRange = NSRange(location: start, length: max(0, end - start))
+            if stanzaRange.length == 0 { return }
+
+            // Apply style to the whole stanza.
+            textView.setSelectedRange(stanzaRange)
+            let styledByCatalog = applyCatalogStyle(named: canonical)
+            if styledByCatalog {
+                applyStyleAttribute(canonical)
+            }
+
+            // Advance insertion point to the next stanza start.
+            var afterLoc = end
+            while afterLoc < full.length {
+                let para = paragraphRange(at: afterLoc)
+                if !isStanzaSeparator(para) { break }
+                afterLoc = NSMaxRange(para)
+            }
+            textView.setSelectedRange(NSRange(location: min(afterLoc, full.length), length: 0))
+            textView.window?.makeFirstResponder(textView)
+
+            // Refresh stanza outline.
+            DispatchQueue.main.async {
+                NotificationCenter.default.post(name: Notification.Name("QuillPilotOutlineRefresh"), object: nil)
+            }
+            return
+        }
+
         let styledByCatalog = applyCatalogStyle(named: styleName)
         if styledByCatalog {
             if styleName == "Book Title" || styleName == "Poem Title" || styleName == "Poetry — Title" {
@@ -4104,14 +4212,14 @@ case "Book Subtitle":
             font = NSFontManager.shared.convert(font, toHaveTrait: .italicFontMask)
         }
         // Apply professional typography features
-        font = fontWithTypographyFeatures(font, fontName: definition.fontName)
+        font = fontWithTypographyFeatures(font, fontName: definition.fontName, smallCaps: definition.useSmallCaps)
         return font
     }
 
     // MARK: - Professional Typography Features
 
     /// Enhances font with professional typography features (ligatures, kerning, OpenType)
-    private func fontWithTypographyFeatures(_ baseFont: NSFont, fontName: String) -> NSFont {
+    private func fontWithTypographyFeatures(_ baseFont: NSFont, fontName: String, smallCaps: Bool = false) -> NSFont {
         var descriptor = baseFont.fontDescriptor
 
         var features: [[NSFontDescriptor.FeatureKey: Int]] = []
@@ -4122,6 +4230,19 @@ case "Book Subtitle":
             features.append([
                 .typeIdentifier: kLigaturesType,
                 .selectorIdentifier: kCommonLigaturesOnSelector
+            ])
+        }
+
+        if smallCaps {
+            // Best-effort small caps using OpenType features.
+            // Include both lower and upper case selectors so "Argument" can be typed naturally.
+            features.append([
+                .typeIdentifier: kLowerCaseType,
+                .selectorIdentifier: kLowerCaseSmallCapsSelector
+            ])
+            features.append([
+                .typeIdentifier: kUpperCaseType,
+                .selectorIdentifier: kUpperCaseSmallCapsSelector
             ])
         }
 
@@ -4464,6 +4585,9 @@ case "Book Subtitle":
 
         DebugLog.log("📋🔍 buildOutlineEntries: Starting scan of \(storage.length) characters")
         DebugLog.log("📋🔍 styleAttributeKey: \(styleAttributeKey)")
+        if StyleCatalog.shared.isPoetryTemplate {
+            return buildPoetryStanzaOutlineEntries(storage: storage, layoutManager: layoutManager, textContainer: textContainer)
+        }
 
         let isScreenplayTemplate = StyleCatalog.shared.isScreenplayTemplate
 
@@ -4561,6 +4685,213 @@ case "Book Subtitle":
         DebugLog.log("📋🔍 Outline entries found: \(results.count)")
 
         return results
+    }
+
+    private func buildPoetryStanzaOutlineEntries(storage: NSTextStorage, layoutManager: NSLayoutManager, textContainer: NSTextContainer) -> [OutlineEntry] {
+        let fullString = storage.string as NSString
+
+        let stanzaBreakStyles: Set<String> = [
+            "Poetry — Stanza Break",
+            "Section Break"
+        ]
+        let headerStyles: Set<String> = [
+            "Poetry — Title",
+            "Poetry — Author",
+            "Poetry — Poet Name",
+            "Poem Title",
+            "Title",
+            "Author Name",
+            "Poet Name",
+            "Dedication",
+            "Epigraph",
+            "Argument Title",
+            "Argument",
+            "Section / Sequence Title",
+            "Part Number",
+            "Notes",
+            "Draft / Margin Note",
+            "Marginal Note",
+            "Footnote"
+        ]
+        let verseStyles: Set<String> = [
+            "Stanza",
+            "Verse",
+            "Poetry — Stanza",
+            "Poetry — Verse",
+            "Poem",
+            "Refrain",
+            "Chorus",
+            "Speaker",
+            "Voice",
+            "Verse Paragraph",
+            "Prose Poem"
+        ]
+
+        var results: [OutlineEntry] = []
+        var stanzaIndex = 0
+
+        var stanzaStart: Int?
+        var stanzaEnd: Int?
+        var stanzaFirstParagraphRange: NSRange?
+        var stanzaSawVerseLine = false
+        var stanzaLineCount = 0
+
+        func pageIndexForParagraph(_ paragraphRange: NSRange) -> Int {
+            let glyphRange = layoutManager.glyphRange(forCharacterRange: paragraphRange, actualCharacterRange: nil)
+            let bounds = layoutManager.boundingRect(forGlyphRange: glyphRange, in: textContainer)
+            let scaledPageHeight = pageHeight * editorZoom
+            let pageGap: CGFloat = 20
+            return max(0, Int(floor(bounds.midY / (scaledPageHeight + pageGap)))) + 1
+        }
+
+        func finalizeStanzaIfNeeded() {
+            guard let start = stanzaStart, let end = stanzaEnd, let firstPara = stanzaFirstParagraphRange, stanzaSawVerseLine else {
+                stanzaStart = nil
+                stanzaEnd = nil
+                stanzaFirstParagraphRange = nil
+                stanzaSawVerseLine = false
+                stanzaLineCount = 0
+                return
+            }
+
+            stanzaIndex += 1
+            let range = NSRange(location: start, length: max(0, end - start))
+            let pageIndex = pageIndexForParagraph(firstPara)
+
+            let stanzaType: String?
+            switch stanzaLineCount {
+            case 2: stanzaType = "Couplet"
+            case 3: stanzaType = "Tercet"
+            case 4: stanzaType = "Quatrain"
+            default: stanzaType = nil
+            }
+
+            let title: String
+            if let stanzaType {
+                title = "Stanza \(stanzaIndex) — \(stanzaType)"
+            } else if stanzaLineCount > 0 {
+                title = "Stanza \(stanzaIndex) — \(stanzaLineCount) lines"
+            } else {
+                title = "Stanza \(stanzaIndex)"
+            }
+
+            results.append(OutlineEntry(title: title, level: 1, range: range, page: pageIndex, styleName: "Poetry — Stanza"))
+
+            stanzaStart = nil
+            stanzaEnd = nil
+            stanzaFirstParagraphRange = nil
+            stanzaSawVerseLine = false
+            stanzaLineCount = 0
+        }
+
+        var location = 0
+        while location < fullString.length {
+            let paragraphRange = fullString.paragraphRange(for: NSRange(location: location, length: 0))
+            guard paragraphRange.length > 0 else { break }
+
+            let styleName = storage.attribute(styleAttributeKey, at: paragraphRange.location, effectiveRange: nil) as? String
+            let raw = fullString.substring(with: paragraphRange)
+            let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+
+            let isHeader = styleName.map { headerStyles.contains($0) } ?? false
+            let isStanzaBreak = styleName.map { stanzaBreakStyles.contains($0) } ?? false
+            let isVerse = styleName.map { verseStyles.contains($0) } ?? false
+            let isBlank = trimmed.isEmpty
+
+            if isHeader {
+                finalizeStanzaIfNeeded()
+                location = NSMaxRange(paragraphRange)
+                continue
+            }
+
+            if isStanzaBreak || isBlank {
+                finalizeStanzaIfNeeded()
+                location = NSMaxRange(paragraphRange)
+                continue
+            }
+
+            // Verse line (or best-effort fallback when styles are missing).
+            if stanzaStart == nil {
+                stanzaStart = paragraphRange.location
+                stanzaFirstParagraphRange = paragraphRange
+            }
+            stanzaEnd = NSMaxRange(paragraphRange)
+            let countsAsVerseLine = !isBlank && (isVerse || styleName == nil)
+            stanzaSawVerseLine = stanzaSawVerseLine || countsAsVerseLine
+            if countsAsVerseLine {
+                stanzaLineCount += 1
+            }
+
+            location = NSMaxRange(paragraphRange)
+        }
+
+        finalizeStanzaIfNeeded()
+        return results
+    }
+
+    func flashOutlineLocation(_ location: Int, duration: TimeInterval = 0.7) {
+        guard let textStorage = textView.textStorage else { return }
+        let full = textStorage.string as NSString
+        let safeLocation = max(0, min(location, max(0, full.length - 1)))
+        let paragraphRange = full.paragraphRange(for: NSRange(location: safeLocation, length: 0))
+        flashOutlineRange(paragraphRange, duration: duration)
+    }
+
+    private func flashOutlineRange(_ range: NSRange, duration: TimeInterval) {
+        guard let layoutManager = textView.layoutManager else { return }
+        guard let textContainer = textView.textContainer else { return }
+
+        outlineFlashWorkItem?.cancel()
+        if let previous = outlineFlashRange {
+            layoutManager.removeTemporaryAttribute(.backgroundColor, forCharacterRange: previous)
+        }
+
+        outlineFlashOverlay?.removeFromSuperview()
+        outlineFlashOverlay = nil
+
+        let glyphRange = layoutManager.glyphRange(forCharacterRange: range, actualCharacterRange: nil)
+        var rects: [NSRect] = []
+        layoutManager.enumerateLineFragments(forGlyphRange: glyphRange) { _, usedRect, _, _, _ in
+            var r = usedRect
+            r.origin.x += self.textView.textContainerOrigin.x
+            r.origin.y += self.textView.textContainerOrigin.y
+            // Slight padding around the line fragment; keeps it subtle without a fill.
+            r = r.insetBy(dx: -6, dy: -2)
+            rects.append(r)
+        }
+
+        if rects.isEmpty {
+            // Fallback: use the full bounding rect for the glyph range.
+            var r = layoutManager.boundingRect(forGlyphRange: glyphRange, in: textContainer)
+            r.origin.x += textView.textContainerOrigin.x
+            r.origin.y += textView.textContainerOrigin.y
+            r = r.insetBy(dx: -6, dy: -2)
+            rects = [r]
+        }
+
+        let overlay = OutlineFlashOverlayView(frame: textView.bounds)
+        overlay.autoresizingMask = [.width, .height]
+        // Avoid the Cream theme's orange/yellow accents; use the neutral ruler markings.
+        overlay.strokeColor = ThemeManager.shared.currentTheme.rulerMarkings.withAlphaComponent(0.35)
+        overlay.lineWidth = 1.75
+        overlay.cornerRadius = 6
+        overlay.rects = rects
+        textView.addSubview(overlay)
+        outlineFlashOverlay = overlay
+        overlay.needsDisplay = true
+        outlineFlashRange = range
+
+        let work = DispatchWorkItem { [weak self] in
+            guard let self else { return }
+            self.textView.layoutManager?.removeTemporaryAttribute(.backgroundColor, forCharacterRange: range)
+            self.outlineFlashOverlay?.removeFromSuperview()
+            self.outlineFlashOverlay = nil
+            self.textView.needsDisplay = true
+            self.outlineFlashRange = nil
+            self.outlineFlashWorkItem = nil
+        }
+        outlineFlashWorkItem = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + duration, execute: work)
     }
 
     /// Build a comprehensive character-position-to-page mapping for accurate page lookups
@@ -5753,7 +6084,7 @@ case "Book Subtitle":
         }
 
         pageContainer?.layer?.borderColor = theme.pageBorder.cgColor
-        let shadowColor = NSColor.black.withAlphaComponent(theme == .day ? 0.3 : 0.65)
+        let shadowColor = NSColor.black.withAlphaComponent(theme == .night ? 0.65 : 0.3)
         pageContainer?.layer?.shadowColor = shadowColor.cgColor
         textView?.backgroundColor = .clear  // Transparent so page backgrounds show through
         textView?.textColor = theme.textColor

@@ -60,8 +60,9 @@ class CharacterPresenceView: NSView {
 
             // Layout constants
             let padding: CGFloat = 60
-            let topPadding: CGFloat = 70
-            let bottomPadding: CGFloat = 110
+            // Header (title/subtitle/mode control) is outside the chart scroll view.
+            let topPadding: CGFloat = 24
+            let bottomPadding: CGFloat = 100
             let chartWidth = bounds.width - padding * 2
             let chartHeight = bounds.height - topPadding - bottomPadding
             let chartRect = NSRect(x: padding, y: bottomPadding, width: max(1, chartWidth), height: max(1, chartHeight))
@@ -235,16 +236,8 @@ class CharacterPresenceView: NSView {
     private var chartContentWidth: CGFloat = 0
     private var desiredChartContentWidth: CGFloat = 0
 
-    // Always-visible horizontal scroll control.
-    // macOS can hide overlay scrollbars; using a slider guarantees an on-screen control.
-    private let hScrollSlider: NSSlider = {
-        let s = NSSlider(value: 0.0, minValue: 0.0, maxValue: 1.0, target: nil, action: nil)
-        s.isContinuous = true
-        s.controlSize = .small
-        s.sliderType = .linear
-        return s
-    }()
-    private var chartClipBoundsObserver: NSObjectProtocol?
+    private let titleLabel = NSTextField(labelWithString: "")
+    private let subtitleLabel = NSTextField(labelWithString: "")
 
     private let modeControl: NSSegmentedControl = {
         let control = NSSegmentedControl(labels: ["Scenes", "Acts"], trackingMode: .selectOne, target: nil, action: nil)
@@ -265,7 +258,7 @@ class CharacterPresenceView: NSView {
         setupChartViews()
         setupLegendViews()
         setupModeControl()
-        setupHorizontalSlider()
+        setupHeaderLabels()
         startObservingTheme()
     }
 
@@ -274,7 +267,7 @@ class CharacterPresenceView: NSView {
         setupChartViews()
         setupLegendViews()
         setupModeControl()
-        setupHorizontalSlider()
+        setupHeaderLabels()
         startObservingTheme()
     }
 
@@ -282,37 +275,37 @@ class CharacterPresenceView: NSView {
         if let themeObserver {
             NotificationCenter.default.removeObserver(themeObserver)
         }
-        if let chartClipBoundsObserver {
-            NotificationCenter.default.removeObserver(chartClipBoundsObserver)
-        }
     }
 
     private func setupChartViews() {
         chartScrollView.documentView = chartView
-        chartScrollView.hasHorizontalScroller = false
+        chartScrollView.hasHorizontalScroller = true
         chartScrollView.hasVerticalScroller = false
+        chartScrollView.autohidesScrollers = false
         chartScrollView.drawsBackground = true
         chartScrollView.backgroundColor = ThemeManager.shared.currentTheme.pageAround
         chartScrollView.borderType = .noBorder
 
-        chartScrollView.contentView.postsBoundsChangedNotifications = true
+        // Keep wheel/trackpad scrolling responsive.
+        chartScrollView.horizontalScrollElasticity = .allowed
 
         chartView.wantsLayer = true
         addSubview(chartScrollView)
     }
 
-    private func setupHorizontalSlider() {
-        hScrollSlider.target = self
-        hScrollSlider.action = #selector(hScrollSliderChanged)
-        addSubview(hScrollSlider)
+    private func setupHeaderLabels() {
+        titleLabel.font = NSFont.boldSystemFont(ofSize: 18)
+        titleLabel.alignment = .center
+        titleLabel.lineBreakMode = .byTruncatingTail
+        titleLabel.maximumNumberOfLines = 1
 
-        chartClipBoundsObserver = NotificationCenter.default.addObserver(
-            forName: NSView.boundsDidChangeNotification,
-            object: chartScrollView.contentView,
-            queue: .main
-        ) { [weak self] _ in
-            self?.updateHorizontalSlider()
-        }
+        subtitleLabel.font = NSFont.systemFont(ofSize: 11)
+        subtitleLabel.alignment = .center
+        subtitleLabel.lineBreakMode = .byTruncatingTail
+        subtitleLabel.maximumNumberOfLines = 1
+
+        addSubview(titleLabel)
+        addSubview(subtitleLabel)
     }
 
     private func setupModeControl() {
@@ -329,7 +322,7 @@ class CharacterPresenceView: NSView {
 
         legendScrollView.documentView = legendStack
         legendScrollView.hasVerticalScroller = true
-        legendScrollView.autohidesScrollers = true
+        legendScrollView.autohidesScrollers = false
         legendScrollView.drawsBackground = false
         legendScrollView.borderType = .noBorder
 
@@ -362,27 +355,21 @@ class CharacterPresenceView: NSView {
     override func layout() {
         super.layout()
 
-        let topPadding: CGFloat = 70
-        let bottomPadding: CGFloat = 100
-
-        let chartHeight = bounds.height - topPadding - bottomPadding
+        let headerHeight: CGFloat = 70
+        let chartHeight = max(1, bounds.height - headerHeight)
         let legendX = bounds.width - legendWidth - 10
-        legendScrollView.frame = NSRect(x: legendX, y: bottomPadding, width: legendWidth, height: chartHeight)
-
-        let scrollerHeight: CGFloat = 18
+        legendScrollView.frame = NSRect(x: legendX, y: 0, width: legendWidth, height: chartHeight)
 
         // Chart area takes the remaining space on the left.
         let chartAreaWidth = max(1, legendX - 10)
-        chartScrollView.frame = NSRect(x: 0, y: scrollerHeight, width: chartAreaWidth, height: bounds.height - scrollerHeight)
-
-        hScrollSlider.frame = NSRect(x: 10, y: 0, width: max(1, chartAreaWidth - 20), height: scrollerHeight)
+        chartScrollView.frame = NSRect(x: 0, y: 0, width: chartAreaWidth, height: chartHeight)
 
         // Keep the chart view tall; width can exceed the visible area for scrolling.
         if chartContentWidth <= 0 { chartContentWidth = chartAreaWidth }
         if desiredChartContentWidth > 0 {
             chartContentWidth = max(chartAreaWidth, desiredChartContentWidth)
         }
-        chartView.frame = NSRect(x: 0, y: 0, width: chartContentWidth, height: bounds.height - scrollerHeight)
+        chartView.frame = NSRect(x: 0, y: 0, width: chartContentWidth, height: chartHeight)
         chartView.visibleWidth = chartScrollView.contentView.bounds.width
 
         modeControl.sizeToFit()
@@ -393,33 +380,14 @@ class CharacterPresenceView: NSView {
             height: modeControl.frame.height
         )
 
+        // Header labels
+        titleLabel.frame = NSRect(x: 0, y: bounds.height - 40, width: bounds.width, height: 22)
+        subtitleLabel.frame = NSRect(x: 0, y: bounds.height - 58, width: bounds.width, height: 16)
+
         // Size stack for scroll.
-        legendStack.frame = NSRect(x: 0, y: 0, width: legendWidth, height: legendStack.fittingSize.height)
-
-        updateHorizontalSlider()
-    }
-
-    private func updateHorizontalSlider() {
-        let viewportWidth = max(1, chartScrollView.contentView.bounds.width)
-        let contentWidth = max(viewportWidth, chartView.bounds.width)
-        let maxOffset = max(0, contentWidth - viewportWidth)
-
-        hScrollSlider.isHidden = false
-        hScrollSlider.isEnabled = (maxOffset > 0.5)
-
-        let currentX = chartScrollView.contentView.bounds.origin.x
-        hScrollSlider.doubleValue = (maxOffset > 0.5) ? Double(currentX / maxOffset) : 0.0
-    }
-
-    @objc private func hScrollSliderChanged() {
-        let viewportWidth = max(1, chartScrollView.contentView.bounds.width)
-        let contentWidth = max(viewportWidth, chartView.bounds.width)
-        let maxOffset = max(0, contentWidth - viewportWidth)
-        guard maxOffset > 0 else { return }
-
-        let newX = CGFloat(hScrollSlider.doubleValue) * maxOffset
-        chartScrollView.contentView.scroll(to: NSPoint(x: newX, y: 0))
-        chartScrollView.reflectScrolledClipView(chartScrollView.contentView)
+        let legendViewportH = max(1, legendScrollView.contentSize.height)
+        let legendTargetH = max(legendStack.fittingSize.height + 12, legendViewportH + 1)
+        legendStack.frame = NSRect(x: 0, y: 0, width: legendWidth, height: legendTargetH)
     }
 
     func setPresence(_ presence: [CharacterPresence]) {
@@ -468,6 +436,16 @@ class CharacterPresenceView: NSView {
         chartContentWidth = max(bounds.width - legendWidth - 20, desiredChartContentWidth)
 
         rebuildLegend(characters: characters, colors: colors)
+
+        // Update header labels
+        if xAxisMode == .acts {
+            titleLabel.stringValue = "Character Presence by Act"
+            subtitleLabel.stringValue = "Number of mentions per character per act"
+        } else {
+            titleLabel.stringValue = "Character Presence by Scene"
+            subtitleLabel.stringValue = "Number of mentions per character per scene"
+        }
+
         needsLayout = true
         needsDisplay = true
     }
@@ -514,32 +492,8 @@ class CharacterPresenceView: NSView {
         super.draw(dirtyRect)
 
         let theme = ThemeManager.shared.currentTheme
-        let backgroundColor = theme.pageAround
-        let textColor = theme.textColor
-
-        backgroundColor.setFill()
+        theme.pageAround.setFill()
         dirtyRect.fill()
-
-        // Draw title/subtitle (fixed; chart scrolls independently)
-        let titleAttributes: [NSAttributedString.Key: Any] = [
-            .font: NSFont.boldSystemFont(ofSize: 18),
-            .foregroundColor: textColor
-        ]
-        let title: String = (xAxisMode == .acts)
-            ? "Character Presence by Act"
-            : "Character Presence by Scene"
-        let titleSize = title.size(withAttributes: titleAttributes)
-        title.draw(at: NSPoint(x: (bounds.width - titleSize.width) / 2, y: bounds.height - 40), withAttributes: titleAttributes)
-
-        let subtitleAttributes: [NSAttributedString.Key: Any] = [
-            .font: NSFont.systemFont(ofSize: 11),
-            .foregroundColor: textColor.withAlphaComponent(0.6)
-        ]
-        let subtitle: String = (xAxisMode == .acts)
-            ? "Number of mentions per character per act"
-            : "Number of mentions per character per scene"
-        let subtitleSize = subtitle.size(withAttributes: subtitleAttributes)
-        subtitle.draw(at: NSPoint(x: (bounds.width - subtitleSize.width) / 2, y: bounds.height - 58), withAttributes: subtitleAttributes)
     }
 
     private func rebuildLegend(characters: [String], colors: [NSColor]) {
@@ -589,6 +543,9 @@ class CharacterPresenceView: NSView {
     private func applyThemeToLegend() {
         let theme = ThemeManager.shared.currentTheme
         let textColor = theme.textColor
+
+        titleLabel.textColor = textColor
+        subtitleLabel.textColor = textColor.withAlphaComponent(0.65)
 
         for view in legendStack.arrangedSubviews {
             if let label = view as? NSTextField {

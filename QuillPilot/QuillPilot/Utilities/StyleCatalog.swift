@@ -31,6 +31,7 @@ struct StyleDefinition: Codable {
     var fontSize: CGFloat
     var isBold: Bool
     var isItalic: Bool
+    var useSmallCaps: Bool
     var textColorHex: String
     var backgroundColorHex: String?
     var alignmentRawValue: Int
@@ -40,6 +41,91 @@ struct StyleDefinition: Codable {
     var headIndent: CGFloat
     var firstLineIndent: CGFloat
     var tailIndent: CGFloat
+
+    init(
+        fontName: String,
+        fontSize: CGFloat,
+        isBold: Bool,
+        isItalic: Bool,
+        useSmallCaps: Bool = false,
+        textColorHex: String,
+        backgroundColorHex: String? = nil,
+        alignmentRawValue: Int,
+        lineHeightMultiple: CGFloat,
+        spacingBefore: CGFloat,
+        spacingAfter: CGFloat,
+        headIndent: CGFloat,
+        firstLineIndent: CGFloat,
+        tailIndent: CGFloat
+    ) {
+        self.fontName = fontName
+        self.fontSize = fontSize
+        self.isBold = isBold
+        self.isItalic = isItalic
+        self.useSmallCaps = useSmallCaps
+        self.textColorHex = textColorHex
+        self.backgroundColorHex = backgroundColorHex
+        self.alignmentRawValue = alignmentRawValue
+        self.lineHeightMultiple = lineHeightMultiple
+        self.spacingBefore = spacingBefore
+        self.spacingAfter = spacingAfter
+        self.headIndent = headIndent
+        self.firstLineIndent = firstLineIndent
+        self.tailIndent = tailIndent
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case fontName
+        case fontSize
+        case isBold
+        case isItalic
+        case useSmallCaps
+        case textColorHex
+        case backgroundColorHex
+        case alignmentRawValue
+        case lineHeightMultiple
+        case spacingBefore
+        case spacingAfter
+        case headIndent
+        case firstLineIndent
+        case tailIndent
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        fontName = try container.decode(String.self, forKey: .fontName)
+        fontSize = try container.decode(CGFloat.self, forKey: .fontSize)
+        isBold = try container.decode(Bool.self, forKey: .isBold)
+        isItalic = try container.decode(Bool.self, forKey: .isItalic)
+        useSmallCaps = try container.decodeIfPresent(Bool.self, forKey: .useSmallCaps) ?? false
+        textColorHex = try container.decode(String.self, forKey: .textColorHex)
+        backgroundColorHex = try container.decodeIfPresent(String.self, forKey: .backgroundColorHex)
+        alignmentRawValue = try container.decode(Int.self, forKey: .alignmentRawValue)
+        lineHeightMultiple = try container.decode(CGFloat.self, forKey: .lineHeightMultiple)
+        spacingBefore = try container.decode(CGFloat.self, forKey: .spacingBefore)
+        spacingAfter = try container.decode(CGFloat.self, forKey: .spacingAfter)
+        headIndent = try container.decode(CGFloat.self, forKey: .headIndent)
+        firstLineIndent = try container.decode(CGFloat.self, forKey: .firstLineIndent)
+        tailIndent = try container.decode(CGFloat.self, forKey: .tailIndent)
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(fontName, forKey: .fontName)
+        try container.encode(fontSize, forKey: .fontSize)
+        try container.encode(isBold, forKey: .isBold)
+        try container.encode(isItalic, forKey: .isItalic)
+        try container.encode(useSmallCaps, forKey: .useSmallCaps)
+        try container.encode(textColorHex, forKey: .textColorHex)
+        try container.encodeIfPresent(backgroundColorHex, forKey: .backgroundColorHex)
+        try container.encode(alignmentRawValue, forKey: .alignmentRawValue)
+        try container.encode(lineHeightMultiple, forKey: .lineHeightMultiple)
+        try container.encode(spacingBefore, forKey: .spacingBefore)
+        try container.encode(spacingAfter, forKey: .spacingAfter)
+        try container.encode(headIndent, forKey: .headIndent)
+        try container.encode(firstLineIndent, forKey: .firstLineIndent)
+        try container.encode(tailIndent, forKey: .tailIndent)
+    }
 }
 
 struct StyleTemplate: Codable {
@@ -72,7 +158,24 @@ final class StyleCatalog {
     }
 
     func styleNames(for templateName: String) -> [String] {
-        templates[templateName]?.styles.keys.map { $0 }.sorted() ?? []
+        let keys = templates[templateName]?.styles.keys.map { $0 } ?? []
+        // Poetry: prefer modern naming in UI while keeping legacy keys for existing docs.
+        if templateName.lowercased().contains("poetry") {
+            return keys
+                .filter { key in
+                    // Keep legacy keys available for opening old docs, but hide them from UI pickers.
+                    if key == "Poetry — Verse" { return false }
+                    if key == "Poetry — Stanza" { return false }
+                    // Structural/container styles: keep for internal tagging/back-compat, but don't show in dropdown.
+                    if key == "Poem" { return false }
+                    // In Poetry templates, Verse is the writer-facing text style; hide generic Body Text variants.
+                    if key == "Body Text" { return false }
+                    if key == "Body Text – No Indent" { return false }
+                    return true
+                }
+                .sorted()
+        }
+        return keys.sorted()
     }
 
     func setCurrentTemplate(_ name: String) {
@@ -92,9 +195,37 @@ final class StyleCatalog {
     }
 
     func style(named name: String) -> StyleDefinition? {
+        // Poetry model:
+        // - Poem is structural (container) and should not define writer-facing appearance.
+        // - Verse is the writer-facing typographic style.
+        // For backwards compatibility, we resolve legacy/container names to Verse, while also honoring
+        // any overrides a user may already have saved under older keys.
+        let candidateNames: [String]
+        if isPoetryTemplate {
+            switch name {
+            case "Verse":
+                candidateNames = ["Verse", "Body Text – No Indent", "Body Text"]
+            case "Stanza", "Poem", "Body Text", "Body Text – No Indent", "Poetry — Verse", "Poetry — Stanza":
+                candidateNames = ["Verse", "Body Text – No Indent", "Body Text", name]
+            default:
+                candidateNames = [name]
+            }
+        } else {
+            candidateNames = [name]
+        }
+
         let overrides = loadOverrides(for: currentTemplateName)
-        if let override = overrides[name] { return override }
-        return templates[currentTemplateName]?.styles[name]
+        for key in candidateNames {
+            if let override = overrides[key] {
+                return override
+            }
+        }
+        for key in candidateNames {
+            if let def = templates[currentTemplateName]?.styles[key] {
+                return def
+            }
+        }
+        return nil
     }
 
     func saveOverride(_ definition: StyleDefinition, for styleName: String) {
@@ -387,10 +518,9 @@ final class StyleCatalog {
         var styles: [String: StyleDefinition] = [:]
         let font = "Times New Roman"
 
+        // Verse is the writer-facing typographic style (applied to the lines the writer types).
         // Poet-friendly baseline with manuscript-leaning conventions.
-        // Keep legacy names/aliases for existing documents.
-        // Core
-        styles["Poem"] = baseDefinition(
+        styles["Verse"] = baseDefinition(
             font: font,
             size: 20,
             alignment: .left,
@@ -402,8 +532,12 @@ final class StyleCatalog {
             tailIndent: 0
         )
 
-        // Industry term alias
-        styles["Verse"] = styles["Poem"]
+        // Poem is structural (container). We keep it for back-compat, but it should not appear in the UI picker.
+        // If a legacy document has "Poem" applied to lines, we render it like Verse.
+        styles["Poem"] = styles["Verse"]
+
+        // Legacy/structural alias kept for existing documents/importers.
+        styles["Stanza"] = styles["Verse"]
 
         styles["Poem Title"] = baseDefinition(
             font: font,
@@ -417,6 +551,10 @@ final class StyleCatalog {
             firstLine: 0,
             tailIndent: 0
         )
+
+        // Requested: front-matter style aliases
+        // (Use existing Poetry naming where possible, but expose canonical names in the picker.)
+        styles["Title"] = styles["Poem Title"]
 
         styles["Poet Name"] = baseDefinition(
             font: font,
@@ -498,6 +636,107 @@ final class StyleCatalog {
             tailIndent: 0
         )
 
+        // Argument (prose-like; no stanza breaks / poetic spacing by default)
+        styles["Argument Title"] = baseDefinition(
+            font: font,
+            size: 18,
+            smallCaps: true,
+            alignment: .center,
+            lineHeight: 1.15,
+            before: 18,
+            after: 10,
+            headIndent: 0,
+            firstLine: 0,
+            tailIndent: 0
+        )
+        styles["Argument"] = baseDefinition(
+            font: font,
+            size: 18,
+            italic: true,
+            alignment: .justified,
+            lineHeight: 1.25,
+            before: 0,
+            after: 8,
+            headIndent: 0,
+            firstLine: 0,
+            tailIndent: 0
+        )
+
+        // Verse-level variants
+        styles["Refrain"] = baseDefinition(
+            font: font,
+            size: 20,
+            italic: true,
+            alignment: .left,
+            lineHeight: 1.5,
+            before: 0,
+            after: 0,
+            headIndent: 18,
+            firstLine: 0,
+            tailIndent: 0
+        )
+        styles["Chorus"] = baseDefinition(
+            font: font,
+            size: 20,
+            italic: true,
+            alignment: .center,
+            lineHeight: 1.5,
+            before: 0,
+            after: 0,
+            headIndent: 0,
+            firstLine: 0,
+            tailIndent: 0
+        )
+        styles["Speaker"] = baseDefinition(
+            font: font,
+            size: 18,
+            smallCaps: true,
+            alignment: .left,
+            lineHeight: 1.2,
+            before: 10,
+            after: 4,
+            headIndent: 0,
+            firstLine: 0,
+            tailIndent: 0
+        )
+
+        styles["Section Break"] = baseDefinition(
+            font: font,
+            size: 18,
+            alignment: .center,
+            lineHeight: 1.0,
+            before: 12,
+            after: 12,
+            headIndent: 0,
+            firstLine: 0,
+            tailIndent: 0
+        )
+
+        // Verse/prose hybrids
+        styles["Prose Poem"] = baseDefinition(
+            font: font,
+            size: 18,
+            italic: true,
+            alignment: .justified,
+            lineHeight: 1.25,
+            before: 0,
+            after: 8,
+            headIndent: 0,
+            firstLine: 0,
+            tailIndent: 0
+        )
+        styles["Verse Paragraph"] = baseDefinition(
+            font: font,
+            size: 20,
+            alignment: .left,
+            lineHeight: 1.5,
+            before: 0,
+            after: 8,
+            headIndent: 0,
+            firstLine: 0,
+            tailIndent: 0
+        )
+
         styles["Notes"] = baseDefinition(
             font: font,
             size: 16,
@@ -525,6 +764,20 @@ final class StyleCatalog {
             tailIndent: 0
         )
 
+        styles["Marginal Note"] = styles["Draft / Margin Note"]
+
+        styles["Footnote"] = baseDefinition(
+            font: font,
+            size: 14,
+            alignment: .left,
+            lineHeight: 1.2,
+            before: 6,
+            after: 6,
+            headIndent: 18,
+            firstLine: 0,
+            tailIndent: 0
+        )
+
         styles["Revision Variant"] = baseDefinition(
             font: font,
             size: 16,
@@ -539,9 +792,12 @@ final class StyleCatalog {
             tailIndent: 0
         )
 
-        // Legacy Poetry style keys (kept for backwards compatibility with existing documents/importers).
+        // Poetry style keys
         styles["Poetry — Title"] = styles["Poem Title"]
-        styles["Poetry — Verse"] = styles["Poem"]
+        // Internal/compat keys kept for old docs/importers.
+        styles["Poetry — Stanza"] = styles["Verse"]
+        // Legacy name kept for backwards compatibility with existing documents/importers.
+        styles["Poetry — Verse"] = styles["Verse"]
         styles["Poetry — Stanza Break"] = baseDefinition(
             font: font,
             size: 20,
@@ -569,9 +825,9 @@ final class StyleCatalog {
         styles["Author"] = styles["Poet Name"]
         styles["Poetry — Poet Name"] = styles["Poet Name"]
 
-        // Make the standard Body Text map to Poem so defaults behave as expected in the Poetry template.
-        styles["Body Text"] = styles["Poem"]
-        styles["Body Text – No Indent"] = styles["Poem"]
+        // Internal defaults for import/export paths that still refer to Body Text.
+        styles["Body Text"] = styles["Verse"]
+        styles["Body Text – No Indent"] = styles["Verse"]
 
         return styles
     }
@@ -581,6 +837,7 @@ final class StyleCatalog {
         size: CGFloat,
         bold: Bool = false,
         italic: Bool = false,
+        smallCaps: Bool = false,
         color: String = "#1F1B1A",
         background: String? = nil,
         alignment: NSTextAlignment = .left,
@@ -596,6 +853,7 @@ final class StyleCatalog {
             fontSize: size,
             isBold: bold,
             isItalic: italic,
+            useSmallCaps: smallCaps,
             textColorHex: color,
             backgroundColorHex: background,
             alignmentRawValue: alignment.rawValue,

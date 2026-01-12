@@ -40,6 +40,7 @@ protocol FormattingToolbarDelegate: AnyObject {
     func formattingToolbarDidInsertTable(_ toolbar: FormattingToolbar)
     func formattingToolbarDidClearAll(_ toolbar: FormattingToolbar)
     func formattingToolbarDidFormatPainter(_ toolbar: FormattingToolbar)
+    func formattingToolbarDidToggleOutlinePanel(_ toolbar: FormattingToolbar)
 
     func formattingToolbarDidOpenStyleEditor(_ toolbar: FormattingToolbar)
 }
@@ -452,8 +453,26 @@ extension MainWindowController: FormattingToolbarDelegate {
         mainContentViewController.applyStyle(styleName)
 
         // Refresh outline if an outline-related style is applied
-        let outlineStyles = ["Part Title", "Chapter Number", "Chapter Title", "Chapter Subtitle", "Heading 1", "Heading 2", "Heading 3", "TOC Title", "Index Title", "Glossary Title", "Appendix Title"]
-        if outlineStyles.contains(styleName) {
+        let outlineStyles = [
+            "Part Title",
+            "Chapter Number",
+            "Chapter Title",
+            "Chapter Subtitle",
+            "Heading 1",
+            "Heading 2",
+            "Heading 3",
+            "TOC Title",
+            "Index Title",
+            "Glossary Title",
+            "Appendix Title",
+            // Poetry stanza outline drivers
+            "Stanza",
+            "Verse",
+            "Poetry — Stanza",
+            "Poetry — Verse",
+            "Poetry — Stanza Break"
+        ]
+        if outlineStyles.contains(styleName) || StyleCatalog.shared.isPoetryTemplate {
             // Delay refresh slightly to allow style to be applied first
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
                 NotificationCenter.default.post(name: Notification.Name("QuillPilotOutlineRefresh"), object: nil)
@@ -917,6 +936,10 @@ extension MainWindowController: FormattingToolbarDelegate {
 
     func formattingToolbarDidFormatPainter(_ toolbar: FormattingToolbar) {
         mainContentViewController.editorViewController.toggleFormatPainter()
+    }
+
+    func formattingToolbarDidToggleOutlinePanel(_ toolbar: FormattingToolbar) {
+        mainContentViewController.toggleOutlinePanel()
     }
 
     func formattingToolbarDidOpenStyleEditor(_ toolbar: FormattingToolbar) {
@@ -1884,9 +1907,12 @@ extension MainWindowController {
                         )
                     case "txt", "md", "markdown":
                         let text = try self?.readTextFromFile(at: url) ?? ""
-                        // Poetry auto-detection is only applied to plain-text/markdown imports.
-                        // Leave rich formats (.docx/.pages) alone for now.
-                        if PoetryImporter.looksLikePoetry(text) {
+                        // Plain-text imports: infer screenplay/poetry by structure.
+                        // Screenplay wins first so .txt screenplays don't get pulled into prose.
+                        if ScreenplayImporter.looksLikeScreenplay(text) {
+                            self?.toolbarView.selectTemplateProgrammatically("Screenplay")
+                            attributed = ScreenplayImporter.attributedString(fromPlainText: text)
+                        } else if PoetryImporter.looksLikePoetry(text) {
                             self?.toolbarView.selectTemplateProgrammatically("Poetry")
                             attributed = PoetryImporter.attributedString(fromPlainText: text)
                         } else if StyleCatalog.shared.currentTemplateName == "Screenplay" {
@@ -1981,7 +2007,7 @@ extension MainWindowController {
     private func applyImportedContent(_ attributed: NSAttributedString, url: URL) {
         // If the imported content is already tagged with a template-specific Quill style name,
         // switch templates before we run style retagging/materialization so the style definitions exist.
-        if let inferredTemplate = inferTemplateFromImportedStyleTags(in: attributed),
+        if let inferredTemplate = inferTemplateFromImportedContent(in: attributed),
            inferredTemplate != StyleCatalog.shared.currentTemplateName {
             toolbarView.selectTemplateProgrammatically(inferredTemplate)
         }
@@ -2023,6 +2049,13 @@ extension MainWindowController {
         RecentDocuments.shared.note(url)
     }
 
+    private func inferTemplateFromImportedContent(in attributed: NSAttributedString) -> String? {
+        if let tagged = inferTemplateFromImportedStyleTags(in: attributed) {
+            return tagged
+        }
+        return inferTemplateFromImportedFontsAndStructure(in: attributed)
+    }
+
     private func inferTemplateFromImportedStyleTags(in attributed: NSAttributedString) -> String? {
         let styleKey = NSAttributedString.Key("QuillStyleName")
         let fullRange = NSRange(location: 0, length: attributed.length)
@@ -2043,6 +2076,110 @@ extension MainWindowController {
         }
 
         return inferred
+    }
+
+    private func inferTemplateFromImportedFontsAndStructure(in attributed: NSAttributedString) -> String? {
+        let preferredProseTemplate = "Palatino"
+
+        // 1) Screenplay: strong structural signal (sluglines/transitions), even if the import lacks font attributes.
+        if ScreenplayImporter.looksLikeScreenplay(attributed.string) {
+            return "Screenplay"
+        }
+
+        // 2) Screenplay: monospaced/Courier-like dominant font.
+        let dominantFont = dominantFontForInference(in: attributed)
+        if let font = dominantFont, isMonospacedForScreenplay(font) {
+            return "Screenplay"
+        }
+
+        // 3) Poetry: strong structural signal (many short, hard-wrapped lines).
+        if looksLikePoetryByLineStructure(attributed.string) {
+            return "Poetry"
+        }
+
+        // 4) Prose: choose the closest matching font-family template, if any.
+        if let family = dominantFont?.familyName {
+            let available = StyleCatalog.shared.availableTemplates()
+            if let match = available.first(where: { $0.caseInsensitiveCompare(family) == .orderedSame }) {
+                return match
+            }
+            // Common mismatch: template name includes a qualifier.
+            let fuzzyCandidates = available.filter { $0.localizedCaseInsensitiveContains(family) || family.localizedCaseInsensitiveContains($0) }
+            if fuzzyCandidates.contains(where: { $0.caseInsensitiveCompare(preferredProseTemplate) == .orderedSame }) {
+                return preferredProseTemplate
+            }
+            if let fuzzy = fuzzyCandidates.first {
+                return fuzzy
+            }
+        }
+
+        // Final fallback: user-preferred prose template.
+        if StyleCatalog.shared.availableTemplates().contains(where: { $0.caseInsensitiveCompare(preferredProseTemplate) == .orderedSame }) {
+            return preferredProseTemplate
+        }
+
+        return nil
+    }
+
+    private func dominantFontForInference(in attributed: NSAttributedString) -> NSFont? {
+        guard attributed.length > 0 else { return nil }
+        let maxSample = min(attributed.length, 8000)
+        let sampleRange = NSRange(location: 0, length: maxSample)
+
+        var totals: [String: Int] = [:]
+        var representative: [String: NSFont] = [:]
+        attributed.enumerateAttribute(.font, in: sampleRange, options: []) { value, range, _ in
+            guard let font = value as? NSFont else { return }
+            let key = font.familyName ?? font.fontName
+            totals[key, default: 0] += range.length
+            if representative[key] == nil {
+                representative[key] = font
+            }
+        }
+
+        guard let best = totals.max(by: { $0.value < $1.value })?.key else { return nil }
+        return representative[best]
+    }
+
+    private func isMonospacedForScreenplay(_ font: NSFont) -> Bool {
+        if let family = font.familyName?.lowercased() {
+            if family.contains("courier") { return true }
+            if family.contains("menlo") { return true }
+            if family.contains("monaco") { return true }
+        }
+        let traits = NSFontManager.shared.traits(of: font)
+        return traits.contains(.fixedPitchFontMask)
+    }
+
+    private func looksLikePoetryByLineStructure(_ text: String) -> Bool {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return false }
+
+        // Examine only a prefix to keep this fast.
+        let prefix = String(trimmed.prefix(6000))
+        let lines = prefix.split(whereSeparator: \.isNewline)
+        guard lines.count >= 8 else { return false }
+
+        var nonEmpty = 0
+        var shortLines = 0
+        var totalLen = 0
+
+        for raw in lines.prefix(80) {
+            let s = raw.trimmingCharacters(in: .whitespaces)
+            guard !s.isEmpty else { continue }
+            nonEmpty += 1
+            totalLen += s.count
+            if s.count <= 50 {
+                shortLines += 1
+            }
+        }
+
+        guard nonEmpty >= 8 else { return false }
+        let avg = Double(totalLen) / Double(nonEmpty)
+        let shortRatio = Double(shortLines) / Double(nonEmpty)
+
+        // Poetry tends to have many short, deliberate line breaks.
+        return avg < 55 && shortRatio >= 0.65
     }
 
     private enum AssociatedKeys {
@@ -2178,7 +2315,14 @@ class HeaderView: NSView {
         layer?.backgroundColor = theme.headerBackground.cgColor
         titleLabel.textColor = theme.headerText
         taglineLabel.textColor = theme.headerText.withAlphaComponent(0.75)
-        themeToggle.title = theme == .day ? "☀️" : "🌙"
+        switch theme {
+        case .day:
+            themeToggle.title = "☀️"
+        case .cream:
+            themeToggle.title = "🎨"
+        case .night:
+            themeToggle.title = "🌙"
+        }
         themeToggle.contentTintColor = theme.headerText
         let toggleAttributes: [NSAttributedString.Key: Any] = [
             .foregroundColor: theme.headerText,
@@ -2209,7 +2353,9 @@ class FormattingToolbar: NSView {
     private var sizePopup: NSPopUpButton!
     private var editStylesButton: NSButton!
     private var imageButton: NSButton!
+    private var outlinePanelButton: NSButton!
     private var currentTemplate: String = "Novel"
+    private var templateObserver: NSObjectProtocol?
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
@@ -2280,22 +2426,57 @@ class FormattingToolbar: NSView {
         let sortedStyleNames = allStyles.keys.sorted()
 
         if StyleCatalog.shared.isPoetryTemplate {
-            // Poetry: ship a safe, poet-expected style set (and avoid "Headings" language).
-            func addSection(_ title: String, _ names: [String]) {
-                let available = names.filter { allStyles[$0] != nil }
-                guard !available.isEmpty else { return }
-                addHeader(title)
-                available.forEach(addStyle)
-                stylesMenu.addItem(.separator())
+            // Poetry: merged/superset picker (do not drop existing styles when adding new ones).
+            func addOrdered(_ names: [String]) {
+                for name in names {
+                    if name == "— divider —" {
+                        if stylesMenu.items.last?.isSeparatorItem != true {
+                            stylesMenu.addItem(.separator())
+                        }
+                        continue
+                    }
+                    guard allStyles[name] != nil else { continue }
+                    addStyle(name)
+                }
             }
 
-            addSection("Core", ["Poem", "Verse", "Poem Title", "Poet Name"])
-            addSection("Structural", ["Section / Sequence Title", "Part Number"])
-            addSection("Auxiliary", ["Voice", "Epigraph", "Dedication", "Notes"])
-            addSection("Editorial", ["Draft / Margin Note", "Revision Variant"])
+            addOrdered([
+                "Poem Title",
+                "Title",
+                "Poet Name",
+                "Author",
+                "Dedication",
+                "Epigraph",
+                "Argument Title",
+                "Argument",
+                "— divider —",
+                "Poem",
+                "Stanza",
+                "Verse",
+                "Refrain",
+                "Chorus",
+                "Voice",
+                "Speaker",
+                "— divider —",
+                "Prose Poem",
+                "Verse Paragraph",
+                "— divider —",
+                "Section / Sequence Title",
+                "Part Number",
+                "Section Break",
+                "— divider —",
+                "Notes",
+                "Marginal Note",
+                "Footnote",
+                "Revision Variant"
+            ])
 
             stylePopup.menu = stylesMenu
-            let lastStyle = UserDefaults.standard.string(forKey: "LastSelectedStyle") ?? "Poem"
+
+            var lastStyle = UserDefaults.standard.string(forKey: "LastSelectedStyle") ?? "Poem"
+            // Keep old persisted internal names selecting a visible menu item.
+            if lastStyle == "Poetry — Stanza" { lastStyle = "Stanza" }
+            if lastStyle == "Poetry — Verse" { lastStyle = "Verse" }
             if stylePopup.itemTitles.contains(lastStyle) {
                 stylePopup.selectItem(withTitle: lastStyle)
             } else if stylePopup.itemTitles.contains("Poem") {
@@ -2523,6 +2704,10 @@ class FormattingToolbar: NSView {
         sidebarBtn.toolTip = "Toggle Sidebars"
         sidebarBtn.setAccessibilityLabel("Toggle Sidebars")
 
+        // Outline panel toggle moved into the Outline header (left panel).
+        // Keep the toolbar free of an extra outline icon.
+        outlinePanelButton = nil
+
         // Add all to stack view (all aligned left)
         let toolbarStack = NSStackView(views: [
             stylePopup, editStylesButton, formatPainterBtn, templatePopup, decreaseSizeBtn, sizePopup, increaseSizeBtn,
@@ -2677,10 +2862,21 @@ class FormattingToolbar: NSView {
     }
 
     @objc private func styleChanged(_ sender: NSPopUpButton) {
-        let selectedStyle = sender.titleOfSelectedItem ?? ""
-        delegate?.formattingToolbar(self, didSelectStyle: selectedStyle)
-        // Save the selected style to UserDefaults for persistence
-        UserDefaults.standard.set(selectedStyle, forKey: "LastSelectedStyle")
+        let selectedTitle = sender.titleOfSelectedItem ?? ""
+
+        var appliedStyle = selectedTitle
+        let persistedUIStyle = selectedTitle
+        let displayStyle = selectedTitle
+
+        if StyleCatalog.shared.isPoetryTemplate {
+            // Poetry: keep "Verse" as the user-facing default, but apply canonical stanza tagging internally.
+            if selectedTitle == "Verse" {
+                appliedStyle = "Stanza"
+            }
+        }
+
+        delegate?.formattingToolbar(self, didSelectStyle: appliedStyle)
+        UserDefaults.standard.set(persistedUIStyle, forKey: "LastSelectedStyle")
 
         // Update the displayed title with theme color
         let theme = ThemeManager.shared.currentTheme
@@ -2688,7 +2884,7 @@ class FormattingToolbar: NSView {
             .foregroundColor: theme.textColor,
             .font: sender.font ?? NSFont.systemFont(ofSize: 13)
         ]
-        sender.attributedTitle = NSAttributedString(string: selectedStyle, attributes: attrs)
+        sender.attributedTitle = NSAttributedString(string: displayStyle, attributes: attrs)
         sender.synchronizeTitleAndSelectedItem()
     }
 
@@ -2739,6 +2935,67 @@ class FormattingToolbar: NSView {
         // Dynamically load all styles from current template
         let allStyles = StyleCatalog.shared.getAllStyles()
         let sortedStyleNames = allStyles.keys.sorted()
+
+        if StyleCatalog.shared.isPoetryTemplate {
+            func addOrdered(_ names: [String]) {
+                for name in names {
+                    if name == "— divider —" {
+                        if stylesMenu.items.last?.isSeparatorItem != true {
+                            stylesMenu.addItem(.separator())
+                        }
+                        continue
+                    }
+                    guard allStyles[name] != nil else { continue }
+                    addStyle(name)
+                }
+            }
+
+            // Poetry style picker with all available styles organized by category
+            addOrdered([
+                "Poem Title",
+                "Title",
+                "Poet Name",
+                "Author",
+                "Dedication",
+                "Epigraph",
+                "Argument Title",
+                "Argument",
+                "— divider —",
+                "Poem",
+                "Stanza",
+                "Verse",
+                "Refrain",
+                "Chorus",
+                "Voice",
+                "Speaker",
+                "— divider —",
+                "Prose Poem",
+                "Verse Paragraph",
+                "— divider —",
+                "Section / Sequence Title",
+                "Part Number",
+                "Section Break",
+                "— divider —",
+                "Notes",
+                "Marginal Note",
+                "Footnote",
+                "Revision Variant"
+            ])
+
+            stylePopup.menu = stylesMenu
+
+            var lastStyle = UserDefaults.standard.string(forKey: "LastSelectedStyle") ?? "Poem"
+            // Back-compat for earlier builds that persisted the internal name.
+            if lastStyle == "Stanza" { lastStyle = "Verse" }
+            if lastStyle == "Poetry — Stanza" { lastStyle = "Verse" }
+            if lastStyle == "Poetry — Verse" { lastStyle = "Verse" }
+            if stylePopup.itemTitles.contains(lastStyle) {
+                stylePopup.selectItem(withTitle: lastStyle)
+            } else if stylePopup.itemTitles.contains("Poem") {
+                stylePopup.selectItem(withTitle: "Poem")
+            }
+            return
+        }
 
         // Group styles by category
         var titleStyles: [String] = []
@@ -2878,6 +3135,16 @@ class FormattingToolbar: NSView {
         NotificationCenter.default.post(name: NSNotification.Name("ShowSearchPanel"), object: nil)
     }
 
+    @objc private func outlinePanelToggleTapped() {
+        delegate?.formattingToolbarDidToggleOutlinePanel(self)
+    }
+
+    deinit {
+        if let templateObserver {
+            NotificationCenter.default.removeObserver(templateObserver)
+        }
+    }
+
 
     @objc private func templateChanged(_ sender: NSPopUpButton) {
         guard let templateName = sender.titleOfSelectedItem, !templateName.isEmpty else { return }
@@ -2933,14 +3200,33 @@ class FormattingToolbar: NSView {
 
     func updateSelectedStyle(_ styleName: String?) {
         guard let styleName = styleName else {
-            // If no style found, select the first item (typically "Normal")
+            // If no style found, pick a sensible default per template.
+            if StyleCatalog.shared.isPoetryTemplate,
+               let verseIndex = (0..<stylePopup.numberOfItems).first(where: { stylePopup.item(at: $0)?.title == "Verse" }) {
+                stylePopup.selectItem(at: verseIndex)
+                reapplyPopupTheme(stylePopup)
+                return
+            }
+            // Fallback: select the first item (typically "Normal")
             stylePopup.selectItem(at: 0)
             reapplyPopupTheme(stylePopup)
             return
         }
 
+        // Poetry: normalize internal stanza/legacy tags to the visible picker label.
+        let displayStyle: String
+        if StyleCatalog.shared.isPoetryTemplate {
+            if styleName == "Poem" || styleName == "Stanza" || styleName == "Poetry — Stanza" || styleName == "Poetry — Verse" {
+                displayStyle = "Verse"
+            } else {
+                displayStyle = styleName
+            }
+        } else {
+            displayStyle = styleName
+        }
+
         // Try to find and select the matching style in the popup
-        if let index = (0..<stylePopup.numberOfItems).first(where: { stylePopup.item(at: $0)?.title == styleName }) {
+        if let index = (0..<stylePopup.numberOfItems).first(where: { stylePopup.item(at: $0)?.title == displayStyle }) {
             stylePopup.selectItem(at: index)
             reapplyPopupTheme(stylePopup)
         }
@@ -3019,6 +3305,19 @@ class ContentViewController: NSViewController {
     var editorViewController: EditorViewController!
     private var analysisViewController: AnalysisViewController!
     private var backToTopButton: NSButton!
+    private var outlineRevealButton: NSButton!
+
+    private var splitView: NSSplitView!
+    private var outlineMinWidthConstraint: NSLayoutConstraint?
+    private var outlineMaxWidthConstraint: NSLayoutConstraint?
+    private var analysisMinWidthConstraint: NSLayoutConstraint?
+    private var analysisMaxWidthConstraint: NSLayoutConstraint?
+    private var equalSidebarWidthsConstraint: NSLayoutConstraint?
+    private var isOutlinePanelHidden = false
+    private var cachedOutlineWidth: CGFloat = 280
+
+    private var isAnalysisPanelHidden = false
+    private var cachedAnalysisWidth: CGFloat = 320
 
     // Analysis throttling during layout
     private var analysisSuspended = false
@@ -3039,6 +3338,11 @@ class ContentViewController: NSViewController {
         view = NSView()
     }
 
+    @objc func toggleSidebar(_ sender: Any?) {
+        // Route View ▸ Toggle Sidebar through our app-wide behavior so it toggles both sidebars.
+        NotificationCenter.default.post(name: Notification.Name("ToggleSidebars"), object: nil)
+    }
+
     override func viewDidLoad() {
         super.viewDidLoad()
         setupLayout()
@@ -3050,14 +3354,7 @@ class ContentViewController: NSViewController {
         DebugLog.log("[DEBUG] ContentViewController.viewDidLoad - adding observer for ToggleSidebars")
         NotificationCenter.default.addObserver(forName: Notification.Name("ToggleSidebars"), object: nil, queue: .main) { [weak self] _ in
             DebugLog.log("[DEBUG] ContentViewController received ToggleSidebars notification")
-            guard let self else { return }
-            guard let outline = self.outlinePanelController, let analysis = self.analysisViewController else { return }
-
-            // Keep both panels in the same state.
-            // If either is visible, hide both; otherwise show both.
-            let anyVisible = !outline.isMenuSidebarHidden || !analysis.isMenuSidebarHidden
-            outline.setMenuSidebarHidden(anyVisible)
-            analysis.setMenuSidebarHidden(anyVisible)
+            self?.toggleAllSidebarsPanels()
         }
 
         refreshOutline()
@@ -3069,19 +3366,48 @@ class ContentViewController: NSViewController {
         splitView.isVertical = true
         splitView.dividerStyle = .thin
         splitView.translatesAutoresizingMaskIntoConstraints = false
+        self.splitView = splitView
         view.addSubview(splitView)
+
+        // When the outline panel is hidden, the header toggle disappears with it.
+        // Provide a persistent reveal control so the outline can always be restored.
+        let revealImage: NSImage
+        if #available(macOS 11.0, *) {
+            let base = NSImage(systemSymbolName: "square.and.pencil", accessibilityDescription: "Toggle Outline") ?? NSImage()
+            let config = NSImage.SymbolConfiguration(pointSize: 16, weight: .regular)
+            revealImage = base.withSymbolConfiguration(config) ?? base
+        } else {
+            revealImage = NSImage(size: NSSize(width: 18, height: 18))
+            revealImage.lockFocus()
+            NSString(string: "✎").draw(at: NSPoint(x: 2, y: 1), withAttributes: [.font: NSFont.systemFont(ofSize: 14)])
+            revealImage.unlockFocus()
+        }
+
+        outlineRevealButton = NSButton(image: revealImage, target: self, action: #selector(outlineRevealTapped(_:)))
+        outlineRevealButton.bezelStyle = .inline
+        outlineRevealButton.isBordered = false
+        outlineRevealButton.imagePosition = .imageOnly
+        outlineRevealButton.toolTip = "Show Outline"
+        outlineRevealButton.translatesAutoresizingMaskIntoConstraints = false
+        outlineRevealButton.isHidden = true
+        view.addSubview(outlineRevealButton)
 
         // Left: Mirrored analysis shell showing the outline (📝)
         outlineViewController = OutlineViewController()
         outlineViewController.onSelect = { [weak self] entry in
             self?.scrollToOutlineEntry(entry)
         }
+        outlineViewController.onToggleOutlinePanel = { [weak self] in
+            self?.outlineViewController.toggleOutlineContents()
+        }
         outlinePanelController = AnalysisViewController()
         outlinePanelController.isOutlinePanel = true
         outlinePanelController.outlineViewController = outlineViewController
         splitView.addArrangedSubview(outlinePanelController.view)
-        outlinePanelController.view.widthAnchor.constraint(greaterThanOrEqualToConstant: 240).isActive = true
-        outlinePanelController.view.widthAnchor.constraint(lessThanOrEqualToConstant: 360).isActive = true
+        outlineMinWidthConstraint = outlinePanelController.view.widthAnchor.constraint(greaterThanOrEqualToConstant: 240)
+        outlineMaxWidthConstraint = outlinePanelController.view.widthAnchor.constraint(lessThanOrEqualToConstant: 360)
+        outlineMinWidthConstraint?.isActive = true
+        outlineMaxWidthConstraint?.isActive = true
 
         // Center: Editor
         editorViewController = EditorViewController()
@@ -3092,9 +3418,46 @@ class ContentViewController: NSViewController {
 
         // Right: Analysis panel
         analysisViewController = AnalysisViewController()
+        analysisViewController.getManuscriptInfoCallback = { [weak self] in
+            guard let editor = self?.editorViewController else { return nil }
+
+            func clean(_ value: String) -> String {
+                value.trimmingCharacters(in: CharacterSet.whitespacesAndNewlines)
+            }
+
+            func isPlaceholder(_ value: String) -> Bool {
+                let normalized = value
+                    .trimmingCharacters(in: CharacterSet.whitespacesAndNewlines)
+                    .lowercased()
+                    .replacingOccurrences(of: "’", with: "'")
+                    .replacingOccurrences(of: "\u{2019}", with: "'")
+                if normalized.isEmpty { return true }
+
+                // Common placeholder variants.
+                let placeholders: Set<String> = [
+                    "untitled",
+                    "poem title",
+                    "title",
+                    "author name",
+                    "author's name",
+                    "authors name",
+                    "author"
+                ]
+                return placeholders.contains(normalized)
+            }
+
+            let title = clean(editor.manuscriptTitle)
+            let author = clean(editor.manuscriptAuthor)
+            return (
+                title: isPlaceholder(title) ? "" : title,
+                author: isPlaceholder(author) ? "" : author
+            )
+        }
         splitView.addArrangedSubview(analysisViewController.view)
-        analysisViewController.view.widthAnchor.constraint(greaterThanOrEqualToConstant: 250).isActive = true
-        analysisViewController.view.widthAnchor.constraint(lessThanOrEqualToConstant: 400).isActive = true
+        analysisMinWidthConstraint = analysisViewController.view.widthAnchor.constraint(greaterThanOrEqualToConstant: 250)
+        analysisMaxWidthConstraint = analysisViewController.view.widthAnchor.constraint(lessThanOrEqualToConstant: 400)
+        analysisMinWidthConstraint?.isActive = true
+        analysisMaxWidthConstraint?.isActive = true
 
         // Set up analysis callback
         analysisViewController.analyzeCallback = { [weak self] in
@@ -3107,6 +3470,7 @@ class ContentViewController: NSViewController {
         let equalSidebarWidths = outlinePanelController.view.widthAnchor.constraint(equalTo: analysisViewController.view.widthAnchor)
         equalSidebarWidths.priority = .defaultHigh
         equalSidebarWidths.isActive = true
+        equalSidebarWidthsConstraint = equalSidebarWidths
         backToTopButton = NSButton(title: "↑ Top", target: self, action: #selector(scrollToTop))
         backToTopButton.bezelStyle = .rounded
         backToTopButton.translatesAutoresizingMaskIntoConstraints = false
@@ -3119,9 +3483,96 @@ class ContentViewController: NSViewController {
             splitView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
             splitView.bottomAnchor.constraint(equalTo: view.bottomAnchor),
 
+            outlineRevealButton.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 10),
+            outlineRevealButton.topAnchor.constraint(equalTo: view.topAnchor, constant: 14),
+
             backToTopButton.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -20),
             backToTopButton.bottomAnchor.constraint(equalTo: view.bottomAnchor, constant: -20)
         ])
+    }
+
+    private func toggleAllSidebarsPanels() {
+        guard let splitView else { return }
+        guard splitView.subviews.count >= 3 else { return }
+
+        // If either sidebar is visible, hide both. Otherwise, show both.
+        let anyVisible = !outlinePanelController.view.isHidden || !analysisViewController.view.isHidden
+        let shouldHide = anyVisible
+
+        if shouldHide {
+            cachedOutlineWidth = splitView.subviews[0].frame.width
+            cachedAnalysisWidth = splitView.subviews[2].frame.width
+
+            equalSidebarWidthsConstraint?.isActive = false
+            outlineMinWidthConstraint?.isActive = false
+            outlineMaxWidthConstraint?.isActive = false
+            analysisMinWidthConstraint?.isActive = false
+            analysisMaxWidthConstraint?.isActive = false
+
+            outlinePanelController.view.isHidden = true
+            analysisViewController.view.isHidden = true
+            outlineRevealButton?.isHidden = true
+
+            isOutlinePanelHidden = true
+            isAnalysisPanelHidden = true
+
+            splitView.setPosition(0, ofDividerAt: 0)
+            splitView.setPosition(splitView.bounds.width, ofDividerAt: 1)
+        } else {
+            outlinePanelController.view.isHidden = false
+            analysisViewController.view.isHidden = false
+
+            outlineMinWidthConstraint?.isActive = true
+            outlineMaxWidthConstraint?.isActive = true
+            analysisMinWidthConstraint?.isActive = true
+            analysisMaxWidthConstraint?.isActive = true
+            equalSidebarWidthsConstraint?.isActive = true
+
+            let restoredOutline = max(240, min(cachedOutlineWidth, 360))
+            let restoredAnalysis = max(250, min(cachedAnalysisWidth, 400))
+
+            isOutlinePanelHidden = false
+            isAnalysisPanelHidden = false
+
+            splitView.setPosition(restoredOutline, ofDividerAt: 0)
+            splitView.setPosition(max(restoredOutline + 450, splitView.bounds.width - restoredAnalysis), ofDividerAt: 1)
+        }
+
+        splitView.needsLayout = true
+        splitView.layoutSubtreeIfNeeded()
+    }
+
+    @objc private func outlineRevealTapped(_ sender: Any?) {
+        // Reuse the same behavior as the header toggle.
+        toggleOutlinePanel()
+    }
+
+    func toggleOutlinePanel() {
+        guard let splitView else { return }
+        guard splitView.subviews.count >= 3 else { return }
+
+        isOutlinePanelHidden.toggle()
+
+        if isOutlinePanelHidden {
+            cachedOutlineWidth = splitView.subviews[0].frame.width
+            equalSidebarWidthsConstraint?.isActive = false
+            outlineMinWidthConstraint?.isActive = false
+            outlineMaxWidthConstraint?.isActive = false
+            outlinePanelController.view.isHidden = true
+            splitView.setPosition(0, ofDividerAt: 0)
+            outlineRevealButton?.isHidden = false
+        } else {
+            outlinePanelController.view.isHidden = false
+            outlineMinWidthConstraint?.isActive = true
+            outlineMaxWidthConstraint?.isActive = true
+            equalSidebarWidthsConstraint?.isActive = true
+            let restored = max(240, min(cachedOutlineWidth, 360))
+            splitView.setPosition(restored, ofDividerAt: 0)
+            outlineRevealButton?.isHidden = true
+        }
+
+        splitView.needsLayout = true
+        splitView.layoutSubtreeIfNeeded()
     }
 
     private func refreshOutline() {
@@ -3136,7 +3587,11 @@ class ContentViewController: NSViewController {
 
     private func scrollToOutlineEntry(_ entry: EditorViewController.OutlineEntry) {
         guard let textView = editorViewController.textView else { return }
+        let insertion = NSRange(location: entry.range.location, length: 0)
+        textView.setSelectedRange(insertion)
+        textView.window?.makeFirstResponder(textView)
         textView.scrollRangeToVisible(entry.range)
+        editorViewController.flashOutlineLocation(entry.range.location)
     }
 
     func applyTheme(_ theme: AppTheme) {
@@ -3423,12 +3878,18 @@ class OutlineViewController: NSViewController {
     }
 
     var onSelect: ((EditorViewController.OutlineEntry) -> Void)?
+    var onToggleOutlinePanel: (() -> Void)?
     private var roots: [Node] = []
     private var isUpdating = false  // Prevent scroll during programmatic updates
 
     private var headerLabel: NSTextField!
     private var outlineView: NSOutlineView!
+    private var outlineScrollView: NSScrollView!
+    private var helpButton: NSButton!
+    private var stanzaHelpPopover: NSPopover?
     private var templateObserver: NSObjectProtocol?
+
+    private var isOutlineContentsHidden = false
 
     private var levelColors: [NSColor] = [
         NSColor(calibratedRed: 0.18, green: 0.33, blue: 0.61, alpha: 1.0), // Part
@@ -3449,7 +3910,31 @@ class OutlineViewController: NSViewController {
         headerLabel = NSTextField(labelWithString: "Document Outline")
         headerLabel.font = NSFont.boldSystemFont(ofSize: 14)
         headerLabel.translatesAutoresizingMaskIntoConstraints = false
+        headerLabel.isSelectable = false
+        headerLabel.isEditable = false
+        headerLabel.isBezeled = false
+        headerLabel.drawsBackground = false
+        headerLabel.addGestureRecognizer(NSClickGestureRecognizer(target: self, action: #selector(toggleOutlineFromHeader(_:))))
         view.addSubview(headerLabel)
+
+        let toggleImage: NSImage
+        if #available(macOS 11.0, *) {
+            let base = NSImage(systemSymbolName: "square.and.pencil", accessibilityDescription: "Toggle Outline") ?? NSImage()
+            let config = NSImage.SymbolConfiguration(pointSize: 16, weight: .regular)
+            toggleImage = base.withSymbolConfiguration(config) ?? base
+        } else {
+            toggleImage = NSImage(size: NSSize(width: 18, height: 18))
+            toggleImage.lockFocus()
+            NSString(string: "✎").draw(at: NSPoint(x: 2, y: 1), withAttributes: [.font: NSFont.systemFont(ofSize: 14)])
+            toggleImage.unlockFocus()
+        }
+
+        helpButton = NSButton(image: toggleImage, target: self, action: #selector(toggleOutlineFromHeader(_:)))
+        helpButton.bezelStyle = .inline
+        helpButton.isBordered = false
+        helpButton.imagePosition = .imageOnly
+        helpButton.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(helpButton)
 
         // Poetry template hides the "Document Outline" heading.
         applyTemplateVisibility()
@@ -3483,20 +3968,25 @@ class OutlineViewController: NSViewController {
         scrollView.horizontalScroller?.isHidden = true
         scrollView.documentView = outlineView
         scrollView.translatesAutoresizingMaskIntoConstraints = false
-        view.addSubview(scrollView)
+        outlineScrollView = scrollView
+        view.addSubview(outlineScrollView)
 
         NSLayoutConstraint.activate([
             headerLabel.topAnchor.constraint(equalTo: view.topAnchor, constant: 12),
             headerLabel.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 12),
-            headerLabel.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -12),
+            headerLabel.trailingAnchor.constraint(lessThanOrEqualTo: helpButton.leadingAnchor, constant: -8),
 
-            scrollView.topAnchor.constraint(equalTo: headerLabel.bottomAnchor, constant: 8),
-            scrollView.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 8),
-            scrollView.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -8),
-            scrollView.bottomAnchor.constraint(equalTo: view.bottomAnchor, constant: -8)
+            helpButton.centerYAnchor.constraint(equalTo: headerLabel.centerYAnchor),
+            helpButton.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -12),
+
+            outlineScrollView.topAnchor.constraint(equalTo: headerLabel.bottomAnchor, constant: 8),
+            outlineScrollView.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 8),
+            outlineScrollView.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -8),
+            outlineScrollView.bottomAnchor.constraint(equalTo: view.bottomAnchor, constant: -8)
         ])
 
         applyTheme(ThemeManager.shared.currentTheme)
+        updateHeaderToggleTooltip()
     }
 
     deinit {
@@ -3506,7 +3996,38 @@ class OutlineViewController: NSViewController {
     }
 
     private func applyTemplateVisibility() {
-        headerLabel?.isHidden = StyleCatalog.shared.isPoetryTemplate
+        headerLabel?.isHidden = false
+
+        if StyleCatalog.shared.isPoetryTemplate {
+            headerLabel?.stringValue = "Stanza Outline"
+            helpButton?.isHidden = false
+        } else {
+            headerLabel?.stringValue = "Document Outline"
+            // Prose templates use the outline panel's vertical toggle button; hide this redundant header toggle.
+            helpButton?.isHidden = true
+        }
+
+        updateHeaderToggleTooltip()
+    }
+
+    @objc private func toggleOutlineFromHeader(_ sender: Any?) {
+        // In prose templates, the outline toggle lives in the vertical icon strip.
+        guard StyleCatalog.shared.isPoetryTemplate else { return }
+        onToggleOutlinePanel?()
+    }
+
+    func toggleOutlineContents() {
+        isOutlineContentsHidden.toggle()
+        outlineScrollView?.isHidden = isOutlineContentsHidden
+        headerLabel?.isHidden = isOutlineContentsHidden
+        updateHeaderToggleTooltip()
+    }
+
+    private func updateHeaderToggleTooltip() {
+        let name = StyleCatalog.shared.isPoetryTemplate ? "Stanza Outline" : "Document Outline"
+        let tip = isOutlineContentsHidden ? "Show \(name)" : "Hide \(name)"
+        helpButton?.toolTip = tip
+        headerLabel?.toolTip = tip
     }
 
     func update(with entries: [EditorViewController.OutlineEntry]) {
@@ -3547,8 +4068,8 @@ class OutlineViewController: NSViewController {
         headerLabel.textColor = theme.textColor
         outlineView.backgroundColor = theme.outlineBackground
 
-        // Update levelColors based on theme
-        if theme == .day {
+        // Update levelColors based on theme (Night uses a lighter-on-dark palette)
+        if theme != .night {
             levelColors = [
                 NSColor(calibratedRed: 0.18, green: 0.33, blue: 0.61, alpha: 1.0), // Part
                 NSColor(calibratedRed: 0.09, green: 0.52, blue: 0.52, alpha: 1.0), // Chapter / H1
@@ -4865,7 +5386,7 @@ private enum DocxTextExtractor {
                         textBlock.setWidth(12.0, type: .absoluteValueType, for: .padding, edge: .maxX)
                     } else {
                         // Regular table: visible borders on all sides with consistent width
-                        let borderColor = NSColor.gray.withAlphaComponent(0.5)
+                        let borderColor = ThemeManager.shared.currentTheme.pageBorder.withAlphaComponent(0.55)
                         textBlock.setBorderColor(borderColor, for: .minX)
                         textBlock.setBorderColor(borderColor, for: .maxX)
                         textBlock.setBorderColor(borderColor, for: .minY)

@@ -141,7 +141,7 @@ class WelcomeWindowController: NSWindowController {
         button.layer?.cornerRadius = 8
         button.layer?.backgroundColor = NSColor(red: 0.92, green: 0.85, blue: 0.77, alpha: 1.0).cgColor
         button.layer?.borderWidth = 1
-        button.layer?.borderColor = NSColor(red: 0.80, green: 0.73, blue: 0.65, alpha: 1.0).cgColor
+        button.layer?.borderColor = ThemeManager.shared.currentTheme.pageBorder.cgColor
 
         // Use attributed string for explicit text color control
         let darkTextColor = NSColor(red: 0.17, green: 0.24, blue: 0.31, alpha: 1.0)

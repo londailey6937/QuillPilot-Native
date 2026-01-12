@@ -246,10 +246,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc private func toggleRulerVisibility(_ sender: Any?) {
         mainWindowController?.toggleRulerVisibility(sender)
+
+        // Update the menu item title immediately so it changes while the menu is still open.
+        if let menuItem = sender as? NSMenuItem {
+            let visible = mainWindowController?.isRulerVisible ?? true
+            menuItem.title = visible ? "Hide Ruler" : "Show Ruler"
+            menuItem.state = visible ? .on : .off
+        }
     }
 
     @objc private func showSpellingAndGrammar(_ sender: Any?) {
-        _ = NSApp.sendAction(Selector(("showGuessPanel:")), to: nil, from: sender)
+        _ = NSApp.sendAction(#selector(NSTextView.showGuessPanel(_:)), to: nil, from: sender)
     }
 
     @objc private func applyDropCap(_ sender: Any?) {

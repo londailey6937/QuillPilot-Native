@@ -141,7 +141,7 @@ struct PoetryImporter {
                 appendStanzaBreak()
                 continue
             }
-            appendLine(line, styleName: "Poetry — Verse")
+            appendLine(line, styleName: "Stanza")
         }
 
         return result

@@ -10,6 +10,7 @@ import Cocoa
 
 enum AppTheme: String {
     case day = "day"
+    case cream = "cream"
     case night = "night"
 
     // Page colors
@@ -17,6 +18,9 @@ enum AppTheme: String {
         switch self {
         case .day:
             return NSColor(hex: "#FFFDF9") ?? .white
+        case .cream:
+            // Lightest cream (primary page surface)
+            return NSColor(hex: "#FFFAF3") ?? .white
         case .night:
             return NSColor(hex: "#1F1F1F") ?? .black
         }
@@ -26,6 +30,9 @@ enum AppTheme: String {
         switch self {
         case .day:
             return NSColor(hex: "#F7EEE0") ?? .lightGray
+        case .cream:
+            // Main card/background cream
+            return NSColor(hex: "#FEF5E7") ?? .lightGray
         case .night:
             return NSColor(hex: "#121212") ?? .darkGray
         }
@@ -35,6 +42,9 @@ enum AppTheme: String {
         switch self {
         case .day:
             return NSColor(hex: "#CEBCA7") ?? .gray
+        case .cream:
+            // Tome Orange (accent) for borders and separators in Cream mode.
+            return NSColor(hex: "#C65A1E") ?? .gray
         case .night:
             return NSColor(hex: "#333333") ?? .gray
         }
@@ -45,6 +55,8 @@ enum AppTheme: String {
         switch self {
         case .day:
             return NSColor(calibratedWhite: 0.1, alpha: 1.0)
+        case .cream:
+            return NSColor(hex: "#2C3E50") ?? NSColor(calibratedWhite: 0.1, alpha: 1.0)
         case .night:
             return NSColor(calibratedWhite: 0.9, alpha: 1.0)
         }
@@ -54,6 +66,8 @@ enum AppTheme: String {
         switch self {
         case .day:
             return NSColor(calibratedWhite: 0.1, alpha: 1.0)
+        case .cream:
+            return NSColor(hex: "#111827") ?? NSColor(calibratedWhite: 0.1, alpha: 1.0)
         case .night:
             return NSColor(hex: "#FFD479") ?? NSColor(calibratedWhite: 0.9, alpha: 1.0)
         }
@@ -64,6 +78,9 @@ enum AppTheme: String {
         switch self {
         case .day:
             return NSColor(hex: "#8B7355") ?? .darkGray  // Warm brown that contrasts with logo
+        case .cream:
+            // Light tan header so the app feels like a warm manuscript desk.
+            return NSColor(hex: "#F7E6D0") ?? .lightGray
         case .night:
             return NSColor(hex: "#2D2D2D") ?? .darkGray
         }
@@ -73,6 +90,8 @@ enum AppTheme: String {
         switch self {
         case .day:
             return NSColor(hex: "#FFFDF9") ?? .white
+        case .cream:
+            return NSColor(hex: "#111827") ?? .black
         case .night:
             return NSColor(hex: "#E8E8E8") ?? .white
         }
@@ -83,6 +102,8 @@ enum AppTheme: String {
         switch self {
         case .day:
             return NSColor(hex: "#F7EEE0") ?? .lightGray
+        case .cream:
+            return NSColor(hex: "#F5EAD9") ?? .lightGray
         case .night:
             return NSColor(hex: "#1A1A1A") ?? .black
         }
@@ -93,6 +114,8 @@ enum AppTheme: String {
         switch self {
         case .day:
             return NSColor(hex: "#F7EEE0") ?? .white
+        case .cream:
+            return NSColor(hex: "#FEF5E7") ?? .white
         case .night:
             return NSColor(hex: "#161616") ?? .black
         }
@@ -103,6 +126,8 @@ enum AppTheme: String {
         switch self {
         case .day:
             return NSColor(hex: "#FFFDF9") ?? .white
+        case .cream:
+            return NSColor(hex: "#FFFAF3") ?? .white
         case .night:
             return NSColor(hex: "#1E1E1E") ?? .black
         }
@@ -112,6 +137,8 @@ enum AppTheme: String {
         switch self {
         case .day:
             return NSColor(hex: "#CEBCA7") ?? .gray
+        case .cream:
+            return NSColor(hex: "#C65A1E") ?? .gray
         case .night:
             return NSColor(hex: "#333333") ?? .gray
         }
@@ -121,6 +148,9 @@ enum AppTheme: String {
         switch self {
         case .day:
             return NSColor(hex: "#684F3C") ?? .gray
+        case .cream:
+            // Stone gray for legend/secondary marks
+            return NSColor(hex: "#78716C") ?? .gray
         case .night:
             return NSColor(hex: "#888888") ?? .lightGray
         }
@@ -131,6 +161,8 @@ enum AppTheme: String {
         switch self {
         case .day:
             return NSColor(calibratedWhite: 0.15, alpha: 1.0)
+        case .cream:
+            return NSColor(hex: "#111827") ?? NSColor(calibratedWhite: 0.15, alpha: 1.0)
         case .night:
             return NSColor(calibratedWhite: 0.9, alpha: 1.0)
         }
@@ -140,6 +172,8 @@ enum AppTheme: String {
         switch self {
         case .day:
             return NSColor(calibratedWhite: 0.35, alpha: 1.0)
+        case .cream:
+            return NSColor(hex: "#6B7280") ?? NSColor(calibratedWhite: 0.35, alpha: 1.0)
         case .night:
             return NSColor(calibratedWhite: 0.7, alpha: 1.0)
         }
@@ -149,6 +183,8 @@ enum AppTheme: String {
         switch self {
         case .day:
             return NSColor(hex: "#FFFDF9") ?? .white
+        case .cream:
+            return NSColor(hex: "#FEF5E7") ?? .white
         case .night:
             return NSColor(hex: "#1F1F1F") ?? .black
         }
@@ -177,12 +213,20 @@ class ThemeManager {
            let theme = AppTheme(rawValue: savedTheme) {
             currentTheme = theme
         } else {
-            currentTheme = .day
+            // Default new installs to the warm Cream theme for experimentation.
+            currentTheme = .cream
         }
     }
 
     func toggleTheme() {
-        currentTheme = (currentTheme == .day) ? .night : .day
+        switch currentTheme {
+        case .day:
+            currentTheme = .cream
+        case .cream:
+            currentTheme = .night
+        case .night:
+            currentTheme = .day
+        }
     }
 }
 

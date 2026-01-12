@@ -1,6 +1,10 @@
 import Cocoa
 
 final class PreferencesWindowController: NSWindowController {
+    private var themedLabels: [NSTextField] = []
+    private var themedButtons: [NSButton] = []
+    private var themedPopups: [NSPopUpButton] = []
+
     private var themePopup: NSPopUpButton!
     private var autoSavePopup: NSPopUpButton!
     private var defaultExportPopup: NSPopUpButton!
@@ -41,9 +45,10 @@ final class PreferencesWindowController: NSWindowController {
 
         // Theme
         themePopup = NSPopUpButton(frame: .zero, pullsDown: false)
-        themePopup.addItems(withTitles: ["Day", "Night"])
+        themePopup.addItems(withTitles: ["Day", "Cream", "Night"])
         themePopup.target = self
         themePopup.action = #selector(themeChanged(_:))
+        themedPopups.append(themePopup)
 
         // Auto-save interval
         autoSavePopup = NSPopUpButton(frame: .zero, pullsDown: false)
@@ -55,24 +60,30 @@ final class PreferencesWindowController: NSWindowController {
         ])
         autoSavePopup.target = self
         autoSavePopup.action = #selector(autoSaveIntervalChanged(_:))
+        themedPopups.append(autoSavePopup)
 
         // Default export format
         defaultExportPopup = NSPopUpButton(frame: .zero, pullsDown: false)
         ExportFormat.allCases.forEach { defaultExportPopup.addItem(withTitle: $0.displayName) }
         defaultExportPopup.target = self
         defaultExportPopup.action = #selector(defaultExportFormatChanged(_:))
+        themedPopups.append(defaultExportPopup)
 
         // Numbering
         numberingSchemePopup = NSPopUpButton(frame: .zero, pullsDown: false)
         QuillPilotSettings.NumberingScheme.allCases.forEach { numberingSchemePopup.addItem(withTitle: $0.displayName) }
         numberingSchemePopup.target = self
         numberingSchemePopup.action = #selector(numberingSchemeChanged(_:))
+        themedPopups.append(numberingSchemePopup)
 
         autoNumberOnReturnCheckbox = NSButton(checkboxWithTitle: "Auto-number lists on Return", target: self, action: #selector(numberingTogglesChanged(_:)))
+        themedButtons.append(autoNumberOnReturnCheckbox)
 
         // Analysis toggles
         autoAnalyzeOnOpenCheckbox = NSButton(checkboxWithTitle: "Auto-run analysis when opening documents/tools", target: self, action: #selector(analysisTogglesChanged(_:)))
         autoAnalyzeWhileTypingCheckbox = NSButton(checkboxWithTitle: "Auto-run analysis while typing", target: self, action: #selector(analysisTogglesChanged(_:)))
+        themedButtons.append(autoAnalyzeOnOpenCheckbox)
+        themedButtons.append(autoAnalyzeWhileTypingCheckbox)
 
         let grid = NSGridView(views: [
             [label("Theme"), themePopup],
@@ -80,10 +91,18 @@ final class PreferencesWindowController: NSWindowController {
             [label("Default Save As format"), defaultExportPopup],
             [label("Numbering style"), numberingSchemePopup]
         ])
-        grid.rowSpacing = 12
-        grid.columnSpacing = 12
+        grid.rowSpacing = 14
+        grid.columnSpacing = 16
         grid.translatesAutoresizingMaskIntoConstraints = false
         grid.xPlacement = .fill
+        grid.column(at: 0).xPlacement = .trailing
+        grid.column(at: 1).xPlacement = .leading
+
+        // Ensure popups have minimum comfortable width
+        themePopup.widthAnchor.constraint(greaterThanOrEqualToConstant: 180).isActive = true
+        autoSavePopup.widthAnchor.constraint(greaterThanOrEqualToConstant: 180).isActive = true
+        defaultExportPopup.widthAnchor.constraint(greaterThanOrEqualToConstant: 180).isActive = true
+        numberingSchemePopup.widthAnchor.constraint(greaterThanOrEqualToConstant: 180).isActive = true
 
         container.addArrangedSubview(grid)
         container.addArrangedSubview(NSView())
@@ -95,6 +114,7 @@ final class PreferencesWindowController: NSWindowController {
         resetTemplateOverridesButton.bezelStyle = .rounded
         resetTemplateOverridesButton.controlSize = .small
         resetTemplateOverridesButton.setButtonType(.momentaryPushIn)
+        themedButtons.append(resetTemplateOverridesButton)
 
         let resetRow = NSStackView()
         resetRow.orientation = .horizontal
@@ -138,17 +158,59 @@ final class PreferencesWindowController: NSWindowController {
         let l = NSTextField(labelWithString: text)
         l.font = NSFont.systemFont(ofSize: 13, weight: .semibold)
         l.setContentHuggingPriority(.required, for: .horizontal)
+        themedLabels.append(l)
         return l
     }
 
     private func applyTheme(_ theme: AppTheme) {
         window?.backgroundColor = theme.pageAround
         window?.contentView?.layer?.backgroundColor = theme.pageAround.cgColor
+
+        // Keep control rendering aligned with theme.
+        let isDarkMode = ThemeManager.shared.isDarkMode
+        window?.appearance = NSAppearance(named: isDarkMode ? .darkAqua : .aqua)
+
+        // Ensure labels and titles remain readable on Cream/Day backgrounds.
+        let labelColor = theme.textColor
+        for l in themedLabels {
+            l.textColor = labelColor
+        }
+
+        for b in themedButtons {
+            // Checkbox and push button titles can become washed out depending on system vibrancy.
+            let title = b.title
+            if !title.isEmpty {
+                let font = b.font ?? NSFont.systemFont(ofSize: NSFont.systemFontSize)
+                b.attributedTitle = NSAttributedString(
+                    string: title,
+                    attributes: [
+                        .foregroundColor: labelColor,
+                        .font: font
+                    ]
+                )
+            }
+            if #available(macOS 10.14, *) {
+                b.contentTintColor = labelColor
+            }
+        }
+
+        for p in themedPopups {
+            if #available(macOS 10.14, *) {
+                p.contentTintColor = labelColor
+            }
+        }
     }
 
     private func loadFromSettings() {
         // Theme
-        themePopup.selectItem(withTitle: ThemeManager.shared.currentTheme == .day ? "Day" : "Night")
+        switch ThemeManager.shared.currentTheme {
+        case .day:
+            themePopup.selectItem(withTitle: "Day")
+        case .cream:
+            themePopup.selectItem(withTitle: "Cream")
+        case .night:
+            themePopup.selectItem(withTitle: "Night")
+        }
 
         // Auto-save
         let interval = QuillPilotSettings.autoSaveIntervalSeconds
@@ -181,7 +243,16 @@ final class PreferencesWindowController: NSWindowController {
 
     @objc private func themeChanged(_ sender: Any?) {
         let selection = themePopup.indexOfSelectedItem
-        ThemeManager.shared.currentTheme = (selection == 1) ? .night : .day
+        switch selection {
+        case 0:
+            ThemeManager.shared.currentTheme = .day
+        case 1:
+            ThemeManager.shared.currentTheme = .cream
+        case 2:
+            ThemeManager.shared.currentTheme = .night
+        default:
+            ThemeManager.shared.currentTheme = .cream
+        }
     }
 
     @objc private func autoSaveIntervalChanged(_ sender: Any?) {

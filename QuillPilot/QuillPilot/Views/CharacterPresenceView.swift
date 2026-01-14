@@ -49,19 +49,25 @@ class CharacterPresenceView: NSView {
                 return
             }
 
-            // Collect data
-            var dataPoints: [(character: String, chapter: Int, mentions: Int)] = []
+            // Collect data into a fast lookup map.
+            var mentionMap: [String: [Int: Int]] = [:]
+            var chaptersSet = Set<Int>()
+            var maxMentions = 0
             for entry in presence {
+                var perChapter: [Int: Int] = mentionMap[entry.characterName] ?? [:]
                 for (chapter, mentions) in entry.chapterPresence {
-                    dataPoints.append((entry.characterName, chapter, mentions))
+                    perChapter[chapter] = mentions
+                    chaptersSet.insert(chapter)
+                    if mentions > maxMentions { maxMentions = mentions }
                 }
+                mentionMap[entry.characterName] = perChapter
             }
-            guard !dataPoints.isEmpty else {
+
+            let chapters = Array(chaptersSet).sorted()
+            guard !chapters.isEmpty else {
                 drawEmptyState(textColor: textColor)
                 return
             }
-
-            let chapters = Array(Set(dataPoints.map { $0.chapter })).sorted()
 
             // Layout constants
             let padding: CGFloat = 60
@@ -73,7 +79,7 @@ class CharacterPresenceView: NSView {
             let chartRect = NSRect(x: padding, y: bottomPadding, width: max(1, chartWidth), height: max(1, chartHeight))
 
             // Find max mentions for scale
-            let maxMentions = dataPoints.map { $0.mentions }.max() ?? 1
+            if maxMentions <= 0 { maxMentions = 1 }
 
             // Draw Y axis
             drawYAxis(in: chartRect, maxValue: maxMentions, textColor: textColor)
@@ -101,8 +107,9 @@ class CharacterPresenceView: NSView {
                 let groupX = chartRect.minX + (CGFloat(chapterIndex) * barGroupWidth) + (barGroupWidth - totalGroupBarsWidth) / 2
 
                 for (charIndex, character) in characters.enumerated() {
-                    if let dataPoint = dataPoints.first(where: { $0.character == character && $0.chapter == chapter }) {
-                        let barHeight = (CGFloat(dataPoint.mentions) / CGFloat(maxMentions)) * chartRect.height
+                    let mentions = mentionMap[character]?[chapter] ?? 0
+                    if mentions >= 0 {
+                        let barHeight = (CGFloat(mentions) / CGFloat(maxMentions)) * chartRect.height
                         let barX = groupX + CGFloat(charIndex) * barWidth
 
                         let barDrawWidth = max(1, barWidth - 1)
@@ -122,8 +129,8 @@ class CharacterPresenceView: NSView {
                             NSBezierPath(rect: barRect).fill()
                         }
 
-                        if showValueLabels, dataPoint.mentions > 0 {
-                            let valueStr = "\(dataPoint.mentions)"
+                        if showValueLabels, mentions > 0 {
+                            let valueStr = "\(mentions)"
                             let valueAttrs: [NSAttributedString.Key: Any] = [
                                 .font: NSFont.systemFont(ofSize: 9),
                                 .foregroundColor: textColor.withAlphaComponent(0.75)
@@ -141,8 +148,8 @@ class CharacterPresenceView: NSView {
                 if chapterIndex % sceneLabelStride == 0 || chapterIndex == chapters.count - 1 {
                     let sceneLabel = "\(xTickPrefix) \(chapter)"
                     let labelAttrs: [NSAttributedString.Key: Any] = [
-                        .font: NSFont.systemFont(ofSize: 9),
-                        .foregroundColor: textColor.withAlphaComponent(0.5)
+                        .font: NSFont.systemFont(ofSize: 11),
+                        .foregroundColor: textColor.withAlphaComponent(0.78)
                     ]
                     let labelSize = sceneLabel.size(withAttributes: labelAttrs)
                     let centerX = chartRect.minX + (CGFloat(chapterIndex) * barGroupWidth) + (barGroupWidth / 2)

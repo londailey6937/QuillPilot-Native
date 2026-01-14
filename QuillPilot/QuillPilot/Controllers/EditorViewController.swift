@@ -2517,15 +2517,23 @@ class EditorViewController: NSViewController {
             return
         }
 
-        // Prefer inheriting typing attributes from the first "Body Text" paragraph.
+        // Prefer inheriting typing attributes from the first writer-facing paragraph style.
         // This avoids imported documents where the first paragraph is a title/heading (often no-indent)
         // from forcing the editor default into "Body Text – No Indent".
         let fullRange = NSRange(location: 0, length: textStorage.length)
         var preferredLocation: Int? = nil
         textStorage.enumerateAttribute(styleAttributeKey, in: fullRange, options: []) { value, range, stop in
-            if let styleName = value as? String, styleName == "Body Text" {
+            if let styleName = value as? String {
+                if StyleCatalog.shared.isPoetryTemplate {
+                    // Poetry docs should type in Verse by default.
+                    if styleName == "Verse" || styleName == "Poetry — Verse" {
+                        preferredLocation = range.location
+                        stop.pointee = true
+                    }
+                } else if styleName == "Body Text" {
                 preferredLocation = range.location
                 stop.pointee = true
+                }
             }
         }
 
@@ -2702,7 +2710,8 @@ class EditorViewController: NSViewController {
             if currentTemplate == "Screenplay" {
                 defaultSeedStyleName = "Screenplay — Action"
             } else if currentTemplate == "Poetry" {
-                defaultSeedStyleName = "Stanza"
+                // Poetry: Verse is the writer-facing style.
+                defaultSeedStyleName = "Verse"
             } else {
                 defaultSeedStyleName = "Body Text"
             }
@@ -2956,7 +2965,7 @@ class EditorViewController: NSViewController {
             return "TOC Title"
         }
 
-        var bestMatch: String = "Body Text"
+        var bestMatch: String = StyleCatalog.shared.isPoetryTemplate ? "Verse" : "Body Text"
         var bestScore: Int = -100
 
         let isItalic = fontTraits.contains(.italicFontMask)

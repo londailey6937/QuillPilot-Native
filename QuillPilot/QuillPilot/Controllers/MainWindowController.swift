@@ -2079,6 +2079,13 @@ extension MainWindowController {
                 stop.pointee = true
                 return
             }
+
+            // Poetry: modern tags used in current builds (no "Poetry —" prefix), plus legacy/container tags.
+            if styleName == "Verse" || styleName == "Stanza" || styleName == "Poem" {
+                inferred = "Poetry"
+                stop.pointee = true
+                return
+            }
         }
 
         return inferred
@@ -4265,7 +4272,8 @@ enum ExportFormat: String, CaseIterable {
 private enum StyleSheetBuilder {
     static func makeStylesXml() -> String {
         let catalog = StyleCatalog.shared
-        let names = catalog.styleNames(for: catalog.currentTemplateName)
+        // Export must include hidden/legacy keys too so style IDs round-trip correctly.
+        let names = catalog.allStyleKeys(for: catalog.currentTemplateName)
 
         var styleNodes: [String] = []
 
@@ -4989,6 +4997,12 @@ private enum DocxTextExtractor {
             "w:pStyle w:val=\"BodyText\"",
             "w:pStyle w:val=\"BodyTextNoIndent\"",
             "w:pStyle w:val=\"Dialogue\"",
+            // Poetry
+            "w:pStyle w:val=\"Verse\"",
+            "w:pStyle w:val=\"Stanza\"",
+            "w:pStyle w:val=\"Poem\"",
+            "w:pStyle w:val=\"PoetryVerse\"",
+            "w:pStyle w:val=\"PoetryStanza\"",
             "w:pStyle w:val=\"TOCEntry\"",
             "w:pStyle w:val=\"TOCEntryLevel1\"",
             "w:pStyle w:val=\"TOCEntryLevel2\"",
@@ -5420,6 +5434,9 @@ private enum DocxTextExtractor {
                     case "BlockQuote": mappedName = "Block Quote"
                     case "Epigraph": mappedName = "Epigraph"
                     case "Dialogue": mappedName = "Dialogue"
+                    // Poetry (normalize legacy/container tags to Verse)
+                    case "Verse": mappedName = "Verse"
+                    case "Stanza", "Poem", "PoetryVerse", "PoetryStanza": mappedName = "Verse"
                     case "TOCTitle": mappedName = "TOC Title"
                     case "TOCEntry": mappedName = "TOC Entry"
                     case "TOCEntryLevel1": mappedName = "TOC Entry Level 1"

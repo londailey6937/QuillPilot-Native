@@ -178,6 +178,15 @@ final class StyleCatalog {
         return keys.sorted()
     }
 
+    /// Returns all style keys for a template, including styles hidden from UI pickers.
+    ///
+    /// This is primarily used for exporters (e.g., DOCX) so documents containing legacy or
+    /// internal styles can round-trip without losing their paragraph style identity.
+    func allStyleKeys(for templateName: String) -> [String] {
+        let keys = templates[templateName]?.styles.keys.map { $0 } ?? []
+        return keys.sorted()
+    }
+
     func setCurrentTemplate(_ name: String) {
         guard templates[name] != nil else { return }
         guard currentTemplateName != name else { return }

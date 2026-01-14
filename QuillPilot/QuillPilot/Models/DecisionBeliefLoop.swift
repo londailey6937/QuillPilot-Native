@@ -861,7 +861,7 @@ class DecisionBeliefLoopAnalyzer {
 
         var presenceData: [CharacterPresence] = []
 
-        // Get chapters using outline or fall back to regex
+        // Get chapters/scenes using outline or fall back to regex
         let chapters: [(text: String, number: Int, startLocation: Int)]
         var chapterToAct: [Int: Int] = [:]
         if let entries = outlineEntries {
@@ -873,17 +873,72 @@ class DecisionBeliefLoopAnalyzer {
                 chapters = chapterTexts.enumerated().map { (text: $1, number: $0 + 1, startLocation: 0) }
                 DebugLog.log("📊 analyzePresenceByChapter: Regex detected \(chapters.count) chapters")
             } else {
-                // Look for level 1 entries (chapters) first - these are the main chapter divisions
-                let chapterEntries = entries.filter { $0.level == 1 }
+                // Prefer outline entries that actually represent chapters/scenes.
+                // `buildOutlineEntries()` can include level-1 headings for TOC/Index/etc; those should not drive chapter splits.
+                let orderedAll = entries.sorted { $0.range.location < $1.range.location }
+
+                func isNonStoryHeading(_ title: String) -> Bool {
+                    let t = title.trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
+                    if t.isEmpty { return true }
+                    let exact = [
+                        "TABLE OF CONTENTS",
+                        "CONTENTS",
+                        "INDEX",
+                        "GLOSSARY",
+                        "APPENDIX",
+                        "BIBLIOGRAPHY",
+                        "ACKNOWLEDGMENTS",
+                        "ACKNOWLEDGEMENTS"
+                    ]
+                    if exact.contains(t) { return true }
+                    if t.hasPrefix("TABLE OF CONTENTS") { return true }
+                    if t.hasPrefix("CONTENTS") { return true }
+                    if t.hasPrefix("INDEX") { return true }
+                    if t.hasPrefix("GLOSSARY") { return true }
+                    return false
+                }
+
+                let level1Entries = orderedAll.filter { $0.level == 1 && !isNonStoryHeading($0.title) }
+                let level0Entries = orderedAll.filter { $0.level == 0 }
+
+                func looksLikeScreenplaySlugline(_ title: String) -> Bool {
+                    let upper = title.trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
+                    guard !upper.isEmpty else { return false }
+                    let prefixes = ["INT.", "EXT.", "INT/EXT.", "EXT/INT.", "I/E.", "EST."]
+                    return prefixes.contains(where: { upper.hasPrefix($0) })
+                }
+
+                func looksLikeChapterHeading(_ title: String) -> Bool {
+                    let trimmed = title.trimmingCharacters(in: .whitespacesAndNewlines)
+                    guard !trimmed.isEmpty else { return false }
+                    let upper = trimmed.uppercased()
+
+                    // Common prose markers.
+                    if upper.hasPrefix("CHAPTER") { return true }
+                    if upper == "PROLOGUE" || upper == "EPILOGUE" { return true }
+                    if upper.hasPrefix("PART ") { return true }
+
+                    // Numeric-only headings ("1" / "1."), and simple roman numerals.
+                    if trimmed.range(of: "^\\d+\\.?$", options: .regularExpression) != nil { return true }
+                    if trimmed.range(of: "^(?i)(I|II|III|IV|V|VI|VII|VIII|IX|X)\\.?$", options: .regularExpression) != nil { return true }
+                    return false
+                }
+
+                let sluglineEntries = level1Entries.filter { looksLikeScreenplaySlugline($0.title) }
+                let chapterLikeEntries = level1Entries.filter { looksLikeChapterHeading($0.title) }
+
                 var effectiveEntries: [OutlineEntry] = []
-                if !chapterEntries.isEmpty {
-                    effectiveEntries = chapterEntries
-                } else {
-                    // Only fallback to level 0 (parts/acts) if no chapters found; otherwise use regex
-                    let level0Entries = entries.filter { $0.level == 0 }
-                    if !level0Entries.isEmpty {
-                        effectiveEntries = level0Entries
-                    }
+                if sluglineEntries.count >= 2, sluglineEntries.count >= Int(Double(level1Entries.count) * 0.5) {
+                    // Screenplay: drive presence by sluglines.
+                    effectiveEntries = sluglineEntries
+                } else if chapterLikeEntries.count >= 2 {
+                    // Prose: drive presence by chapter-like headings.
+                    effectiveEntries = chapterLikeEntries
+                } else if !level1Entries.isEmpty {
+                    // Fallback: keep prior behavior when we can't confidently detect chapter-like entries.
+                    effectiveEntries = level1Entries
+                } else if !level0Entries.isEmpty {
+                    effectiveEntries = level0Entries
                 }
 
                 if effectiveEntries.isEmpty {
@@ -894,6 +949,34 @@ class DecisionBeliefLoopAnalyzer {
                 } else {
                     let fullText = text as NSString
                     let orderedEntries = effectiveEntries.sorted { $0.range.location < $1.range.location }
+
+                    func parseExplicitNumber(from title: String) -> Int? {
+                        let trimmed = title.trimmingCharacters(in: .whitespacesAndNewlines)
+                        guard !trimmed.isEmpty else { return nil }
+
+                        // "Chapter 12" -> 12
+                        if let regex = try? NSRegularExpression(pattern: "(?i)^chapter\\s+(\\d+)") {
+                            let range = NSRange(trimmed.startIndex..., in: trimmed)
+                            if let match = regex.firstMatch(in: trimmed, options: [], range: range), match.numberOfRanges >= 2 {
+                                let capRange = match.range(at: 1)
+                                if let r = Range(capRange, in: trimmed) {
+                                    return Int(trimmed[r])
+                                }
+                            }
+                        }
+
+                        // "12" / "12." -> 12
+                        if trimmed.range(of: "^\\d+\\.?$", options: .regularExpression) != nil {
+                            let digits = trimmed.filter { $0.isNumber }
+                            return Int(digits)
+                        }
+
+                        return nil
+                    }
+
+                    var nextFallbackNumber = 1
+                    var usedNumbers = Set<Int>()
+
                     chapters = orderedEntries.enumerated().map { index, entry in
                         // Clamp outline-derived ranges to avoid substring out-of-bounds crashes.
                         let startLocation = min(entry.range.location, fullText.length)
@@ -906,7 +989,21 @@ class DecisionBeliefLoopAnalyzer {
                         let clampedEnd = min(endLocation, fullText.length)
                         let length = max(0, clampedEnd - startLocation)
                         let chapterRange = NSRange(location: startLocation, length: length)
-                        return (text: fullText.substring(with: chapterRange), number: index + 1, startLocation: startLocation)
+
+                        // Prefer explicit numbering when present in titles (e.g. "Chapter 3"), but fall back to sequential.
+                        let explicit = parseExplicitNumber(from: entry.title)
+                        let number: Int
+                        if let explicit, !usedNumbers.contains(explicit) {
+                            number = explicit
+                            usedNumbers.insert(explicit)
+                        } else {
+                            while usedNumbers.contains(nextFallbackNumber) { nextFallbackNumber += 1 }
+                            number = nextFallbackNumber
+                            usedNumbers.insert(number)
+                            nextFallbackNumber += 1
+                        }
+
+                        return (text: fullText.substring(with: chapterRange), number: number, startLocation: startLocation)
                     }
 
                     // If the outline contains ACT headings (level 0) and chapters/scenes are level 1,
@@ -943,7 +1040,9 @@ class DecisionBeliefLoopAnalyzer {
                         }.sorted { $0.start < $1.start }
 
                         if !numberedActs.isEmpty {
-                            for (index, scene) in sceneEntries.enumerated() {
+                            // Map by chronological order of the effective entries, not by any explicit title numbering.
+                            let orderedScenes = sceneEntries.sorted { $0.range.location < $1.range.location }
+                            for (index, scene) in orderedScenes.enumerated() {
                                 let sceneStart = scene.range.location
                                 // Find the last act marker at or before this scene.
                                 var act = numberedActs.first?.act ?? 1
@@ -954,6 +1053,7 @@ class DecisionBeliefLoopAnalyzer {
                                         break
                                     }
                                 }
+                                // Use sequential scene indexes for the act map to match how we label in the chart.
                                 chapterToAct[index + 1] = act
                             }
                         }
@@ -1011,13 +1111,25 @@ class DecisionBeliefLoopAnalyzer {
                 DebugLog.log("📊 analyzePresenceByChapter: Using aliases for '\(characterName)': \(aliases)")
             }
 
+            var mentionsByChapter: [Int: Int] = [:]
+            var totalMentions = 0
             for chapter in chapters {
                 let mentions = aliases.reduce(0) { partial, alias in
                     partial + countMentions(of: alias, in: chapter.text)
                 }
-                if mentions > 0 {
+                mentionsByChapter[chapter.number] = mentions
+                totalMentions += mentions
+            }
+
+            // Only include characters that appear at least once, but include 0s for chapters/scenes
+            // so the x-axis can show all chapters/scenes even when a character is absent in a section.
+            if totalMentions > 0 {
+                for chapter in chapters {
+                    let mentions = mentionsByChapter[chapter.number] ?? 0
                     presence.chapterPresence[chapter.number] = mentions
-                    DebugLog.log("📊 analyzePresenceByChapter: Character '\(characterName)' has \(mentions) mentions in chapter \(chapter.number)")
+                    if mentions > 0 {
+                        DebugLog.log("📊 analyzePresenceByChapter: Character '\(characterName)' has \(mentions) mentions in chapter \(chapter.number)")
+                    }
                 }
             }
 

@@ -62,8 +62,7 @@ class MainWindowController: NSWindowController {
 
     // Notes popover
     private var notesButton: NSButton?
-    private var notesPopover: NSPopover?
-    private var notesPopoverController: NotesPopoverViewController?
+    private var generalNotesWindow: GeneralNotesWindowController?
 
     // View controllers (referenced in multiple methods)
     private var outlinePanelController: AnalysisViewController!
@@ -158,13 +157,16 @@ class MainWindowController: NSWindowController {
         containerView.addSubview(contentView)
 
         // Notes button (bottom-right)
-        let notesButton = NSButton(title: "Notes", target: self, action: #selector(notesButtonClicked(_:)))
+        let notesButton = NSButton(title: "", target: self, action: #selector(notesButtonClicked(_:)))
         notesButton.translatesAutoresizingMaskIntoConstraints = false
-        notesButton.bezelStyle = .rounded
+        notesButton.bezelStyle = .texturedRounded
         notesButton.controlSize = .small
+        notesButton.toolTip = "Notes"
         if #available(macOS 11.0, *) {
-            notesButton.image = NSImage(systemSymbolName: "note.text", accessibilityDescription: "Notes")
-            notesButton.imagePosition = .imageLeading
+            let baseImage = NSImage(systemSymbolName: "note.text", accessibilityDescription: "Notes")
+            let config = NSImage.SymbolConfiguration(pointSize: 14, weight: .regular)
+            notesButton.image = baseImage?.withSymbolConfiguration(config)
+            notesButton.imagePosition = .imageOnly
         }
         containerView.addSubview(notesButton)
         self.notesButton = notesButton
@@ -285,33 +287,17 @@ class MainWindowController: NSWindowController {
             if #available(macOS 10.14, *) {
                 notesButton.contentTintColor = labelColor
             }
-            let font = notesButton.font ?? NSFont.systemFont(ofSize: NSFont.systemFontSize)
-            notesButton.attributedTitle = NSAttributedString(
-                string: notesButton.title,
-                attributes: [
-                    .foregroundColor: labelColor,
-                    .font: font
-                ]
-            )
+            notesButton.image?.isTemplate = true
         }
-
-        notesPopoverController?.applyTheme(theme)
     }
 
     @objc private func notesButtonClicked(_ sender: NSButton) {
-        if notesPopover == nil {
-            let popover = NSPopover()
-            popover.behavior = .transient
-            let vc = NotesPopoverViewController()
-            vc.documentURLProvider = { [weak self] in self?.currentDocumentURL }
-            popover.contentViewController = vc
-            popover.contentSize = NSSize(width: 420, height: 320)
-            notesPopover = popover
-            notesPopoverController = vc
+        if generalNotesWindow == nil {
+            generalNotesWindow = GeneralNotesWindowController()
         }
-
-        notesPopoverController?.reloadFromStore()
-        notesPopover?.show(relativeTo: sender.bounds, of: sender, preferredEdge: .maxY)
+        generalNotesWindow?.setDocumentURL(currentDocumentURL)
+        generalNotesWindow?.showWindow(nil)
+        generalNotesWindow?.window?.makeKeyAndOrderFront(nil)
     }
 
     private func showSearchPanel() {
@@ -2298,7 +2284,7 @@ class HeaderView: NSView {
     private var titleLabel: NSTextField!
     private var taglineLabel: NSTextField!
     var specsPanel: DocumentInfoPanel!
-    private var themeToggle: NSSegmentedControl!
+    private var themeToggleButton: NSButton!
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
@@ -2338,13 +2324,15 @@ class HeaderView: NSView {
         specsPanel.translatesAutoresizingMaskIntoConstraints = false
         addSubview(specsPanel)
 
-        // Theme toggle (right)
-        themeToggle = NSSegmentedControl(labels: ["Night", "Dusk"], trackingMode: .selectOne, target: self, action: #selector(themeToggleChanged(_:)))
-        themeToggle.translatesAutoresizingMaskIntoConstraints = false
-        themeToggle.controlSize = .small
-        themeToggle.segmentStyle = .rounded
-        themeToggle.setContentHuggingPriority(.required, for: .horizontal)
-        addSubview(themeToggle)
+        // Theme toggle (right) - single button cycles Cream/Night/Dusk
+        themeToggleButton = NSButton(title: "", target: self, action: #selector(themeToggleClicked(_:)))
+        themeToggleButton.translatesAutoresizingMaskIntoConstraints = false
+        themeToggleButton.bezelStyle = .texturedRounded
+        themeToggleButton.controlSize = .small
+        themeToggleButton.setButtonType(.momentaryPushIn)
+        themeToggleButton.toolTip = "Cycle theme (Night → Dusk → Cream)"
+        themeToggleButton.setContentHuggingPriority(.required, for: .horizontal)
+        addSubview(themeToggleButton)
 
         NSLayoutConstraint.activate([
             // Logo at left - fills height with 4pt padding
@@ -2368,11 +2356,11 @@ class HeaderView: NSView {
             specsPanel.widthAnchor.constraint(lessThanOrEqualToConstant: 500),
 
             // Theme toggle anchored to the right
-            themeToggle.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -16),
-            themeToggle.centerYAnchor.constraint(equalTo: centerYAnchor),
+            themeToggleButton.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -16),
+            themeToggleButton.centerYAnchor.constraint(equalTo: centerYAnchor),
 
             // Prevent overlap between centered specs and the right toggle
-            specsPanel.trailingAnchor.constraint(lessThanOrEqualTo: themeToggle.leadingAnchor, constant: -12)
+            specsPanel.trailingAnchor.constraint(lessThanOrEqualTo: themeToggleButton.leadingAnchor, constant: -12)
         ])
 
         applyTheme(ThemeManager.shared.currentTheme)
@@ -2385,23 +2373,48 @@ class HeaderView: NSView {
         taglineLabel.textColor = theme.headerText.withAlphaComponent(0.75)
         specsPanel.applyTheme(theme)
 
-        // Keep toggle selection in sync with the current theme.
-        switch ThemeManager.shared.currentTheme {
-        case .dusk:
-            themeToggle.selectedSegment = 1
-        default:
-            // Treat all other themes as the default "Night" position.
-            themeToggle.selectedSegment = 0
+        // Icon-only toggle that reflects the current theme.
+        if #available(macOS 11.0, *) {
+            let imageName: String
+            switch theme {
+            case .night:
+                imageName = "moon.stars.fill"
+            case .dusk:
+                imageName = "sun.haze.fill"
+            case .cream, .day:
+                imageName = "sun.max.fill"
+            }
+
+            let baseImage = NSImage(systemSymbolName: imageName, accessibilityDescription: "Theme")
+            let config = NSImage.SymbolConfiguration(pointSize: 14, weight: .regular)
+            themeToggleButton.image = baseImage?.withSymbolConfiguration(config)
+            themeToggleButton.imagePosition = .imageOnly
+            themeToggleButton.title = ""
+            themeToggleButton.image?.isTemplate = true
+            if #available(macOS 10.14, *) {
+                themeToggleButton.contentTintColor = theme.headerText.withAlphaComponent(0.92)
+            }
+            let label = themeDisplayName(for: theme)
+            themeToggleButton.toolTip = "Theme: \(label). Click to cycle (Night → Dusk → Cream)."
+        } else {
+            // Fallback for older macOS: show a short text label.
+            themeToggleButton.title = themeDisplayName(for: theme)
         }
     }
 
-    @objc private func themeToggleChanged(_ sender: Any?) {
-        switch themeToggle.selectedSegment {
-        case 1:
-            ThemeManager.shared.currentTheme = .dusk
-        default:
-            ThemeManager.shared.currentTheme = .night
+    private func themeDisplayName(for theme: AppTheme) -> String {
+        switch theme {
+        case .cream, .day:
+            return "Cream"
+        case .night:
+            return "Night"
+        case .dusk:
+            return "Dusk"
         }
+    }
+
+    @objc private func themeToggleClicked(_ sender: Any?) {
+        ThemeManager.shared.toggleTheme()
     }
 
     func setDocumentTitle(_ title: String) {
@@ -2410,165 +2423,6 @@ class HeaderView: NSView {
 
     func documentTitle() -> String {
         specsPanel.getTitle()
-    }
-}
-
-// MARK: - Notes Popover
-private final class NotesPopoverViewController: NSViewController, NSTextViewDelegate {
-    enum Section: Int, CaseIterable {
-        case theme = 0
-        case locations = 1
-        case outline = 2
-        case directions = 3
-
-        var title: String {
-            switch self {
-            case .theme: return "Theme"
-            case .locations: return "Locations"
-            case .outline: return "Outline"
-            case .directions: return "Directions"
-            }
-        }
-    }
-
-    var documentURLProvider: (() -> URL?)?
-
-    private var segmented: NSSegmentedControl!
-    private var scrollView: NSScrollView!
-    private var textView: NSTextView!
-    private var saveTimer: Timer?
-    private var themeObserver: NSObjectProtocol?
-
-    private var currentSection: Section {
-        Section(rawValue: segmented.selectedSegment) ?? .theme
-    }
-
-    override func loadView() {
-        view = NSView()
-    }
-
-    override func viewDidLoad() {
-        super.viewDidLoad()
-
-        segmented = NSSegmentedControl(labels: Section.allCases.map { $0.title }, trackingMode: .selectOne, target: self, action: #selector(sectionChanged(_:)))
-        segmented.translatesAutoresizingMaskIntoConstraints = false
-        segmented.segmentStyle = .rounded
-        segmented.controlSize = .small
-        segmented.selectedSegment = 0
-
-        scrollView = NSScrollView()
-        scrollView.translatesAutoresizingMaskIntoConstraints = false
-        scrollView.hasVerticalScroller = true
-        scrollView.borderType = .bezelBorder
-
-        textView = NSTextView()
-        textView.isRichText = false
-        textView.isAutomaticQuoteSubstitutionEnabled = true
-        textView.isAutomaticDashSubstitutionEnabled = true
-        textView.font = NSFont.systemFont(ofSize: 13)
-        textView.textContainerInset = NSSize(width: 8, height: 8)
-        textView.delegate = self
-        scrollView.documentView = textView
-
-        view.addSubview(segmented)
-        view.addSubview(scrollView)
-
-        NSLayoutConstraint.activate([
-            segmented.topAnchor.constraint(equalTo: view.topAnchor, constant: 12),
-            segmented.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 12),
-            segmented.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -12),
-
-            scrollView.topAnchor.constraint(equalTo: segmented.bottomAnchor, constant: 10),
-            scrollView.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 12),
-            scrollView.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -12),
-            scrollView.bottomAnchor.constraint(equalTo: view.bottomAnchor, constant: -12)
-        ])
-
-        applyTheme(ThemeManager.shared.currentTheme)
-        reloadFromStore()
-
-        themeObserver = NotificationCenter.default.addObserver(forName: .themeDidChange, object: nil, queue: .main) { [weak self] note in
-            guard let self, let theme = note.object as? AppTheme else { return }
-            self.applyTheme(theme)
-        }
-    }
-
-    deinit {
-        if let themeObserver {
-            NotificationCenter.default.removeObserver(themeObserver)
-        }
-        saveTimer?.invalidate()
-    }
-
-    override func viewWillDisappear() {
-        super.viewWillDisappear()
-        flushPendingSave()
-    }
-
-    func applyTheme(_ theme: AppTheme) {
-        view.wantsLayer = true
-        view.layer?.backgroundColor = theme.popoutBackground.cgColor
-
-        textView.textColor = theme.popoutTextColor
-        textView.insertionPointColor = theme.insertionPointColor
-        textView.backgroundColor = theme.popoutBackground
-    }
-
-    func reloadFromStore() {
-        let url = documentURLProvider?()
-        _ = StoryNotesStore.shared.load(for: url)
-        StoryNotesStore.shared.setDocumentURL(url)
-        loadSectionTextIntoEditor()
-    }
-
-    @objc private func sectionChanged(_ sender: Any?) {
-        flushPendingSave()
-        loadSectionTextIntoEditor()
-    }
-
-    private func loadSectionTextIntoEditor() {
-        let notes = StoryNotesStore.shared.notes
-        let content: String
-        switch currentSection {
-        case .theme:
-            content = notes.theme
-        case .locations:
-            content = notes.locations
-        case .outline:
-            content = notes.outline
-        case .directions:
-            content = notes.directions
-        }
-        textView.string = content
-    }
-
-    private func persistCurrentText() {
-        let content = textView.string
-        switch currentSection {
-        case .theme:
-            StoryNotesStore.shared.updateTheme(content)
-        case .locations:
-            StoryNotesStore.shared.updateLocations(content)
-        case .outline:
-            StoryNotesStore.shared.updateOutline(content)
-        case .directions:
-            StoryNotesStore.shared.updateDirections(content)
-        }
-    }
-
-    private func flushPendingSave() {
-        if saveTimer != nil {
-            saveTimer?.invalidate()
-            saveTimer = nil
-            persistCurrentText()
-        }
-    }
-
-    func textDidChange(_ notification: Notification) {
-        saveTimer?.invalidate()
-        saveTimer = Timer.scheduledTimer(withTimeInterval: 0.6, repeats: false) { [weak self] _ in
-            self?.persistCurrentText()
-        }
     }
 }
 

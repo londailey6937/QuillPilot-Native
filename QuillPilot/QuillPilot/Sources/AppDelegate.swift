@@ -25,7 +25,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let brandedAppName = "Quill Pilot"
     private var mainWindowController: MainWindowController?
     private var documentationWindow: DocumentationWindowController?
-    private var dialogueTipsWindow: DialogueTipsWindowController?
     private var preferencesWindow: PreferencesWindowController?
     private var aboutWindow: NSWindow?
     private var welcomeWindow: WelcomeWindowController?
@@ -296,19 +295,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         editor.restartNumbering(startAt: startAt)
     }
 
-    @MainActor
-    @objc private func showListNumberingHelp(_ sender: Any?) {
-        let alert = NSAlert()
-        alert.messageText = "List Numbering Help"
-        alert.informativeText = "\nNumbering style: 1.1.1\n\n• Numbered List: Format → Lists → Numbered List\n• Auto-number on Return: enabled in Preferences (can be turned off)\n• Tab: indent a numbered item (adds a sub-level, e.g. 2. → 2.1.)\n• Shift-Tab: outdent a numbered item (removes a sub-level)\n• Restart numbering: Format → Lists → Restart Numbering…\n\nTip: If a numbered item is empty, pressing Return ends the list."
-        alert.addButton(withTitle: "OK")
-        alert.addButton(withTitle: "Open Preferences")
 
-        let response = alert.runModal()
-        if response == .alertSecondButtonReturn {
-            showPreferences(nil)
-        }
-    }
 
     @objc private func openDocument(_ sender: Any?) {
         Task { @MainActor [weak self] in
@@ -583,16 +570,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         documentationItem.target = self
         helpMenu.addItem(documentationItem)
 
-        let dialogueTipsItem = NSMenuItem(title: "Dialogue Writing Tips", action: #selector(showDialogueTips(_:)), keyEquivalent: "")
-        dialogueTipsItem.target = self
-        helpMenu.addItem(dialogueTipsItem)
-
-        helpMenu.addItem(.separator())
-
-        let listNumberingHelpItem = NSMenuItem(title: "List Numbering Help", action: #selector(showListNumberingHelp(_:)), keyEquivalent: "")
-        listNumberingHelpItem.target = self
-        helpMenu.addItem(listNumberingHelpItem)
-
         NSApp.mainMenu = mainMenu
         enforceBrandedAppMenuTitle()
         NSApp.windowsMenu = windowMenu
@@ -665,14 +642,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         documentationWindow?.showWindow(nil)
         documentationWindow?.window?.makeKeyAndOrderFront(nil)
-    }
-
-    @objc private func showDialogueTips(_ sender: Any?) {
-        if dialogueTipsWindow == nil {
-            dialogueTipsWindow = DialogueTipsWindowController()
-        }
-        dialogueTipsWindow?.showWindow(nil)
-        dialogueTipsWindow?.window?.makeKeyAndOrderFront(nil)
     }
 
     @objc private func showAboutWindow(_ sender: Any?) {

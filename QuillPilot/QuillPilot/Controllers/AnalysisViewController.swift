@@ -235,6 +235,18 @@ class AnalysisViewController: NSViewController, NSWindowDelegate {
             case .characters: return "👥"
             }
         }
+
+        var symbolName: String {
+            switch self {
+            case .basic: return "list.bullet.rectangle"
+            case .theme: return "paintpalette"
+            case .scenes: return "film"
+            case .storyOutline: return "book.closed"
+            case .locations: return "mappin.and.ellipse"
+            case .storyDirections: return "shuffle"
+            case .characters: return "person.2"
+            }
+        }
     }
 
     // Analysis panel categories (right side)
@@ -248,6 +260,14 @@ class AnalysisViewController: NSViewController, NSWindowDelegate {
             case .basic: return "📊"
             case .plot: return "📖"
             case .characters: return "👥"
+            }
+        }
+
+        var symbolName: String {
+            switch self {
+            case .basic: return "chart.bar.xaxis"
+            case .plot: return "chart.xyaxis.line"
+            case .characters: return "person.2"
             }
         }
     }
@@ -377,8 +397,22 @@ class AnalysisViewController: NSViewController, NSWindowDelegate {
                     }
                     button.toolTip = isOutlineVisible ? "Hide Document Outline" : "Show Document Outline"
                 } else {
-                    button.title = category.icon
-                    button.font = .systemFont(ofSize: 20)
+                    if #available(macOS 11.0, *) {
+                        let base = NSImage(systemSymbolName: category.symbolName, accessibilityDescription: category.rawValue)
+                        let config = NSImage.SymbolConfiguration(pointSize: 16, weight: .regular)
+                        if let base, let image = base.withSymbolConfiguration(config) {
+                            button.image = image
+                            button.imagePosition = .imageOnly
+                            button.title = ""
+                            button.image?.isTemplate = true
+                        } else {
+                            button.title = category.icon
+                            button.font = .systemFont(ofSize: 20)
+                        }
+                    } else {
+                        button.title = category.icon
+                        button.font = .systemFont(ofSize: 20)
+                    }
                     button.toolTip = category.rawValue
                 }
 
@@ -406,8 +440,22 @@ class AnalysisViewController: NSViewController, NSWindowDelegate {
             let categories: [AnalysisCategory] = isPoetry ? [.basic] : AnalysisCategory.allCases
             for category in categories {
                 let button = NSButton(frame: NSRect(x: 0, y: 0, width: 44, height: 44))
-                button.title = category.icon
-                button.font = .systemFont(ofSize: 20)
+                if #available(macOS 11.0, *) {
+                    let base = NSImage(systemSymbolName: category.symbolName, accessibilityDescription: category.rawValue)
+                    let config = NSImage.SymbolConfiguration(pointSize: 16, weight: .regular)
+                    if let base, let image = base.withSymbolConfiguration(config) {
+                        button.image = image
+                        button.imagePosition = .imageOnly
+                        button.title = ""
+                        button.image?.isTemplate = true
+                    } else {
+                        button.title = category.icon
+                        button.font = .systemFont(ofSize: 20)
+                    }
+                } else {
+                    button.title = category.icon
+                    button.font = .systemFont(ofSize: 20)
+                }
                 button.isBordered = false
                 button.bezelStyle = .rounded
                 button.target = self
@@ -1460,6 +1508,11 @@ class AnalysisViewController: NSViewController, NSWindowDelegate {
         view.displayIfNeeded()
 
         outlineViewController?.applyTheme(theme)
+        for button in menuButtons {
+            if #available(macOS 10.14, *) {
+                button.contentTintColor = theme.textColor.withAlphaComponent(0.9)
+            }
+        }
         updateSelectedButton()
     }
 

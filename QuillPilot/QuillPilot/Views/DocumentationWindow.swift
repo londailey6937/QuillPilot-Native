@@ -48,6 +48,8 @@ class DocumentationWindowController: NSWindowController {
         createTab(title: "👥 Character Features", identifier: "characters")
         createTab(title: "📖 Plot & Structure", identifier: "plot")
         createTab(title: "🎬 Scenes", identifier: "scenes")
+        createTab(title: "💬 Dialogue Tips", identifier: "dialogue")
+        createTab(title: "🔢 List Numbering", identifier: "numbering")
         createTab(title: "⌨️ Shortcuts", identifier: "shortcuts")
 
         contentView.addSubview(tabView)
@@ -96,6 +98,8 @@ class DocumentationWindowController: NSWindowController {
         loadCharactersTab()
         loadPlotTab()
         loadScenesTab()
+        loadDialogueTab()
+        loadNumberingTab()
         loadShortcutsTab()
     }
 
@@ -250,7 +254,6 @@ Availability depends on your macOS version, device support, language/region, and
 • Word Count - Total words in your document
 • Sentence Count - Number of sentences
 • Paragraph Count - Number of paragraphs
-• Reading Level - Flesch-Kincaid grade level
 • Average Sentence Length - Words per sentence
 """, color: bodyColor))
         content.append(makeNewline())
@@ -1167,8 +1170,8 @@ A: As many as your story needs. A 80,000-word novel might have 40-80 scenes, but
     // MARK: - Tab 6: Keyboard Shortcuts
 
     private func loadShortcutsTab() {
-                guard textViews.count > 5 else { return }
-                let textView = textViews[5]
+                guard textViews.count > 7 else { return }
+                let textView = textViews[7]
         let theme = ThemeManager.shared.currentTheme
         let titleColor = theme.textColor
         let headingColor = theme.textColor
@@ -1189,7 +1192,7 @@ File > Export… - Export without changing the document’s identity
 ⌘P - Print
 ⌘W - Close window
 
-Note: Auto-save runs periodically for saved documents (default ~30 seconds; configurable in Preferences).
+Note: Auto-save runs periodically for saved documents (default 1 minute; configurable in Preferences: Off, 1 minute, or 5 minutes).
 """, color: bodyColor))
         content.append(makeNewline())
 
@@ -1300,6 +1303,19 @@ Add ⇧ (Shift) to select while moving
 """, color: bodyColor))
         content.append(makeNewline())
 
+        content.append(makeHeading("🎨 Themes & Notes", color: headingColor))
+        content.append(makeBody("""
+Themes:
+• Use the theme button in the header (top-right) to cycle Night → Dusk → Cream.
+• You can also set a specific theme in Preferences.
+
+General Notes:
+• Click the Notes button at the bottom-right to open a General Notes window.
+• Use this window to keep free-form writing notes, ideas, or reminders.
+• Notes are saved per document and reloaded automatically when you reopen that document.
+""", color: bodyColor))
+        content.append(makeNewline())
+
         content.append(makeHeading("🧠 Analysis", color: headingColor))
         content.append(makeBody("""
 ⌘⇧A - Analyze document now
@@ -1363,5 +1379,297 @@ Tip: Auto-analyze behavior can be configured in Preferences.
 
     private func makeNewline() -> NSAttributedString {
         return NSAttributedString(string: "\n")
+    }
+
+    // MARK: - Dialogue Tips Tab
+    private func loadDialogueTab() {
+        guard textViews.count > 5, let textView = textViews[safe: 5] else { return }
+        let theme = ThemeManager.shared.currentTheme
+        let titleColor = theme.textColor
+        let headingColor = theme.textColor
+        let bodyColor = theme.textColor
+
+        let content = NSMutableAttributedString()
+
+        content.append(makeTitle("💬 Writing Better Dialogue", color: titleColor))
+        content.append(makeBody("Dialogue can be considered \"basic and thin\" for several reasons. Here are the most common issues and how to fix them:", color: bodyColor))
+        content.append(makeNewline())
+        content.append(makeNewline())
+
+        content.append(makeHeading("1. Lack of Depth", color: headingColor))
+        content.append(makeBody("""
+When characters only say exactly what they mean without any subtext or nuance, it can make the dialogue feel shallow.
+
+✓ Good Example:
+\"Everything's fine,\" she said, not meeting his eyes.
+
+✗ Avoid:
+\"I am upset with you because you forgot my birthday.\"
+
+Tip: Let characters hide emotions, use subtext, and leave things unsaid. What characters don't say is often more powerful than what they do say.
+""", color: bodyColor))
+        content.append(makeNewline())
+        content.append(makeNewline())
+
+        content.append(makeHeading("2. Repetition", color: headingColor))
+        content.append(makeBody("""
+Reiterating the same ideas or phrases can drain the dialogue of any weight or importance.
+
+✗ Avoid:
+\"I'm scared. Really scared. I've never been this scared before.\"
+
+✓ Better:
+\"I'm scared.\" Her voice cracked. \"I've never felt like this before.\"
+
+Tip: Say it once, say it well. Use action and description to reinforce emotions rather than repeating them.
+""", color: bodyColor))
+        content.append(makeNewline())
+        content.append(makeNewline())
+
+        content.append(makeHeading("3. Overuse of Filler", color: headingColor))
+        content.append(makeBody("""
+Excessive use of filler words like \"uh,\" \"um,\" \"well,\" etc., can dilute the impact of the dialogue.
+
+✗ Avoid:
+\"Well, um, I was thinking, you know, that maybe we could, like, go to the movies?\"
+
+✓ Better:
+\"Want to catch a movie?\"
+
+Tip: Use filler words sparingly and only when characterizing nervous or uncertain speech patterns. Most dialogue should be cleaner than real conversation.
+""", color: bodyColor))
+        content.append(makeNewline())
+        content.append(makeNewline())
+
+        content.append(makeHeading("4. Monotony", color: headingColor))
+        content.append(makeBody("""
+If all characters have the same speaking style or voice, the dialogue can be boring and uninformative.
+
+✗ Avoid:
+\"Hello, John. How are you today?\" Mary said.
+\"I am well, Mary. Thank you for asking,\" John said.
+
+✓ Better:
+\"Hey.\" John nodded.
+\"You look tired,\" Mary said, studying his face.
+
+Tip: Give each character a distinct voice through word choice, sentence length, formality level, and speech patterns. A teenager speaks differently than a professor.
+""", color: bodyColor))
+        content.append(makeNewline())
+        content.append(makeNewline())
+
+        content.append(makeHeading("5. Predictability", color: headingColor))
+        content.append(makeBody("""
+When dialogue follows very predictable patterns or uses clichéd phrases, it lacks originality.
+
+✗ Avoid Clichés:
+• \"We need to talk.\"
+• \"It's not what it looks like!\"
+• \"I can explain everything.\"
+• \"This isn't over.\"
+
+✓ Better:
+Create fresh, character-specific lines that feel authentic to your story and characters.
+
+Tip: If you've heard it in a movie or read it in another book, find a new way to say it.
+""", color: bodyColor))
+        content.append(makeNewline())
+        content.append(makeNewline())
+
+        content.append(makeHeading("6. No Character Growth or Plot Advancement", color: headingColor))
+        content.append(makeBody("""
+Good dialogue often reveals something new about a character or advances the plot in some way. \"Thin\" dialogue does neither.
+
+✗ Avoid Filler Conversation:
+\"Nice weather today.\"
+\"Yes, it is quite pleasant.\"
+
+✓ Better:
+\"Nice weather for a funeral,\" she said, buttoning her coat.
+
+Tip: Every line of dialogue should serve a purpose—reveal character, advance plot, create tension, or provide essential information. If it doesn't, cut it.
+""", color: bodyColor))
+        content.append(makeNewline())
+        content.append(makeNewline())
+
+        content.append(makeHeading("7. Over-Exposition", color: headingColor))
+        content.append(makeBody("""
+Dialogue that is used purely to convey information in a very straightforward manner can be dull and unengaging.
+
+✗ Avoid Info-Dumping:
+\"As you know, Bob, we've been working on this project for three years, and the deadline is next Tuesday. The client, Mr. Johnson from Acme Corp, is expecting the full report with all the data we collected from the 500 survey participants.\"
+
+✓ Better:
+\"Three years of work. One week left.\"
+\"Johnson's going to want every detail.\"
+
+Tip: Break up information naturally. Show through action when possible. Let readers discover information gradually.
+""", color: bodyColor))
+        content.append(makeNewline())
+        content.append(makeNewline())
+
+        content.append(makeHeading("8. Lack of Conflict or Tension", color: headingColor))
+        content.append(makeBody("""
+Engaging dialogue often includes some level of disagreement, tension, or conflict. Without this, the dialogue may lack dynamism.
+
+✗ Avoid Too Much Agreement:
+\"That's a good idea.\"
+\"Thank you. I think so too.\"
+\"We should definitely do that.\"
+
+✓ Better:
+\"That's a terrible idea.\"
+\"Got a better one?\"
+She didn't.
+
+Tip: Characters should want different things. Even allies can disagree on methods. Conflict creates interest.
+""", color: bodyColor))
+        content.append(makeNewline())
+        content.append(makeNewline())
+
+        content.append(makeHeading("9. No Emotional Resonance", color: headingColor))
+        content.append(makeBody("""
+If the dialogue doesn't evoke any emotion or reaction in the reader, it might not be serving its purpose effectively.
+
+✗ Avoid Flat Delivery:
+\"My brother died,\" he said.
+\"That's sad,\" she said.
+
+✓ Better:
+\"My brother died.\" He stared at his hands.
+She reached across the table but stopped short of touching him.
+
+Tip: Use action, beats, and subtext to convey emotion. Let the white space speak. Sometimes what isn't said carries more weight.
+""", color: bodyColor))
+        content.append(makeNewline())
+        content.append(makeNewline())
+
+        content.append(makeHeading("10. Lack of Pacing", color: headingColor))
+        content.append(makeBody("""
+Dialogue that doesn't vary its rhythm can be less engaging. Good dialogue often mixes long, complex sentences with short, impactful ones to create a dynamic pace.
+
+✗ Avoid Monotonous Rhythm:
+\"I think we should go to the store. We need to buy milk. We also need bread. And maybe some eggs too.\"
+
+✓ Better:
+\"We need milk.\"
+\"And bread. And eggs. Basically, we need to go shopping.\"
+\"Fine.\"
+
+Tip: Vary sentence length. Use fragments. Short bursts of dialogue during tense scenes. Longer speeches when a character needs to explain or persuade.
+""", color: bodyColor))
+        content.append(makeNewline())
+        content.append(makeNewline())
+
+        content.append(makeHeading("Summary", color: headingColor))
+        content.append(makeBody("""
+Improving these aspects can make dialogue more engaging, revealing, and true to life. Remember:
+
+• Use subtext and nuance
+• Avoid repetition and filler words
+• Give each character a unique voice
+• Create fresh, unpredictable lines
+• Make every line count
+• Show, don't tell (avoid exposition dumps)
+• Include conflict and tension
+• Evoke emotion through action and subtext
+• Vary pacing with sentence length
+
+QuillPilot's dialogue analysis tool checks for all these issues and provides feedback to help you refine your dialogue.
+""", color: bodyColor))
+
+        normalizeAppNameInDocumentation(content)
+        textView.textStorage?.setAttributedString(content)
+    }
+
+    // MARK: - List Numbering Tab
+    private func loadNumberingTab() {
+        guard textViews.count > 6, let textView = textViews[safe: 6] else { return }
+        let theme = ThemeManager.shared.currentTheme
+        let titleColor = theme.textColor
+        let headingColor = theme.textColor
+        let bodyColor = theme.textColor
+
+        let content = NSMutableAttributedString()
+
+        content.append(makeTitle("🔢 List Numbering Help", color: titleColor))
+        content.append(makeNewline())
+
+        content.append(makeHeading("Numbering Style: 1.1.1", color: headingColor))
+        content.append(makeNewline())
+
+        content.append(makeBody("""
+QuillPilot uses a hierarchical numbering system for lists.
+""", color: bodyColor))
+        content.append(makeNewline())
+        content.append(makeNewline())
+
+        content.append(makeHeading("Creating Numbered Lists", color: headingColor))
+        content.append(makeBody("""
+• Go to Format → Lists → Numbered List
+• Or use the numbering button in the toolbar
+• Type your content and press Return to continue numbering
+""", color: bodyColor))
+        content.append(makeNewline())
+        content.append(makeNewline())
+
+        content.append(makeHeading("Indenting (Creating Sub-levels)", color: headingColor))
+        content.append(makeBody("""
+• Press Tab to indent a numbered item
+• This creates a sub-level (e.g., 2. → 2.1.)
+• You can nest multiple levels (1.1.1.1, etc.)
+""", color: bodyColor))
+        content.append(makeNewline())
+        content.append(makeNewline())
+
+        content.append(makeHeading("Outdenting (Removing Sub-levels)", color: headingColor))
+        content.append(makeBody("""
+• Press Shift-Tab to outdent a numbered item
+• This removes one level of nesting (e.g., 2.1. → 2.)
+""", color: bodyColor))
+        content.append(makeNewline())
+        content.append(makeNewline())
+
+        content.append(makeHeading("Restarting Numbering", color: headingColor))
+        content.append(makeBody("""
+• Go to Format → Lists → Restart Numbering…
+• Choose a custom starting number
+• Default restart is at 1
+""", color: bodyColor))
+        content.append(makeNewline())
+        content.append(makeNewline())
+
+        content.append(makeHeading("Auto-Numbering on Return", color: headingColor))
+        content.append(makeBody("""
+• Enabled by default in Preferences
+• Can be turned off if you prefer manual control
+• When enabled, pressing Return automatically continues the list
+""", color: bodyColor))
+        content.append(makeNewline())
+        content.append(makeNewline())
+
+        content.append(makeHeading("Ending a List", color: headingColor))
+        content.append(makeBody("""
+• If a numbered item is empty, pressing Return ends the list
+• You can also manually remove numbering via Format → Lists → Numbered List (toggle off)
+""", color: bodyColor))
+        content.append(makeNewline())
+        content.append(makeNewline())
+
+        content.append(makeHeading("Tips", color: headingColor))
+        content.append(makeBody("""
+• Configure auto-numbering behavior in Preferences
+• Use Tab/Shift-Tab to quickly organize hierarchical lists
+• Empty line + Return exits the list automatically
+""", color: bodyColor))
+
+        normalizeAppNameInDocumentation(content)
+        textView.textStorage?.setAttributedString(content)
+    }
+}
+
+extension Collection {
+    subscript(safe index: Index) -> Element? {
+        return indices.contains(index) ? self[index] : nil
     }
 }

@@ -252,12 +252,12 @@ class ThemeManager {
 
     func toggleTheme() {
         // Light mode (Day) is no longer supported.
-        // Toggle between the two dark variants for quick header switching.
+        // Cycle through the three supported themes for the header toggle.
         switch currentTheme {
         case .night:
             currentTheme = .dusk
         case .dusk:
-            currentTheme = .night
+            currentTheme = .cream
         case .cream, .day:
             currentTheme = .night
         }

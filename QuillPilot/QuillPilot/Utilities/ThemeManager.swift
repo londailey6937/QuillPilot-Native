@@ -12,6 +12,7 @@ enum AppTheme: String {
     case day = "day"
     case cream = "cream"
     case night = "night"
+    case dusk = "dusk"
 
     // Page colors
     var pageBackground: NSColor {
@@ -23,6 +24,8 @@ enum AppTheme: String {
             return NSColor(hex: "#FFFAF3") ?? .white
         case .night:
             return NSColor(hex: "#1F1F1F") ?? .black
+        case .dusk:
+            return NSColor(hex: "#1A1726") ?? .black
         }
     }
 
@@ -35,6 +38,8 @@ enum AppTheme: String {
             return NSColor(hex: "#FEF5E7") ?? .lightGray
         case .night:
             return NSColor(hex: "#121212") ?? .darkGray
+        case .dusk:
+            return NSColor(hex: "#0F0D17") ?? .black
         }
     }
 
@@ -47,6 +52,8 @@ enum AppTheme: String {
             return NSColor(hex: "#C65A1E") ?? .gray
         case .night:
             return NSColor(hex: "#333333") ?? .gray
+        case .dusk:
+            return NSColor(hex: "#3A3355") ?? .gray
         }
     }
 
@@ -59,6 +66,8 @@ enum AppTheme: String {
             return NSColor(hex: "#2C3E50") ?? NSColor(calibratedWhite: 0.1, alpha: 1.0)
         case .night:
             return NSColor(calibratedWhite: 0.9, alpha: 1.0)
+        case .dusk:
+            return NSColor(hex: "#E8E5FF") ?? NSColor(calibratedWhite: 0.9, alpha: 1.0)
         }
     }
 
@@ -70,6 +79,8 @@ enum AppTheme: String {
             return NSColor(hex: "#111827") ?? NSColor(calibratedWhite: 0.1, alpha: 1.0)
         case .night:
             return NSColor(hex: "#FFD479") ?? NSColor(calibratedWhite: 0.9, alpha: 1.0)
+        case .dusk:
+            return NSColor(hex: "#FFB86C") ?? NSColor(calibratedWhite: 0.9, alpha: 1.0)
         }
     }
 
@@ -83,6 +94,8 @@ enum AppTheme: String {
             return NSColor(hex: "#F7E6D0") ?? .lightGray
         case .night:
             return NSColor(hex: "#2D2D2D") ?? .darkGray
+        case .dusk:
+            return NSColor(hex: "#241E37") ?? .darkGray
         }
     }
 
@@ -94,6 +107,8 @@ enum AppTheme: String {
             return NSColor(hex: "#111827") ?? .black
         case .night:
             return NSColor(hex: "#E8E8E8") ?? .white
+        case .dusk:
+            return NSColor(hex: "#F2F0FF") ?? .white
         }
     }
 
@@ -106,6 +121,8 @@ enum AppTheme: String {
             return NSColor(hex: "#F5EAD9") ?? .lightGray
         case .night:
             return NSColor(hex: "#1A1A1A") ?? .black
+        case .dusk:
+            return NSColor(hex: "#151225") ?? .black
         }
     }
 
@@ -118,6 +135,8 @@ enum AppTheme: String {
             return NSColor(hex: "#FEF5E7") ?? .white
         case .night:
             return NSColor(hex: "#161616") ?? .black
+        case .dusk:
+            return NSColor(hex: "#121020") ?? .black
         }
     }
 
@@ -130,6 +149,8 @@ enum AppTheme: String {
             return NSColor(hex: "#FFFAF3") ?? .white
         case .night:
             return NSColor(hex: "#1E1E1E") ?? .black
+        case .dusk:
+            return NSColor(hex: "#19162A") ?? .black
         }
     }
 
@@ -141,6 +162,8 @@ enum AppTheme: String {
             return NSColor(hex: "#C65A1E") ?? .gray
         case .night:
             return NSColor(hex: "#333333") ?? .gray
+        case .dusk:
+            return NSColor(hex: "#3A3355") ?? .gray
         }
     }
 
@@ -153,6 +176,8 @@ enum AppTheme: String {
             return NSColor(hex: "#78716C") ?? .gray
         case .night:
             return NSColor(hex: "#888888") ?? .lightGray
+        case .dusk:
+            return NSColor(hex: "#A9A2C6") ?? .lightGray
         }
     }
 
@@ -165,6 +190,8 @@ enum AppTheme: String {
             return NSColor(hex: "#111827") ?? NSColor(calibratedWhite: 0.15, alpha: 1.0)
         case .night:
             return NSColor(calibratedWhite: 0.9, alpha: 1.0)
+        case .dusk:
+            return NSColor(hex: "#EDEAFF") ?? NSColor(calibratedWhite: 0.9, alpha: 1.0)
         }
     }
 
@@ -176,6 +203,8 @@ enum AppTheme: String {
             return NSColor(hex: "#6B7280") ?? NSColor(calibratedWhite: 0.35, alpha: 1.0)
         case .night:
             return NSColor(calibratedWhite: 0.7, alpha: 1.0)
+        case .dusk:
+            return NSColor(hex: "#B8B2D6") ?? NSColor(calibratedWhite: 0.7, alpha: 1.0)
         }
     }
 
@@ -187,6 +216,8 @@ enum AppTheme: String {
             return NSColor(hex: "#FEF5E7") ?? .white
         case .night:
             return NSColor(hex: "#1F1F1F") ?? .black
+        case .dusk:
+            return NSColor(hex: "#1A1726") ?? .black
         }
     }
 }
@@ -205,7 +236,7 @@ class ThemeManager {
 
     /// Returns true if the current theme is a dark theme
     var isDarkMode: Bool {
-        return currentTheme == .night
+        return currentTheme == .night || currentTheme == .dusk
     }
 
     private init() {
@@ -220,10 +251,13 @@ class ThemeManager {
     }
 
     func toggleTheme() {
-        // Light mode (Day) is no longer supported; toggle between Cream and Night.
+        // Light mode (Day) is no longer supported.
+        // Toggle between the two dark variants for quick header switching.
         switch currentTheme {
         case .night:
-            currentTheme = .cream
+            currentTheme = .dusk
+        case .dusk:
+            currentTheme = .night
         case .cream, .day:
             currentTheme = .night
         }

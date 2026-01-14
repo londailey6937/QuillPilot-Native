@@ -24,7 +24,8 @@ enum QuillPilotSettings {
     static var autoSaveIntervalSeconds: TimeInterval {
         get {
             if UserDefaults.standard.object(forKey: Keys.autoSaveIntervalSeconds) == nil {
-                return 30.0
+                // Default to a practical cadence that won't churn disks while writing.
+                return 60.0
             }
             let v = UserDefaults.standard.double(forKey: Keys.autoSaveIntervalSeconds)
             return max(0, v)

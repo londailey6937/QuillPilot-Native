@@ -45,8 +45,8 @@ final class PreferencesWindowController: NSWindowController {
 
         // Theme
         themePopup = NSPopUpButton(frame: .zero, pullsDown: false)
-        // Light mode (Day) removed: keep only Cream + Night.
-        themePopup.addItems(withTitles: ["Cream", "Night"])
+        // Light mode (Day) removed: keep Cream plus dark variants.
+        themePopup.addItems(withTitles: ["Cream", "Night", "Dusk"])
         themePopup.target = self
         themePopup.action = #selector(themeChanged(_:))
         themedPopups.append(themePopup)
@@ -55,9 +55,8 @@ final class PreferencesWindowController: NSWindowController {
         autoSavePopup = NSPopUpButton(frame: .zero, pullsDown: false)
         autoSavePopup.addItems(withTitles: [
             "Off",
-            "Every 15 seconds",
-            "Every 30 seconds",
-            "Every 60 seconds"
+            "Every 1 minute",
+            "Every 5 minutes"
         ])
         autoSavePopup.target = self
         autoSavePopup.action = #selector(autoSaveIntervalChanged(_:))
@@ -209,6 +208,8 @@ final class PreferencesWindowController: NSWindowController {
             themePopup.selectItem(withTitle: "Cream")
         case .night:
             themePopup.selectItem(withTitle: "Night")
+        case .dusk:
+            themePopup.selectItem(withTitle: "Dusk")
         case .day:
             themePopup.selectItem(withTitle: "Cream")
         }
@@ -218,12 +219,13 @@ final class PreferencesWindowController: NSWindowController {
         switch interval {
         case 0:
             autoSavePopup.selectItem(at: 0)
-        case 15:
-            autoSavePopup.selectItem(at: 1)
         case 60:
-            autoSavePopup.selectItem(at: 3)
-        default:
+            autoSavePopup.selectItem(at: 1)
+        case 300:
             autoSavePopup.selectItem(at: 2)
+        default:
+            // Any legacy value: fall back to 1 minute.
+            autoSavePopup.selectItem(at: 1)
         }
 
         // Default export format
@@ -249,6 +251,8 @@ final class PreferencesWindowController: NSWindowController {
             ThemeManager.shared.currentTheme = .cream
         case 1:
             ThemeManager.shared.currentTheme = .night
+        case 2:
+            ThemeManager.shared.currentTheme = .dusk
         default:
             ThemeManager.shared.currentTheme = .cream
         }
@@ -259,11 +263,11 @@ final class PreferencesWindowController: NSWindowController {
         case 0:
             QuillPilotSettings.autoSaveIntervalSeconds = 0
         case 1:
-            QuillPilotSettings.autoSaveIntervalSeconds = 15
-        case 3:
             QuillPilotSettings.autoSaveIntervalSeconds = 60
+        case 2:
+            QuillPilotSettings.autoSaveIntervalSeconds = 300
         default:
-            QuillPilotSettings.autoSaveIntervalSeconds = 30
+            QuillPilotSettings.autoSaveIntervalSeconds = 60
         }
     }
 

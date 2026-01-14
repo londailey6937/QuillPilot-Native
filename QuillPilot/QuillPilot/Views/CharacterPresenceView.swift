@@ -12,6 +12,11 @@ import Cocoa
 /// Uses draw() method for proper theme support
 class CharacterPresenceView: NSView {
 
+    enum DisplayMode {
+        case scenes
+        case chapters
+    }
+
     private enum XAxisMode: Int {
         case scenes = 0
         case acts = 1
@@ -230,6 +235,7 @@ class CharacterPresenceView: NSView {
     private var presence: [CharacterPresence] = []
     private var rawPresence: [CharacterPresence] = []
     private var xAxisMode: XAxisMode = .scenes
+    private var displayMode: DisplayMode = .scenes
 
     private let chartScrollView = NSScrollView()
     private let chartView = CharacterPresenceChartView(frame: .zero)
@@ -269,6 +275,21 @@ class CharacterPresenceView: NSView {
         setupModeControl()
         setupHeaderLabels()
         startObservingTheme()
+    }
+
+    func setDisplayMode(_ mode: DisplayMode) {
+        displayMode = mode
+
+        switch displayMode {
+        case .chapters:
+            modeControl.isHidden = true
+            xAxisMode = .scenes
+            modeControl.selectedSegment = XAxisMode.scenes.rawValue
+        case .scenes:
+            modeControl.isHidden = false
+        }
+
+        applyXAxisMode()
     }
 
     deinit {
@@ -396,12 +417,18 @@ class CharacterPresenceView: NSView {
     }
 
     @objc private func xAxisModeChanged() {
+        guard displayMode == .scenes else { return }
         xAxisMode = XAxisMode(rawValue: modeControl.selectedSegment) ?? .scenes
         applyXAxisMode()
     }
 
     private func applyXAxisMode() {
-        presence = (xAxisMode == .acts) ? aggregatePresenceToActs(rawPresence) : rawPresence
+        switch displayMode {
+        case .chapters:
+            presence = rawPresence
+        case .scenes:
+            presence = (xAxisMode == .acts) ? aggregatePresenceToActs(rawPresence) : rawPresence
+        }
 
         // Collect data
         var dataPoints: [(character: String, chapter: Int, mentions: Int)] = []
@@ -424,12 +451,18 @@ class CharacterPresenceView: NSView {
         chartView.characters = characters
         chartView.colors = colors
 
-        if xAxisMode == .acts {
-            chartView.xAxisTitle = "Act"
-            chartView.xTickPrefix = "Act"
-        } else {
-            chartView.xAxisTitle = "Scene"
-            chartView.xTickPrefix = "Sc"
+        switch displayMode {
+        case .chapters:
+            chartView.xAxisTitle = "Chapter"
+            chartView.xTickPrefix = "Ch"
+        case .scenes:
+            if xAxisMode == .acts {
+                chartView.xAxisTitle = "Act"
+                chartView.xTickPrefix = "Act"
+            } else {
+                chartView.xAxisTitle = "Scene"
+                chartView.xTickPrefix = "Sc"
+            }
         }
 
         desiredChartContentWidth = computeDesiredChartWidth(chaptersCount: chapters.count, charactersCount: characters.count)
@@ -438,12 +471,18 @@ class CharacterPresenceView: NSView {
         rebuildLegend(characters: characters, colors: colors)
 
         // Update header labels
-        if xAxisMode == .acts {
-            titleLabel.stringValue = "Character Presence by Act"
-            subtitleLabel.stringValue = "Number of mentions per character per act"
-        } else {
-            titleLabel.stringValue = "Character Presence by Scene"
-            subtitleLabel.stringValue = "Number of mentions per character per scene"
+        switch displayMode {
+        case .chapters:
+            titleLabel.stringValue = "Character Presence by Chapter"
+            subtitleLabel.stringValue = "Number of mentions per character per chapter"
+        case .scenes:
+            if xAxisMode == .acts {
+                titleLabel.stringValue = "Character Presence by Act"
+                subtitleLabel.stringValue = "Number of mentions per character per act"
+            } else {
+                titleLabel.stringValue = "Character Presence by Scene"
+                subtitleLabel.stringValue = "Number of mentions per character per scene"
+            }
         }
 
         needsLayout = true

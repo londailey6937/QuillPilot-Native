@@ -171,6 +171,16 @@ class AnalysisViewController: NSViewController, NSWindowDelegate {
         currentDocumentURL = url
         // Load scenes for this document if window exists
         sceneListWindow?.loadScenes(for: url)
+
+        // Load story notes (theme/locations/outline/directions) for this document.
+        StoryNotesStore.shared.load(for: url)
+
+        // If navigator windows are already open, refresh them to the new document.
+        themeWindow?.setDocumentURL(url)
+        storyOutlineWindow?.setDocumentURL(url)
+        locationsWindow?.setDocumentURL(url)
+        storyDirectionsWindow?.setDocumentURL(url)
+
         // Clear analysis results and all UI to prevent stale data across documents
         latestAnalysisResults = nil
         clearAllAnalysisUI()
@@ -182,6 +192,20 @@ class AnalysisViewController: NSViewController, NSWindowDelegate {
             plotVisualizationView.removeFromSuperview()
             characterArcVisualizationView.removeFromSuperview()
         }
+    }
+
+    /// Called when the document URL becomes known/changes (e.g. first Save / Save As).
+    /// Unlike `documentDidChange`, this must NOT clear analysis UI.
+    func documentURLDidUpdate(url: URL?) {
+        currentDocumentURL = url
+        sceneListWindow?.loadScenes(for: url)
+
+        StoryNotesStore.shared.setDocumentURL(url)
+
+        themeWindow?.updateDocumentURL(url)
+        storyOutlineWindow?.updateDocumentURL(url)
+        locationsWindow?.updateDocumentURL(url)
+        storyDirectionsWindow?.updateDocumentURL(url)
     }
 
     private func scrollToTop() {
@@ -578,7 +602,9 @@ class AnalysisViewController: NSViewController, NSWindowDelegate {
         if category == .theme {
             // Open Theme window
             if themeWindow == nil {
-                themeWindow = ThemeWindowController()
+                themeWindow = ThemeWindowController(documentURL: currentDocumentURL)
+            } else {
+                themeWindow?.setDocumentURL(currentDocumentURL)
             }
             themeWindow?.showWindow(nil)
             themeWindow?.window?.makeKeyAndOrderFront(nil)
@@ -603,7 +629,9 @@ class AnalysisViewController: NSViewController, NSWindowDelegate {
         if category == .storyOutline {
             // Open Story Outline window
             if storyOutlineWindow == nil {
-                storyOutlineWindow = StoryOutlineWindowController()
+                storyOutlineWindow = StoryOutlineWindowController(documentURL: currentDocumentURL)
+            } else {
+                storyOutlineWindow?.setDocumentURL(currentDocumentURL)
             }
             storyOutlineWindow?.showWindow(nil)
             storyOutlineWindow?.window?.makeKeyAndOrderFront(nil)
@@ -613,7 +641,9 @@ class AnalysisViewController: NSViewController, NSWindowDelegate {
         if category == .locations {
             // Open Locations window
             if locationsWindow == nil {
-                locationsWindow = LocationsWindowController()
+                locationsWindow = LocationsWindowController(documentURL: currentDocumentURL)
+            } else {
+                locationsWindow?.setDocumentURL(currentDocumentURL)
             }
             locationsWindow?.showWindow(nil)
             locationsWindow?.window?.makeKeyAndOrderFront(nil)
@@ -623,7 +653,9 @@ class AnalysisViewController: NSViewController, NSWindowDelegate {
         if category == .storyDirections {
             // Open Story Directions window
             if storyDirectionsWindow == nil {
-                storyDirectionsWindow = StoryDirectionsWindowController()
+                storyDirectionsWindow = StoryDirectionsWindowController(documentURL: currentDocumentURL)
+            } else {
+                storyDirectionsWindow?.setDocumentURL(currentDocumentURL)
             }
             storyDirectionsWindow?.showWindow(nil)
             storyDirectionsWindow?.window?.makeKeyAndOrderFront(nil)
@@ -2588,8 +2620,7 @@ extension AnalysisViewController {
     }
 
     private func getStoryThemeText() -> String {
-        // Always load from persistent storage - ensures consistency across sessions
-        return ThemeWindowController.getCurrentTheme()
+        return StoryNotesStore.shared.notes.theme
     }
 
     private func generateThematicJourneys() -> [ThematicResonanceMapView.CharacterThematicJourney] {
@@ -2907,7 +2938,13 @@ extension AnalysisViewController {
             backing: .buffered,
             defer: false
         )
-        window.title = "Character Presence"
+        let isScreenplay = StyleCatalog.shared.isScreenplayTemplate
+        switch isScreenplay {
+        case true:
+            window.title = "Character Presence by Scene"
+        case false:
+            window.title = "Character Presence by Chapter"
+        }
         window.level = .normal
         window.isMovableByWindowBackground = true
         window.isExcludedFromWindowsMenu = false
@@ -2926,6 +2963,7 @@ extension AnalysisViewController {
         // Use AppKit view for proper theme support
         let presenceView = CharacterPresenceView(frame: window.contentView!.bounds)
         presenceView.autoresizingMask = [.width, .height]
+        presenceView.setDisplayMode(isScreenplay ? .scenes : .chapters)
         presenceView.setPresence(filteredPresence)
 
         window.contentView = presenceView
@@ -3853,6 +3891,18 @@ extension AnalysisViewController {
         let jumpButton = NSButton(title: "Scroll to chart", target: self, action: #selector(scrollPlotPopoutToChart))
         jumpButton.bezelStyle = .rounded
         jumpButton.controlSize = .small
+        let jumpColor = theme.popoutTextColor
+        let jumpFont = jumpButton.font ?? NSFont.systemFont(ofSize: NSFont.smallSystemFontSize)
+        jumpButton.attributedTitle = NSAttributedString(
+            string: "Scroll to chart",
+            attributes: [
+                .foregroundColor: jumpColor,
+                .font: jumpFont
+            ]
+        )
+        if #available(macOS 10.14, *) {
+            jumpButton.contentTintColor = jumpColor
+        }
         stack.addArrangedSubview(jumpButton)
 
         let header = NSTextField(labelWithString: "Plot Structure Analysis")

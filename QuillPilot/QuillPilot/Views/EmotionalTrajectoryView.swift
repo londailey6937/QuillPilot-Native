@@ -101,6 +101,7 @@ class EmotionalTrajectoryView: NSView {
     }
 
     func setXAxisMode(_ mode: XAxisMode) {
+        
         self.xAxisMode = mode
         self.needsDisplay = true
     }

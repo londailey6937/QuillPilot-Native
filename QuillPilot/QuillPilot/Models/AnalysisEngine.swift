@@ -1824,15 +1824,19 @@ class AnalysisEngine {
             }
             if !effectiveEntries.isEmpty {
                 let fullText = text as NSString
-                chapters = effectiveEntries.enumerated().map { index, entry in
-                    let startLocation = entry.range.location
+                let orderedEntries = effectiveEntries.sorted { $0.range.location < $1.range.location }
+                chapters = orderedEntries.enumerated().map { index, entry in
+                    // Clamp outline-derived ranges to avoid substring out-of-bounds crashes.
+                    let startLocation = min(entry.range.location, fullText.length)
                     let endLocation: Int
-                    if index < effectiveEntries.count - 1 {
-                        endLocation = effectiveEntries[index + 1].range.location
+                    if index < orderedEntries.count - 1 {
+                        endLocation = orderedEntries[index + 1].range.location
                     } else {
                         endLocation = fullText.length
                     }
-                    let chapterRange = NSRange(location: startLocation, length: endLocation - startLocation)
+                    let clampedEnd = min(endLocation, fullText.length)
+                    let length = max(0, clampedEnd - startLocation)
+                    let chapterRange = NSRange(location: startLocation, length: length)
                     return (number: index + 1, text: fullText.substring(with: chapterRange))
                 }
             } else {
@@ -2063,15 +2067,19 @@ class AnalysisEngine {
             }
             if !effectiveEntries.isEmpty {
                 let fullText = text as NSString
-                chapters = effectiveEntries.enumerated().map { index, entry in
-                    let startLocation = entry.range.location
+                let orderedEntries = effectiveEntries.sorted { $0.range.location < $1.range.location }
+                chapters = orderedEntries.enumerated().map { index, entry in
+                    // Clamp outline-derived ranges to avoid substring out-of-bounds crashes.
+                    let startLocation = min(entry.range.location, fullText.length)
                     let endLocation: Int
-                    if index < effectiveEntries.count - 1 {
-                        endLocation = effectiveEntries[index + 1].range.location
+                    if index < orderedEntries.count - 1 {
+                        endLocation = orderedEntries[index + 1].range.location
                     } else {
                         endLocation = fullText.length
                     }
-                    let chapterRange = NSRange(location: startLocation, length: endLocation - startLocation)
+                    let clampedEnd = min(endLocation, fullText.length)
+                    let length = max(0, clampedEnd - startLocation)
+                    let chapterRange = NSRange(location: startLocation, length: length)
                     return (number: index + 1, text: fullText.substring(with: chapterRange))
                 }
             } else {

@@ -45,7 +45,8 @@ final class PreferencesWindowController: NSWindowController {
 
         // Theme
         themePopup = NSPopUpButton(frame: .zero, pullsDown: false)
-        themePopup.addItems(withTitles: ["Day", "Cream", "Night"])
+        // Light mode (Day) removed: keep only Cream + Night.
+        themePopup.addItems(withTitles: ["Cream", "Night"])
         themePopup.target = self
         themePopup.action = #selector(themeChanged(_:))
         themedPopups.append(themePopup)
@@ -170,7 +171,7 @@ final class PreferencesWindowController: NSWindowController {
         let isDarkMode = ThemeManager.shared.isDarkMode
         window?.appearance = NSAppearance(named: isDarkMode ? .darkAqua : .aqua)
 
-        // Ensure labels and titles remain readable on Cream/Day backgrounds.
+        // Ensure labels and titles remain readable on Cream backgrounds.
         let labelColor = theme.textColor
         for l in themedLabels {
             l.textColor = labelColor
@@ -204,12 +205,12 @@ final class PreferencesWindowController: NSWindowController {
     private func loadFromSettings() {
         // Theme
         switch ThemeManager.shared.currentTheme {
-        case .day:
-            themePopup.selectItem(withTitle: "Day")
         case .cream:
             themePopup.selectItem(withTitle: "Cream")
         case .night:
             themePopup.selectItem(withTitle: "Night")
+        case .day:
+            themePopup.selectItem(withTitle: "Cream")
         }
 
         // Auto-save
@@ -245,10 +246,8 @@ final class PreferencesWindowController: NSWindowController {
         let selection = themePopup.indexOfSelectedItem
         switch selection {
         case 0:
-            ThemeManager.shared.currentTheme = .day
-        case 1:
             ThemeManager.shared.currentTheme = .cream
-        case 2:
+        case 1:
             ThemeManager.shared.currentTheme = .night
         default:
             ThemeManager.shared.currentTheme = .cream

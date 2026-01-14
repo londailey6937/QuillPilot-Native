@@ -1046,6 +1046,9 @@ extension MainWindowController {
             self.currentDocumentURL = url
             self.currentDocumentFormat = format
             self.hasUnsavedChanges = false
+
+            // Notify sidebars that the document now has a concrete URL (Save As).
+            self.mainContentViewController.documentURLDidUpdate(url: url)
         }
     }
 
@@ -1188,6 +1191,9 @@ extension MainWindowController {
     private func saveToURL(_ url: URL, format: ExportFormat) {
         do {
             try writeDocument(to: url, format: format)
+
+            // Update per-document sidecars/notes to this URL (covers first Save and Save As).
+            mainContentViewController.documentURLDidUpdate(url: url)
 
             if format == .docx {
                 // Primary document save: attach sidecars (character library) to this URL.
@@ -2231,7 +2237,6 @@ class HeaderView: NSView {
     private var titleLabel: NSTextField!
     private var taglineLabel: NSTextField!
     var specsPanel: DocumentInfoPanel!
-    private var themeToggle: NSButton!
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
@@ -2271,12 +2276,6 @@ class HeaderView: NSView {
         specsPanel.translatesAutoresizingMaskIntoConstraints = false
         addSubview(specsPanel)
 
-        // Day/Night toggle button
-        themeToggle = NSButton(title: "☀️", target: self, action: #selector(HeaderView.toggleTheme(_:)))
-        themeToggle.bezelStyle = .rounded
-        themeToggle.translatesAutoresizingMaskIntoConstraints = false
-        addSubview(themeToggle)
-
         NSLayoutConstraint.activate([
             // Logo at left - fills height with 4pt padding
             logoView.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 16),
@@ -2296,18 +2295,10 @@ class HeaderView: NSView {
             // Specs panel centered in header
             specsPanel.centerXAnchor.constraint(equalTo: centerXAnchor),
             specsPanel.centerYAnchor.constraint(equalTo: centerYAnchor),
-            specsPanel.widthAnchor.constraint(lessThanOrEqualToConstant: 500),
-
-            // Theme toggle at right
-            themeToggle.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -16),
-            themeToggle.centerYAnchor.constraint(equalTo: centerYAnchor)
+            specsPanel.widthAnchor.constraint(lessThanOrEqualToConstant: 500)
         ])
 
         applyTheme(ThemeManager.shared.currentTheme)
-    }
-
-    @objc func toggleTheme(_ sender: Any?) {
-        ThemeManager.shared.toggleTheme()
     }
 
     func applyTheme(_ theme: AppTheme) {
@@ -2315,20 +2306,6 @@ class HeaderView: NSView {
         layer?.backgroundColor = theme.headerBackground.cgColor
         titleLabel.textColor = theme.headerText
         taglineLabel.textColor = theme.headerText.withAlphaComponent(0.75)
-        switch theme {
-        case .day:
-            themeToggle.title = "☀️"
-        case .cream:
-            themeToggle.title = "🎨"
-        case .night:
-            themeToggle.title = "🌙"
-        }
-        themeToggle.contentTintColor = theme.headerText
-        let toggleAttributes: [NSAttributedString.Key: Any] = [
-            .foregroundColor: theme.headerText,
-            .font: themeToggle.font ?? NSFont.systemFont(ofSize: 13)
-        ]
-        themeToggle.attributedTitle = NSAttributedString(string: themeToggle.title, attributes: toggleAttributes)
         specsPanel.applyTheme(theme)
     }
 
@@ -3611,6 +3588,13 @@ class ContentViewController: NSViewController {
         editorViewController?.manuscriptTitle = "Untitled"
         editorViewController?.manuscriptAuthor = "Author Name"
         onAuthorChange?("")
+    }
+
+    /// Notify sidebars that the document now has a concrete URL (Save / Save As).
+    /// Must not clear analysis results/UI.
+    func documentURLDidUpdate(url: URL?) {
+        outlinePanelController?.documentURLDidUpdate(url: url)
+        analysisViewController?.documentURLDidUpdate(url: url)
     }
 
     func setRuler(_ ruler: EnhancedRulerView) {

@@ -112,7 +112,7 @@ class RelationshipEvolutionMapView: NSView {
             .font: NSFont.systemFont(ofSize: 9),
             .foregroundColor: textColor.withAlphaComponent(0.6)
         ]
-        let info = "Node size = emotional investment  •  Line thickness = trust/conflict  •  Arrows = power direction"
+        let info = "Green = trust • Red = conflict • Gray = neutral • Thicker = stronger • Arrow = who holds power"
         let infoSize = info.size(withAttributes: infoAttributes)
         let infoRect = NSRect(
             x: (bounds.width - infoSize.width) / 2,
@@ -413,11 +413,12 @@ class RelationshipEvolutionMapView: NSView {
         let legendY: CGFloat = 20
 
         let legendItems = [
-            ("Node Size", "Emotional Investment"),
-            ("Line Thickness", "Trust/Conflict Strength"),
-            ("Green Line", "Trust"),
-            ("Red Line", "Conflict"),
-            ("Arrow", "Power Direction")
+            ("Node Size", "Emotional investment (bigger = more invested)"),
+            ("Green Line", "Trust (positive relationship)"),
+            ("Red Line", "Conflict (negative relationship)"),
+            ("Gray Line", "Neutral / unclear"),
+            ("Line Thickness", "Strength (thicker = stronger trust/conflict)"),
+            ("Arrow", "Power (points from dominant → less powerful)")
         ]
 
         var currentY = legendY

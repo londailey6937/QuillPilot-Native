@@ -14,7 +14,6 @@ class DocumentInfoPanel: NSView {
     private var authorField: NSTextField!
     private var wordCountLabel: NSTextField!
     private var charactersLabel: NSTextField!
-    private var readingLevelLabel: NSTextField!
     private var autoSaveStatusLabel: NSTextField!
     private var stackView: NSStackView!
     private var statLabels: [NSTextField] = []
@@ -77,14 +76,11 @@ class DocumentInfoPanel: NSView {
         // Characters count
         charactersLabel = createStatLabel("Characters: 0")
 
-        // Reading level
-        readingLevelLabel = createStatLabel("Reading Level: --")
-
         // Auto-save indicator (shows interval or Off)
         autoSaveStatusLabel = createStatLabel("Auto-save: --")
 
-        // Horizontal stack for stats (word count | characters | reading level | optional auto-save status)
-        let statsStack = NSStackView(views: [wordCountLabel, charactersLabel, readingLevelLabel, autoSaveStatusLabel])
+        // Horizontal stack for stats (word count | characters | optional auto-save status)
+        let statsStack = NSStackView(views: [wordCountLabel, charactersLabel, autoSaveStatusLabel])
         statsStack.orientation = .horizontal
         statsStack.spacing = 16
         statsStack.distribution = .equalSpacing
@@ -126,10 +122,6 @@ class DocumentInfoPanel: NSView {
         // Characters count
         let charCount = text.count
         charactersLabel.stringValue = "Characters: \(charCount)"
-
-        // Reading level (Flesch-Kincaid Grade Level)
-        let readingLevel = calculateReadingLevel(text: text)
-        readingLevelLabel.stringValue = "Reading Level: \(readingLevel)"
     }
 
     private func startObservingSettings() {
@@ -212,54 +204,6 @@ class DocumentInfoPanel: NSView {
                 ]
             )
         }
-    }
-
-    // MARK: - Reading Level Calculation (Flesch-Kincaid Grade Level)
-    private func calculateReadingLevel(text: String) -> String {
-        guard !text.isEmpty else { return "--" }
-
-        let words = text.components(separatedBy: .whitespacesAndNewlines).filter { !$0.isEmpty }
-        guard !words.isEmpty else { return "--" }
-
-        let wordCount = words.count
-
-        // Count sentences (naive: split by . ! ?)
-        let sentences = text.components(separatedBy: CharacterSet(charactersIn: ".!?")).filter { !$0.trimmingCharacters(in: .whitespaces).isEmpty }
-        let sentenceCount = max(sentences.count, 1)
-
-        // Count syllables (naive approximation)
-        var syllableCount = 0
-        for word in words {
-            syllableCount += countSyllables(word: word)
-        }
-
-        // Flesch-Kincaid Grade Level formula
-        let gradeLevel = 0.39 * (Double(wordCount) / Double(sentenceCount)) + 11.8 * (Double(syllableCount) / Double(wordCount)) - 15.59
-
-        let grade = Int(max(0, min(18, gradeLevel)))
-        return "Grade \(grade)"
-    }
-
-    private func countSyllables(word: String) -> Int {
-        let word = word.lowercased()
-        let vowels: Set<Character> = ["a", "e", "i", "o", "u", "y"]
-        var count = 0
-        var previousWasVowel = false
-
-        for char in word {
-            let isVowel = vowels.contains(char)
-            if isVowel && !previousWasVowel {
-                count += 1
-            }
-            previousWasVowel = isVowel
-        }
-
-        // Adjust for silent e
-        if word.hasSuffix("e") && count > 1 {
-            count -= 1
-        }
-
-        return max(count, 1)
     }
 
 }

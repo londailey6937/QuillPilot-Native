@@ -17,6 +17,7 @@ class ThemeWindowController: NSWindowController, NSTextViewDelegate {
     private var scrollView: NSScrollView!
     private var textView: NSTextView?
     private var saveTimer: Timer?
+    private var currentDocumentURL: URL?
 
     convenience init() {
         let window = NSWindow(
@@ -39,6 +40,22 @@ class ThemeWindowController: NSWindowController, NSTextViewDelegate {
         self.init(window: window)
         setupUI()
         loadThemeContent()
+    }
+
+    convenience init(documentURL: URL?) {
+        self.init()
+        setDocumentURL(documentURL)
+    }
+
+    func setDocumentURL(_ url: URL?) {
+        currentDocumentURL = url
+        StoryNotesStore.shared.load(for: url)
+        loadThemeContent()
+    }
+
+    func updateDocumentURL(_ url: URL?) {
+        currentDocumentURL = url
+        StoryNotesStore.shared.setDocumentURL(url)
     }
 
     private func setupUI() {
@@ -78,7 +95,10 @@ class ThemeWindowController: NSWindowController, NSTextViewDelegate {
         let theme = ThemeManager.shared.currentTheme
         textView.backgroundColor = theme.pageAround
         textView.textColor = theme.textColor
+        textView.insertionPointColor = theme.insertionPointColor
         scrollView.backgroundColor = theme.pageAround
+
+        applyBodyTypingAttributes(to: textView, theme: theme)
     }
 
     private func loadThemeContent() {
@@ -97,10 +117,13 @@ class ThemeWindowController: NSWindowController, NSTextViewDelegate {
         content.append(makeNewline())
 
         // Load saved theme or use default
-        let savedTheme = Self.loadSavedTheme()
+        let savedTheme = StoryNotesStore.shared.notes.theme
         content.append(makeBody(savedTheme, color: bodyColor))
 
         textView.textStorage?.setAttributedString(content)
+
+        // Ensure newly-typed text uses theme-visible attributes (fixes invisible typing in Night mode).
+        applyBodyTypingAttributes(to: textView, theme: theme)
 
         // Size to fit
         textView.sizeToFit()
@@ -127,35 +150,25 @@ class ThemeWindowController: NSWindowController, NSTextViewDelegate {
         let contentLines = lines.filter { !$0.isEmpty && !$0.contains("Story Theme") }
         let themeContent = contentLines.joined(separator: "\n")
 
-        Self.saveThemeContent(themeContent)
+        StoryNotesStore.shared.setDocumentURL(currentDocumentURL)
+        StoryNotesStore.shared.updateTheme(themeContent)
 
         // Notify that theme changed
         NotificationCenter.default.post(name: .storyThemeDidChange, object: nil)
     }
 
     static func saveThemeContent(_ content: String) {
-        let defaults = UserDefaults.standard
-        defaults.set(content, forKey: "StoryThemeContent")
+        // Backwards-compat shim; prefer per-document storage.
+        StoryNotesStore.shared.updateTheme(content)
     }
 
     static func loadSavedTheme() -> String {
-        let defaults = UserDefaults.standard
-        if let saved = defaults.string(forKey: "StoryThemeContent"), !saved.isEmpty {
-            return saved
-        }
-
-        // Default theme
-        return """
-The theme of the story centers on the tension between personal integrity and the morally ambiguous world of political and covert operations. It delves into how individuals—whether they are politicians like Senator Kessler, operatives like Alex, or investigators like Allison—navigate a complex landscape fraught with ethical dilemmas and hidden agendas.
-
-Amidst high-stakes political games and clandestine activities, the characters are forced to confront their own values, loyalties, and limits. In doing so, the story raises questions about the sacrifices one must make for the greater good, the ethical compromises that may or may not be justifiable, and the blurry line between right and wrong in a world where every decision has far-reaching consequences.
-
-Furthermore, it will attempt to tie into fundamental questions about governance, the balance of power, and the erosion of democratic values. This added layer should give the story a compelling depth and contemporary relevance, making it not just a tale of individual characters but a reflection on the state of the society they inhabit.
-"""
+        // Backwards-compat shim; prefer per-document storage.
+        return StoryNotesStore.shared.notes.theme
     }
 
     static func getCurrentTheme() -> String {
-        return loadSavedTheme()
+        return StoryNotesStore.shared.notes.theme
     }
 
     // MARK: - Helper Methods
@@ -177,16 +190,32 @@ Furthermore, it will attempt to tie into fundamental questions about governance,
     }
 
     private func makeBody(_ text: String, color: NSColor) -> NSAttributedString {
-        let paragraphStyle = NSMutableParagraphStyle()
-        paragraphStyle.lineSpacing = 6
-        paragraphStyle.paragraphSpacing = 12
-
         let attributes: [NSAttributedString.Key: Any] = [
             .font: NSFont.systemFont(ofSize: 14),
             .foregroundColor: color,
-            .paragraphStyle: paragraphStyle
+            .paragraphStyle: bodyParagraphStyle()
         ]
         return NSAttributedString(string: text, attributes: attributes)
+    }
+
+    private func bodyParagraphStyle() -> NSParagraphStyle {
+        let paragraphStyle = NSMutableParagraphStyle()
+        paragraphStyle.lineSpacing = 6
+        paragraphStyle.paragraphSpacing = 12
+        return paragraphStyle
+    }
+
+    private func applyBodyTypingAttributes(to textView: NSTextView, theme: AppTheme) {
+        textView.typingAttributes = [
+            .font: NSFont.systemFont(ofSize: 14),
+            .foregroundColor: theme.textColor,
+            .paragraphStyle: bodyParagraphStyle()
+        ]
+        textView.insertionPointColor = theme.insertionPointColor
+        textView.selectedTextAttributes = [
+            .backgroundColor: theme.pageBorder.withAlphaComponent(0.30),
+            .foregroundColor: theme.textColor
+        ]
     }
 
     private func makeNewline() -> NSAttributedString {

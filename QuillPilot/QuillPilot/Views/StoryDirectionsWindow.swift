@@ -8,9 +8,12 @@
 
 import Cocoa
 
-class StoryDirectionsWindowController: NSWindowController {
+class StoryDirectionsWindowController: NSWindowController, NSTextViewDelegate {
 
     private var scrollView: NSScrollView!
+    private var textView: NSTextView?
+    private var saveTimer: Timer?
+    private var currentDocumentURL: URL?
 
     convenience init() {
         let window = NSWindow(
@@ -33,6 +36,22 @@ class StoryDirectionsWindowController: NSWindowController {
         self.init(window: window)
         setupUI()
         loadDirectionsContent()
+    }
+
+    convenience init(documentURL: URL?) {
+        self.init()
+        setDocumentURL(documentURL)
+    }
+
+    func setDocumentURL(_ url: URL?) {
+        currentDocumentURL = url
+        StoryNotesStore.shared.load(for: url)
+        loadDirectionsContent()
+    }
+
+    func updateDocumentURL(_ url: URL?) {
+        currentDocumentURL = url
+        StoryNotesStore.shared.setDocumentURL(url)
     }
 
     private func setupUI() {
@@ -58,6 +77,8 @@ class StoryDirectionsWindowController: NSWindowController {
         textView.autoresizingMask = [.width]
         textView.isRichText = true
         textView.allowsUndo = true
+        textView.delegate = self
+        self.textView = textView
 
         scrollView.documentView = textView
         contentView.addSubview(scrollView)
@@ -70,7 +91,10 @@ class StoryDirectionsWindowController: NSWindowController {
         let theme = ThemeManager.shared.currentTheme
         textView.backgroundColor = theme.pageAround
         textView.textColor = theme.textColor
+        textView.insertionPointColor = theme.insertionPointColor
         scrollView.backgroundColor = theme.pageAround
+
+        applyBodyTypingAttributes(to: textView, theme: theme)
     }
 
     private func loadDirectionsContent() {
@@ -79,7 +103,6 @@ class StoryDirectionsWindowController: NSWindowController {
 
         let theme = ThemeManager.shared.currentTheme
         let titleColor = theme.textColor
-        let headingColor = theme.textColor
         let bodyColor = theme.textColor
 
         let content = NSMutableAttributedString()
@@ -89,69 +112,37 @@ class StoryDirectionsWindowController: NSWindowController {
         content.append(makeNewline())
         content.append(makeNewline())
 
-        // Instructions
-        content.append(makeBody("""
-Explore different narrative possibilities and plot variations. These directions can help guide your story development and provide options when you reach decision points in your writing.
-""", color: bodyColor))
-        content.append(makeNewline())
-        content.append(makeNewline())
-
-        // Sample directions structure
-        content.append(makeHeading("Direction 1: [Title]", color: headingColor))
-        content.append(makeNewline())
-        content.append(makeBody("""
-• Premise: [Core concept or "what if" scenario]
-• Key Plot Points:
-  - [Major event or turning point 1]
-  - [Major event or turning point 2]
-  - [Major event or turning point 3]
-• Character Impact: [How this direction affects main characters]
-• Thematic Implications: [How this aligns with or challenges your theme]
-• Potential Ending: [Possible resolution]
-""", color: bodyColor))
-        content.append(makeNewline())
-        content.append(makeNewline())
-
-        content.append(makeHeading("Direction 2: [Title]", color: headingColor))
-        content.append(makeNewline())
-        content.append(makeBody("""
-• Premise: [Core concept or "what if" scenario]
-• Key Plot Points:
-  - [Major event or turning point 1]
-  - [Major event or turning point 2]
-  - [Major event or turning point 3]
-• Character Impact: [How this direction affects main characters]
-• Thematic Implications: [How this aligns with or challenges your theme]
-• Potential Ending: [Possible resolution]
-""", color: bodyColor))
-        content.append(makeNewline())
-        content.append(makeNewline())
-
-        content.append(makeHeading("Direction 3: [Title]", color: headingColor))
-        content.append(makeNewline())
-        content.append(makeBody("""
-• Premise: [Core concept or "what if" scenario]
-• Key Plot Points:
-  - [Major event or turning point 1]
-  - [Major event or turning point 2]
-  - [Major event or turning point 3]
-• Character Impact: [How this direction affects main characters]
-• Thematic Implications: [How this aligns with or challenges your theme]
-• Potential Ending: [Possible resolution]
-""", color: bodyColor))
-        content.append(makeNewline())
-        content.append(makeNewline())
-
-        content.append(makeHeading("Notes", color: headingColor))
-        content.append(makeNewline())
-        content.append(makeBody("""
-[Use this space to brainstorm additional directions, track which elements work well together, or note reader feedback on different possibilities]
-""", color: bodyColor))
+        let saved = StoryNotesStore.shared.notes.directions
+        if !saved.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            content.append(makeBody(saved, color: bodyColor))
+        }
 
         textView.textStorage?.setAttributedString(content)
 
+        // Ensure newly-typed text uses theme-visible attributes (fixes invisible typing in Night mode).
+        applyBodyTypingAttributes(to: textView, theme: theme)
+
         // Size to fit
         textView.sizeToFit()
+    }
+
+    func textDidChange(_ notification: Notification) {
+        saveTimer?.invalidate()
+        saveTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: false) { [weak self] _ in
+            self?.saveDirections()
+        }
+    }
+
+    private func saveDirections() {
+        guard let textView = textView,
+              let text = textView.textStorage?.string else { return }
+
+        let lines = text.components(separatedBy: .newlines)
+        let contentLines = lines.filter { !$0.contains("Potential Story Directions") }
+        let directionsContent = contentLines.joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
+
+        StoryNotesStore.shared.setDocumentURL(currentDocumentURL)
+        StoryNotesStore.shared.updateDirections(directionsContent)
     }
 
     // MARK: - Helper Methods
@@ -173,16 +164,32 @@ Explore different narrative possibilities and plot variations. These directions 
     }
 
     private func makeBody(_ text: String, color: NSColor) -> NSAttributedString {
-        let paragraphStyle = NSMutableParagraphStyle()
-        paragraphStyle.lineSpacing = 6
-        paragraphStyle.paragraphSpacing = 12
-
         let attributes: [NSAttributedString.Key: Any] = [
             .font: NSFont.systemFont(ofSize: 14),
             .foregroundColor: color,
-            .paragraphStyle: paragraphStyle
+            .paragraphStyle: bodyParagraphStyle()
         ]
         return NSAttributedString(string: text, attributes: attributes)
+    }
+
+    private func bodyParagraphStyle() -> NSParagraphStyle {
+        let paragraphStyle = NSMutableParagraphStyle()
+        paragraphStyle.lineSpacing = 6
+        paragraphStyle.paragraphSpacing = 12
+        return paragraphStyle
+    }
+
+    private func applyBodyTypingAttributes(to textView: NSTextView, theme: AppTheme) {
+        textView.typingAttributes = [
+            .font: NSFont.systemFont(ofSize: 14),
+            .foregroundColor: theme.textColor,
+            .paragraphStyle: bodyParagraphStyle()
+        ]
+        textView.insertionPointColor = theme.insertionPointColor
+        textView.selectedTextAttributes = [
+            .backgroundColor: theme.pageBorder.withAlphaComponent(0.30),
+            .foregroundColor: theme.textColor
+        ]
     }
 
     private func makeNewline() -> NSAttributedString {

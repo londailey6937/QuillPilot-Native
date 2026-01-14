@@ -409,21 +409,25 @@ class DecisionBeliefLoopAnalyzer {
             if !effectiveEntries.isEmpty {
                 var result: [(text: String, number: Int, startPos: Int)] = []
                 let fullText = text as NSString
+                let orderedEntries = effectiveEntries.sorted { $0.range.location < $1.range.location }
 
-                for (index, entry) in effectiveEntries.enumerated() {
-                    let startLocation = entry.range.location
+                for (index, entry) in orderedEntries.enumerated() {
+                    // Clamp outline-derived ranges to avoid substring out-of-bounds crashes.
+                    let startLocation = min(entry.range.location, fullText.length)
                     let endLocation: Int
 
                     // Determine end of chapter
-                    if index < effectiveEntries.count - 1 {
+                    if index < orderedEntries.count - 1 {
                         // End at next chapter start
-                        endLocation = effectiveEntries[index + 1].range.location
+                        endLocation = orderedEntries[index + 1].range.location
                     } else {
                         // Last chapter goes to end of document
                         endLocation = fullText.length
                     }
 
-                    let chapterRange = NSRange(location: startLocation, length: endLocation - startLocation)
+                    let clampedEnd = min(endLocation, fullText.length)
+                    let length = max(0, clampedEnd - startLocation)
+                    let chapterRange = NSRange(location: startLocation, length: length)
                     let chapterText = fullText.substring(with: chapterRange)
 
                     result.append((text: chapterText, number: index + 1, startPos: startLocation))
@@ -889,15 +893,19 @@ class DecisionBeliefLoopAnalyzer {
                     DebugLog.log("📊 analyzePresenceByChapter: Regex detected \(chapters.count) chapters")
                 } else {
                     let fullText = text as NSString
-                    chapters = effectiveEntries.enumerated().map { index, entry in
-                        let startLocation = entry.range.location
+                    let orderedEntries = effectiveEntries.sorted { $0.range.location < $1.range.location }
+                    chapters = orderedEntries.enumerated().map { index, entry in
+                        // Clamp outline-derived ranges to avoid substring out-of-bounds crashes.
+                        let startLocation = min(entry.range.location, fullText.length)
                         let endLocation: Int
-                        if index < effectiveEntries.count - 1 {
-                            endLocation = effectiveEntries[index + 1].range.location
+                        if index < orderedEntries.count - 1 {
+                            endLocation = orderedEntries[index + 1].range.location
                         } else {
                             endLocation = fullText.length
                         }
-                        let chapterRange = NSRange(location: startLocation, length: endLocation - startLocation)
+                        let clampedEnd = min(endLocation, fullText.length)
+                        let length = max(0, clampedEnd - startLocation)
+                        let chapterRange = NSRange(location: startLocation, length: length)
                         return (text: fullText.substring(with: chapterRange), number: index + 1, startLocation: startLocation)
                     }
 
@@ -1319,15 +1327,19 @@ class DecisionBeliefLoopAnalyzer {
             }
             if !effectiveEntries.isEmpty {
                 let fullText = text as NSString
-                chapters = effectiveEntries.enumerated().map { index, entry in
-                    let startLocation = entry.range.location
+                let orderedEntries = effectiveEntries.sorted { $0.range.location < $1.range.location }
+                chapters = orderedEntries.enumerated().map { index, entry in
+                    // Clamp outline-derived ranges to avoid substring out-of-bounds crashes.
+                    let startLocation = min(entry.range.location, fullText.length)
                     let endLocation: Int
-                    if index < effectiveEntries.count - 1 {
-                        endLocation = effectiveEntries[index + 1].range.location
+                    if index < orderedEntries.count - 1 {
+                        endLocation = orderedEntries[index + 1].range.location
                     } else {
                         endLocation = fullText.length
                     }
-                    let chapterRange = NSRange(location: startLocation, length: endLocation - startLocation)
+                    let clampedEnd = min(endLocation, fullText.length)
+                    let length = max(0, clampedEnd - startLocation)
+                    let chapterRange = NSRange(location: startLocation, length: length)
                     return (text: fullText.substring(with: chapterRange), number: index + 1)
                 }
             } else {
@@ -1513,15 +1525,19 @@ class DecisionBeliefLoopAnalyzer {
             }
             if !effectiveEntries.isEmpty {
                 let fullText = text as NSString
-                chapters = effectiveEntries.enumerated().map { index, entry in
-                    let startLocation = entry.range.location
+                let orderedEntries = effectiveEntries.sorted { $0.range.location < $1.range.location }
+                chapters = orderedEntries.enumerated().map { index, entry in
+                    // Clamp outline-derived ranges to avoid substring out-of-bounds crashes.
+                    let startLocation = min(entry.range.location, fullText.length)
                     let endLocation: Int
-                    if index < effectiveEntries.count - 1 {
-                        endLocation = effectiveEntries[index + 1].range.location
+                    if index < orderedEntries.count - 1 {
+                        endLocation = orderedEntries[index + 1].range.location
                     } else {
                         endLocation = fullText.length
                     }
-                    let chapterRange = NSRange(location: startLocation, length: endLocation - startLocation)
+                    let clampedEnd = min(endLocation, fullText.length)
+                    let length = max(0, clampedEnd - startLocation)
+                    let chapterRange = NSRange(location: startLocation, length: length)
                     return (text: fullText.substring(with: chapterRange), number: index + 1)
                 }
             } else {

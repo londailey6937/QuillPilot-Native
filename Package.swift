@@ -40,6 +40,7 @@ let package = Package(
                 "Utilities/ScreenplayImporter.swift",
                 "Utilities/PoetryImporter.swift",
                 "Utilities/FadeInImporter.swift",
+                "Utilities/StoryNotesStore.swift",
                 "Extensions/NSColor+Hex.swift",
                 "Extensions/NSAlert+Themed.swift",
                 "Views/DocumentInfoPanel.swift",

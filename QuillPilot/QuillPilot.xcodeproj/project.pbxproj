@@ -12,7 +12,7 @@
 
 /* Begin PBXFileReference section */
 		95D4E7942EED15A300D9FD96 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
-		95F565052EED0D890079E9C2 /* QuillPilot.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = QuillPilot.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		95F565052EED0D890079E9C2 /* QuillPilot.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; name = QuillPilot.app; path = "Quill Pilot.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */

@@ -211,7 +211,8 @@ class ThemeManager {
     private init() {
         if let savedTheme = UserDefaults.standard.string(forKey: themeKey),
            let theme = AppTheme(rawValue: savedTheme) {
-            currentTheme = theme
+            // Light mode (Day) has been removed; migrate any saved Day selection to Cream.
+            currentTheme = (theme == .day) ? .cream : theme
         } else {
             // Default new installs to the warm Cream theme for experimentation.
             currentTheme = .cream
@@ -219,13 +220,12 @@ class ThemeManager {
     }
 
     func toggleTheme() {
+        // Light mode (Day) is no longer supported; toggle between Cream and Night.
         switch currentTheme {
-        case .day:
-            currentTheme = .cream
-        case .cream:
-            currentTheme = .night
         case .night:
-            currentTheme = .day
+            currentTheme = .cream
+        case .cream, .day:
+            currentTheme = .night
         }
     }
 }

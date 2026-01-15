@@ -159,7 +159,9 @@ class MainWindowController: NSWindowController {
         // Notes button (bottom-right)
         let notesButton = NSButton(title: "", target: self, action: #selector(notesButtonClicked(_:)))
         notesButton.translatesAutoresizingMaskIntoConstraints = false
-        notesButton.bezelStyle = .texturedRounded
+        // Keep icon buttons visually consistent with other SF Symbol controls (no accent tint).
+        notesButton.bezelStyle = .inline
+        notesButton.isBordered = false
         notesButton.controlSize = .small
         notesButton.toolTip = "Notes"
         if #available(macOS 11.0, *) {
@@ -167,6 +169,7 @@ class MainWindowController: NSWindowController {
             let config = NSImage.SymbolConfiguration(pointSize: 14, weight: .regular)
             notesButton.image = baseImage?.withSymbolConfiguration(config)
             notesButton.imagePosition = .imageOnly
+            notesButton.image?.isTemplate = true
         }
         containerView.addSubview(notesButton)
         self.notesButton = notesButton
@@ -2353,7 +2356,9 @@ class HeaderView: NSView {
         // Theme toggle (right) - single button cycles Cream/Night/Dusk
         themeToggleButton = NSButton(title: "", target: self, action: #selector(themeToggleClicked(_:)))
         themeToggleButton.translatesAutoresizingMaskIntoConstraints = false
-        themeToggleButton.bezelStyle = .texturedRounded
+        // Borderless icon-only button avoids macOS accent (blue) tint.
+        themeToggleButton.bezelStyle = .inline
+        themeToggleButton.isBordered = false
         themeToggleButton.controlSize = .small
         themeToggleButton.setButtonType(.momentaryPushIn)
         themeToggleButton.toolTip = "Cycle theme (Night → Dusk → Cream)"
@@ -2937,6 +2942,10 @@ class FormattingToolbar: NSView {
                 popup.needsDisplay = true
             } else if let button = control as? NSButton {
                 button.contentTintColor = theme.textColor
+                    // Ensure SF Symbols render as template images so `contentTintColor` applies (prevents system accent blue).
+                    if button.image != nil {
+                        button.image?.isTemplate = true
+                    }
                 let currentFontSize = button.font?.pointSize ?? 14
                 let attributes: [NSAttributedString.Key: Any] = [
                     .foregroundColor: theme.textColor,
@@ -4009,12 +4018,22 @@ class OutlineViewController: NSViewController {
 
     private var isOutlineContentsHidden = false
 
-    private var levelColors: [NSColor] = [
-        NSColor(calibratedRed: 0.18, green: 0.33, blue: 0.61, alpha: 1.0), // Part
-        NSColor(calibratedRed: 0.09, green: 0.52, blue: 0.52, alpha: 1.0), // Chapter / H1
-        NSColor(calibratedWhite: 0.2, alpha: 1.0),                         // H2
-        NSColor(calibratedWhite: 0.35, alpha: 1.0)                         // H3+
-    ]
+    private var currentTheme: AppTheme = ThemeManager.shared.currentTheme
+
+    private func titleColor(forLevel level: Int) -> NSColor {
+        // Theme-aware (no green/blue coding). Use subtle alpha changes for hierarchy.
+        let base = currentTheme.textColor
+        switch level {
+        case 0: return base.withAlphaComponent(0.95)
+        case 1: return base.withAlphaComponent(0.90)
+        case 2: return base.withAlphaComponent(0.75)
+        default: return base.withAlphaComponent(0.60)
+        }
+    }
+
+    private func pageColor() -> NSColor {
+        currentTheme.textColor.withAlphaComponent(0.45)
+    }
 
     override func loadView() {
         view = NSView()
@@ -4181,27 +4200,11 @@ class OutlineViewController: NSViewController {
     }
 
     func applyTheme(_ theme: AppTheme) {
+        currentTheme = theme
         view.wantsLayer = true
         view.layer?.backgroundColor = theme.outlineBackground.cgColor
         headerLabel.textColor = theme.textColor
         outlineView.backgroundColor = theme.outlineBackground
-
-        // Update levelColors based on theme (Night uses a lighter-on-dark palette)
-        if theme != .night {
-            levelColors = [
-                NSColor(calibratedRed: 0.18, green: 0.33, blue: 0.61, alpha: 1.0), // Part
-                NSColor(calibratedRed: 0.09, green: 0.52, blue: 0.52, alpha: 1.0), // Chapter / H1
-                NSColor(calibratedWhite: 0.2, alpha: 1.0),                         // H2
-                NSColor(calibratedWhite: 0.35, alpha: 1.0)                         // H3+
-            ]
-        } else {
-            levelColors = [
-                NSColor(calibratedRed: 0.5, green: 0.7, blue: 1.0, alpha: 1.0),    // Part - lighter blue
-                NSColor(calibratedRed: 0.4, green: 0.85, blue: 0.85, alpha: 1.0),  // Chapter / H1 - lighter teal
-                NSColor(calibratedWhite: 0.8, alpha: 1.0),                         // H2
-                NSColor(calibratedWhite: 0.65, alpha: 1.0)                         // H3+
-            ]
-        }
 
         // Reload data to apply new colors
         outlineView.reloadData()
@@ -4214,8 +4217,11 @@ class OutlineViewController: NSViewController {
                 if let view = self.outlineView.view(atColumn: 0, row: row, makeIfNecessary: false) as? NSTableCellView,
                    let titleField = view.textField,
                    let node = self.outlineView.item(atRow: row) as? Node {
-                    let color = self.levelColors[min(node.level, self.levelColors.count - 1)]
-                    titleField.textColor = color
+                    titleField.textColor = self.titleColor(forLevel: node.level)
+                    if let stack = view.subviews.first(where: { $0 is NSStackView }) as? NSStackView,
+                       let pageField = stack.arrangedSubviews.last as? NSTextField {
+                        pageField.textColor = self.pageColor()
+                    }
                 }
             }
         }
@@ -4251,7 +4257,7 @@ extension OutlineViewController: NSOutlineViewDataSource, NSOutlineViewDelegate 
 
             let pageField = NSTextField(labelWithString: "")
             pageField.font = NSFont.systemFont(ofSize: 10)
-            pageField.textColor = NSColor.secondaryLabelColor
+            pageField.textColor = pageColor()
 
             let stack = NSStackView(views: [titleField, NSView(), pageField])
             stack.orientation = .horizontal
@@ -4278,9 +4284,7 @@ extension OutlineViewController: NSOutlineViewDataSource, NSOutlineViewDelegate 
         let titleField = cell.textField!
         let pageField = (cell.subviews.first { $0 is NSStackView } as? NSStackView)?.arrangedSubviews.last as? NSTextField
 
-        // Uncomment the next line to force all outline text to use the theme's text color:
-        // let color = theme.textColor
-        let color = levelColors[min(node.level, levelColors.count - 1)]
+        let color = titleColor(forLevel: node.level)
         let fontSize: CGFloat = node.level == 0 ? 13 : (node.level == 1 ? 12 : 11)
         titleField.font = NSFont.systemFont(ofSize: fontSize, weight: node.level <= 1 ? .semibold : .regular)
         titleField.textColor = color
@@ -4288,6 +4292,7 @@ extension OutlineViewController: NSOutlineViewDataSource, NSOutlineViewDelegate 
 
         if let page = node.page {
             pageField?.stringValue = "p. \(page)"
+            pageField?.textColor = pageColor()
         } else {
             pageField?.stringValue = ""
         }

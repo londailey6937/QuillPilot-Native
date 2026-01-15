@@ -3546,7 +3546,7 @@ class EditorViewController: NSViewController {
         let styledByCatalog = applyCatalogStyle(named: styleName)
         if styledByCatalog {
             if styleName == "Book Title" || styleName == "Poem Title" || styleName == "Poetry — Title" {
-                if let range = textView.selectedRanges.first as? NSRange, range.length == 0 {
+                if let range = textView.selectedRanges.first?.rangeValue, range.length == 0 {
                     let paragraphRange = (textView.string as NSString).paragraphRange(for: range)
                     let titleText = (textView.string as NSString).substring(with: paragraphRange).trimmingCharacters(in: .whitespacesAndNewlines)
                     if !titleText.isEmpty {
@@ -3556,7 +3556,7 @@ class EditorViewController: NSViewController {
             }
 
             if styleName == "Author Name" || styleName == "Poetry — Author" || styleName == "Poet Name" {
-                if let range = textView.selectedRanges.first as? NSRange, range.length == 0 {
+                if let range = textView.selectedRanges.first?.rangeValue, range.length == 0 {
                     let paragraphRange = (textView.string as NSString).paragraphRange(for: range)
                     let authorText = (textView.string as NSString).substring(with: paragraphRange).trimmingCharacters(in: .whitespacesAndNewlines)
                     if !authorText.isEmpty {
@@ -3584,7 +3584,7 @@ class EditorViewController: NSViewController {
             }
 
             // Sync title to header
-            if let range = textView.selectedRanges.first as? NSRange, range.length == 0 {
+            if let range = textView.selectedRanges.first?.rangeValue, range.length == 0 {
                 let paragraphRange = (textView.string as NSString).paragraphRange(for: range)
                 let titleText = (textView.string as NSString).substring(with: paragraphRange).trimmingCharacters(in: .whitespacesAndNewlines)
                 if !titleText.isEmpty {
@@ -4120,7 +4120,7 @@ case "Book Subtitle":
     private func applyStyleAttribute(_ styleName: String) {
         textView.typingAttributes[styleAttributeKey] = styleName
 
-        if let selected = textView.selectedRanges.first as? NSRange {
+        if let selected = textView.selectedRanges.first?.rangeValue {
             let paragraphRange = (textView.string as NSString).paragraphRange(for: selected)
             performUndoableTextStorageEdit(in: paragraphRange, actionName: "Apply Style") { storage in
                 storage.addAttribute(styleAttributeKey, value: styleName, range: paragraphRange)
@@ -4130,7 +4130,7 @@ case "Book Subtitle":
 
     func getCurrentStyleName() -> String? {
         guard let storage = textView.textStorage,
-              let selected = textView.selectedRanges.first as? NSRange else {
+                            let selected = textView.selectedRanges.first?.rangeValue else {
             return nil
         }
 
@@ -6529,8 +6529,8 @@ extension EditorViewController: NSTextViewDelegate {
     }
 
     private func checkAndUpdateTitle() {
-        guard let textStorage = textView?.textStorage,
-              let selectedRange = textView?.selectedRanges.first as? NSRange else {
+          guard let textStorage = textView?.textStorage,
+              let selectedRange = textView?.selectedRanges.first?.rangeValue else {
             return
         }
 

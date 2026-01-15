@@ -730,6 +730,73 @@ class AnalysisEngine {
     ) -> PoetryInsights.WritersAnalysis {
         let stop = poetryStopwords
 
+        enum PoetryFormContext {
+            case stanzaicNarrativeBalladLike
+            case stanzaicLyric
+            case freeVerseOrOpenForm
+            case mixedOrUnclear
+        }
+
+        func isABABOrABCBQuatrain(_ scheme: String) -> Bool {
+            guard scheme.count == 4 else { return false }
+            let chars = Array(scheme)
+            // Treat "-" (unknown rhyme key) as non-matching.
+            if chars.contains("-") { return false }
+
+            // ABAB: 1=3 and 2=4, and A != B
+            if chars[0] == chars[2] && chars[1] == chars[3] && chars[0] != chars[1] { return true }
+
+            // ABCB: 2=4, and 1 != 2, 3 != 2
+            if chars[1] == chars[3] && chars[0] != chars[1] && chars[2] != chars[1] { return true }
+
+            return false
+        }
+
+        func inferFormContext(
+            mode: PoetryInsights.PoetryMode,
+            stanzas: [[String]],
+            formal: PoetryInsights.FormalTechnical
+        ) -> (context: PoetryFormContext, note: String?) {
+            guard !stanzas.isEmpty else { return (.mixedOrUnclear, nil) }
+
+            let stanzaCount = stanzas.count
+            let counts = stanzas.map { $0.count }
+            let quatrains = counts.filter { $0 == 4 }.count
+            let sextets = counts.filter { $0 == 6 }.count
+            let stanzaicRatio = Double(quatrains + sextets) / Double(stanzaCount)
+
+            let quatrainSchemes = formal.rhymeSchemeByStanza.filter { $0.count == 4 }
+            let balladQuatrains = quatrainSchemes.filter(isABABOrABCBQuatrain).count
+            let balladQuatrainRatio = quatrainSchemes.isEmpty ? 0.0 : Double(balladQuatrains) / Double(quatrainSchemes.count)
+
+            // Heuristic: long + mostly stanzaic + some alternating-rhyme quatrains => ballad-like narrative.
+            let isLong = formal.lineCount >= 80 || formal.stanzaCount >= 10
+            if isLong && stanzaicRatio >= 0.60 && (mode == .narrative || mode == .hybrid) && balladQuatrainRatio >= 0.25 {
+                return (
+                    .stanzaicNarrativeBalladLike,
+                    "Form context: likely stanzaic narrative (ballad-like). Many line-ending stats (enjambment/hard-stops) are partly explained by quatrain/sextet structure—interpret them as constraints before choices."
+                )
+            }
+
+            // Stanzaic but not clearly narrative.
+            if stanzaicRatio >= 0.60 {
+                return (
+                    .stanzaicLyric,
+                    "Form context: stanzaic structure detected. Some metrics (enjambment/hard-stops) will skew toward closure because stanzas create regular landing pads."
+                )
+            }
+
+            // Open form proxy: no consistent stanzaic block + higher enjambment.
+            if formal.stanzaCount <= 2 || formal.enjambmentRate >= 0.55 {
+                return (
+                    .freeVerseOrOpenForm,
+                    "Form context: open-form / free-verse leaning. Line breaks are doing more semantic work here, so enjambment cues are more likely to be stylistic choices."
+                )
+            }
+
+            return (.mixedOrUnclear, nil)
+        }
+
         func formatCounted(_ items: ArraySlice<PoetryInsights.CountedItem>, limit: Int) -> String {
             items.prefix(limit).map { "\($0.text) (\($0.count)×)" }.joined(separator: ", ")
         }
@@ -738,6 +805,9 @@ class AnalysisEngine {
 
         // --- Mode classification (very lightweight heuristic)
         let modeResult = classifyPoetryMode(lines: lines, tokensByLine: tokensByLine)
+
+        // --- Form context (helps avoid over-interpreting metrics that are form-driven)
+        let formContext = inferFormContext(mode: modeResult.mode, stanzas: stanzas, formal: formal)
 
         // --- Line ending behavior
         var openBreaks = 0
@@ -797,10 +867,20 @@ class AnalysisEngine {
 
         // --- Pressure Points
         var pressure: [String] = []
+
+        if let note = formContext.note {
+            pressure.append(note)
+        }
+
         if formal.enjambmentRate >= 0.6 {
             pressure.append("High enjambment (\(pct(formal.enjambmentRate))): the poem delays closure; use this to carry tension without explaining it.")
         } else if formal.enjambmentRate <= 0.3 {
-            pressure.append("Low enjambment (\(pct(formal.enjambmentRate))): lines land cleanly; use the occasional run-on line as a deliberate breach.")
+            switch formContext.context {
+            case .stanzaicNarrativeBalladLike, .stanzaicLyric:
+                pressure.append("Low enjambment (\(pct(formal.enjambmentRate))): expected in stanzaic forms where rhyme and cadence reward clean landings. If you want extra propulsion, use a few strategic run-on lines—but treat it as a pacing tool, not a rule-break for its own sake.")
+            default:
+                pressure.append("Low enjambment (\(pct(formal.enjambmentRate))): lines land cleanly. If you want a spike of forward-leaning pressure, try a few deliberate run-on lines (and notice how that changes breath and urgency).")
+            }
         } else {
             pressure.append("Mixed closure (enjambment \(pct(formal.enjambmentRate))): you can control when the reader is allowed to " +
                             "know something by tightening or loosening line endings.")
@@ -819,7 +899,12 @@ class AnalysisEngine {
 
         if !formal.notableAnaphora.isEmpty {
             let top = formatCounted(formal.notableAnaphora.prefix(2), limit: 2)
-            pressure.append("You establish a rule early (anaphora): \(top). Consider breaking it once for emphasis.")
+            switch formContext.context {
+            case .stanzaicNarrativeBalladLike:
+                pressure.append("Refrain/anaphora signal: \(top). In ballad-like narration, repetition is often the engine (memory, inevitability, moral insistence). If you want emphasis, vary the refrain slightly at the turning point rather than fully breaking it.")
+            default:
+                pressure.append("You establish a rule early (anaphora): \(top). Consider varying it once for emphasis.")
+            }
         }
 
         // --- Line Energy
@@ -832,7 +917,12 @@ class AnalysisEngine {
             lineEnergy.append("Questions (\(questionEndings)) inject uncertainty—good for pressure without plot.")
         }
         if let volta = voice.candidateVoltaLine {
-            lineEnergy.append("Candidate turn: line \(volta). If you want a pivot, tighten syntax right before it, then break pattern at the turn.")
+            switch formContext.context {
+            case .stanzaicNarrativeBalladLike:
+                lineEnergy.append("Candidate turn: line \(volta). In stanzaic narrative, a turn often lands at a stanza boundary or on a repeated line—consider marking it with a refrained phrase, a tonal gear-shift, or a suddenly plainer sentence.")
+            default:
+                lineEnergy.append("Candidate turn: line \(volta). If you want a pivot, tighten syntax right before it, then break pattern at the turn.")
+            }
         }
 
         // --- Image Logic
@@ -858,6 +948,10 @@ class AnalysisEngine {
         // --- Voice Management
         var voiceMgmt: [String] = []
         voiceMgmt.append("Address mode: \(voice.likelyAddressMode). Pronouns (1st/2nd/3rd): \(voice.firstPersonPronouns)/\(voice.secondPersonPronouns)/\(voice.thirdPersonPronouns).")
+        if formContext.context == .stanzaicNarrativeBalladLike {
+            voiceMgmt.append("Note: framed/narrative address is common in ballad-like poems (a speaker tells an event to a listener). Pronoun counts alone can mislabel this as " +
+                             "\"lyric reflection\"—treat this as a delivery stance, not a persona diagnosis.")
+        }
         if !voice.modality.isEmpty {
             let items = formatCounted(voice.modality.prefix(4), limit: 4)
             voiceMgmt.append("Modality pressure (must/should/never/etc.): \(items). Use certainty to create authority—or remove it to create vulnerability.")
@@ -882,6 +976,10 @@ class AnalysisEngine {
         }
 
         var emotionalArc: [String] = []
+
+        if modeResult.mode == .narrative || formContext.context == .stanzaicNarrativeBalladLike {
+            emotionalArc.append("Affect curve is a lexical estimate (word-based). In narrative poems it often tracks event intensity or moral dread more than a speaker’s interior mood—use it as instrumentation, not a critical verdict.")
+        }
 
         let isLong = lines.count >= 80 || stanzas.count >= 10
         if isLong, !emotion.stanzaScores.isEmpty {
@@ -929,7 +1027,12 @@ class AnalysisEngine {
         if expositionCount <= 1 {
             compression.append("Low explanation markers: the poem relies on implication more than reasoning.")
         } else {
-            compression.append("Explanation markers detected (\(expositionCount))—if the poem feels over-explained, try deleting one causal bridge.")
+            switch formContext.context {
+            case .stanzaicNarrativeBalladLike:
+                compression.append("Explanation markers detected (\(expositionCount)). In ballad/parable modes, explicit causality and reiteration can be part of the ethic (moral insistence). If it drags, try compressing one explanatory aside or moving explanation into a repeated line—avoid removing clarity that’s doing thematic work.")
+            default:
+                compression.append("Explanation markers detected (\(expositionCount))—if the poem feels over-explained, try compressing one causal bridge (keep the logic, reduce the connective tissue).")
+            }
         }
         let avgLineLen = formal.averageLineLength
         if avgLineLen > 0 {
@@ -1076,6 +1179,11 @@ class AnalysisEngine {
         let second: Set<String> = ["you", "your", "yours", "yourself"]
         let third: Set<String> = ["he", "him", "his", "she", "her", "hers", "they", "them", "their", "theirs"]
 
+        let narrativeVerbs: Set<String> = [
+            "said", "say", "told", "tell", "asked", "ask", "went", "go", "came", "come", "took", "take", "made", "make",
+            "saw", "see", "heard", "hear", "did", "do", "had", "have", "was", "were", "fell", "fall", "rose", "rise"
+        ]
+
         let hedgeWords: Set<String> = ["maybe", "perhaps", "seems", "seemed", "almost", "nearly", "kind", "sort", "possibly"]
         let modalityWords: Set<String> = ["must", "should", "ought", "need", "can't", "cannot", "won't", "never", "always"]
         let voltaCues: Set<String> = ["but", "yet", "however", "though", "although", "instead", "still", "then", "so", "therefore"]
@@ -1088,11 +1196,14 @@ class AnalysisEngine {
         var hedges: [String: Int] = [:]
         var modality: [String: Int] = [:]
         var candidateVoltaLine: Int? = nil
+        var narrativeVerbHits = 0
+        var quoteishLines = 0
 
         for (idx, line) in lines.enumerated() {
             let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
             if trimmed.hasSuffix("?") { questions += 1 }
             if trimmed.hasSuffix("!") { exclamations += 1 }
+            if trimmed.contains("\"") || trimmed.contains("“") || trimmed.contains("”") { quoteishLines += 1 }
 
             let tokens = tokensByLine[idx]
             for t in tokens {
@@ -1101,6 +1212,7 @@ class AnalysisEngine {
                 if third.contains(t) { thirdCount += 1 }
                 if hedgeWords.contains(t) { hedges[t, default: 0] += 1 }
                 if modalityWords.contains(t) { modality[t, default: 0] += 1 }
+                if narrativeVerbs.contains(t) { narrativeVerbHits += 1 }
             }
             if candidateVoltaLine == nil {
                 if tokens.contains(where: { voltaCues.contains($0) }) {
@@ -1115,8 +1227,10 @@ class AnalysisEngine {
         let likelyMode: String
         if secondCount > firstCount && secondCount > 0 {
             likelyMode = "Address (speaker → you)"
+        } else if thirdCount > max(firstCount, secondCount) && (narrativeVerbHits >= 6 || quoteishLines >= 2) {
+            likelyMode = "Narrative / storytelling voice (speaker → scene)"
         } else if firstCount > 0 {
-            likelyMode = "Lyric reflection (speaker-centered)"
+            likelyMode = "First-person stance (speaker-centered)"
         } else {
             likelyMode = "Observational / descriptive"
         }

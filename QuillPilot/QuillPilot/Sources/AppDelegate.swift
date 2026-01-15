@@ -29,10 +29,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var aboutWindow: NSWindow?
     private var welcomeWindow: WelcomeWindowController?
     private var recentlyOpenedMenu: NSMenu?
+    private var viewMenu: NSMenu?
+    private var windowMenu: NSMenu?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         setupMenuBar()
         NSApp.setActivationPolicy(.regular)
+
+        // Disable window tabbing and its automatically-inserted View menu items.
+        NSWindow.allowsAutomaticWindowTabbing = false
 
         // Some systems can re-apply the process/bundle name after menu setup.
         // Re-assert branding a couple of times to ensure consistency.
@@ -54,6 +59,29 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         // Show welcome screen on launch
         showWelcomeWindow()
+    }
+
+    private func pruneAutomaticTabBarMenuItems() {
+        guard let viewMenu = self.viewMenu else { return }
+
+        let tabSelectors: Set<Selector> = [
+            #selector(NSWindow.toggleTabBar(_:)),
+            NSSelectorFromString("toggleTabOverview:"),
+            NSSelectorFromString("showTabBar:"),
+            NSSelectorFromString("hideTabBar:")
+        ]
+
+        // Remove by selector or by title match (covers AppKit variations).
+        for item in viewMenu.items.reversed() {
+            if let action = item.action, tabSelectors.contains(action) {
+                viewMenu.removeItem(item)
+                continue
+            }
+            if item.title.localizedCaseInsensitiveContains("tab bar") {
+                viewMenu.removeItem(item)
+                continue
+            }
+        }
     }
 
     private func showWelcomeWindow() {
@@ -256,6 +284,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc private func showSpellingAndGrammar(_ sender: Any?) {
         _ = NSApp.sendAction(#selector(NSTextView.showGuessPanel(_:)), to: nil, from: sender)
+
+        // Best-effort theming of the system spelling panel to match other utility windows.
+        DispatchQueue.main.async {
+            let isDarkMode = ThemeManager.shared.isDarkMode
+            let theme = ThemeManager.shared.currentTheme
+            let panel = NSSpellChecker.shared.spellingPanel
+            panel.appearance = NSAppearance(named: isDarkMode ? .darkAqua : .aqua)
+            panel.backgroundColor = theme.pageAround
+            panel.collectionBehavior = [.moveToActiveSpace, .fullScreenAuxiliary]
+        }
     }
 
     @objc private func applyDropCap(_ sender: Any?) {
@@ -513,6 +551,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         mainMenu.addItem(viewMenuItem)
         let viewMenu = NSMenu(title: "View")
         viewMenuItem.submenu = viewMenu
+        self.viewMenu = viewMenu
+        viewMenu.delegate = self
 
         let toggleRulerItem = NSMenuItem(title: "Hide Ruler", action: #selector(toggleRulerVisibility(_:)), keyEquivalent: "r")
         toggleRulerItem.keyEquivalentModifierMask = [.command]
@@ -532,13 +572,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         viewMenu.addItem(.separator())
 
-        let analyzeNowItem = NSMenuItem(title: "Analyze Document Now", action: #selector(analyzeDocumentNow(_:)), keyEquivalent: "a")
-        analyzeNowItem.keyEquivalentModifierMask = [.command, .shift]
-        analyzeNowItem.target = self
-        viewMenu.addItem(analyzeNowItem)
-
-        viewMenu.addItem(.separator())
-
         let autoAnalyzeOpenItem = NSMenuItem(title: "Auto-Analyze on Open", action: #selector(toggleAutoAnalyzeOnOpen(_:)), keyEquivalent: "")
         autoAnalyzeOpenItem.target = self
         viewMenu.addItem(autoAnalyzeOpenItem)
@@ -553,6 +586,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         let windowMenu = NSMenu(title: "Window")
         windowMenuItem.submenu = windowMenu
+        self.windowMenu = windowMenu
 
         windowMenu.addItem(NSMenuItem(title: "Minimize", action: #selector(NSWindow.miniaturize(_:)), keyEquivalent: "m"))
         windowMenu.addItem(NSMenuItem(title: "Zoom", action: #selector(NSWindow.zoom(_:)), keyEquivalent: ""))
@@ -574,6 +608,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         enforceBrandedAppMenuTitle()
         NSApp.windowsMenu = windowMenu
         NSApp.helpMenu = helpMenu
+
+        // AppKit can insert "Show/Hide Tab Bar" automatically; prune it after the menu is installed.
+        DispatchQueue.main.async { [weak self] in
+            self?.pruneAutomaticTabBarMenuItems()
+        }
     }
 
     private func enforceBrandedAppMenuTitle() {
@@ -587,6 +626,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         preferencesWindow?.showWindow(nil)
         preferencesWindow?.window?.makeKeyAndOrderFront(nil)
+        preferencesWindow?.window?.collectionBehavior = [.moveToActiveSpace, .fullScreenAuxiliary]
         NSApp.activate(ignoringOtherApps: true)
     }
 
@@ -642,6 +682,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         documentationWindow?.showWindow(nil)
         documentationWindow?.window?.makeKeyAndOrderFront(nil)
+        documentationWindow?.window?.collectionBehavior = [.moveToActiveSpace, .fullScreenAuxiliary]
+        documentationWindow?.window?.isExcludedFromWindowsMenu = false
+        NSApp.activate(ignoringOtherApps: true)
     }
 
     @objc private func showAboutWindow(_ sender: Any?) {
@@ -799,6 +842,11 @@ extension AppDelegate: NSMenuItemValidation {
 // MARK: - Recently Opened Menu
 extension AppDelegate: NSMenuDelegate {
     func menuNeedsUpdate(_ menu: NSMenu) {
+        if menu == viewMenu {
+            pruneAutomaticTabBarMenuItems()
+            return
+        }
+
         guard menu == recentlyOpenedMenu else { return }
 
         menu.removeAllItems()

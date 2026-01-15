@@ -316,7 +316,15 @@ class MainWindowController: NSWindowController {
         // Update page info before showing
         searchPanel?.updatePageInfoBeforeShow()
         searchPanel?.showWindow(nil)
-        searchPanel?.window?.makeKeyAndOrderFront(nil)
+        if let parent = window, let child = searchPanel?.window {
+            let alreadyChild = parent.childWindows?.contains(child) ?? false
+            if !alreadyChild {
+                parent.addChildWindow(child, ordered: .above)
+            }
+            child.makeKeyAndOrderFront(nil)
+        } else {
+            searchPanel?.window?.makeKeyAndOrderFront(nil)
+        }
         // Ensure window becomes key to accept input immediately
         searchPanel?.window?.makeFirstResponder(searchPanel?.window?.contentView)
     }
@@ -425,7 +433,17 @@ class MainWindowController: NSWindowController {
             self?.headerFooterSettingsWindow = nil
         }
 
-        settingsWindow.window?.makeKeyAndOrderFront(nil)
+        settingsWindow.showWindow(nil)
+        if let parent = window, let child = settingsWindow.window {
+            let alreadyChild = parent.childWindows?.contains(child) ?? false
+            if !alreadyChild {
+                parent.addChildWindow(child, ordered: .above)
+            }
+            child.makeKeyAndOrderFront(nil)
+        } else {
+            settingsWindow.window?.makeKeyAndOrderFront(nil)
+        }
+
         NSApp.activate(ignoringOtherApps: true)
     }
 

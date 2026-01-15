@@ -325,7 +325,15 @@ final class SceneListWindowController: NSWindowController {
         }
 
         inspectorWindow?.showWindow(nil)
-        inspectorWindow?.window?.makeKeyAndOrderFront(nil)
+        if let parent = window, let child = inspectorWindow?.window {
+            let alreadyChild = parent.childWindows?.contains(child) ?? false
+            if !alreadyChild {
+                parent.addChildWindow(child, ordered: .above)
+            }
+            child.makeKeyAndOrderFront(nil)
+        } else {
+            inspectorWindow?.window?.makeKeyAndOrderFront(nil)
+        }
     }
 
     @objc private func doubleClickScene() {

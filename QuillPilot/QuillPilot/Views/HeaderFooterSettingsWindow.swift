@@ -8,7 +8,7 @@
 
 import Cocoa
 
-class HeaderFooterSettingsWindow: NSWindowController {
+class HeaderFooterSettingsWindow: NSWindowController, NSWindowDelegate {
 
     private var showHeadersCheckbox: NSButton!
     private var showFootersCheckbox: NSButton!
@@ -20,6 +20,10 @@ class HeaderFooterSettingsWindow: NSWindowController {
     private var headerRightTextField: NSTextField!
     private var footerLeftTextField: NSTextField!
     private var footerRightTextField: NSTextField!
+
+    private var themedLabels: [NSTextField] = []
+    private var infoLabel: NSTextField?
+    private var didApplyOrCancel = false
 
     /// onApply(showHeaders, showFooters, showPageNumbers, hideFirstPageNumber, centerPageNumbers, headerLeftText, headerRightText, footerLeftText, footerRightText)
     var onApply: ((Bool, Bool, Bool, Bool, Bool, String, String, String, String) -> Void)?
@@ -35,12 +39,13 @@ class HeaderFooterSettingsWindow: NSWindowController {
         window.title = "Header & Footer Settings"
         window.center()
 
-        // Apply theme
-        let isDarkMode = ThemeManager.shared.isDarkMode
-        window.appearance = NSAppearance(named: isDarkMode ? .darkAqua : .aqua)
+        window.isReleasedWhenClosed = false
+        window.collectionBehavior = [.moveToActiveSpace, .fullScreenAuxiliary]
 
         self.init(window: window)
+        window.delegate = self
         setupUI()
+        applyTheme()
 
         // Observe theme changes
         NotificationCenter.default.addObserver(
@@ -51,8 +56,24 @@ class HeaderFooterSettingsWindow: NSWindowController {
         )
     }
 
+    private func applyTheme() {
+        guard let window = window else { return }
+        let theme = ThemeManager.shared.currentTheme
+        let isDarkMode = ThemeManager.shared.isDarkMode
+
+        window.appearance = NSAppearance(named: isDarkMode ? .darkAqua : .aqua)
+        window.backgroundColor = theme.pageAround
+        window.contentView?.wantsLayer = true
+        window.contentView?.layer?.backgroundColor = theme.pageAround.cgColor
+
+        themedLabels.forEach { $0.textColor = theme.textColor }
+        infoLabel?.textColor = theme.textColor.withAlphaComponent(0.7)
+    }
+
     private func setupUI() {
         guard let contentView = window?.contentView else { return }
+
+        contentView.wantsLayer = true
 
         // Show Headers checkbox
         showHeadersCheckbox = NSButton(checkboxWithTitle: "Show Headers", target: self, action: #selector(checkboxChanged))
@@ -64,6 +85,7 @@ class HeaderFooterSettingsWindow: NSWindowController {
         let headerLeftLabel = NSTextField(labelWithString: "Header Left:")
         headerLeftLabel.translatesAutoresizingMaskIntoConstraints = false
         contentView.addSubview(headerLeftLabel)
+        themedLabels.append(headerLeftLabel)
 
         headerLeftTextField = NSTextField()
         headerLeftTextField.placeholderString = "Left header text (optional)"
@@ -73,6 +95,7 @@ class HeaderFooterSettingsWindow: NSWindowController {
         let headerRightLabel = NSTextField(labelWithString: "Header Right:")
         headerRightLabel.translatesAutoresizingMaskIntoConstraints = false
         contentView.addSubview(headerRightLabel)
+        themedLabels.append(headerRightLabel)
 
         headerRightTextField = NSTextField()
         headerRightTextField.placeholderString = "Right header text (optional)"
@@ -89,6 +112,7 @@ class HeaderFooterSettingsWindow: NSWindowController {
         let footerLeftLabel = NSTextField(labelWithString: "Footer Left:")
         footerLeftLabel.translatesAutoresizingMaskIntoConstraints = false
         contentView.addSubview(footerLeftLabel)
+        themedLabels.append(footerLeftLabel)
 
         footerLeftTextField = NSTextField()
         footerLeftTextField.placeholderString = "Left footer text (optional)"
@@ -98,6 +122,7 @@ class HeaderFooterSettingsWindow: NSWindowController {
         let footerRightLabel = NSTextField(labelWithString: "Footer Right:")
         footerRightLabel.translatesAutoresizingMaskIntoConstraints = false
         contentView.addSubview(footerRightLabel)
+        themedLabels.append(footerRightLabel)
 
         footerRightTextField = NSTextField()
         footerRightTextField.placeholderString = "Right footer text (optional)"
@@ -120,6 +145,7 @@ class HeaderFooterSettingsWindow: NSWindowController {
         pageNumberPositionLabel = NSTextField(labelWithString: "Page Number Position:")
         pageNumberPositionLabel.translatesAutoresizingMaskIntoConstraints = false
         contentView.addSubview(pageNumberPositionLabel)
+        themedLabels.append(pageNumberPositionLabel)
 
         pageNumberPositionControl = NSSegmentedControl(labels: ["Right", "Center"], trackingMode: .selectOne, target: self, action: #selector(checkboxChanged))
         pageNumberPositionControl.selectedSegment = 0
@@ -132,6 +158,7 @@ class HeaderFooterSettingsWindow: NSWindowController {
         infoLabel.textColor = .secondaryLabelColor
         infoLabel.translatesAutoresizingMaskIntoConstraints = false
         contentView.addSubview(infoLabel)
+        self.infoLabel = infoLabel
 
         // Buttons
         let applyButton = NSButton()
@@ -248,6 +275,7 @@ class HeaderFooterSettingsWindow: NSWindowController {
     }
 
     @objc private func applySettings() {
+        didApplyOrCancel = true
         onApply?(
             showHeadersCheckbox.state == .on,
             showFootersCheckbox.state == .on,
@@ -263,13 +291,20 @@ class HeaderFooterSettingsWindow: NSWindowController {
     }
 
     @objc private func cancel() {
+        didApplyOrCancel = true
         onCancel?()
         window?.close()
     }
 
     @objc private func themeDidChange() {
-        let isDarkMode = ThemeManager.shared.isDarkMode
-        window?.appearance = NSAppearance(named: isDarkMode ? .darkAqua : .aqua)
+        applyTheme()
+    }
+
+    func windowWillClose(_ notification: Notification) {
+        // Ensure close button behaves like Cancel for cleanup.
+        if !didApplyOrCancel {
+            onCancel?()
+        }
     }
 
     deinit {

@@ -1228,6 +1228,10 @@ For sharing, collaboration, or cross-platform editing, exporting is often better
 ⌘E - Center text
 ⌘{ - Decrease indent
 ⌘} - Increase indent
+
+Format menu:
+• Typography: Drop Cap, Old-Style Numerals, Optical Kerning
+• Lists: Bulleted List, Numbered List, Restart Numbering
 """, color: bodyColor))
         content.append(makeNewline())
 
@@ -1241,9 +1245,21 @@ Automatic Features:
 • Smart Dashes - Converts double/triple hyphens to en/em dashes
 
 Format > Typography Menu:
-• Apply Drop Cap - Create a decorative large initial letter (3 lines tall)
-• Use Old-Style Numerals - Enable elegant lowercase-style numbers (OpenType)
-• Apply Optical Kerning - Adjust letter spacing for better visual balance
+• Apply Drop Cap - Creates a decorative large initial letter (3 lines tall)
+        How to use: Place the cursor anywhere in the paragraph you want to affect, then choose Apply Drop Cap.
+        Undo: ⌘Z immediately removes it.
+
+• Use Old-Style Numerals - Enables old-style (lowercase-style) numerals via OpenType features
+        How to use: Select text containing numbers (recommended) then choose Use Old-Style Numerals.
+        If nothing is selected, it applies to the current paragraph.
+        Note: Some fonts don’t include old-style numerals, so the result can look identical.
+        Undo: ⌘Z.
+
+• Apply Optical Kerning - Uses font kerning features for better visual spacing
+        How to use: Select a word/sentence (recommended) then choose Apply Optical Kerning.
+        If nothing is selected, it applies to the current paragraph.
+        Note: Optical kerning is subtle and font-dependent; it’s easiest to see at larger font sizes.
+        Undo: ⌘Z.
 
 These features work best with professional fonts like Times New Roman, Georgia, Baskerville, Garamond, Palatino, and Hoefler Text.
 """, color: bodyColor))
@@ -1318,7 +1334,7 @@ General Notes:
 
         content.append(makeHeading("🧠 Analysis", color: headingColor))
         content.append(makeBody("""
-⌘⇧A - Analyze document now
+Analyze features are available from the analysis panel.
 
 Tip: Auto-analyze behavior can be configured in Preferences.
 """, color: bodyColor))

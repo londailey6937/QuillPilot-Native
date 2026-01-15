@@ -434,6 +434,8 @@ class TOCIndexWindowController: NSWindowController, NSWindowDelegate, NSOutlineV
     private var currentPageFormat: PageNumberFormat = .arabic
     private var insertPageBreak: Bool = true
 
+    private weak var windowMenuItem: NSMenuItem?
+
     private func resolveDocumentFont(from textView: NSTextView) -> NSFont {
         // FIRST PRIORITY: Query StyleCatalog for TOC Entry or Body Text style
         // This ensures we use the template's font family
@@ -504,6 +506,8 @@ class TOCIndexWindowController: NSWindowController, NSWindowDelegate, NSOutlineV
         panel.isFloatingPanel = false
         panel.becomesKeyOnlyIfNeeded = true
         panel.hidesOnDeactivate = false
+        panel.isExcludedFromWindowsMenu = false
+        panel.collectionBehavior = [.moveToActiveSpace, .fullScreenAuxiliary]
 
         self.init(window: panel)
 
@@ -511,10 +515,13 @@ class TOCIndexWindowController: NSWindowController, NSWindowDelegate, NSOutlineV
         setupUI()
         applyTheme()
 
+        registerInWindowMenuIfNeeded()
+
         NotificationCenter.default.addObserver(self, selector: #selector(themeDidChange), name: .themeDidChange, object: nil)
     }
 
     deinit {
+        unregisterFromWindowMenu()
         NotificationCenter.default.removeObserver(self)
     }
 
@@ -739,6 +746,47 @@ class TOCIndexWindowController: NSWindowController, NSWindowDelegate, NSOutlineV
     }
 
     // MARK: - NSWindowDelegate
+
+    func windowDidBecomeKey(_ notification: Notification) {
+        registerInWindowMenuIfNeeded()
+    }
+
+    func windowWillClose(_ notification: Notification) {
+        unregisterFromWindowMenu()
+    }
+
+    private func registerInWindowMenuIfNeeded() {
+        guard let window = window else { return }
+        guard let menu = NSApp.windowsMenu else { return }
+
+        if let existing = windowMenuItem {
+            existing.title = window.title
+            return
+        }
+
+        let item = NSMenuItem(title: window.title, action: #selector(bringWindowToFrontFromMenu(_:)), keyEquivalent: "")
+        item.target = self
+
+        // Insert just above "Bring All to Front" if present, otherwise append.
+        if let idx = menu.items.firstIndex(where: { $0.action == #selector(NSApplication.arrangeInFront(_:)) }) {
+            menu.insertItem(item, at: idx)
+        } else {
+            menu.addItem(item)
+        }
+
+        windowMenuItem = item
+    }
+
+    private func unregisterFromWindowMenu() {
+        guard let item = windowMenuItem else { return }
+        NSApp.windowsMenu?.removeItem(item)
+        windowMenuItem = nil
+    }
+
+    @objc private func bringWindowToFrontFromMenu(_ sender: Any?) {
+        window?.makeKeyAndOrderFront(nil)
+        NSApp.activate(ignoringOtherApps: true)
+    }
 
     func windowDidResignKey(_ notification: Notification) {
         resetIndexGoToState()

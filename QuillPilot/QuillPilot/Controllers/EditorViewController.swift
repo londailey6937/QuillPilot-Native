@@ -7,6 +7,7 @@
 //
 
 import Cocoa
+import CoreText
 import ImageIO
 
 private final class AttachmentClickableTextView: NSTextView {
@@ -4272,11 +4273,110 @@ case "Book Subtitle":
         textView.isAutomaticTextReplacementEnabled = true
     }
 
+    private func effectiveSelectionOrParagraphRange() -> NSRange? {
+        guard let storage = textView.textStorage, storage.length > 0 else { return nil }
+
+        let selected = textView.selectedRange()
+        if selected.location != NSNotFound, selected.length > 0 {
+            return NSRange(location: selected.location, length: min(selected.length, storage.length - selected.location))
+        }
+
+        let paragraph = (textView.string as NSString).paragraphRange(for: selected)
+        guard paragraph.location != NSNotFound, paragraph.length > 0 else { return nil }
+        return NSRange(location: paragraph.location, length: min(paragraph.length, storage.length - paragraph.location))
+    }
+
+    private func registerAttributedUndo(for range: NSRange, before: NSAttributedString, actionName: String) {
+        guard let undoManager = textView.undoManager else { return }
+
+        undoManager.registerUndo(withTarget: self) { target in
+            guard let storage = target.textView.textStorage else { return }
+            storage.beginEditing()
+            storage.replaceCharacters(in: range, with: before)
+            storage.endEditing()
+            target.textView.didChangeText()
+        }
+        undoManager.setActionName(actionName)
+    }
+
+    private func fontByAddingFeature(_ font: NSFont, typeIdentifier: Int, selectorIdentifier: Int) -> NSFont {
+        var features = font.fontDescriptor.object(forKey: .featureSettings) as? [[NSFontDescriptor.FeatureKey: Int]] ?? []
+
+        // Remove any existing entry for this feature type to avoid duplicates.
+        features.removeAll(where: { $0[.typeIdentifier] == typeIdentifier })
+        features.append([
+            .typeIdentifier: typeIdentifier,
+            .selectorIdentifier: selectorIdentifier
+        ])
+
+        let descriptor = font.fontDescriptor.addingAttributes([.featureSettings: features])
+        return NSFont(descriptor: descriptor, size: font.pointSize) ?? font
+    }
+
+    private func bestKerningFeature(for font: NSFont) -> (typeIdentifier: Int, selectorIdentifier: Int)? {
+        // Prefer Optical Kerning when available; otherwise fall back to any explicit Kerning "On" selector.
+        guard let raw = CTFontCopyFeatures(font as CTFont) as? [[CFString: Any]] else { return nil }
+
+        func intValue(_ any: Any?) -> Int? {
+            if let i = any as? Int { return i }
+            if let n = any as? NSNumber { return n.intValue }
+            return nil
+        }
+
+        for feature in raw {
+            let typeName = (feature[kCTFontFeatureTypeNameKey] as? String) ?? ""
+            let typeId = intValue(feature[kCTFontFeatureTypeIdentifierKey])
+
+            let isKerningType = typeName.localizedCaseInsensitiveContains("kern") || typeName.localizedCaseInsensitiveContains("kerning")
+            guard isKerningType, let typeIdentifier = typeId else { continue }
+
+            let selectors = feature[kCTFontFeatureTypeSelectorsKey] as? [[CFString: Any]] ?? []
+
+            var optical: Int?
+            var on: Int?
+
+            for selector in selectors {
+                let selectorName = (selector[kCTFontFeatureSelectorNameKey] as? String) ?? ""
+                let selectorId = intValue(selector[kCTFontFeatureSelectorIdentifierKey])
+                guard let selectorIdentifier = selectorId else { continue }
+
+                if selectorName.localizedCaseInsensitiveContains("optical") {
+                    optical = selectorIdentifier
+                }
+                if selectorName.localizedCaseInsensitiveContains("on") {
+                    on = selectorIdentifier
+                }
+            }
+
+            if let optical {
+                return (typeIdentifier, optical)
+            }
+            if let on {
+                return (typeIdentifier, on)
+            }
+        }
+
+        return nil
+    }
+
     /// Apply optical kerning to selection or entire document
     func applyOpticalKerning(to range: NSRange? = nil) {
         guard let storage = textView.textStorage else { return }
-        let targetRange = range ?? NSRange(location: 0, length: storage.length)
-        storage.addAttribute(.kern, value: 0.0, range: targetRange) // 0.0 = use font's optical kerning
+        guard let targetRange = range ?? effectiveSelectionOrParagraphRange() else { return }
+
+        let before = storage.attributedSubstring(from: targetRange)
+        registerAttributedUndo(for: targetRange, before: before, actionName: "Apply Optical Kerning")
+
+        storage.beginEditing()
+        storage.enumerateAttribute(.font, in: targetRange) { value, subrange, _ in
+            guard let font = value as? NSFont else { return }
+            if let f = bestKerningFeature(for: font) {
+                let newFont = fontByAddingFeature(font, typeIdentifier: f.typeIdentifier, selectorIdentifier: f.selectorIdentifier)
+                storage.addAttribute(.font, value: newFont, range: subrange)
+            }
+        }
+        storage.endEditing()
+        textView.didChangeText()
     }
 
     /// Apply drop cap to the current paragraph
@@ -4295,33 +4395,32 @@ case "Book Subtitle":
         let dropCapSize = currentFont.pointSize * CGFloat(lines)
         let dropCapFont = NSFont(descriptor: currentFont.fontDescriptor, size: dropCapSize) ?? currentFont
 
+        let before = storage.attributedSubstring(from: firstCharRange)
+        registerAttributedUndo(for: firstCharRange, before: before, actionName: "Apply Drop Cap")
+
+        storage.beginEditing()
         storage.addAttribute(.font, value: dropCapFont, range: firstCharRange)
         storage.addAttribute(.baselineOffset, value: -(dropCapSize * 0.2), range: firstCharRange)
+        storage.endEditing()
+        textView.didChangeText()
     }
 
     /// Enable OpenType features for old-style numerals
     func applyOldStyleNumerals(to range: NSRange? = nil) {
         guard let storage = textView.textStorage else { return }
-        let targetRange = range ?? NSRange(location: 0, length: storage.length)
+        guard let targetRange = range ?? effectiveSelectionOrParagraphRange() else { return }
 
+        let before = storage.attributedSubstring(from: targetRange)
+        registerAttributedUndo(for: targetRange, before: before, actionName: "Use Old-Style Numerals")
+
+        storage.beginEditing()
         storage.enumerateAttribute(.font, in: targetRange) { value, subrange, _ in
             guard let font = value as? NSFont else { return }
-
-            let features: [[NSFontDescriptor.FeatureKey: Int]] = [
-                [
-                    .typeIdentifier: kNumberCaseType,
-                    .selectorIdentifier: kLowerCaseNumbersSelector
-                ]
-            ]
-
-            let descriptor = font.fontDescriptor.addingAttributes([
-                .featureSettings: features
-            ])
-
-            if let newFont = NSFont(descriptor: descriptor, size: font.pointSize) {
-                storage.addAttribute(.font, value: newFont, range: subrange)
-            }
+            let newFont = fontByAddingFeature(font, typeIdentifier: kNumberCaseType, selectorIdentifier: kLowerCaseNumbersSelector)
+            storage.addAttribute(.font, value: newFont, range: subrange)
         }
+        storage.endEditing()
+        textView.didChangeText()
     }
 
     /// Merges style base font with existing font to preserve intentional inline changes

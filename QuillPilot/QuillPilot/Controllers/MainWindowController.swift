@@ -2751,6 +2751,9 @@ class FormattingToolbar: NSView {
             btn.setButtonType(.momentaryPushIn)
             btn.imagePosition = .imageOnly
             btn.title = ""
+            // Force the symbol to respect theme tint (avoid macOS accent blue).
+            btn.contentTintColor = ThemeManager.shared.currentTheme.textColor
+            btn.image?.isTemplate = true
             btn.toolTip = "Insert Image"
             btn.setAccessibilityLabel("Insert Image")
             imageButton = btn

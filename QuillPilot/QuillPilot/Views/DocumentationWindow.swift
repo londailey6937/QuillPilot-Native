@@ -11,9 +11,22 @@ import WebKit
 
 class DocumentationWindowController: NSWindowController {
 
+        private struct HelpHeadingLocation {
+                let tabIdentifier: String
+                let title: String
+                let normalizedTitle: String
+                let range: NSRange
+        }
+
+        private let helpHeadingAttributeKey = NSAttributedString.Key("QuillHelpHeading")
+
     private var tabView: NSTabView!
     private var scrollViews: [NSScrollView] = []
     private var textViews: [NSTextView] = []
+        private var tabIdentifiers: [String] = []
+
+        private var searchField: NSSearchField!
+        private var headingIndex: [HelpHeadingLocation] = []
 
     convenience init() {
         let window = NSWindow(
@@ -37,9 +50,18 @@ class DocumentationWindowController: NSWindowController {
         contentView.autoresizingMask = [.width, .height]
         contentView.wantsLayer = true
 
+                // Help heading search
+                searchField = NSSearchField(frame: .zero)
+                searchField.placeholderString = "Search help headings…"
+                searchField.sendsWholeSearchString = true
+                searchField.target = self
+                searchField.action = #selector(helpSearchSubmitted(_:))
+                searchField.translatesAutoresizingMaskIntoConstraints = false
+                contentView.addSubview(searchField)
+
         // Create tab view
-        tabView = NSTabView(frame: contentView.bounds)
-        tabView.autoresizingMask = [.width, .height]
+                tabView = NSTabView(frame: .zero)
+                tabView.translatesAutoresizingMaskIntoConstraints = false
         tabView.tabViewType = .topTabsBezelBorder
 
         // Create tabs
@@ -54,6 +76,18 @@ class DocumentationWindowController: NSWindowController {
 
         contentView.addSubview(tabView)
         window.contentView = contentView
+
+                NSLayoutConstraint.activate([
+                        searchField.topAnchor.constraint(equalTo: contentView.topAnchor, constant: 10),
+                        searchField.leadingAnchor.constraint(equalTo: contentView.leadingAnchor, constant: 12),
+                        searchField.trailingAnchor.constraint(equalTo: contentView.trailingAnchor, constant: -12),
+                        searchField.heightAnchor.constraint(equalToConstant: 26),
+
+                        tabView.topAnchor.constraint(equalTo: searchField.bottomAnchor, constant: 8),
+                        tabView.leadingAnchor.constraint(equalTo: contentView.leadingAnchor),
+                        tabView.trailingAnchor.constraint(equalTo: contentView.trailingAnchor),
+                        tabView.bottomAnchor.constraint(equalTo: contentView.bottomAnchor)
+                ])
 
         applyTheme()
     }
@@ -81,16 +115,89 @@ class DocumentationWindowController: NSWindowController {
         tabView.addTabViewItem(tabViewItem)
         scrollViews.append(scrollView)
         textViews.append(textView)
+                tabIdentifiers.append(identifier)
     }
 
     private func applyTheme() {
         let theme = ThemeManager.shared.currentTheme
+
+                searchField.textColor = theme.textColor
+                searchField.backgroundColor = theme.pageAround
+                searchField.drawsBackground = true
+                searchField.appearance = NSAppearance(named: ThemeManager.shared.isDarkMode ? .darkAqua : .aqua)
+
         for (index, textView) in textViews.enumerated() {
             textView.backgroundColor = theme.pageAround
             textView.textColor = theme.textColor
             scrollViews[index].backgroundColor = theme.pageAround
         }
     }
+
+        @objc private func helpSearchSubmitted(_ sender: NSSearchField) {
+                let rawQuery = sender.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !rawQuery.isEmpty else { return }
+
+                if headingIndex.isEmpty {
+                        rebuildHeadingIndex()
+                }
+
+                let normalizedQuery = normalizeHeadingForSearch(rawQuery)
+                guard !normalizedQuery.isEmpty else { return }
+
+                func score(_ candidate: HelpHeadingLocation) -> Int {
+                        if candidate.normalizedTitle == normalizedQuery { return 100 }
+                        if candidate.normalizedTitle.hasPrefix(normalizedQuery) { return 80 }
+                        if candidate.normalizedTitle.contains(normalizedQuery) { return 60 }
+                        if candidate.title.lowercased().contains(rawQuery.lowercased()) { return 40 }
+                        return 0
+                }
+
+                guard let best = headingIndex.max(by: { score($0) < score($1) }), score(best) > 0 else {
+                        NSSound.beep()
+                        return
+                }
+
+                selectTab(identifier: best.tabIdentifier)
+
+                DispatchQueue.main.async { [weak self] in
+                        guard let self else { return }
+                        guard let tabIndex = self.tabIdentifiers.firstIndex(of: best.tabIdentifier),
+                                  tabIndex < self.textViews.count else { return }
+                        let textView = self.textViews[tabIndex]
+                        textView.window?.makeFirstResponder(textView)
+                        textView.setSelectedRange(best.range)
+                        textView.scrollRangeToVisible(best.range)
+                        textView.showFindIndicator(for: best.range)
+                }
+        }
+
+        private func rebuildHeadingIndex() {
+                headingIndex.removeAll(keepingCapacity: true)
+
+                for (index, tabIdentifier) in tabIdentifiers.enumerated() {
+                        guard index < textViews.count else { continue }
+                        let textView = textViews[index]
+                        guard let storage = textView.textStorage, storage.length > 0 else { continue }
+                        let fullRange = NSRange(location: 0, length: storage.length)
+                        storage.enumerateAttribute(helpHeadingAttributeKey, in: fullRange, options: []) { value, range, _ in
+                                guard let heading = value as? String else { return }
+                                let normalized = normalizeHeadingForSearch(heading)
+                                guard !normalized.isEmpty else { return }
+                                headingIndex.append(HelpHeadingLocation(tabIdentifier: tabIdentifier, title: heading, normalizedTitle: normalized, range: range))
+                        }
+                }
+        }
+
+        private func normalizeHeadingForSearch(_ heading: String) -> String {
+                let trimmed = heading.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !trimmed.isEmpty else { return "" }
+
+                // Drop leading emoji / punctuation so searches for "analysis" match "📊 Analysis Tools".
+                let scalars = trimmed.unicodeScalars
+                let startIndex = scalars.firstIndex(where: { CharacterSet.alphanumerics.contains($0) })
+                let cleaned = startIndex.map { String(String.UnicodeScalarView(scalars[$0...])) } ?? trimmed
+                return cleaned.lowercased()
+        }
 
         func selectTab(identifier: String) {
                 guard let tabView else { return }
@@ -112,6 +219,9 @@ class DocumentationWindowController: NSWindowController {
         loadDialogueTab()
         loadNumberingTab()
         loadShortcutsTab()
+
+                // Build the search index after content is loaded.
+                rebuildHeadingIndex()
     }
 
         private func normalizeAppNameInDocumentation(_ content: NSMutableAttributedString) {
@@ -1467,7 +1577,8 @@ Tip: Auto-analyze behavior can be configured in Preferences.
         let attributes: [NSAttributedString.Key: Any] = [
             .font: NSFont.systemFont(ofSize: 24, weight: .bold),
             .foregroundColor: color,
-            .paragraphStyle: paragraphStyle
+                        .paragraphStyle: paragraphStyle,
+                        helpHeadingAttributeKey: text
         ]
         return NSAttributedString(string: text + "\n\n", attributes: attributes)
     }
@@ -1480,7 +1591,8 @@ Tip: Auto-analyze behavior can be configured in Preferences.
         let attributes: [NSAttributedString.Key: Any] = [
             .font: NSFont.systemFont(ofSize: 18, weight: .semibold),
             .foregroundColor: color,
-            .paragraphStyle: paragraphStyle
+                        .paragraphStyle: paragraphStyle,
+                        helpHeadingAttributeKey: text
         ]
         return NSAttributedString(string: text + "\n", attributes: attributes)
     }

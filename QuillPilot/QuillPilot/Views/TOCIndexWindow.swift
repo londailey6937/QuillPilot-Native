@@ -137,13 +137,13 @@ class TOCIndexManager {
         if lowercased.contains("book title") || lowercased.contains("part title") ||
            lowercased.contains("subtitle") || lowercased.contains("author") ||
            lowercased.contains("index letter") || lowercased.contains("index entry") ||
-           lowercased.contains("glossary entry") || lowercased.contains("toc entry") {
+           lowercased.contains("glossary entry") || lowercased.contains("toc entry") ||
+           lowercased.contains("toc title") || lowercased.contains("index title") ||
+           lowercased.contains("glossary title") || lowercased.contains("appendix title") {
             return 0  // Don't include in TOC
         }
         if lowercased.contains("chapter") {
             return 1
-        } else if lowercased.contains("toc title") || lowercased.contains("index title") || lowercased.contains("glossary title") || lowercased.contains("appendix title") {
-            return 1  // Same level as chapters for document outline
         } else if lowercased.contains("heading 1") {
             return 2
         } else if lowercased.contains("heading 2") {

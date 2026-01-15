@@ -33,6 +33,9 @@ class CharacterPresenceView: NSView {
         // Width of the visible viewport (used for label density decisions).
         var visibleWidth: CGFloat = 0 { didSet { needsDisplay = true } }
 
+        // Shared scale for Y-axis rendering.
+        var maxMentions: Int = 1 { didSet { needsDisplay = true } }
+
         // MARK: Drawing
         override func draw(_ dirtyRect: NSRect) {
             super.draw(dirtyRect)
@@ -69,20 +72,14 @@ class CharacterPresenceView: NSView {
                 return
             }
 
-            // Layout constants
-            let padding: CGFloat = 60
+            // Layout constants (Y-axis is rendered by a separate fixed view).
+            let padding: CGFloat = 20
             // Header (title/subtitle/mode control) is outside the chart scroll view.
             let topPadding: CGFloat = 24
             let bottomPadding: CGFloat = 100
             let chartWidth = bounds.width - padding * 2
             let chartHeight = bounds.height - topPadding - bottomPadding
             let chartRect = NSRect(x: padding, y: bottomPadding, width: max(1, chartWidth), height: max(1, chartHeight))
-
-            // Find max mentions for scale
-            if maxMentions <= 0 { maxMentions = 1 }
-
-            // Draw Y axis
-            drawYAxis(in: chartRect, maxValue: maxMentions, textColor: textColor)
 
             // Draw bars
             let barGroupWidth = chartRect.width / CGFloat(max(1, chapters.count))
@@ -95,12 +92,11 @@ class CharacterPresenceView: NSView {
             let totalBars = chapters.count * characters.count
             let showValueLabels = (barWidth >= 14) && (totalBars <= 240)
 
-            // Auto-skip scene labels when there are many scenes.
-            // Use the visible viewport width rather than the full scrollable width.
+            // Scene labels should be shown for every scene.
+            // Rotate when dense to reduce overlap.
             let viewportWidth = max(1, visibleWidth)
-            let maxSceneLabels = max(6, min(14, Int(floor(viewportWidth / 70))))
-            let sceneLabelStride = max(1, Int(ceil(Double(chapters.count) / Double(maxSceneLabels))))
-            let rotateSceneLabels = sceneLabelStride > 1
+            let approxLabelCountThatFits = max(6, Int(floor(viewportWidth / 60)))
+            let rotateSceneLabels = chapters.count > approxLabelCountThatFits
 
             for (chapterIndex, chapter) in chapters.enumerated() {
                 let totalGroupBarsWidth = CGFloat(characters.count) * barWidth
@@ -144,26 +140,24 @@ class CharacterPresenceView: NSView {
                     }
                 }
 
-                // Draw x tick label
-                if chapterIndex % sceneLabelStride == 0 || chapterIndex == chapters.count - 1 {
-                    let sceneLabel = "\(xTickPrefix) \(chapter)"
-                    let labelAttrs: [NSAttributedString.Key: Any] = [
-                        .font: NSFont.systemFont(ofSize: 11),
-                        .foregroundColor: textColor.withAlphaComponent(0.78)
-                    ]
-                    let labelSize = sceneLabel.size(withAttributes: labelAttrs)
-                    let centerX = chartRect.minX + (CGFloat(chapterIndex) * barGroupWidth) + (barGroupWidth / 2)
+                // Draw x tick label (every scene)
+                let sceneLabel = "\(xTickPrefix) \(chapter)"
+                let labelAttrs: [NSAttributedString.Key: Any] = [
+                    .font: NSFont.systemFont(ofSize: rotateSceneLabels ? 9 : 11),
+                    .foregroundColor: textColor.withAlphaComponent(0.78)
+                ]
+                let labelSize = sceneLabel.size(withAttributes: labelAttrs)
+                let centerX = chartRect.minX + (CGFloat(chapterIndex) * barGroupWidth) + (barGroupWidth / 2)
 
-                    if rotateSceneLabels, let context = NSGraphicsContext.current?.cgContext {
-                        context.saveGState()
-                        context.translateBy(x: centerX, y: chartRect.minY - 18)
-                        context.rotate(by: -.pi / 4)
-                        sceneLabel.draw(at: NSPoint(x: -labelSize.width / 2, y: -labelSize.height / 2), withAttributes: labelAttrs)
-                        context.restoreGState()
-                    } else {
-                        let labelX = centerX - (labelSize.width / 2)
-                        sceneLabel.draw(at: NSPoint(x: labelX, y: chartRect.minY - 20), withAttributes: labelAttrs)
-                    }
+                if rotateSceneLabels, let context = NSGraphicsContext.current?.cgContext {
+                    context.saveGState()
+                    context.translateBy(x: centerX, y: chartRect.minY - 18)
+                    context.rotate(by: -.pi / 4)
+                    sceneLabel.draw(at: NSPoint(x: -labelSize.width / 2, y: -labelSize.height / 2), withAttributes: labelAttrs)
+                    context.restoreGState()
+                } else {
+                    let labelX = centerX - (labelSize.width / 2)
+                    sceneLabel.draw(at: NSPoint(x: labelX, y: chartRect.minY - 20), withAttributes: labelAttrs)
                 }
             }
 
@@ -176,19 +170,6 @@ class CharacterPresenceView: NSView {
             let xAxisSize = xAxisLabel.size(withAttributes: xAxisAttrs)
             xAxisLabel.draw(at: NSPoint(x: chartRect.midX - xAxisSize.width / 2, y: chartRect.minY - 45), withAttributes: xAxisAttrs)
 
-            let yAxisLabel = "Mentions"
-            let yAxisAttrs: [NSAttributedString.Key: Any] = [
-                .font: NSFont.systemFont(ofSize: 11),
-                .foregroundColor: textColor
-            ]
-            if let context = NSGraphicsContext.current?.cgContext {
-                context.saveGState()
-                context.translateBy(x: chartRect.minX - 55, y: chartRect.midY)
-                context.rotate(by: .pi / 2)
-                let ySize = yAxisLabel.size(withAttributes: yAxisAttrs)
-                yAxisLabel.draw(at: NSPoint(x: -ySize.width / 2, y: -ySize.height / 2), withAttributes: yAxisAttrs)
-                context.restoreGState()
-            }
         }
 
         private func drawEmptyState(textColor: NSColor) {
@@ -207,24 +188,50 @@ class CharacterPresenceView: NSView {
             message.draw(in: rect, withAttributes: attributes)
         }
 
-        private func drawYAxis(in rect: NSRect, maxValue: Int, textColor: NSColor) {
-            let axisPath = NSBezierPath()
-            axisPath.move(to: NSPoint(x: rect.minX, y: rect.minY))
-            axisPath.line(to: NSPoint(x: rect.minX, y: rect.maxY))
-            axisPath.move(to: NSPoint(x: rect.minX, y: rect.minY))
-            axisPath.line(to: NSPoint(x: rect.maxX, y: rect.minY))
+    }
 
+    private final class CharacterPresenceYAxisView: NSView {
+        var maxValue: Int = 1 { didSet { needsDisplay = true } }
+
+        override func draw(_ dirtyRect: NSRect) {
+            super.draw(dirtyRect)
+
+            let theme = ThemeManager.shared.currentTheme
+            let textColor = theme.textColor
+
+            theme.pageAround.setFill()
+            dirtyRect.fill()
+
+            let topPadding: CGFloat = 24
+            let bottomPadding: CGFloat = 100
+            let leftPadding: CGFloat = 8
+            let rightPadding: CGFloat = 8
+
+            let axisX = bounds.maxX - rightPadding
+            let axisRect = NSRect(
+                x: leftPadding,
+                y: bottomPadding,
+                width: max(1, bounds.width - leftPadding - rightPadding),
+                height: max(1, bounds.height - topPadding - bottomPadding)
+            )
+
+            // Y axis line
+            let axisPath = NSBezierPath()
+            axisPath.move(to: NSPoint(x: axisX, y: axisRect.minY))
+            axisPath.line(to: NSPoint(x: axisX, y: axisRect.maxY))
             textColor.withAlphaComponent(0.25).setStroke()
             axisPath.lineWidth = 1
             axisPath.stroke()
 
             let ticks = 5
+            let maxV = max(1, maxValue)
             for i in 0...ticks {
-                let value = Int(round(Double(maxValue) * Double(i) / Double(ticks)))
-                let y = rect.minY + (rect.height * CGFloat(i) / CGFloat(ticks))
+                let value = Int(round(Double(maxV) * Double(i) / Double(ticks)))
+                let y = axisRect.minY + (axisRect.height * CGFloat(i) / CGFloat(ticks))
+
                 let tickPath = NSBezierPath()
-                tickPath.move(to: NSPoint(x: rect.minX - 4, y: y))
-                tickPath.line(to: NSPoint(x: rect.minX, y: y))
+                tickPath.move(to: NSPoint(x: axisX - 4, y: y))
+                tickPath.line(to: NSPoint(x: axisX, y: y))
                 tickPath.lineWidth = 1
                 tickPath.stroke()
 
@@ -234,7 +241,22 @@ class CharacterPresenceView: NSView {
                     .foregroundColor: textColor.withAlphaComponent(0.6)
                 ]
                 let labelSize = label.size(withAttributes: labelAttrs)
-                label.draw(at: NSPoint(x: rect.minX - 8 - labelSize.width, y: y - labelSize.height / 2), withAttributes: labelAttrs)
+                label.draw(at: NSPoint(x: axisX - 8 - labelSize.width, y: y - labelSize.height / 2), withAttributes: labelAttrs)
+            }
+
+            // Rotated axis title
+            let yAxisLabel = "Mentions"
+            let yAxisAttrs: [NSAttributedString.Key: Any] = [
+                .font: NSFont.systemFont(ofSize: 11),
+                .foregroundColor: textColor
+            ]
+            if let context = NSGraphicsContext.current?.cgContext {
+                context.saveGState()
+                context.translateBy(x: 14, y: axisRect.midY)
+                context.rotate(by: .pi / 2)
+                let ySize = yAxisLabel.size(withAttributes: yAxisAttrs)
+                yAxisLabel.draw(at: NSPoint(x: -ySize.width / 2, y: -ySize.height / 2), withAttributes: yAxisAttrs)
+                context.restoreGState()
             }
         }
     }
@@ -246,6 +268,7 @@ class CharacterPresenceView: NSView {
 
     private let chartScrollView = NSScrollView()
     private let chartView = CharacterPresenceChartView(frame: .zero)
+    private let yAxisView = CharacterPresenceYAxisView(frame: .zero)
     private var chartContentWidth: CGFloat = 0
     private var desiredChartContentWidth: CGFloat = 0
 
@@ -318,6 +341,7 @@ class CharacterPresenceView: NSView {
         chartScrollView.horizontalScrollElasticity = .allowed
 
         chartView.wantsLayer = true
+        addSubview(yAxisView)
         addSubview(chartScrollView)
     }
 
@@ -376,7 +400,7 @@ class CharacterPresenceView: NSView {
         let groupOuterPadding: CGFloat = 18
         let minGroupWidth: CGFloat = 80
         let groupWidth = max(minGroupWidth, CGFloat(charactersCount) * minBarWidthPerCharacter + groupOuterPadding)
-        let padding: CGFloat = 60
+        let padding: CGFloat = 20
         return padding * 2 + CGFloat(max(1, chaptersCount)) * groupWidth
     }
 
@@ -390,7 +414,10 @@ class CharacterPresenceView: NSView {
 
         // Chart area takes the remaining space on the left.
         let chartAreaWidth = max(1, legendX - 10)
-        chartScrollView.frame = NSRect(x: 0, y: 0, width: chartAreaWidth, height: chartHeight)
+
+        let yAxisWidth: CGFloat = 70
+        yAxisView.frame = NSRect(x: 0, y: 0, width: yAxisWidth, height: chartHeight)
+        chartScrollView.frame = NSRect(x: yAxisWidth, y: 0, width: max(1, chartAreaWidth - yAxisWidth), height: chartHeight)
 
         // Keep the chart view tall; width can exceed the visible area for scrolling.
         if chartContentWidth <= 0 { chartContentWidth = chartAreaWidth }
@@ -457,6 +484,17 @@ class CharacterPresenceView: NSView {
         chartView.presence = presence
         chartView.characters = characters
         chartView.colors = colors
+
+        // Update shared Y-axis scaling for the fixed axis view.
+        var maxMentions = 0
+        for entry in presence {
+            for mentions in entry.chapterPresence.values {
+                if mentions > maxMentions { maxMentions = mentions }
+            }
+        }
+        if maxMentions <= 0 { maxMentions = 1 }
+        chartView.maxMentions = maxMentions
+        yAxisView.maxValue = maxMentions
 
         switch displayMode {
         case .chapters:

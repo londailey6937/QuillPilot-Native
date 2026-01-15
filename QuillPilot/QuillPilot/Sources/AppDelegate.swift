@@ -676,7 +676,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         mainWindowController?.mainContentViewController.editorViewController.removeExtraBlankLines()
     }
 
-    @objc private func showDocumentation(_ sender: Any?) {
+    func openDocumentation(tabIdentifier: String? = nil) {
         if documentationWindow == nil {
             documentationWindow = DocumentationWindowController()
         }
@@ -684,7 +684,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         documentationWindow?.window?.makeKeyAndOrderFront(nil)
         documentationWindow?.window?.collectionBehavior = [.moveToActiveSpace, .fullScreenAuxiliary]
         documentationWindow?.window?.isExcludedFromWindowsMenu = false
+
+        if let tabIdentifier {
+            documentationWindow?.selectTab(identifier: tabIdentifier)
+        }
+
         NSApp.activate(ignoringOtherApps: true)
+    }
+
+    @objc private func showDocumentation(_ sender: Any?) {
+        openDocumentation(tabIdentifier: nil)
     }
 
     @objc private func showAboutWindow(_ sender: Any?) {

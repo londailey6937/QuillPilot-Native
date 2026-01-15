@@ -476,6 +476,41 @@ class AnalysisViewController: NSViewController, NSWindowDelegate {
 
                 yPosition += 52
             }
+
+            // Help button (bottom) to make analysis documentation discoverable from the Analysis panel.
+            let helpButton = NSButton(frame: NSRect(x: 0, y: 0, width: 44, height: 44))
+            if #available(macOS 11.0, *) {
+                let base = NSImage(systemSymbolName: "questionmark.circle", accessibilityDescription: "Help")
+                let config = NSImage.SymbolConfiguration(pointSize: 16, weight: .regular)
+                if let base, let image = base.withSymbolConfiguration(config) {
+                    helpButton.image = image
+                    helpButton.imagePosition = .imageOnly
+                    helpButton.title = ""
+                    helpButton.image?.isTemplate = true
+                } else {
+                    helpButton.title = "?"
+                    helpButton.font = .systemFont(ofSize: 18)
+                }
+            } else {
+                helpButton.title = "?"
+                helpButton.font = .systemFont(ofSize: 18)
+            }
+            helpButton.isBordered = false
+            helpButton.bezelStyle = .rounded
+            helpButton.target = self
+            helpButton.action = #selector(helpButtonTapped(_:))
+            helpButton.translatesAutoresizingMaskIntoConstraints = false
+            helpButton.toolTip = "Help (opens Quill Pilot Help)"
+
+            menuSidebar.addSubview(helpButton)
+            menuButtons.append(helpButton)
+
+            NSLayoutConstraint.activate([
+                helpButton.bottomAnchor.constraint(equalTo: menuSidebar.bottomAnchor, constant: -12),
+                helpButton.centerXAnchor.constraint(equalTo: menuSidebar.centerXAnchor),
+                helpButton.widthAnchor.constraint(equalToConstant: 44),
+                helpButton.heightAnchor.constraint(equalToConstant: 44)
+            ])
         }
 
         updateSelectedButton()
@@ -542,6 +577,9 @@ class AnalysisViewController: NSViewController, NSWindowDelegate {
     @objc private func categoryButtonTapped(_ sender: NSButton) {
         let category = AnalysisCategory.allCases[sender.tag]
 
+        // Track the last-opened category so context-aware Help can open the right documentation tab.
+        currentCategory = category
+
         // Poetry template: hide non-poetry analysis categories
         if StyleCatalog.shared.isPoetryTemplate && category != .basic {
             return
@@ -597,6 +635,21 @@ class AnalysisViewController: NSViewController, NSWindowDelegate {
             showCharacterAnalysisMenu(sender)
             return
         }
+    }
+
+    @objc private func helpButtonTapped(_ sender: NSButton) {
+        // Map the current analysis category to the matching Help window tab.
+        let tabIdentifier: String
+        switch currentCategory {
+        case .basic:
+            tabIdentifier = "analysis"
+        case .plot:
+            tabIdentifier = "plot"
+        case .characters:
+            tabIdentifier = "characters"
+        }
+
+        (NSApp.delegate as? AppDelegate)?.openDocumentation(tabIdentifier: tabIdentifier)
     }
 
     @objc private func mainWindowBecameKey(_ notification: Notification) {

@@ -92,6 +92,17 @@ class DocumentationWindowController: NSWindowController {
         }
     }
 
+        func selectTab(identifier: String) {
+                guard let tabView else { return }
+                guard let item = tabView.tabViewItems.first(where: { ($0.identifier as? String) == identifier }) else { return }
+                tabView.selectTabViewItem(item)
+
+                if let scrollView = item.view as? NSScrollView {
+                        scrollView.contentView.scroll(to: .zero)
+                        scrollView.reflectScrolledClipView(scrollView.contentView)
+                }
+        }
+
     private func loadDocumentation() {
         loadWhyTab()
         loadAnalysisTab()
@@ -251,49 +262,79 @@ Availability depends on your macOS version, device support, language/region, and
 
         content.append(makeHeading("📊 Basic Metrics", color: headingColor))
         content.append(makeBody("""
-• Word Count - Total words in your document
-• Sentence Count - Number of sentences
-• Paragraph Count - Number of paragraphs
-• Average Sentence Length - Words per sentence
+Access: Right panel → 📊 Analysis
+
+What you’ll see:
+• Word Count — Total words in your document
+• Sentence Count — Total sentences detected
+• Paragraph Count — Total paragraphs
+• Average Sentence Length — Words per sentence
+
+How to use it:
+• Treat these as “manuscript telemetry,” not goals. What matters is the delta: before vs after revisions.
+• If sentence count looks off, check for unusual punctuation (em-dashes, ellipses, screenplay formatting) — detection is heuristic.
 """, color: bodyColor))
         content.append(makeNewline())
 
         content.append(makeHeading("📝 Writing Quality", color: headingColor))
         content.append(makeBody("""
+Access: Right panel → 📊 Analysis
+
 Passive Voice Detection
 • Shows percentage of passive constructions
 • Highlights "was," "were," "been" patterns
 • Target: Keep below 10% for most genres
+
+How to use it:
+• Passive voice isn’t “bad,” it’s a tool. Use the report to find places where agency is unclear.
+• If the prose is intentionally distant (noir, fairy tale, documentary voice), your target can be higher.
 
 Adverb Usage
 • Counts -ly adverbs
 • Shows examples and locations
 • Helps strengthen verb choices
 
+How to use it:
+• Hunt clusters. One adverb isn’t an issue; five in a paragraph often signals weak verb specificity.
+
 Weak Verbs
 • Detects: is, was, get, make, etc.
 • Suggests stronger alternatives
 • Context matters—not all are bad
+
+How to use it:
+• Replace only when it improves precision. “Was” is often correct in scene-setting and reflection.
 
 Clichés & Overused Phrases
 • Identifies common clichés
 • "low-hanging fruit," "think outside the box"
 • Helps keep writing fresh
 
+How to use it:
+• Prioritize clichés in character voice. If the character would say it, it may be intentional.
+
 Filter Words
 • Perception words that distance readers
 • saw, felt, thought, realized, wondered
 • Show, don't tell principle
 
+How to use it:
+• Replace when the POV can be rendered as direct experience. Keep when you need narrative distance.
+
 Sensory Details
 • Balance of sight, sound, touch, taste, smell
 • Shows sensory distribution chart
 • Helps immerse readers
+
+How to use it:
+• “Balance” is genre-dependent: thrillers skew visual/kinesthetic; literary can skew interiority.
 """, color: bodyColor))
         content.append(makeNewline())
 
         content.append(makeHeading("📖 Sentence Variety", color: headingColor))
         content.append(makeBody("""
+Access: Right panel → 📊 Analysis
+
 Visual graph showing distribution of:
 • Short sentences (1-10 words)
 • Medium sentences (11-20 words)
@@ -302,11 +343,18 @@ Visual graph showing distribution of:
 
 Good variety = engaging rhythm
 Too uniform = monotonous reading
+
+How to use it:
+• In action sequences, you often want a higher short-sentence share.
+• In contemplative passages, longer sentences can be a feature.
+• Watch for “flatlines” where every paragraph has the same cadence.
 """, color: bodyColor))
         content.append(makeNewline())
 
         content.append(makeHeading("💬 Dialogue Analysis", color: headingColor))
         content.append(makeBody("""
+Access: Right panel → 📊 Analysis
+
 10 comprehensive metrics for dialogue quality:
 
 Filler Word Percentage - um, uh, like, you know
@@ -319,6 +367,35 @@ Tag Variety - "said" alternatives
 Subtext Quality - what's unsaid
 Authenticity Score - sounds like real speech
 Balance - distribution among characters
+
+Notes on accuracy:
+• These are pattern detectors, not literary judgments.
+• Screenplay formatting and heavy dialect can reduce tagging accuracy.
+
+How to use it (fast):
+1) Find the worst-scoring chapter/segment.
+2) Fix one issue (exposition, repetition, tag monotony).
+3) Re-run analysis and look for movement, not perfection.
+""", color: bodyColor))
+
+        content.append(makeNewline())
+
+        content.append(makeHeading("🪶 Poetry Analysis", color: headingColor))
+        content.append(makeBody("""
+Access: Right panel → 📊 Analysis (Poetry templates)
+
+What it’s for:
+• A writer-facing lens on sound, rhythm, diction, and rhetorical motion.
+• Pattern surfacing (“what’s happening in the language”) more than verdict (“what it means”).
+
+Important note:
+• Many results are heuristic — especially in stanzaic narrative poems and ballads.
+• Use the output as revision prompts, not a grade.
+
+Practical workflow:
+1) Read the “Form / mode” notes first (lyric vs narrative/stanzaic).
+2) Pick one lever (enjambment, compression, sonic texture, rhetorical turn).
+3) Revise 20–40 lines, then re-run analysis to see if the pattern moved.
 """, color: bodyColor))
 
         normalizeAppNameInDocumentation(content)
@@ -568,6 +645,16 @@ Helps with:
 • Balancing character screen time
 • Finding missing relationship development
 • Ensuring subplot integration
+
+How interactions are detected:
+• The analyzer looks for character-name co-mentions within the same text segment.
+• Segments are derived from your chapter/outline structure when available; otherwise it uses rolling word windows.
+• Character Library aliases are used (nickname / first-name fallback) so dialogue like “Alex” can still count toward “Alex Ross.”
+
+If the network looks incomplete:
+• Make sure Character Library names match what the manuscript actually uses (including nicknames).
+• Add/confirm chapter headings (or use the Outline styles) so segmentation aligns with your structure.
+• This is a lightweight heuristic—implicit relationships without co-mentions won’t appear.
 """, color: bodyColor))
         content.append(makeNewline())
 
@@ -616,6 +703,18 @@ Interactive Features:
 • Drag nodes to rearrange the layout
 • Nodes snap to reasonable positions
 • Edges follow as you move nodes
+
+How trust/conflict is estimated (important):
+• Trust is a keyword-based signal, not a definitive model of the relationship.
+• For each chapter/segment, the analyzer finds sentences that mention both characters (alias-aware) and scores cues like:
+        • Trust-building: help/support/protect/thank/forgive/together/trust
+        • Conflict: argue/fight/betray/accuse/blame/attack/distrust
+• The graph shows an average trust/conflict level per relationship, and can vary by chapter.
+
+Accuracy tips:
+• Relationships that are implied but never co-mentioned will read as neutral.
+• Clear on-page cues (“I trust you,” “He betrayed her,” etc.) are easier to detect than subtext.
+• Consistent naming (and a complete Character Library) improves detection.
 
 Great for:
 • Mentor/rival dynamics - See power imbalances
@@ -1334,8 +1433,14 @@ General Notes:
 
         content.append(makeHeading("🧠 Analysis", color: headingColor))
         content.append(makeBody("""
-Analyze features are available from the analysis panel.
+Analysis tools are available from the right-side Analysis panel.
 
+Quick access:
+• 📊 Analysis — document-level metrics, writing-quality flags, dialogue metrics, and Poetry Analysis when using Poetry templates
+• 📖 Plot Structure — plot/structure visualizations
+• 👥 Characters — character-focused tools and maps
+
+Tip: In this Help window, use the “📊 Analysis Tools”, “📖 Plot & Structure”, and “👥 Character Features” tabs for in-depth documentation.
 Tip: Auto-analyze behavior can be configured in Preferences.
 """, color: bodyColor))
         content.append(makeNewline())

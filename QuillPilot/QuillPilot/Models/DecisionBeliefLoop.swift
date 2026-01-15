@@ -347,6 +347,93 @@ class DecisionBeliefLoopAnalyzer {
         "always", "never", "must", "should", "wrong", "right", "value"
     ]
 
+    // MARK: - Character Aliases (for interaction detection)
+
+    /// Returns canonical + any nicknames/aliases from Character Library (if present).
+    /// This is critical for interactions: texts often use short forms (e.g., "Alex") while the library uses full names.
+    private func characterAliases(for canonical: String) -> [String] {
+        var aliases: [String] = [canonical]
+        let trimmedCanonical = canonical.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmedCanonical.isEmpty { return aliases }
+
+        let library = CharacterLibrary.shared
+
+        // Add first name as a safe-ish alias when the library key is a multi-word full name.
+        let parts = trimmedCanonical.split(whereSeparator: { $0.isWhitespace }).map(String.init)
+        if parts.count >= 2, let first = parts.first, first.count >= 3 {
+            aliases.append(first)
+        }
+
+        // Add nickname (if present)
+        if let profile = library.analysisEligibleCharacters.first(where: {
+            ($0.analysisKey ?? "").caseInsensitiveCompare(trimmedCanonical) == .orderedSame
+        }) {
+            let nick = profile.nickname.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !nick.isEmpty, nick.caseInsensitiveCompare(trimmedCanonical) != .orderedSame {
+                aliases.append(nick)
+            }
+        }
+
+        // De-dupe while preserving order.
+        var seen = Set<String>()
+        var unique: [String] = []
+        for a in aliases {
+            let key = a.lowercased()
+            if seen.contains(key) { continue }
+            seen.insert(key)
+            unique.append(a)
+        }
+        return unique
+    }
+
+    private func buildMentionRegexes(for aliases: [String]) -> [NSRegularExpression] {
+        var regexes: [NSRegularExpression] = []
+        regexes.reserveCapacity(aliases.count)
+        for alias in aliases {
+            let trimmed = alias.trimmingCharacters(in: .whitespacesAndNewlines)
+            if trimmed.isEmpty { continue }
+            let pattern = "\\b" + NSRegularExpression.escapedPattern(for: trimmed) + "\\b"
+            if let regex = try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive]) {
+                regexes.append(regex)
+            }
+        }
+        return regexes
+    }
+
+    private func containsAny(_ regexes: [NSRegularExpression], in text: String) -> Bool {
+        let range = NSRange(text.startIndex..<text.endIndex, in: text)
+        return regexes.contains(where: { $0.firstMatch(in: text, options: [], range: range) != nil })
+    }
+
+    private func countMentions(ofAny aliases: [String], in text: String) -> Int {
+        aliases.reduce(0) { partial, alias in
+            partial + countMentions(of: alias, in: text)
+        }
+    }
+
+    // MARK: - Stable layout helpers
+
+    private func fnv1a64(_ string: String) -> UInt64 {
+        var hash: UInt64 = 14695981039346656037
+        let prime: UInt64 = 1099511628211
+        for byte in string.utf8 {
+            hash ^= UInt64(byte)
+            hash &*= prime
+        }
+        return hash
+    }
+
+    private func stableJitter(for key: String, gridSize: Int) -> (Double, Double) {
+        // Deterministic jitter in [-0.1, 0.1] scaled by grid size.
+        let h1 = fnv1a64(key.lowercased() + "|x")
+        let h2 = fnv1a64(key.lowercased() + "|y")
+        let unit1 = Double(h1 % 10_000) / 10_000.0
+        let unit2 = Double(h2 % 10_000) / 10_000.0
+        let jitterX = (unit1 * 0.2 - 0.1) / Double(max(1, gridSize))
+        let jitterY = (unit2 * 0.2 - 0.1) / Double(max(1, gridSize))
+        return (jitterX, jitterY)
+    }
+
     /// Analyze and populate loop entries for each character from the actual text
     func initializeLoops(characterNames: [String], chapterCount: Int) -> [DecisionBeliefLoop] {
         // For now, create empty templates - full analysis requires the chapter text
@@ -1149,14 +1236,24 @@ class DecisionBeliefLoopAnalyzer {
     func analyzeInteractions(text: String, characterNames: [String]) -> [CharacterInteraction] {
         var interactions: [CharacterInteraction] = []
 
-        // Split text into sections (every ~1000 words)
-        let sections = splitIntoSections(text: text, wordsPerSection: 1000)
+        // Prefer structural segmentation when possible (chapters), otherwise fall back to word-window sections.
+        // Using only exact Character Library keys is too brittle; alias-aware detection is required.
+        var sections: [String] = splitIntoChapters(text: text)
+        if sections.count <= 1 {
+            // Finer granularity for documents without explicit chapter markers.
+            sections = splitIntoSections(text: text, wordsPerSection: 800)
+        }
 
         // Check each pair of characters
         for i in 0..<characterNames.count {
             for j in (i+1)..<characterNames.count {
                 let char1 = characterNames[i]
                 let char2 = characterNames[j]
+
+                let aliases1 = characterAliases(for: char1)
+                let aliases2 = characterAliases(for: char2)
+                let regexes1 = buildMentionRegexes(for: aliases1)
+                let regexes2 = buildMentionRegexes(for: aliases2)
 
                 var interaction = CharacterInteraction(
                     character1: char1,
@@ -1165,8 +1262,8 @@ class DecisionBeliefLoopAnalyzer {
 
                 // Check each section for co-appearances
                 for (sectionIndex, section) in sections.enumerated() {
-                    let hasChar1 = section.lowercased().contains(char1.lowercased())
-                    let hasChar2 = section.lowercased().contains(char2.lowercased())
+                    let hasChar1 = containsAny(regexes1, in: section)
+                    let hasChar2 = containsAny(regexes2, in: section)
 
                     if hasChar1 && hasChar2 {
                         interaction.coAppearances += 1
@@ -1276,7 +1373,11 @@ class DecisionBeliefLoopAnalyzer {
             return RelationshipEvolutionData()
         }
 
-        let chapters = splitIntoChapters(text: text)
+        var chapters = splitIntoChapters(text: text)
+        if chapters.count <= 1 {
+            // If no chapters are detected, we still want evolution over time.
+            chapters = splitIntoSections(text: text, wordsPerSection: 1500)
+        }
         var evolutionData = RelationshipEvolutionData()
 
         // Generate nodes with positions and emotional investment
@@ -1289,16 +1390,17 @@ class DecisionBeliefLoopAnalyzer {
             let baseX = (Double(col) + 0.5) / Double(gridSize)
             let baseY = (Double(row) + 0.5) / Double(gridSize)
 
-            // Add slight randomization
-            let randomX = Double.random(in: -0.1...0.1) / Double(gridSize)
-            let randomY = Double.random(in: -0.1...0.1) / Double(gridSize)
+            // Add slight *deterministic* jitter so maps are stable across runs/machines.
+            let (randomX, randomY) = stableJitter(for: character, gridSize: gridSize)
 
             let posX = max(0.1, min(0.9, baseX + randomX))
             let posY = max(0.1, min(0.9, baseY + randomY))
 
-            // Calculate emotional investment based on presence in text
-            let totalMentions = countMentions(of: character, in: text)
-            let maxMentions = characterNames.map { countMentions(of: $0, in: text) }.max() ?? 1
+            // Calculate emotional investment based on presence in text (alias-aware)
+            let totalMentions = countMentions(ofAny: characterAliases(for: character), in: text)
+            let maxMentions = characterNames
+                .map { countMentions(ofAny: characterAliases(for: $0), in: text) }
+                .max() ?? 1
             let investment = Double(totalMentions) / Double(maxMentions)
 
             evolutionData.nodes.append(RelationshipNodeData(
@@ -1315,11 +1417,10 @@ class DecisionBeliefLoopAnalyzer {
                 let char1 = characterNames[i]
                 let char2 = characterNames[j]
 
-                // Build regexes for word boundary matching
-                let pattern1 = "\\b" + NSRegularExpression.escapedPattern(for: char1) + "\\b"
-                let pattern2 = "\\b" + NSRegularExpression.escapedPattern(for: char2) + "\\b"
-                guard let regex1 = try? NSRegularExpression(pattern: pattern1, options: .caseInsensitive),
-                      let regex2 = try? NSRegularExpression(pattern: pattern2, options: .caseInsensitive) else { continue }
+                // Alias-aware mention detection
+                let regexes1 = buildMentionRegexes(for: characterAliases(for: char1))
+                let regexes2 = buildMentionRegexes(for: characterAliases(for: char2))
+                if regexes1.isEmpty || regexes2.isEmpty { continue }
 
                 // Analyze relationship evolution across chapters
                 var evolutionPoints: [RelationshipEvolutionPoint] = []
@@ -1329,49 +1430,69 @@ class DecisionBeliefLoopAnalyzer {
                     let chapterNum = chapterIndex + 1
                     let sentences = chapter.components(separatedBy: CharacterSet(charactersIn: ".!?")).filter { !$0.isEmpty }
 
-                    var trustScore: Double = 0.0
-                    var interactionCount = 0
+                    var sentenceScores: [Double] = []
+                    sentenceScores.reserveCapacity(4)
 
                     // Analyze sentences mentioning both characters
                     for sentence in sentences {
-                        let range = NSRange(sentence.startIndex..., in: sentence)
-                        let hasChar1 = regex1.firstMatch(in: sentence, options: [], range: range) != nil
-                        let hasChar2 = regex2.firstMatch(in: sentence, options: [], range: range) != nil
+                        let hasChar1 = containsAny(regexes1, in: sentence)
+                        let hasChar2 = containsAny(regexes2, in: sentence)
+                        if !(hasChar1 && hasChar2) { continue }
 
-                        if hasChar1 && hasChar2 {
-                            interactionCount += 1
-                            let lowerSentence = sentence.lowercased()
+                        let tokens = sentence
+                            .lowercased()
+                            .split(whereSeparator: { !$0.isLetter && $0 != "'" })
+                            .map(String.init)
+                        if tokens.isEmpty { continue }
 
-                            // Positive relationship indicators
-                            let positiveWords = ["help", "support", "agree", "together", "friend", "ally", "trust", "love", "care"]
-                            let negativeWords = ["fight", "argue", "hate", "enemy", "against", "betray", "distrust", "conflict", "oppose"]
+                        // Heuristic signal words (writer-facing, not a definitive NLP model)
+                        let positive: Set<String> = [
+                            "help", "helps", "helped", "support", "supports", "supported", "protect", "protects", "protected",
+                            "save", "saves", "saved", "thank", "thanks", "thanked", "forgive", "forgives", "forgave",
+                            "together", "friend", "friends", "ally", "allies", "trust", "trusted", "care", "cared", "love", "loved"
+                        ]
+                        let negative: Set<String> = [
+                            "fight", "fights", "fought", "argue", "argues", "argued", "hate", "hated", "enemy", "enemies",
+                            "against", "betray", "betrayed", "distrust", "distrusted", "conflict", "oppose", "opposed",
+                            "threaten", "threatened", "attack", "attacked", "accuse", "accused", "blame", "blamed",
+                            "lie", "lied", "deceive", "deceived"
+                        ]
+                        let negators: Set<String> = ["not", "never", "no", "without"]
 
-                            for word in positiveWords {
-                                if lowerSentence.contains(word) {
-                                    trustScore += 0.1
-                                }
-                            }
-
-                            for word in negativeWords {
-                                if lowerSentence.contains(word) {
-                                    trustScore -= 0.1
-                                }
+                        var posHits = 0
+                        var negHits = 0
+                        for (idx, tok) in tokens.enumerated() {
+                            if positive.contains(tok) {
+                                // crude negation handling: "not trust" counts negative
+                                let windowStart = max(0, idx - 2)
+                                let hasNegation = tokens[windowStart..<idx].contains(where: { negators.contains($0) })
+                                if hasNegation { negHits += 1 } else { posHits += 1 }
+                            } else if negative.contains(tok) {
+                                negHits += 1
                             }
                         }
+
+                        // Convert to a bounded per-sentence trust signal in [-1, 1]
+                        let raw = Double(posHits - negHits)
+                        let sentenceScore = max(-1.0, min(1.0, raw / 3.0))
+                        sentenceScores.append(sentenceScore)
                     }
 
-                    if interactionCount > 0 {
-                        // Normalize trust score
-                        let normalizedTrust = max(-1.0, min(1.0, trustScore / Double(interactionCount)))
+                    if !sentenceScores.isEmpty {
+                        let avg = sentenceScores.reduce(0, +) / Double(sentenceScores.count)
+                        let normalizedTrust = max(-1.0, min(1.0, avg))
                         overallTrust += normalizedTrust
 
-                        let description = normalizedTrust > 0 ? "Positive interaction" : normalizedTrust < 0 ? "Conflict" : "Neutral"
+                        let description: String
+                        if normalizedTrust >= 0.25 {
+                            description = "Trust-building cues (keyword-based)"
+                        } else if normalizedTrust <= -0.25 {
+                            description = "Conflict cues (keyword-based)"
+                        } else {
+                            description = "Mixed/neutral cues (keyword-based)"
+                        }
 
-                        evolutionPoints.append(RelationshipEvolutionPoint(
-                            chapter: chapterNum,
-                            trustLevel: normalizedTrust,
-                            description: description
-                        ))
+                        evolutionPoints.append(RelationshipEvolutionPoint(chapter: chapterNum, trustLevel: normalizedTrust, description: description))
                     }
                 }
 
@@ -1380,8 +1501,8 @@ class DecisionBeliefLoopAnalyzer {
                     let avgTrust = overallTrust / Double(evolutionPoints.count)
 
                     // Determine power direction (simplified heuristic)
-                    let char1Mentions = countMentions(of: char1, in: text)
-                    let char2Mentions = countMentions(of: char2, in: text)
+                    let char1Mentions = countMentions(ofAny: characterAliases(for: char1), in: text)
+                    let char2Mentions = countMentions(ofAny: characterAliases(for: char2), in: text)
 
                     let powerDirection: String
                     if abs(char1Mentions - char2Mentions) < 3 {

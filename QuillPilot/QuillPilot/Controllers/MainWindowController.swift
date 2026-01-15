@@ -60,8 +60,7 @@ class MainWindowController: NSWindowController {
     private var tocIndexWindow: TOCIndexWindowController?
     private var searchPanel: SearchPanelController?
 
-    // Notes popover
-    private var notesButton: NSButton?
+    // Notes
     private var generalNotesWindow: GeneralNotesWindowController?
 
     // View controllers (referenced in multiple methods)
@@ -147,6 +146,10 @@ class MainWindowController: NSWindowController {
             self?.markDocumentDirty()
         }
 
+        mainContentViewController.onNotesTapped = { [weak self] in
+            self?.openNotesWindow()
+        }
+
         // Connect manuscript info changes to editor headers/footers
         headerView.specsPanel.onManuscriptInfoChanged = { [weak self] title, author in
             self?.mainContentViewController.editorViewController.setManuscriptInfo(title: title, author: author)
@@ -155,24 +158,6 @@ class MainWindowController: NSWindowController {
         let contentView = mainContentViewController.view
         contentView.translatesAutoresizingMaskIntoConstraints = false
         containerView.addSubview(contentView)
-
-        // Notes button (bottom-right)
-        let notesButton = NSButton(title: "", target: self, action: #selector(notesButtonClicked(_:)))
-        notesButton.translatesAutoresizingMaskIntoConstraints = false
-        // Keep icon buttons visually consistent with other SF Symbol controls (no accent tint).
-        notesButton.bezelStyle = .inline
-        notesButton.isBordered = false
-        notesButton.controlSize = .small
-        notesButton.toolTip = "Notes"
-        if #available(macOS 11.0, *) {
-            let baseImage = NSImage(systemSymbolName: "note.text", accessibilityDescription: "Notes")
-            let config = NSImage.SymbolConfiguration(pointSize: 14, weight: .regular)
-            notesButton.image = baseImage?.withSymbolConfiguration(config)
-            notesButton.imagePosition = .imageOnly
-            notesButton.image?.isTemplate = true
-        }
-        containerView.addSubview(notesButton)
-        self.notesButton = notesButton
 
         rulerView.delegate = mainContentViewController
         mainContentViewController.setRuler(rulerView)
@@ -201,9 +186,7 @@ class MainWindowController: NSWindowController {
             contentView.trailingAnchor.constraint(equalTo: containerView.trailingAnchor),
             contentView.bottomAnchor.constraint(equalTo: containerView.bottomAnchor),
 
-            // Notes button anchored to bottom-right
-            notesButton.trailingAnchor.constraint(equalTo: containerView.trailingAnchor, constant: -16),
-            notesButton.bottomAnchor.constraint(equalTo: containerView.bottomAnchor, constant: -16)
+            // (Notes button now lives in the left sidebar under Characters)
         ]
 
         rulerHeightConstraint = constraints.first(where: { $0.firstItem as AnyObject? === rulerView && $0.firstAttribute == .height })
@@ -284,17 +267,9 @@ class MainWindowController: NSWindowController {
         toolbarView.applyTheme(theme)
         rulerView.applyTheme(theme)
         mainContentViewController.applyTheme(theme)
-
-        if let notesButton {
-            let labelColor = theme.headerText.withAlphaComponent(0.9)
-            if #available(macOS 10.14, *) {
-                notesButton.contentTintColor = labelColor
-            }
-            notesButton.image?.isTemplate = true
-        }
     }
 
-    @objc private func notesButtonClicked(_ sender: NSButton) {
+    private func openNotesWindow() {
         if generalNotesWindow == nil {
             generalNotesWindow = GeneralNotesWindowController()
         }
@@ -309,6 +284,10 @@ class MainWindowController: NSWindowController {
         } else {
             generalNotesWindow?.window?.makeKeyAndOrderFront(nil)
         }
+    }
+
+    @objc private func notesButtonClicked(_ sender: NSButton) {
+        openNotesWindow()
     }
 
     private func showSearchPanel() {
@@ -3419,6 +3398,7 @@ class ContentViewController: NSViewController {
     var onStatsUpdate: ((String) -> Void)?
     var onSelectionChange: ((String?) -> Void)?
     var onTextChange: (() -> Void)?
+    var onNotesTapped: (() -> Void)?
 
     private var outlineViewController: OutlineViewController!
     private var outlinePanelController: AnalysisViewController!
@@ -3523,6 +3503,9 @@ class ContentViewController: NSViewController {
         outlinePanelController = AnalysisViewController()
         outlinePanelController.isOutlinePanel = true
         outlinePanelController.outlineViewController = outlineViewController
+        outlinePanelController.onNotesTapped = { [weak self] in
+            self?.onNotesTapped?()
+        }
         splitView.addArrangedSubview(outlinePanelController.view)
         outlineMinWidthConstraint = outlinePanelController.view.widthAnchor.constraint(greaterThanOrEqualToConstant: 240)
         outlineMaxWidthConstraint = outlinePanelController.view.widthAnchor.constraint(lessThanOrEqualToConstant: 360)

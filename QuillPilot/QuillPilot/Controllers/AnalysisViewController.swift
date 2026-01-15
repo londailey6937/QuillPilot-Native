@@ -25,6 +25,8 @@ private class AutoCloseWindowDelegate: NSObject, NSWindowDelegate {
 
 class AnalysisViewController: NSViewController, NSWindowDelegate {
 
+    var onNotesTapped: (() -> Void)?
+
     private var menuSidebar: NSView!
     private var menuSeparator: NSView!
     private var menuSidebarWidthConstraint: NSLayoutConstraint?
@@ -435,9 +437,48 @@ class AnalysisViewController: NSViewController, NSWindowDelegate {
 
                 yPosition += 52
             }
+
+            // Notes button: sits under the Characters icon in the left sidebar.
+            if !isPoetry {
+                let notesButton = NSButton(frame: NSRect(x: 0, y: 0, width: 44, height: 44))
+                if #available(macOS 11.0, *) {
+                    let base = NSImage(systemSymbolName: "note.text", accessibilityDescription: "Notes")
+                    let config = NSImage.SymbolConfiguration(pointSize: 16, weight: .regular)
+                    if let base, let image = base.withSymbolConfiguration(config) {
+                        notesButton.image = image
+                        notesButton.imagePosition = .imageOnly
+                        notesButton.title = ""
+                        notesButton.image?.isTemplate = true
+                    } else {
+                        notesButton.title = "Notes"
+                        notesButton.font = .systemFont(ofSize: 11)
+                    }
+                } else {
+                    notesButton.title = "Notes"
+                    notesButton.font = .systemFont(ofSize: 11)
+                }
+                notesButton.isBordered = false
+                notesButton.bezelStyle = .rounded
+                notesButton.target = self
+                notesButton.action = #selector(notesSidebarButtonTapped(_:))
+                notesButton.translatesAutoresizingMaskIntoConstraints = false
+                notesButton.toolTip = "Notes"
+
+                menuSidebar.addSubview(notesButton)
+                menuButtons.append(notesButton)
+
+                NSLayoutConstraint.activate([
+                    notesButton.topAnchor.constraint(equalTo: menuSidebar.topAnchor, constant: yPosition),
+                    notesButton.centerXAnchor.constraint(equalTo: menuSidebar.centerXAnchor),
+                    notesButton.widthAnchor.constraint(equalToConstant: 44),
+                    notesButton.heightAnchor.constraint(equalToConstant: 44)
+                ])
+
+                yPosition += 52
+            }
         } else {
             // Poetry: only show the Poetry-focused Analysis popout (hide Plot/Characters)
-            let categories: [AnalysisCategory] = isPoetry ? [.basic] : AnalysisCategory.allCases
+            let categories: [AnalysisCategory] = isPoetry ? [.basic] : [.basic, .plot]
             for category in categories {
                 let button = NSButton(frame: NSRect(x: 0, y: 0, width: 44, height: 44))
                 if #available(macOS 11.0, *) {
@@ -477,7 +518,54 @@ class AnalysisViewController: NSViewController, NSWindowDelegate {
                 yPosition += 52
             }
 
-            // Help button (bottom) to make analysis documentation discoverable from the Analysis panel.
+            // Character analysis tools: break out the old Characters menu into individual buttons.
+            if !isPoetry {
+                for tool in CharacterTool.allCases {
+                    if !tool.isAvailable(forScreenplay: StyleCatalog.shared.isScreenplayTemplate) {
+                        continue
+                    }
+
+                    let button = NSButton(frame: NSRect(x: 0, y: 0, width: 44, height: 44))
+                    if #available(macOS 11.0, *) {
+                        let base = NSImage(systemSymbolName: tool.symbolName, accessibilityDescription: tool.title)
+                        let config = NSImage.SymbolConfiguration(pointSize: 16, weight: .regular)
+                        if let base, let image = base.withSymbolConfiguration(config) {
+                            button.image = image
+                            button.imagePosition = .imageOnly
+                            button.title = ""
+                            button.image?.isTemplate = true
+                        } else {
+                            button.title = tool.fallbackGlyph
+                            button.font = .systemFont(ofSize: 18)
+                        }
+                    } else {
+                        button.title = tool.fallbackGlyph
+                        button.font = .systemFont(ofSize: 18)
+                    }
+
+                    button.isBordered = false
+                    button.bezelStyle = .rounded
+                    button.target = self
+                    button.action = #selector(characterToolButtonTapped(_:))
+                    button.tag = tool.rawValue
+                    button.translatesAutoresizingMaskIntoConstraints = false
+                    button.toolTip = tool.title
+
+                    menuSidebar.addSubview(button)
+                    menuButtons.append(button)
+
+                    NSLayoutConstraint.activate([
+                        button.topAnchor.constraint(equalTo: menuSidebar.topAnchor, constant: yPosition),
+                        button.centerXAnchor.constraint(equalTo: menuSidebar.centerXAnchor),
+                        button.widthAnchor.constraint(equalToConstant: 44),
+                        button.heightAnchor.constraint(equalToConstant: 44)
+                    ])
+
+                    yPosition += 52
+                }
+            }
+
+            // Help button: sits directly after the analysis buttons.
             let helpButton = NSButton(frame: NSRect(x: 0, y: 0, width: 44, height: 44))
             if #available(macOS 11.0, *) {
                 let base = NSImage(systemSymbolName: "questionmark.circle", accessibilityDescription: "Help")
@@ -506,7 +594,7 @@ class AnalysisViewController: NSViewController, NSWindowDelegate {
             menuButtons.append(helpButton)
 
             NSLayoutConstraint.activate([
-                helpButton.bottomAnchor.constraint(equalTo: menuSidebar.bottomAnchor, constant: -12),
+                helpButton.topAnchor.constraint(equalTo: menuSidebar.topAnchor, constant: yPosition),
                 helpButton.centerXAnchor.constraint(equalTo: menuSidebar.centerXAnchor),
                 helpButton.widthAnchor.constraint(equalToConstant: 44),
                 helpButton.heightAnchor.constraint(equalToConstant: 44)
@@ -650,6 +738,115 @@ class AnalysisViewController: NSViewController, NSWindowDelegate {
         }
 
         (NSApp.delegate as? AppDelegate)?.openDocumentation(tabIdentifier: tabIdentifier)
+    }
+
+    private enum CharacterTool: Int, CaseIterable {
+        case emotionalTrajectory
+        case decisionBeliefLoops
+        case beliefShiftMatrix
+        case decisionConsequenceChains
+        case relationshipEvolutionMaps
+        case internalExternalAlignment
+        case languageDrift
+        case thematicResonance
+        case failurePatterns
+        case interactions
+        case presence
+
+        var title: String {
+            switch self {
+            case .emotionalTrajectory: return "Emotional Trajectory"
+            case .decisionBeliefLoops: return "Decision-Belief Loops"
+            case .beliefShiftMatrix: return "Belief Shift Matrix"
+            case .decisionConsequenceChains: return "Decision-Consequence Chains"
+            case .relationshipEvolutionMaps: return "Relationship Evolution Maps"
+            case .internalExternalAlignment: return "Internal vs External Alignment"
+            case .languageDrift: return "Language Drift Analysis"
+            case .thematicResonance: return "Thematic Resonance Map"
+            case .failurePatterns: return "Failure Pattern Charts"
+            case .interactions: return "Character Interactions"
+            case .presence: return "Character Presence"
+            }
+        }
+
+        var symbolName: String {
+            switch self {
+            case .emotionalTrajectory: return "chart.line.uptrend.xyaxis"
+            case .decisionBeliefLoops: return "arrow.triangle.branch"
+            case .beliefShiftMatrix: return "tablecells"
+            case .decisionConsequenceChains: return "link"
+            case .relationshipEvolutionMaps: return "point.3.connected.trianglepath"
+            case .internalExternalAlignment: return "circle.lefthalf.filled"
+            case .languageDrift: return "text.line.first.and.arrowtriangle.forward"
+            case .thematicResonance: return "target"
+            case .failurePatterns: return "chart.line.downtrend.xyaxis"
+            case .interactions: return "person.2.fill"
+            case .presence: return "person.crop.circle.badge.clock"
+            }
+        }
+
+        var fallbackGlyph: String {
+            switch self {
+            case .emotionalTrajectory: return "📈"
+            case .decisionBeliefLoops: return "📊"
+            case .beliefShiftMatrix: return "📋"
+            case .decisionConsequenceChains: return "⛓️"
+            case .relationshipEvolutionMaps: return "🔗"
+            case .internalExternalAlignment: return "🎭"
+            case .languageDrift: return "📝"
+            case .thematicResonance: return "🎯"
+            case .failurePatterns: return "📉"
+            case .interactions: return "🤝"
+            case .presence: return "📍"
+            }
+        }
+
+        func isAvailable(forScreenplay: Bool) -> Bool {
+            // Mirror the existing menu logic: some tools are hidden for Screenplay templates.
+            if forScreenplay {
+                switch self {
+                case .decisionConsequenceChains, .internalExternalAlignment, .languageDrift, .thematicResonance, .failurePatterns:
+                    return false
+                default:
+                    return true
+                }
+            }
+            return true
+        }
+    }
+
+    @objc private func characterToolButtonTapped(_ sender: NSButton) {
+        guard let tool = CharacterTool(rawValue: sender.tag) else { return }
+        currentCategory = .characters
+
+        switch tool {
+        case .emotionalTrajectory:
+            showEmotionalTrajectory()
+        case .decisionBeliefLoops:
+            showDecisionBeliefLoops()
+        case .beliefShiftMatrix:
+            showBeliefShiftMatrix()
+        case .decisionConsequenceChains:
+            showDecisionConsequenceChains()
+        case .relationshipEvolutionMaps:
+            showRelationshipEvolutionMaps()
+        case .internalExternalAlignment:
+            showInternalExternalAlignment()
+        case .languageDrift:
+            showLanguageDriftAnalysis()
+        case .thematicResonance:
+            showThematicResonanceMap()
+        case .failurePatterns:
+            showFailurePatternCharts()
+        case .interactions:
+            showInteractions()
+        case .presence:
+            showPresence()
+        }
+    }
+
+    @objc private func notesSidebarButtonTapped(_ sender: NSButton) {
+        onNotesTapped?()
     }
 
     @objc private func mainWindowBecameKey(_ notification: Notification) {

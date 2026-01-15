@@ -4722,22 +4722,10 @@ case "Book Subtitle":
             "Marginal Note",
             "Footnote"
         ]
-        let verseStyles: Set<String> = [
-            "Stanza",
-            "Verse",
-            "Poetry — Stanza",
-            "Poetry — Verse",
-            "Poem",
-            "Refrain",
-            "Chorus",
-            "Speaker",
-            "Voice",
-            "Verse Paragraph",
-            "Prose Poem"
-        ]
 
         var results: [OutlineEntry] = []
         var stanzaIndex = 0
+        var sawExplicitStanzaBreak = false
 
         var stanzaStart: Int?
         var stanzaEnd: Int?
@@ -4763,26 +4751,21 @@ case "Book Subtitle":
                 return
             }
 
+            // Only treat a stanza as outline-worthy if it is exactly four lines (quatrain).
+            guard stanzaLineCount == 4 else {
+                stanzaStart = nil
+                stanzaEnd = nil
+                stanzaFirstParagraphRange = nil
+                stanzaSawVerseLine = false
+                stanzaLineCount = 0
+                return
+            }
+
             stanzaIndex += 1
             let range = NSRange(location: start, length: max(0, end - start))
             let pageIndex = pageIndexForParagraph(firstPara)
 
-            let stanzaType: String?
-            switch stanzaLineCount {
-            case 2: stanzaType = "Couplet"
-            case 3: stanzaType = "Tercet"
-            case 4: stanzaType = "Quatrain"
-            default: stanzaType = nil
-            }
-
-            let title: String
-            if let stanzaType {
-                title = "Stanza \(stanzaIndex) — \(stanzaType)"
-            } else if stanzaLineCount > 0 {
-                title = "Stanza \(stanzaIndex) — \(stanzaLineCount) lines"
-            } else {
-                title = "Stanza \(stanzaIndex)"
-            }
+            let title = "Stanza \(stanzaIndex) — Quatrain"
 
             results.append(OutlineEntry(title: title, level: 1, range: range, page: pageIndex, styleName: "Poetry — Stanza"))
 
@@ -4804,8 +4787,8 @@ case "Book Subtitle":
 
             let isHeader = styleName.map { headerStyles.contains($0) } ?? false
             let isStanzaBreak = styleName.map { stanzaBreakStyles.contains($0) } ?? false
-            let isVerse = styleName.map { verseStyles.contains($0) } ?? false
             let isBlank = trimmed.isEmpty
+            let isStanzaLine = !isBlank && !isHeader && !isStanzaBreak
 
             if isHeader {
                 finalizeStanzaIfNeeded()
@@ -4813,8 +4796,14 @@ case "Book Subtitle":
                 continue
             }
 
-            if isStanzaBreak || isBlank {
+            if isStanzaBreak {
+                sawExplicitStanzaBreak = true
                 finalizeStanzaIfNeeded()
+                location = NSMaxRange(paragraphRange)
+                continue
+            }
+
+            if isBlank {
                 location = NSMaxRange(paragraphRange)
                 continue
             }
@@ -4825,9 +4814,9 @@ case "Book Subtitle":
                 stanzaFirstParagraphRange = paragraphRange
             }
             stanzaEnd = NSMaxRange(paragraphRange)
-            let countsAsVerseLine = !isBlank && (isVerse || styleName == nil)
-            stanzaSawVerseLine = stanzaSawVerseLine || countsAsVerseLine
-            if countsAsVerseLine {
+            let countsAsStanzaLine = isStanzaLine
+            stanzaSawVerseLine = stanzaSawVerseLine || countsAsStanzaLine
+            if countsAsStanzaLine {
                 stanzaLineCount += 1
             }
 
@@ -4835,6 +4824,7 @@ case "Book Subtitle":
         }
 
         finalizeStanzaIfNeeded()
+        guard sawExplicitStanzaBreak else { return [] }
         return results
     }
 

@@ -297,7 +297,15 @@ class MainWindowController: NSWindowController {
         }
         generalNotesWindow?.setDocumentURL(currentDocumentURL)
         generalNotesWindow?.showWindow(nil)
-        generalNotesWindow?.window?.makeKeyAndOrderFront(nil)
+        if let parent = window, let notesWindow = generalNotesWindow?.window {
+            let alreadyChild = parent.childWindows?.contains(notesWindow) ?? false
+            if !alreadyChild {
+                parent.addChildWindow(notesWindow, ordered: .above)
+            }
+            notesWindow.makeKeyAndOrderFront(nil)
+        } else {
+            generalNotesWindow?.window?.makeKeyAndOrderFront(nil)
+        }
     }
 
     private func showSearchPanel() {

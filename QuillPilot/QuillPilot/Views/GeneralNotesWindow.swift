@@ -24,6 +24,8 @@ class GeneralNotesWindowController: NSWindowController, NSTextViewDelegate {
         )
         window.title = "General Notes"
         window.minSize = NSSize(width: 500, height: 400)
+        window.isReleasedWhenClosed = false
+        window.collectionBehavior = [.moveToActiveSpace, .fullScreenAuxiliary]
 
         // Center the window
         if let screen = NSScreen.main {

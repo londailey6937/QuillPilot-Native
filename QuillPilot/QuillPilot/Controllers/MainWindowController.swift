@@ -2743,17 +2743,27 @@ class FormattingToolbar: NSView {
 
         // Images
         if let baseSymbol = NSImage(systemSymbolName: "photo", accessibilityDescription: "Insert Image") {
-            let config = NSImage.SymbolConfiguration(pointSize: 14, weight: .regular)
-            let symbol = baseSymbol.withSymbolConfiguration(config) ?? baseSymbol
-            symbol.isTemplate = true
+            let theme = ThemeManager.shared.currentTheme
+            let sizeConfig = NSImage.SymbolConfiguration(pointSize: 14, weight: .regular)
+            var symbol = baseSymbol.withSymbolConfiguration(sizeConfig) ?? baseSymbol
+
+            // Force a theme-colored SF Symbol so it never falls back to macOS accent blue.
+            // (Some AppKit button/toolbar styles ignore `contentTintColor` unless the image is a plain template.)
+            if let colored = symbol.withSymbolConfiguration(NSImage.SymbolConfiguration(paletteColors: [theme.textColor])) {
+                symbol = colored
+                symbol.isTemplate = false
+            } else {
+                symbol.isTemplate = true
+            }
+
             let btn = registerControl(NSButton(image: symbol, target: self, action: #selector(imageTapped)))
+            btn.identifier = NSUserInterfaceItemIdentifier("qp.insertImage")
             btn.bezelStyle = .texturedRounded
             btn.setButtonType(.momentaryPushIn)
             btn.imagePosition = .imageOnly
             btn.title = ""
-            // Force the symbol to respect theme tint (avoid macOS accent blue).
-            btn.contentTintColor = ThemeManager.shared.currentTheme.textColor
-            btn.image?.isTemplate = true
+            // Keep tint set as well (helps if the symbol config falls back to template rendering).
+            btn.contentTintColor = theme.textColor
             btn.toolTip = "Insert Image"
             btn.setAccessibilityLabel("Insert Image")
             imageButton = btn
@@ -2924,10 +2934,25 @@ class FormattingToolbar: NSView {
                 popup.needsDisplay = true
             } else if let button = control as? NSButton {
                 button.contentTintColor = theme.textColor
+                if button.identifier?.rawValue == "qp.insertImage" {
+                    // Insert Image must be forced to theme color (palette symbol) to avoid system accent blue.
+                    if let base = NSImage(systemSymbolName: "photo", accessibilityDescription: "Insert Image") {
+                        let sizeConfig = NSImage.SymbolConfiguration(pointSize: 14, weight: .regular)
+                        var symbol = base.withSymbolConfiguration(sizeConfig) ?? base
+                        if let colored = symbol.withSymbolConfiguration(NSImage.SymbolConfiguration(paletteColors: [theme.textColor])) {
+                            symbol = colored
+                            symbol.isTemplate = false
+                        } else {
+                            symbol.isTemplate = true
+                        }
+                        button.image = symbol
+                    }
+                } else {
                     // Ensure SF Symbols render as template images so `contentTintColor` applies (prevents system accent blue).
                     if button.image != nil {
                         button.image?.isTemplate = true
                     }
+                }
                 let currentFontSize = button.font?.pointSize ?? 14
                 let attributes: [NSAttributedString.Key: Any] = [
                     .foregroundColor: theme.textColor,
@@ -3693,11 +3718,18 @@ class ContentViewController: NSViewController {
 
     private func scrollToOutlineEntry(_ entry: EditorViewController.OutlineEntry) {
         guard let textView = editorViewController.textView else { return }
-        let insertion = NSRange(location: entry.range.location, length: 0)
+        let storageLength = (textView.string as NSString).length
+        guard storageLength > 0 else { return }
+
+        let clampedLocation = min(entry.range.location, max(0, storageLength - 1))
+        let clampedLength = min(entry.range.length, storageLength - clampedLocation)
+        let visibleRange = NSRange(location: clampedLocation, length: max(1, clampedLength))
+        let insertion = NSRange(location: clampedLocation, length: 0)
+
         textView.setSelectedRange(insertion)
         textView.window?.makeFirstResponder(textView)
-        textView.scrollRangeToVisible(entry.range)
-        editorViewController.flashOutlineLocation(entry.range.location)
+        textView.scrollRangeToVisible(visibleRange)
+        editorViewController.flashOutlineLocation(insertion.location)
     }
 
     func applyTheme(_ theme: AppTheme) {
@@ -4075,6 +4107,9 @@ class OutlineViewController: NSViewController {
         outlineView.rowSizeStyle = .small
         outlineView.delegate = self
         outlineView.dataSource = self
+        outlineView.target = self
+        outlineView.action = #selector(outlineRowClicked(_:))
+        outlineView.doubleAction = #selector(outlineRowDoubleClicked(_:))
 
         let column = NSTableColumn(identifier: NSUserInterfaceItemIdentifier("OutlineColumn"))
         column.title = ""
@@ -4160,6 +4195,20 @@ class OutlineViewController: NSViewController {
         outlineView.reloadData()
         outlineView.expandItem(nil, expandChildren: true)
         isUpdating = false
+    }
+
+    @objc private func outlineRowClicked(_ sender: Any?) {
+        let targetRow = outlineView.clickedRow
+        guard targetRow >= 0, let node = outlineView.item(atRow: targetRow) as? Node else { return }
+        let entry = EditorViewController.OutlineEntry(title: node.title, level: node.level, range: node.range, page: node.page, styleName: nil)
+        onSelect?(entry)
+    }
+
+    @objc private func outlineRowDoubleClicked(_ sender: Any?) {
+        let targetRow = outlineView.clickedRow
+        guard targetRow >= 0, let node = outlineView.item(atRow: targetRow) as? Node else { return }
+        let entry = EditorViewController.OutlineEntry(title: node.title, level: node.level, range: node.range, page: node.page, styleName: nil)
+        onSelect?(entry)
     }
 
     private func buildTree(from entries: [EditorViewController.OutlineEntry]) -> [Node] {
@@ -4287,13 +4336,8 @@ extension OutlineViewController: NSOutlineViewDataSource, NSOutlineViewDelegate 
     }
 
     func outlineViewSelectionDidChange(_ notification: Notification) {
-        // Don't scroll during programmatic updates (e.g., outline refresh from typing)
-        guard !isUpdating else { return }
-
-        let selectedRow = outlineView.selectedRow
-        guard selectedRow >= 0, let node = outlineView.item(atRow: selectedRow) as? Node else { return }
-        let entry = EditorViewController.OutlineEntry(title: node.title, level: node.level, range: node.range, page: node.page, styleName: nil)
-        onSelect?(entry)
+        // Navigation is handled by click/double-click actions to avoid duplicate calls.
+        // This delegate is intentionally empty to prevent scroll conflicts.
     }
 }
 

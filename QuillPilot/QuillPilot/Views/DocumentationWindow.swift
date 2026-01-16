@@ -67,7 +67,8 @@ class DocumentationWindowController: NSWindowController {
         // Create tabs
         createTab(title: "❓ Why Quill Pilot?", identifier: "why")
         createTab(title: "📊 Analysis Tools", identifier: "analysis")
-        createTab(title: "👥 Character Features", identifier: "characters")
+        createTab(title: "👥 Character Library", identifier: "characterLibrary")
+        createTab(title: "👥 Character Analysis Tools", identifier: "characters")
         createTab(title: "📖 Plot & Structure", identifier: "plot")
         createTab(title: "🎬 Scenes", identifier: "scenes")
         createTab(title: "💬 Dialogue Tips", identifier: "dialogue")
@@ -96,21 +97,34 @@ class DocumentationWindowController: NSWindowController {
         let tabViewItem = NSTabViewItem(identifier: identifier)
         tabViewItem.label = title
 
-        let scrollView = NSScrollView(frame: tabView.bounds)
-        scrollView.autoresizingMask = [.width, .height]
-        scrollView.hasVerticalScroller = true
-        scrollView.hasHorizontalScroller = false
-        scrollView.borderType = .noBorder
+                let scrollView = NSScrollView(frame: tabView.bounds)
+                scrollView.autoresizingMask = [.width, .height]
+                scrollView.hasVerticalScroller = true
+                scrollView.hasHorizontalScroller = false
+                scrollView.borderType = .noBorder
 
-        let textView = NSTextView(frame: NSRect(x: 0, y: 0, width: scrollView.bounds.width - 40, height: 0))
-        textView.isEditable = false
-        textView.isSelectable = true
-        textView.drawsBackground = true
-        textView.textContainerInset = NSSize(width: 20, height: 20)
-        textView.autoresizingMask = [.width]
+                let textView = NSTextView(frame: .zero)
+                textView.isEditable = false
+                textView.isSelectable = true
+                textView.drawsBackground = true
+                textView.textContainerInset = NSSize(width: 20, height: 20)
+                textView.isHorizontallyResizable = false
+                textView.isVerticallyResizable = true
+                textView.textContainer?.widthTracksTextView = true
+                textView.textContainer?.heightTracksTextView = false
+                textView.textContainer?.lineFragmentPadding = 0
+                textView.translatesAutoresizingMaskIntoConstraints = false
 
-        scrollView.documentView = textView
+                scrollView.documentView = textView
         tabViewItem.view = scrollView
+
+                NSLayoutConstraint.activate([
+                        textView.leadingAnchor.constraint(equalTo: scrollView.contentView.leadingAnchor),
+                        textView.trailingAnchor.constraint(equalTo: scrollView.contentView.trailingAnchor),
+                        textView.topAnchor.constraint(equalTo: scrollView.contentView.topAnchor),
+                        textView.bottomAnchor.constraint(equalTo: scrollView.contentView.bottomAnchor),
+                        textView.widthAnchor.constraint(equalTo: scrollView.contentView.widthAnchor)
+                ])
 
         tabView.addTabViewItem(tabViewItem)
         scrollViews.append(scrollView)
@@ -145,29 +159,71 @@ class DocumentationWindowController: NSWindowController {
                 guard !normalizedQuery.isEmpty else { return }
 
                 func score(_ candidate: HelpHeadingLocation) -> Int {
+                        let lowerRaw = rawQuery.lowercased()
+                        let lowerTitle = candidate.title.lowercased()
                         if candidate.normalizedTitle == normalizedQuery { return 100 }
                         if candidate.normalizedTitle.hasPrefix(normalizedQuery) { return 80 }
                         if candidate.normalizedTitle.contains(normalizedQuery) { return 60 }
-                        if candidate.title.lowercased().contains(rawQuery.lowercased()) { return 40 }
+                        if lowerTitle.contains(lowerRaw) { return 50 }
+                        // Partial word matching for phrases like "thematic resonance" matching "Thematic Resonance Map"
+                        let queryWords = lowerRaw.split(separator: " ").map { String($0) }
+                        let titleWords = lowerTitle.split(separator: " ").map { String($0) }
+                        let matchCount = queryWords.filter { qw in titleWords.contains { $0.hasPrefix(qw) || $0.contains(qw) } }.count
+                        if matchCount == queryWords.count && queryWords.count >= 2 { return 45 }
+                        if matchCount > 0 { return 30 }
                         return 0
                 }
 
-                guard let best = headingIndex.max(by: { score($0) < score($1) }), score(best) > 0 else {
+                if let best = headingIndex.max(by: { score($0) < score($1) }), score(best) > 0 {
+                        selectTab(identifier: best.tabIdentifier)
+
+                        DispatchQueue.main.async { [weak self] in
+                                guard let self else { return }
+                                guard let tabIndex = self.tabIdentifiers.firstIndex(of: best.tabIdentifier),
+                                          tabIndex < self.textViews.count else { return }
+                                let textView = self.textViews[tabIndex]
+                                textView.window?.makeFirstResponder(textView)
+                                textView.setSelectedRange(best.range)
+                                textView.scrollRangeToVisible(best.range)
+                                textView.showFindIndicator(for: best.range)
+                        }
+                        return
+                }
+
+                // Fallback: search full help text (not just headings). This guarantees searches for
+                // terms like "Thematic Resonance map" or "Failure Pattern Charts" still land somewhere helpful.
+                let lowerQuery = rawQuery.lowercased()
+                var bestFallback: (tabIdentifier: String, range: NSRange)?
+
+                for (index, tabIdentifier) in tabIdentifiers.enumerated() {
+                        guard index < textViews.count else { continue }
+                        let textView = textViews[index]
+                        let fullText = (textView.string as NSString)
+                        let lowerText = fullText.lowercased
+                        let swiftLowerText = String(lowerText)
+                        if let r = swiftLowerText.range(of: lowerQuery) {
+                                let location = swiftLowerText.distance(from: swiftLowerText.startIndex, to: r.lowerBound)
+                                let length = lowerQuery.count
+                                bestFallback = (tabIdentifier, NSRange(location: location, length: length))
+                                break
+                        }
+                }
+
+                guard let fallback = bestFallback else {
                         NSSound.beep()
                         return
                 }
 
-                selectTab(identifier: best.tabIdentifier)
-
+                selectTab(identifier: fallback.tabIdentifier)
                 DispatchQueue.main.async { [weak self] in
                         guard let self else { return }
-                        guard let tabIndex = self.tabIdentifiers.firstIndex(of: best.tabIdentifier),
+                        guard let tabIndex = self.tabIdentifiers.firstIndex(of: fallback.tabIdentifier),
                                   tabIndex < self.textViews.count else { return }
                         let textView = self.textViews[tabIndex]
                         textView.window?.makeFirstResponder(textView)
-                        textView.setSelectedRange(best.range)
-                        textView.scrollRangeToVisible(best.range)
-                        textView.showFindIndicator(for: best.range)
+                        textView.setSelectedRange(fallback.range)
+                        textView.scrollRangeToVisible(fallback.range)
+                        textView.showFindIndicator(for: fallback.range)
                 }
         }
 
@@ -213,6 +269,7 @@ class DocumentationWindowController: NSWindowController {
     private func loadDocumentation() {
         loadWhyTab()
         loadAnalysisTab()
+                loadCharacterLibraryTab()
         loadCharactersTab()
         loadPlotTab()
         loadScenesTab()
@@ -351,9 +408,21 @@ QuillPilot is for the latter.
 Open analysis from the right-side Analysis panel:
 • Click 📊 (Analysis) to open the main analysis popout
 • Click 📖 (Plot Structure) for plot/structure visualizations
-• Click 👥 (Characters) for character-focused tools
+• Use the character tool buttons listed under the analysis buttons (each tool has its own icon)
 
 If results aren’t available yet, QuillPilot runs analysis automatically the first time you open any analysis view.
+""", color: bodyColor))
+        content.append(makeNewline())
+
+        content.append(makeHeading("Thematic Resonance Map", color: headingColor))
+        content.append(makeBody("""
+Status: Not currently implemented.
+""", color: bodyColor))
+        content.append(makeNewline())
+
+        content.append(makeHeading("Failure Pattern Charts", color: headingColor))
+        content.append(makeBody("""
+Status: Not currently implemented.
 """, color: bodyColor))
         content.append(makeNewline())
 
@@ -512,11 +581,59 @@ Practical workflow:
         textView.textStorage?.setAttributedString(content)
     }
 
-    // MARK: - Tab 3: Character Features
+    // MARK: - Tab 3: Character Library
+
+    private func loadCharacterLibraryTab() {
+        guard textViews.count > 2 else { return }
+        let textView = textViews[2]
+        let theme = ThemeManager.shared.currentTheme
+        let titleColor = theme.textColor
+        let headingColor = theme.textColor
+        let bodyColor = theme.textColor
+
+        let content = NSMutableAttributedString()
+
+        content.append(makeTitle("Character Library", color: titleColor))
+        content.append(makeBody("""
+Central repository for all character information (profiles, roles, motivations, relationships, arcs).
+
+Location:
+• Left sidebar (Navigator) → 👥 Characters
+
+Notes:
+• The Character Library is a data tool, not an analysis report. Analysis visualizations live in the right-side Analysis panel.
+""", color: bodyColor))
+        content.append(makeNewline())
+
+        content.append(makeHeading("What It Stores", color: headingColor))
+        content.append(makeBody("""
+• Character profiles (name, role)
+• Descriptions and backstory
+• Motivations and goals
+• Relationships and notes
+
+Tip: Consistent naming (and a complete Character Library) improves character detection in the analysis tools.
+""", color: bodyColor))
+        content.append(makeNewline())
+
+        content.append(makeHeading("How To Use", color: headingColor))
+        content.append(makeBody("""
+1) Open the Character Library from the Navigator
+2) Add or edit characters (including common aliases/nicknames)
+3) Keep names aligned with the manuscript’s actual usage
+
+Character data is saved automatically.
+""", color: bodyColor))
+
+        normalizeAppNameInDocumentation(content)
+        textView.textStorage?.setAttributedString(content)
+    }
+
+    // MARK: - Tab 4: Character Analysis Tools
 
     private func loadCharactersTab() {
-                guard textViews.count > 2 else { return }
-                let textView = textViews[2]
+                guard textViews.count > 3 else { return }
+                let textView = textViews[3]
         let theme = ThemeManager.shared.currentTheme
         let titleColor = theme.textColor
         let headingColor = theme.textColor
@@ -526,29 +643,9 @@ Practical workflow:
 
         content.append(makeTitle("Character Analysis Tools", color: titleColor))
         content.append(makeBody("""
-Character analysis lives in the right-side Analysis panel (👥). If results aren’t available yet, QuillPilot runs analysis automatically when you open a character tool.
-""", color: bodyColor))
-        content.append(makeNewline())
+Character analysis lives in the right-side Analysis panel. Each character tool has its own button (no submenu).
 
-        content.append(makeHeading("👥 Character Library", color: headingColor))
-        content.append(makeBody("""
-Central repository for all character information.
-
-Location: Click 👥 in the Navigator panel
-
-Features:
-• Create detailed character profiles
-• Store physical descriptions
-• Track character roles (Protagonist, Antagonist, Supporting, Minor)
-• Document motivations and backstory
-• Add character relationships
-• Define character arcs
-
-To use:
-1. Click 👥 Characters in Navigator
-2. Opens dedicated Character Library window
-3. Add/Edit/Delete characters
-4. Saved automatically as JSON
+If results aren’t available yet, QuillPilot runs analysis automatically when you open a character tool.
 """, color: bodyColor))
         content.append(makeNewline())
 
@@ -556,7 +653,7 @@ To use:
         content.append(makeBody("""
 Visualize character emotional states throughout your story.
 
-Access: Right panel → 👥 Characters → 📈 Emotional Trajectory
+Access: Right panel → 📈 Emotional Trajectory
 
 Features:
 • Multi-character overlay with color coding
@@ -604,7 +701,7 @@ This visualization helps identify:
         content.append(makeBody("""
 Tracks how character decisions reinforce or challenge their beliefs.
 
-Access: Right panel → 👥 Characters → 📊 Decision-Belief Loops
+Access: Right panel → 📊 Decision-Belief Loops
 
 What the framework is tracking (per chapter):
 • Pressure — new forces acting on the character (conflict, dilemma, constraint)
@@ -656,7 +753,7 @@ Character Arc Timeline (legend):
         content.append(makeBody("""
 Table format tracking character belief evolution through chapters.
 
-Access: Right panel → 👥 Characters → 📋 Belief Shift Matrix
+Access: Right panel → 📋 Belief Shift Matrix
 
 Columns:
 • Chapter - Where the belief appears
@@ -712,7 +809,7 @@ Perfect for:
         content.append(makeBody("""
 Maps choices, not traits. Ensures growth comes from action, not narration.
 
-Access: Right panel → 👥 Characters → ⛓️ Decision-Consequence Chains
+Access: Right panel → ⛓️ Decision-Consequence Chains
 
 Structure:
 • Chapter → Decision → Immediate Outcome → Long-term Effect
@@ -742,7 +839,7 @@ and those decisions have real, lasting consequences on their journey.
         content.append(makeBody("""
 Analyzes relationships and scenes between characters.
 
-Access: Right panel → 👥 Characters → 🤝 Character Interactions
+Access: Right panel → 🤝 Character Interactions
 
 Features:
 • Network graph of character relationships
@@ -772,7 +869,7 @@ If the network looks incomplete:
         content.append(makeBody("""
 Heat map showing which characters appear in which chapters.
 
-Access: Right panel → 👥 Characters → 📍 Character Presence
+Access: Right panel → 📍 Character Presence
 
 Displays:
 • Grid: Rows = Characters, Columns = Chapters
@@ -793,7 +890,7 @@ Use cases:
         content.append(makeBody("""
 Network diagram visualizing character relationships and their evolution.
 
-Access: Right panel → 👥 Characters → 🔗 Relationship Evolution Maps
+Access: Right panel → 🔗 Relationship Evolution Maps
 
 Visual Elements:
 • Nodes = Characters (size = emotional investment %)
@@ -839,7 +936,7 @@ Great for:
         content.append(makeBody("""
 Track the gap between who characters are inside and how they act.
 
-Access: Right panel → 👥 Characters → 🎭 Internal vs External Alignment
+Access: Right panel → 🎭 Internal vs External Alignment
 
 Two Parallel Tracks:
 • Purple line = Inner Truth (what they feel/believe)
@@ -881,7 +978,7 @@ Character Selection:
         content.append(makeBody("""
 Track how character's language changes — reveals unconscious growth.
 
-Access: Right panel → 👥 Characters → 📝 Language Drift Analysis
+Access: Right panel → 📝 Language Drift Analysis
 
 Five Metrics Tracked:
 
@@ -932,6 +1029,57 @@ Interactive Features:
 • Click character names to switch characters
 • Badges highlight significant shifts
 """, color: bodyColor))
+        content.append(makeNewline())
+
+        content.append(makeHeading("🎯 Thematic Resonance Map", color: headingColor))
+        content.append(makeBody("""
+Visualize how each character aligns with (or resists) the story’s theme over time.
+
+Access: Right panel → 🎯 Thematic Resonance Map
+
+What it shows:
+• Theme alignment (from opposed → embodied)
+• Awareness of the theme (how conscious the character is of the theme)
+• Influence (how much the character drives thematic exploration)
+• Personal cost (what it costs the character to engage the theme)
+
+How to read it:
+• Alignment above 0 = thematically aligned; below 0 = in conflict with the theme
+• Rising alignment suggests growth toward the theme
+• High awareness + low alignment often indicates conscious resistance
+• High cost highlights moments of thematic sacrifice
+
+Use it to:
+• Track character transformations in thematic terms
+• Identify who embodies the theme vs who resists it
+• Spot where the theme is under-explored in later chapters
+""", color: bodyColor))
+        content.append(makeNewline())
+
+        content.append(makeHeading("📉 Failure Pattern Charts", color: headingColor))
+        content.append(makeBody("""
+Shows how character failures evolve across the story — not just success vs failure, but *how* they fail.
+
+Access: Right panel → 📉 Failure Pattern Charts
+
+Failure types tracked:
+• Naive
+• Reactive
+• Misinformed
+• Strategic
+• Principled
+• Costly but Chosen
+
+What it indicates:
+• Early failures trend toward naive/reactive patterns
+• Later failures should show better judgment (strategic/principled)
+• A flat pattern suggests limited growth in decision quality
+
+Use it to:
+• Diagnose whether characters are learning from mistakes
+• Ensure failures evolve with the character arc
+• Identify late-story regression or stagnation
+""", color: bodyColor))
 
         normalizeAppNameInDocumentation(content)
         textView.textStorage?.setAttributedString(content)
@@ -940,8 +1088,8 @@ Interactive Features:
     // MARK: - Tab 4: Plot & Structure
 
     private func loadPlotTab() {
-                guard textViews.count > 3 else { return }
-                let textView = textViews[3]
+        guard textViews.count > 4 else { return }
+        let textView = textViews[4]
         let theme = ThemeManager.shared.currentTheme
         let titleColor = theme.textColor
         let headingColor = theme.textColor
@@ -1056,8 +1204,8 @@ Story Directions (🧭 in Navigator):
     // MARK: - Tab 5: Scenes
 
     private func loadScenesTab() {
-                guard textViews.count > 4 else { return }
-                let textView = textViews[4]
+        guard textViews.count > 5 else { return }
+        let textView = textViews[5]
         let theme = ThemeManager.shared.currentTheme
         let titleColor = theme.textColor
         let headingColor = theme.textColor
@@ -1379,8 +1527,8 @@ A: As many as your story needs. A 80,000-word novel might have 40-80 scenes, but
     // MARK: - Tab 6: Keyboard Shortcuts
 
     private func loadShortcutsTab() {
-                guard textViews.count > 7 else { return }
-                let textView = textViews[7]
+        guard textViews.count > 8 else { return }
+        let textView = textViews[8]
         let theme = ThemeManager.shared.currentTheme
         let titleColor = theme.textColor
         let headingColor = theme.textColor
@@ -1548,9 +1696,9 @@ Analysis tools are available from the right-side Analysis panel.
 Quick access:
 • 📊 Analysis — document-level metrics, writing-quality flags, dialogue metrics, and Poetry Analysis when using Poetry templates
 • 📖 Plot Structure — plot/structure visualizations
-• 👥 Characters — character-focused tools and maps
+• 👥 Character Analysis Tools — character-focused tools and maps
 
-Tip: In this Help window, use the “📊 Analysis Tools”, “📖 Plot & Structure”, and “👥 Character Features” tabs for in-depth documentation.
+Tip: In this Help window, use the “📊 Analysis Tools”, “👥 Character Library”, “👥 Character Analysis Tools”, and “📖 Plot & Structure” tabs for in-depth documentation.
 Tip: Auto-analyze behavior can be configured in Preferences.
 """, color: bodyColor))
         content.append(makeNewline())
@@ -1616,7 +1764,7 @@ Tip: Auto-analyze behavior can be configured in Preferences.
 
     // MARK: - Dialogue Tips Tab
     private func loadDialogueTab() {
-        guard textViews.count > 5, let textView = textViews[safe: 5] else { return }
+                guard textViews.count > 6, let textView = textViews[safe: 6] else { return }
         let theme = ThemeManager.shared.currentTheme
         let titleColor = theme.textColor
         let headingColor = theme.textColor
@@ -1817,7 +1965,7 @@ QuillPilot's dialogue analysis tool checks for all these issues and provides fee
 
     // MARK: - List Numbering Tab
     private func loadNumberingTab() {
-        guard textViews.count > 6, let textView = textViews[safe: 6] else { return }
+                guard textViews.count > 7, let textView = textViews[safe: 7] else { return }
         let theme = ThemeManager.shared.currentTheme
         let titleColor = theme.textColor
         let headingColor = theme.textColor

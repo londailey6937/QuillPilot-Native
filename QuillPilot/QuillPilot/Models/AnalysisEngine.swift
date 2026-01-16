@@ -1964,7 +1964,7 @@ class AnalysisEngine {
         }
 
         // Real analysis: Extract beliefs, evidence, and counterpressures from text
-        let beliefIndicators = ["believe", "think", "thought", "realize", "understand", "know", "trust", "faith", "value", "principle", "convinced", "certain", "sure"]
+        let beliefIndicators = ["believe", "think", "thought", "realize", "realized", "understand", "know", "trust", "faith", "value", "values", "principle", "principles", "convinced", "certain", "sure", "feel", "felt", "want", "wanted", "need", "needed", "hope", "hoped", "fear", "feared", "swore", "vowed", "promised", "resolved"]
         let evidenceIndicators = ["because", "shows", "demonstrates", "proves", "revealed", "acted", "chose", "decided", "refused"]
         let counterpressureIndicators = ["but", "however", "challenged", "questioned", "opposed", "confronted", "despite", "although", "forced", "pressured"]
 
@@ -2003,40 +2003,45 @@ class AnalysisEngine {
             let chapterAliasRegexes = aliasRegexes(for: characterAliases)
 
             // Sample chapters for analysis.
-            // For screenplays (many scenes), sampling only 3 points is too sparse.
+            // For screenplays (many scenes), sparse sampling misses characters.
+            let maxChaptersToScan = min(chapters.count, 18)
             let sampleIndices: [Int]
-            if chapters.count <= 12 {
+            if chapters.count <= maxChaptersToScan {
                 sampleIndices = Array(0..<chapters.count)
+            } else if maxChaptersToScan <= 1 {
+                sampleIndices = [0]
             } else {
-                let targetSamples = 12
-                let stride = max(1, chapters.count / targetSamples)
-                var idx: [Int] = []
-                var i = 0
-                while i < chapters.count {
-                    idx.append(i)
-                    i += stride
+                let step = Double(chapters.count - 1) / Double(maxChaptersToScan - 1)
+                var idxs: [Int] = []
+                var seen: Set<Int> = []
+                for i in 0..<maxChaptersToScan {
+                    let idx = min(chapters.count - 1, max(0, Int(round(Double(i) * step))))
+                    if seen.insert(idx).inserted {
+                        idxs.append(idx)
+                    }
                 }
-                if idx.last != chapters.count - 1 { idx.append(chapters.count - 1) }
-                sampleIndices = idx
+                sampleIndices = idxs
             }
+
+            let maxEntriesPerCharacter = 8
 
             for index in sampleIndices {
                 let chapter = chapters[index]
 
                 // Only analyze chapters where character appears
-                                guard matchesAnyAlias(chapterAliasRegexes, in: chapter.text) else {
+                guard matchesAnyAlias(chapterAliasRegexes, in: chapter.text) else {
                     continue
                 }
 
                 // Extract belief statement
-                                let belief = extractBeliefStatement(from: chapter.text, aliases: characterAliases, indicators: beliefIndicators)
+                let belief = extractBeliefStatement(from: chapter.text, aliases: characterAliases, indicators: beliefIndicators)
                 guard !belief.isEmpty else { continue }
 
                 // Extract supporting evidence
-                                let evidence = extractEvidence(from: chapter.text, aliases: characterAliases, indicators: evidenceIndicators)
+                let evidence = extractEvidence(from: chapter.text, aliases: characterAliases, indicators: evidenceIndicators)
 
                 // Extract counterpressure
-                                let counterpressure = extractCounterpressure(from: chapter.text, aliases: characterAliases, indicators: counterpressureIndicators)
+                let counterpressure = extractCounterpressure(from: chapter.text, aliases: characterAliases, indicators: counterpressureIndicators)
 
                 let entry = BeliefShiftMatrix.BeliefEntry(
                     chapter: chapter.number,
@@ -2049,6 +2054,31 @@ class AnalysisEngine {
                 )
 
                 entries.append(entry)
+
+                if entries.count >= maxEntriesPerCharacter {
+                    break
+                }
+            }
+
+            if entries.isEmpty {
+                if let fallbackChapter = chapters.first(where: { matchesAnyAlias(chapterAliasRegexes, in: $0.text) }) {
+                    let rawBelief = extractBeliefStatement(from: fallbackChapter.text, aliases: characterAliases, indicators: beliefIndicators)
+                    let belief = rawBelief.isEmpty ? "Belief implied by character actions" : rawBelief
+                    let evidence = extractEvidence(from: fallbackChapter.text, aliases: characterAliases, indicators: evidenceIndicators)
+                    let counterpressure = extractCounterpressure(from: fallbackChapter.text, aliases: characterAliases, indicators: counterpressureIndicators)
+
+                    entries.append(
+                        BeliefShiftMatrix.BeliefEntry(
+                            chapter: fallbackChapter.number,
+                            chapterPage: 0,
+                            coreBelief: belief,
+                            evidence: evidence.isEmpty ? "Character's actions reflect this belief" : evidence,
+                            evidencePage: 0,
+                            counterpressure: counterpressure.isEmpty ? "Circumstances test this perspective" : counterpressure,
+                            counterpressurePage: 0
+                        )
+                    )
+                }
             }
 
             // Always add a matrix for valid library characters, even if entries are sparse.
@@ -2076,15 +2106,24 @@ class AnalysisEngine {
             return false
         }
 
+        var firstAliasSentence: String?
+
         for sentence in sentences {
             let lower = sentence.lowercased()
             guard sentenceMatchesAnyAlias(sentence) else { continue }
+
+            if firstAliasSentence == nil {
+                firstAliasSentence = sentence
+            }
 
             for indicator in indicators {
                 if lower.contains(indicator) {
                     return sentence.trimmingCharacters(in: .whitespacesAndNewlines).prefix(120).description
                 }
             }
+        }
+        if let fallback = firstAliasSentence {
+            return fallback.trimmingCharacters(in: .whitespacesAndNewlines).prefix(120).description
         }
         return ""
     }

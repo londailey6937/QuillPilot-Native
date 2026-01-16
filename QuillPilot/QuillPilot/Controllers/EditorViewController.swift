@@ -1884,6 +1884,36 @@ class EditorViewController: NSViewController {
         textView.scrollToBeginningOfDocument(nil)
     }
 
+    func scrollToBottom() {
+        guard let storage = textView.textStorage else { return }
+        let length = storage.length
+        guard length > 0 else { return }
+
+        updatePageLayout()
+
+        let endRange = NSRange(location: max(0, length - 1), length: 0)
+        textView.setSelectedRange(endRange)
+        textView.scrollRangeToVisible(NSRange(location: max(0, length - 1), length: 1))
+        textView.scrollToEndOfDocument(nil)
+    }
+
+    func scrollToOutlineEntry(_ entry: OutlineEntry) {
+        guard let storage = textView.textStorage else { return }
+        let length = storage.length
+        guard length > 0 else { return }
+
+        updatePageLayout()
+
+        guard let resolvedRange = resolveOutlineEntryRange(entry) else { return }
+        let clampedLocation = min(resolvedRange.location, max(0, length - 1))
+        let targetRange = NSRange(location: clampedLocation, length: 1)
+
+        textView.layoutManager?.ensureLayout(forCharacterRange: targetRange)
+        textView.setSelectedRange(NSRange(location: clampedLocation, length: 0))
+        textView.scrollRangeToVisible(targetRange)
+        flashOutlineLocation(clampedLocation)
+    }
+
     /// Navigate to a specific page number
     /// - Parameter pageNumber: The page to navigate to (1-indexed)
     /// - Returns: True if navigation was successful, false if page number is out of range
@@ -4521,6 +4551,56 @@ case "Book Subtitle":
         let styleName: String?
     }
 
+    func resolveOutlineEntryRange(_ entry: OutlineEntry) -> NSRange? {
+        guard let storage = textView.textStorage else { return nil }
+        let full = storage.string as NSString
+        guard full.length > 0 else { return nil }
+
+        let desiredTitle = entry.title.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        let clampedLocation = min(entry.range.location, max(0, full.length - 1))
+        let initialRange = full.paragraphRange(for: NSRange(location: clampedLocation, length: 0))
+
+        func normalizedTitle(_ range: NSRange) -> String {
+            full.substring(with: range).trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+
+        func paragraphStyleName(atParagraphStart range: NSRange) -> String? {
+            storage.attribute(styleAttributeKey, at: range.location, effectiveRange: nil) as? String
+        }
+
+        if !desiredTitle.isEmpty {
+            let initialTitle = normalizedTitle(initialRange)
+            if initialTitle.caseInsensitiveCompare(desiredTitle) == .orderedSame {
+                return initialRange
+            }
+
+            var matches: [NSRange] = []
+            var location = 0
+            while location < full.length {
+                let paragraphRange = full.paragraphRange(for: NSRange(location: location, length: 0))
+                let paragraphTitle = normalizedTitle(paragraphRange)
+                if !paragraphTitle.isEmpty && paragraphTitle.caseInsensitiveCompare(desiredTitle) == .orderedSame {
+                    if let styleName = entry.styleName, let currentStyle = paragraphStyleName(atParagraphStart: paragraphRange) {
+                        if currentStyle == styleName {
+                            matches.append(paragraphRange)
+                        }
+                    } else {
+                        matches.append(paragraphRange)
+                    }
+                }
+                location = NSMaxRange(paragraphRange)
+            }
+
+            if !matches.isEmpty {
+                let anchor = entry.range.location
+                return matches.min(by: { abs($0.location - anchor) < abs($1.location - anchor) })
+            }
+        }
+
+        return initialRange
+    }
+
     func extractScreenplayCharacterCues(maxScanParagraphs: Int = 5000) -> [String] {
         guard StyleCatalog.shared.currentTemplateName == "Screenplay" else { return [] }
         guard let storage = textView.textStorage else { return [] }
@@ -6386,6 +6466,16 @@ case "Book Subtitle":
 
 extension EditorViewController: NSTextViewDelegate {
     func textView(_ textView: NSTextView, doCommandBy commandSelector: Selector) -> Bool {
+        if commandSelector == #selector(NSResponder.moveToEndOfDocument(_:)) {
+            scrollToBottom()
+            return true
+        }
+
+        if commandSelector == #selector(NSResponder.moveToBeginningOfDocument(_:)) {
+            scrollToTop()
+            return true
+        }
+
         guard let storage = textView.textStorage else { return false }
         let sel = textView.selectedRange()
         guard sel.length == 0 else { return false }

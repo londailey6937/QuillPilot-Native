@@ -3403,6 +3403,7 @@ extension AnalysisViewController {
                 addStat("Words", "\(results.wordCount)")
                 addStat("Lines", "\(poetry.formal.lineCount)")
                 addStat("Stanzas", "\(poetry.formal.stanzaCount)")
+                addDetail("Percentages are heuristic signals, not measurements.")
                 addDetail("Poem Type: \(poetry.writers.mode.rawValue) — \(poetry.writers.modeRationale)")
 
                 func addBullets(_ items: [String]) {

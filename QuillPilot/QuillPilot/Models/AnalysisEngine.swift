@@ -351,6 +351,13 @@ class AnalysisEngine {
 
         // Basic counts (use full text for accurate word count)
         results.wordCount = countWords(text)
+        if StyleCatalog.shared.isPoetryTemplate {
+            let poemLines = poetryBodyLines(from: text)
+            let poemTokens = poemLines.flatMap { tokenizeWords($0) }
+            if !poemTokens.isEmpty {
+                results.wordCount = poemTokens.count
+            }
+        }
         results.sentenceCount = countSentences(analysisText)
 
         // Paragraph analysis
@@ -460,7 +467,7 @@ class AnalysisEngine {
 
     // MARK: - Poetry Analysis
 
-    private func generatePoetryInsights(text: String) -> PoetryInsights {
+    private func poetryBodyLines(from text: String) -> [String] {
         let normalized = text
             .replacingOccurrences(of: "\r\n", with: "\n")
             .replacingOccurrences(of: "\r", with: "\n")
@@ -477,6 +484,46 @@ class AnalysisEngine {
                 rawLines.removeSubrange(0...firstBlank)
             }
         }
+
+        // Fallback header detection (no blank line): strip 1–3 short header lines if the body is long enough.
+        let trimmedNonEmpty = rawLines.filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+        if trimmedNonEmpty.count >= 8 {
+            func isHeaderCandidate(_ line: String) -> Bool {
+                let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !trimmed.isEmpty else { return false }
+                if trimmed.count > 60 { return false }
+                if trimmed.rangeOfCharacter(from: CharacterSet(charactersIn: ".,;:!?")) != nil { return false }
+                return true
+            }
+
+            var headerLineIndexes: [Int] = []
+            for (idx, line) in rawLines.enumerated() {
+                let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
+                if trimmed.isEmpty { continue }
+                if isHeaderCandidate(line), headerLineIndexes.count < 3 {
+                    headerLineIndexes.append(idx)
+                    continue
+                }
+                break
+            }
+
+            if !headerLineIndexes.isEmpty {
+                let headerCount = headerLineIndexes.count
+                if headerCount <= 3 {
+                    // Remove contiguous header lines at the top.
+                    let lastHeaderIndex = headerLineIndexes.last ?? -1
+                    if lastHeaderIndex >= 0 {
+                        rawLines.removeSubrange(0...lastHeaderIndex)
+                    }
+                }
+            }
+        }
+
+        return rawLines
+    }
+
+    private func generatePoetryInsights(text: String) -> PoetryInsights {
+        let rawLines = poetryBodyLines(from: text)
 
         // Build stanzas as contiguous non-empty line blocks.
         var stanzas: [[String]] = []
@@ -801,7 +848,7 @@ class AnalysisEngine {
             items.prefix(limit).map { "\($0.text) (\($0.count)×)" }.joined(separator: ", ")
         }
 
-        func pct(_ value: Double) -> String { "\(Int(round(value * 100)))%" }
+        func pct(_ value: Double) -> String { "≈\(Int(round(value * 100)))%" }
 
         // --- Mode classification (very lightweight heuristic)
         let modeResult = classifyPoetryMode(lines: lines, tokensByLine: tokensByLine)
@@ -909,7 +956,7 @@ class AnalysisEngine {
 
         // --- Line Energy
         var lineEnergy: [String] = []
-        lineEnergy.append("Open line breaks: \(pct(openBreakRate)); hard stops: \(pct(hardStopRate)). Line breaks are the poem’s timing edits.")
+        lineEnergy.append("Open line breaks: \(pct(openBreakRate)); hard stops: \(pct(hardStopRate)). Line breaks are the poem’s timing edits (heuristic signal).")
         if dashEndings > 0 {
             lineEnergy.append("Dash endings (\(dashEndings)) keep meaning suspended—use them to deny closure or force rereads.")
         }
@@ -938,7 +985,11 @@ class AnalysisEngine {
             let first = Array(tokensByLine.prefix(third))
             let middle = Array(tokensByLine.dropFirst(third).prefix(third))
             let last = Array(tokensByLine.suffix(max(1, lines.count - 2 * third)))
-            imageLogic.append("Dominant senses (start → middle → end): \(dominantSenses(for: first)) → \(dominantSenses(for: middle)) → \(dominantSenses(for: last)).")
+            imageLogic.append("Dominant sensory cues by section (start → middle → end): \(dominantSenses(for: first)) → \(dominantSenses(for: middle)) → \(dominantSenses(for: last)) (lexical/heuristic, interpretive).")
+        }
+        if !imagery.dominantSenses.isEmpty {
+            let overall = imagery.dominantSenses.map { $0.rawValue }.joined(separator: ", ")
+            imageLogic.append("Overall dominant sensory cues: \(overall) (based on detected sensory words).")
         }
         if !motif.topMotifs.isEmpty {
             let top = formatCounted(motif.topMotifs.prefix(6), limit: 6)
@@ -1050,8 +1101,13 @@ class AnalysisEngine {
         } else {
             ending.append("Ending resists the opening (low keyword overlap). Resistive endings can reframe the first line without mirroring it.")
         }
+        let lowerLastLine = lastLine.lowercased()
+        let isCount = max(0, lowerLastLine.components(separatedBy: " is ").count - 1)
+        if isCount >= 2 {
+            ending.append("Ending pivots to aphorism (repeated “is” claims), which can override motif cues.")
+        }
         if !endingMotifs.isEmpty {
-            ending.append("Ends on an established motif: \(endingMotifs.prefix(3).joined(separator: ", ")).")
+            ending.append("Ending includes established motif tokens: \(endingMotifs.prefix(3).joined(separator: ", ")).")
         }
         let directionWords: Set<String> = ["toward", "into", "beyond", "away", "home", "forward", "out", "through"]
         let lastLineTokens = Set(tokenizeWords(lastLine))

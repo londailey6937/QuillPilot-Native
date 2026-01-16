@@ -3717,19 +3717,7 @@ class ContentViewController: NSViewController {
     }
 
     private func scrollToOutlineEntry(_ entry: EditorViewController.OutlineEntry) {
-        guard let textView = editorViewController.textView else { return }
-        let storageLength = (textView.string as NSString).length
-        guard storageLength > 0 else { return }
-
-        let clampedLocation = min(entry.range.location, max(0, storageLength - 1))
-        let clampedLength = min(entry.range.length, storageLength - clampedLocation)
-        let visibleRange = NSRange(location: clampedLocation, length: max(1, clampedLength))
-        let insertion = NSRange(location: clampedLocation, length: 0)
-
-        textView.setSelectedRange(insertion)
-        textView.window?.makeFirstResponder(textView)
-        textView.scrollRangeToVisible(visibleRange)
-        editorViewController.flashOutlineLocation(insertion.location)
+        editorViewController.scrollToOutlineEntry(entry)
     }
 
     func applyTheme(_ theme: AppTheme) {

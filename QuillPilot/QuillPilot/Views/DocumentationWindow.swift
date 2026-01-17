@@ -216,12 +216,14 @@ class DocumentationWindowController: NSWindowController, NSWindowDelegate {
                 for (identifier, button) in tabButtonsByIdentifier {
                         let isSelected = (identifier == selectedIdentifier)
 
-                        button.layer?.borderWidth = 1
-                        button.layer?.borderColor = theme.pageBorder.withAlphaComponent(isSelected ? 1.0 : 0.25).cgColor
-                        button.layer?.backgroundColor = (isSelected ? theme.pageBorder : theme.pageBackground).cgColor
+                        // Border-only tabs (no filled backgrounds). Use border strength + title color
+                        // to indicate selection, while keeping the Day theme's orange accent.
+                        button.layer?.backgroundColor = NSColor.clear.cgColor
+                        button.layer?.borderWidth = isSelected ? 2 : 1
+                        button.layer?.borderColor = theme.pageBorder.withAlphaComponent(isSelected ? 1.0 : 0.55).cgColor
 
-                        let titleColor: NSColor = isSelected ? .white : theme.textColor
-                        let font = NSFont.systemFont(ofSize: 12, weight: .semibold)
+                        let titleColor: NSColor = theme.textColor
+                        let font = NSFont.systemFont(ofSize: 12, weight: isSelected ? .bold : .semibold)
                         button.attributedTitle = NSAttributedString(
                                 string: button.title,
                                 attributes: [
@@ -249,21 +251,19 @@ class DocumentationWindowController: NSWindowController, NSWindowDelegate {
                 textView.textContainerInset = NSSize(width: 20, height: 20)
                 textView.isHorizontallyResizable = false
                 textView.isVerticallyResizable = true
+                textView.autoresizingMask = [.width]
+                textView.minSize = NSSize(width: 0, height: 0)
+                textView.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
+                textView.textContainer?.containerSize = NSSize(width: scrollView.contentSize.width, height: CGFloat.greatestFiniteMagnitude)
                 textView.textContainer?.widthTracksTextView = true
                 textView.textContainer?.heightTracksTextView = false
                 textView.textContainer?.lineFragmentPadding = 0
-                textView.translatesAutoresizingMaskIntoConstraints = false
+                textView.translatesAutoresizingMaskIntoConstraints = true
 
                 scrollView.documentView = textView
         tabViewItem.view = scrollView
 
-                NSLayoutConstraint.activate([
-                        textView.leadingAnchor.constraint(equalTo: scrollView.contentView.leadingAnchor),
-                        textView.trailingAnchor.constraint(equalTo: scrollView.contentView.trailingAnchor),
-                        textView.topAnchor.constraint(equalTo: scrollView.contentView.topAnchor),
-                        textView.bottomAnchor.constraint(equalTo: scrollView.contentView.bottomAnchor),
-                        textView.widthAnchor.constraint(equalTo: scrollView.contentView.widthAnchor)
-                ])
+                // Let NSTextView determine its height so scrolling works reliably.
 
         tabView.addTabViewItem(tabViewItem)
         scrollViews.append(scrollView)
@@ -468,25 +468,22 @@ QuillPilot is a writing environment that prioritizes how words feel on the page,
         content.append(makeNewline())
 
         content.append(makeHeading("What Makes QuillPilot Different", color: headingColor))
-        content.append(makeNewline())
 
-        content.append(makeHeading("Output-First Writing", color: headingColor))
+        content.append(makeSubheading("Output-First Writing", color: headingColor))
         content.append(makeBody("""
 What you see is what you submit. No compile step. No export-format-revise cycle.
 
 For professional novelists, this changes how you judge pacing, feel paragraph density, evaluate dialogue rhythm, and spot visual monotony. The manuscript you write is the manuscript you send.
 """, color: bodyColor))
-        content.append(makeNewline())
 
-        content.append(makeHeading("Typography as a Writing Tool", color: headingColor))
+        content.append(makeSubheading("Typography as a Writing Tool", color: headingColor))
         content.append(makeBody("""
 Good typography reduces cognitive load, improves rereading accuracy, and makes structural problems visible earlier.
 
 QuillPilot treats typography as part of thinking on the page—not output polish. Professional templates (Baskerville, Garamond, Hoefler Text) give your manuscript submission-quality presentation while you draft.
 """, color: bodyColor))
-        content.append(makeNewline())
 
-        content.append(makeHeading("Integrated Narrative Intelligence", color: headingColor))
+        content.append(makeSubheading("Integrated Narrative Intelligence", color: headingColor))
         content.append(makeBody("""
 Your analysis tools don't live in spreadsheets or notebooks—they surface structure automatically:
 
@@ -498,9 +495,8 @@ Your analysis tools don't live in spreadsheets or notebooks—they surface struc
 
 QuillPilot replaces the external bookkeeping that serious novelists already maintain, making patterns visible without breaking your writing flow.
 """, color: bodyColor))
-        content.append(makeNewline())
 
-        content.append(makeHeading("Story Data Files (Story Notes & Character Library)", color: headingColor))
+        content.append(makeSubheading("Story Data Files (Story Notes & Character Library)", color: headingColor))
         content.append(makeBody("""
 Quill Pilot keeps certain per-document data separate from your manuscript text so it can persist notes without rewriting your document file.
 
@@ -512,12 +508,10 @@ MyStory.docx.characters.json
 
 If you delete these files, Quill Pilot will treat that data as empty for the affected document.
 """, color: bodyColor))
-        content.append(makeNewline())
 
         content.append(makeHeading("Who QuillPilot Is For", color: headingColor))
-        content.append(makeNewline())
 
-        content.append(makeHeading("Choose QuillPilot if you:", color: headingColor))
+        content.append(makeSubheading("Choose QuillPilot if you:", color: headingColor))
         content.append(makeBody("""
 • Write primarily novels or screenplays
 • Already understand story structure
@@ -527,9 +521,8 @@ If you delete these files, Quill Pilot will treat that data as empty for the aff
 • Prefer writing in a finished-looking manuscript
 • Value execution refinement over project management
 """, color: bodyColor))
-        content.append(makeNewline())
 
-        content.append(makeHeading("QuillPilot is NOT trying to:", color: headingColor))
+        content.append(makeSubheading("QuillPilot is NOT trying to:", color: headingColor))
         content.append(makeBody("""
 • Manage research PDFs or web archives
 • Handle citations or footnotes
@@ -539,9 +532,8 @@ If you delete these files, Quill Pilot will treat that data as empty for the aff
 
 These are legitimate needs—but they're not what QuillPilot optimizes for.
 """, color: bodyColor))
-        content.append(makeNewline())
 
-        content.append(makeHeading("The Real Comparison", color: headingColor))
+        content.append(makeSubheading("The Real Comparison", color: headingColor))
         content.append(makeBody("""
 Many professional fiction writers use:
 • Scrivener for planning, research, and complex projects
@@ -551,9 +543,8 @@ QuillPilot replaces the moment when you export from project management tools and
 
 If that's the moment you care about most, QuillPilot wins.
 """, color: bodyColor))
-        content.append(makeNewline())
 
-        content.append(makeHeading("Writer Seniority Matters", color: headingColor))
+        content.append(makeSubheading("Writer Seniority Matters", color: headingColor))
         content.append(makeBody("""
 QuillPilot feels "simpler" because it assumes you already know how to write. It doesn't teach story structure—it helps you execute it precisely and consistently.
 
@@ -564,7 +555,7 @@ Mid-to-late career fiction writers benefit from tools that refine execution, mai
 QuillPilot is for the latter.
 """, color: bodyColor))
 
-        normalizeAppNameInDocumentation(content)
+                normalizeAppNameInDocumentation(content)
         textView.textStorage?.setAttributedString(content)
     }
 
@@ -591,19 +582,19 @@ If results aren’t available yet, QuillPilot runs analysis automatically the fi
 """, color: bodyColor))
         content.append(makeNewline())
 
-        content.append(makeHeading("Thematic Resonance Map", color: headingColor))
+        content.append(makeSubheading("Thematic Resonance Map", color: headingColor))
         content.append(makeBody("""
 Status: Not currently implemented.
 """, color: bodyColor))
         content.append(makeNewline())
 
-        content.append(makeHeading("Failure Pattern Charts", color: headingColor))
+        content.append(makeSubheading("Failure Pattern Charts", color: headingColor))
         content.append(makeBody("""
 Status: Not currently implemented.
 """, color: bodyColor))
         content.append(makeNewline())
 
-        content.append(makeHeading("Built-in macOS Writing Tools (Apple)", color: headingColor))
+        content.append(makeSubheading("Built-in macOS Writing Tools (Apple)", color: headingColor))
         content.append(makeBody("""
 Some Macs include system-provided Writing Tools (sometimes shown as Proofread, Rewrite, Summarize, etc.). If you see this panel while editing, it’s provided by macOS — not by QuillPilot.
 
@@ -616,7 +607,7 @@ Availability depends on your macOS version, device support, language/region, and
 """, color: bodyColor))
         content.append(makeNewline())
 
-        content.append(makeHeading("📊 Basic Metrics", color: headingColor))
+        content.append(makeSubheading("📊 Basic Metrics", color: headingColor))
         content.append(makeBody("""
 Access: Right panel → 📊 Analysis
 
@@ -632,7 +623,7 @@ How to use it:
 """, color: bodyColor))
         content.append(makeNewline())
 
-        content.append(makeHeading("📝 Writing Quality", color: headingColor))
+        content.append(makeSubheading("📝 Writing Quality", color: headingColor))
         content.append(makeBody("""
 Access: Right panel → 📊 Analysis
 
@@ -687,7 +678,7 @@ How to use it:
 """, color: bodyColor))
         content.append(makeNewline())
 
-        content.append(makeHeading("📖 Sentence Variety", color: headingColor))
+        content.append(makeSubheading("📖 Sentence Variety", color: headingColor))
         content.append(makeBody("""
 Access: Right panel → 📊 Analysis
 
@@ -707,7 +698,7 @@ How to use it:
 """, color: bodyColor))
         content.append(makeNewline())
 
-        content.append(makeHeading("💬 Dialogue Analysis", color: headingColor))
+        content.append(makeSubheading("💬 Dialogue Analysis", color: headingColor))
         content.append(makeBody("""
 Access: Right panel → 📊 Analysis
 
@@ -736,7 +727,7 @@ How to use it (fast):
 
         content.append(makeNewline())
 
-        content.append(makeHeading("🪶 Poetry Analysis", color: headingColor))
+        content.append(makeSubheading("🪶 Poetry Analysis", color: headingColor))
         content.append(makeBody("""
 Access: Right panel → 📊 Analysis (Poetry templates)
 
@@ -754,7 +745,7 @@ Practical workflow:
 3) Revise 20–40 lines, then re-run analysis to see if the pattern moved.
 """, color: bodyColor))
 
-        normalizeAppNameInDocumentation(content)
+                normalizeAppNameInDocumentation(content)
         textView.textStorage?.setAttributedString(content)
     }
 
@@ -782,7 +773,7 @@ Notes:
 """, color: bodyColor))
         content.append(makeNewline())
 
-        content.append(makeHeading("What It Stores", color: headingColor))
+        content.append(makeSubheading("What It Stores", color: headingColor))
         content.append(makeBody("""
 • Character profiles (name, role)
 • Descriptions and backstory
@@ -793,7 +784,7 @@ Tip: Consistent naming (and a complete Character Library) improves character det
 """, color: bodyColor))
         content.append(makeNewline())
 
-        content.append(makeHeading("How To Use", color: headingColor))
+        content.append(makeSubheading("How To Use", color: headingColor))
         content.append(makeBody("""
 1) Open the Character Library from the Navigator
 2) Add or edit characters (including common aliases/nicknames)
@@ -802,7 +793,7 @@ Tip: Consistent naming (and a complete Character Library) improves character det
 Character data is saved automatically.
 """, color: bodyColor))
 
-        normalizeAppNameInDocumentation(content)
+                normalizeAppNameInDocumentation(content)
         textView.textStorage?.setAttributedString(content)
     }
 
@@ -826,7 +817,7 @@ If results aren’t available yet, QuillPilot runs analysis automatically when y
 """, color: bodyColor))
         content.append(makeNewline())
 
-        content.append(makeHeading("📈 Emotional Trajectory", color: headingColor))
+        content.append(makeSubheading("📈 Emotional Trajectory", color: headingColor))
         content.append(makeBody("""
 Visualize character emotional states throughout your story.
 
@@ -874,7 +865,7 @@ This visualization helps identify:
 """, color: bodyColor))
         content.append(makeNewline())
 
-        content.append(makeHeading("📊 Decision-Belief Loops", color: headingColor))
+        content.append(makeSubheading("📊 Decision-Belief Loops", color: headingColor))
         content.append(makeBody("""
 Tracks how character decisions reinforce or challenge their beliefs.
 
@@ -926,7 +917,7 @@ Character Arc Timeline (legend):
 """, color: bodyColor))
         content.append(makeNewline())
 
-        content.append(makeHeading("📋 Belief Shift Matrix", color: headingColor))
+        content.append(makeSubheading("📋 Belief Shift Matrix", color: headingColor))
         content.append(makeBody("""
 Table format tracking character belief evolution through chapters.
 
@@ -982,7 +973,7 @@ Perfect for:
 """, color: bodyColor))
         content.append(makeNewline())
 
-        content.append(makeHeading("⛓️ Decision-Consequence Chains", color: headingColor))
+        content.append(makeSubheading("⛓️ Decision-Consequence Chains", color: headingColor))
         content.append(makeBody("""
 Maps choices, not traits. Ensures growth comes from action, not narration.
 
@@ -1012,7 +1003,7 @@ and those decisions have real, lasting consequences on their journey.
 """, color: bodyColor))
         content.append(makeNewline())
 
-        content.append(makeHeading("🤝 Character Interactions", color: headingColor))
+        content.append(makeSubheading("🤝 Character Interactions", color: headingColor))
         content.append(makeBody("""
 Analyzes relationships and scenes between characters.
 
@@ -1042,7 +1033,7 @@ If the network looks incomplete:
 """, color: bodyColor))
         content.append(makeNewline())
 
-        content.append(makeHeading("📍 Character Presence", color: headingColor))
+        content.append(makeSubheading("📍 Character Presence", color: headingColor))
         content.append(makeBody("""
 Heat map showing which characters appear in which chapters.
 
@@ -1063,7 +1054,7 @@ Use cases:
 """, color: bodyColor))
         content.append(makeNewline())
 
-        content.append(makeHeading("🔗 Relationship Evolution Maps", color: headingColor))
+        content.append(makeSubheading("🔗 Relationship Evolution Maps", color: headingColor))
         content.append(makeBody("""
 Network diagram visualizing character relationships and their evolution.
 
@@ -1109,7 +1100,7 @@ Great for:
 """, color: bodyColor))
         content.append(makeNewline())
 
-        content.append(makeHeading("🎭 Internal vs External Alignment", color: headingColor))
+        content.append(makeSubheading("🎭 Internal vs External Alignment", color: headingColor))
         content.append(makeBody("""
 Track the gap between who characters are inside and how they act.
 
@@ -1151,7 +1142,7 @@ Character Selection:
 """, color: bodyColor))
         content.append(makeNewline())
 
-        content.append(makeHeading("📝 Language Drift Analysis", color: headingColor))
+        content.append(makeSubheading("📝 Language Drift Analysis", color: headingColor))
         content.append(makeBody("""
 Track how character's language changes — reveals unconscious growth.
 
@@ -1208,7 +1199,7 @@ Interactive Features:
 """, color: bodyColor))
         content.append(makeNewline())
 
-        content.append(makeHeading("🎯 Thematic Resonance Map", color: headingColor))
+        content.append(makeSubheading("🎯 Thematic Resonance Map", color: headingColor))
         content.append(makeBody("""
 Visualize how each character aligns with (or resists) the story’s theme over time.
 
@@ -1233,7 +1224,7 @@ Use it to:
 """, color: bodyColor))
         content.append(makeNewline())
 
-        content.append(makeHeading("📉 Failure Pattern Charts", color: headingColor))
+        content.append(makeSubheading("📉 Failure Pattern Charts", color: headingColor))
         content.append(makeBody("""
 Shows how character failures evolve across the story — not just success vs failure, but *how* they fail.
 
@@ -1258,7 +1249,7 @@ Use it to:
 • Identify late-story regression or stagnation
 """, color: bodyColor))
 
-        normalizeAppNameInDocumentation(content)
+                normalizeAppNameInDocumentation(content)
         textView.textStorage?.setAttributedString(content)
     }
 
@@ -1374,7 +1365,7 @@ Story Directions (🧭 in Navigator):
 • Plan story progression
 """, color: bodyColor))
 
-        normalizeAppNameInDocumentation(content)
+                normalizeAppNameInDocumentation(content)
         textView.textStorage?.setAttributedString(content)
     }
 
@@ -1697,7 +1688,7 @@ Q: How many scenes should I have?
 A: As many as your story needs. A 80,000-word novel might have 40-80 scenes, but there's no rule. Use what's useful.
 """, color: bodyColor))
 
-        normalizeAppNameInDocumentation(content)
+                normalizeAppNameInDocumentation(content)
         textView.textStorage?.setAttributedString(content)
     }
 
@@ -1716,7 +1707,7 @@ A: As many as your story needs. A 80,000-word novel might have 40-80 scenes, but
         content.append(makeTitle("Keyboard Shortcuts", color: titleColor))
         content.append(makeNewline())
 
-        content.append(makeHeading("📄 File Operations", color: headingColor))
+        content.append(makeSubheading("📄 File Operations", color: headingColor))
         content.append(makeBody("""
 ⌘N - New document
 ⌘O - Open document
@@ -1730,7 +1721,7 @@ Note: Auto-save runs periodically for saved documents (default 1 minute; configu
 """, color: bodyColor))
         content.append(makeNewline())
 
-        content.append(makeHeading("📦 Working Format: RTFD (Recommended)", color: headingColor))
+        content.append(makeSubheading("📦 Working Format: RTFD (Recommended)", color: headingColor))
         content.append(makeBody("""
 RTFD is a macOS-native rich-text format stored as a package (a folder that looks like a single file). It preserves text styling and embedded images reliably, and is usually the best choice while drafting in QuillPilot.
 
@@ -1738,7 +1729,7 @@ For sharing, collaboration, or cross-platform editing, exporting is often better
 """, color: bodyColor))
         content.append(makeNewline())
 
-        content.append(makeHeading("✂️ Editing", color: headingColor))
+        content.append(makeSubheading("✂️ Editing", color: headingColor))
         content.append(makeBody("""
 ⌘Z - Undo
 ⌘⇧Z - Redo
@@ -1750,7 +1741,7 @@ For sharing, collaboration, or cross-platform editing, exporting is often better
 """, color: bodyColor))
         content.append(makeNewline())
 
-        content.append(makeHeading("📝 Formatting", color: headingColor))
+        content.append(makeSubheading("📝 Formatting", color: headingColor))
         content.append(makeBody("""
 ⌘B - Bold
 ⌘I - Italic
@@ -1769,7 +1760,7 @@ Format menu:
 """, color: bodyColor))
         content.append(makeNewline())
 
-        content.append(makeHeading("✨ Typography", color: headingColor))
+        content.append(makeSubheading("✨ Typography", color: headingColor))
         content.append(makeBody("""
 QuillPilot includes professional typography features:
 
@@ -1799,7 +1790,7 @@ These features work best with professional fonts like Times New Roman, Georgia, 
 """, color: bodyColor))
         content.append(makeNewline())
 
-        content.append(makeHeading("📚 Style Templates", color: headingColor))
+        content.append(makeSubheading("📚 Style Templates", color: headingColor))
         content.append(makeBody("""
 Templates in QuillPilot are complete style sets (Body Text, headings, chapter formats, TOC/Index styles, etc.) tuned around a specific typeface.
 
@@ -1889,7 +1880,7 @@ Tip: Auto-analyze behavior can be configured in Preferences.
 • Use ⌘F to quickly search your document
 """, color: bodyColor))
 
-        normalizeAppNameInDocumentation(content)
+                normalizeAppNameInDocumentation(content)
         textView.textStorage?.setAttributedString(content)
     }
 
@@ -1897,7 +1888,8 @@ Tip: Auto-analyze behavior can be configured in Preferences.
 
     private func makeTitle(_ text: String, color: NSColor) -> NSAttributedString {
         let paragraphStyle = NSMutableParagraphStyle()
-        paragraphStyle.paragraphSpacingBefore = 20
+                paragraphStyle.paragraphSpacingBefore = 8
+                paragraphStyle.paragraphSpacing = 4
 
         let attributes: [NSAttributedString.Key: Any] = [
             .font: NSFont.systemFont(ofSize: 24, weight: .bold),
@@ -1905,16 +1897,16 @@ Tip: Auto-analyze behavior can be configured in Preferences.
                         .paragraphStyle: paragraphStyle,
                         helpHeadingAttributeKey: text
         ]
-        return NSAttributedString(string: text + "\n\n", attributes: attributes)
+        return NSAttributedString(string: text + "\n", attributes: attributes)
     }
 
     private func makeHeading(_ text: String, color: NSColor) -> NSAttributedString {
         let paragraphStyle = NSMutableParagraphStyle()
-        paragraphStyle.paragraphSpacingBefore = 12
-        paragraphStyle.paragraphSpacing = 6
+                paragraphStyle.paragraphSpacingBefore = 8
+                paragraphStyle.paragraphSpacing = 4
 
         let attributes: [NSAttributedString.Key: Any] = [
-            .font: NSFont.systemFont(ofSize: 18, weight: .semibold),
+            .font: NSFont.systemFont(ofSize: 17, weight: .bold),
             .foregroundColor: color,
                         .paragraphStyle: paragraphStyle,
                         helpHeadingAttributeKey: text
@@ -1922,21 +1914,50 @@ Tip: Auto-analyze behavior can be configured in Preferences.
         return NSAttributedString(string: text + "\n", attributes: attributes)
     }
 
-    private func makeBody(_ text: String, color: NSColor) -> NSAttributedString {
+    private func makeSubheading(_ text: String, color: NSColor) -> NSAttributedString {
         let paragraphStyle = NSMutableParagraphStyle()
-        paragraphStyle.lineSpacing = 4
-        paragraphStyle.paragraphSpacing = 8
+                paragraphStyle.paragraphSpacingBefore = 6
+                paragraphStyle.paragraphSpacing = 2
+                                paragraphStyle.headIndent = 0
+                                paragraphStyle.firstLineHeadIndent = 0
+
+        let attributes: [NSAttributedString.Key: Any] = [
+            .font: NSFont.systemFont(ofSize: 15, weight: .semibold),
+            .foregroundColor: color,
+                        .paragraphStyle: paragraphStyle,
+                        helpHeadingAttributeKey: text
+        ]
+        return NSAttributedString(string: text + "\n", attributes: attributes)
+    }
+
+        private func makeBody(_ text: String, color: NSColor) -> NSAttributedString {
+        let paragraphStyle = NSMutableParagraphStyle()
+                paragraphStyle.lineSpacing = 0
+                paragraphStyle.paragraphSpacing = 1
+                paragraphStyle.headIndent = 0
+                paragraphStyle.firstLineHeadIndent = 0
+                paragraphStyle.alignment = .left
 
         let attributes: [NSAttributedString.Key: Any] = [
             .font: NSFont.systemFont(ofSize: 13),
             .foregroundColor: color,
             .paragraphStyle: paragraphStyle
         ]
-        return NSAttributedString(string: text, attributes: attributes)
+                let normalizedText = text.hasSuffix("\n") ? text : text + "\n"
+                return NSAttributedString(string: normalizedText, attributes: attributes)
     }
 
     private func makeNewline() -> NSAttributedString {
-        return NSAttributedString(string: "\n")
+        let paragraphStyle = NSMutableParagraphStyle()
+        paragraphStyle.lineSpacing = 0
+        paragraphStyle.paragraphSpacing = 0
+        return NSAttributedString(
+                string: "\n",
+                attributes: [
+                        .font: NSFont.systemFont(ofSize: 13),
+                        .paragraphStyle: paragraphStyle
+                ]
+        )
     }
 
     // MARK: - Dialogue Tips Tab
@@ -1954,7 +1975,7 @@ Tip: Auto-analyze behavior can be configured in Preferences.
         content.append(makeNewline())
         content.append(makeNewline())
 
-        content.append(makeHeading("1. Lack of Depth", color: headingColor))
+        content.append(makeSubheading("1. Lack of Depth", color: headingColor))
         content.append(makeBody("""
 When characters only say exactly what they mean without any subtext or nuance, it can make the dialogue feel shallow.
 
@@ -1969,7 +1990,7 @@ Tip: Let characters hide emotions, use subtext, and leave things unsaid. What ch
         content.append(makeNewline())
         content.append(makeNewline())
 
-        content.append(makeHeading("2. Repetition", color: headingColor))
+        content.append(makeSubheading("2. Repetition", color: headingColor))
         content.append(makeBody("""
 Reiterating the same ideas or phrases can drain the dialogue of any weight or importance.
 
@@ -1984,7 +2005,7 @@ Tip: Say it once, say it well. Use action and description to reinforce emotions 
         content.append(makeNewline())
         content.append(makeNewline())
 
-        content.append(makeHeading("3. Overuse of Filler", color: headingColor))
+        content.append(makeSubheading("3. Overuse of Filler", color: headingColor))
         content.append(makeBody("""
 Excessive use of filler words like \"uh,\" \"um,\" \"well,\" etc., can dilute the impact of the dialogue.
 
@@ -1999,7 +2020,7 @@ Tip: Use filler words sparingly and only when characterizing nervous or uncertai
         content.append(makeNewline())
         content.append(makeNewline())
 
-        content.append(makeHeading("4. Monotony", color: headingColor))
+        content.append(makeSubheading("4. Monotony", color: headingColor))
         content.append(makeBody("""
 If all characters have the same speaking style or voice, the dialogue can be boring and uninformative.
 
@@ -2016,7 +2037,7 @@ Tip: Give each character a distinct voice through word choice, sentence length, 
         content.append(makeNewline())
         content.append(makeNewline())
 
-        content.append(makeHeading("5. Predictability", color: headingColor))
+        content.append(makeSubheading("5. Predictability", color: headingColor))
         content.append(makeBody("""
 When dialogue follows very predictable patterns or uses clichéd phrases, it lacks originality.
 
@@ -2034,7 +2055,7 @@ Tip: If you've heard it in a movie or read it in another book, find a new way to
         content.append(makeNewline())
         content.append(makeNewline())
 
-        content.append(makeHeading("6. No Character Growth or Plot Advancement", color: headingColor))
+        content.append(makeSubheading("6. No Character Growth or Plot Advancement", color: headingColor))
         content.append(makeBody("""
 Good dialogue often reveals something new about a character or advances the plot in some way. \"Thin\" dialogue does neither.
 
@@ -2050,7 +2071,7 @@ Tip: Every line of dialogue should serve a purpose—reveal character, advance p
         content.append(makeNewline())
         content.append(makeNewline())
 
-        content.append(makeHeading("7. Over-Exposition", color: headingColor))
+        content.append(makeSubheading("7. Over-Exposition", color: headingColor))
         content.append(makeBody("""
 Dialogue that is used purely to convey information in a very straightforward manner can be dull and unengaging.
 
@@ -2066,7 +2087,7 @@ Tip: Break up information naturally. Show through action when possible. Let read
         content.append(makeNewline())
         content.append(makeNewline())
 
-        content.append(makeHeading("8. Lack of Conflict or Tension", color: headingColor))
+        content.append(makeSubheading("8. Lack of Conflict or Tension", color: headingColor))
         content.append(makeBody("""
 Engaging dialogue often includes some level of disagreement, tension, or conflict. Without this, the dialogue may lack dynamism.
 
@@ -2085,7 +2106,7 @@ Tip: Characters should want different things. Even allies can disagree on method
         content.append(makeNewline())
         content.append(makeNewline())
 
-        content.append(makeHeading("9. No Emotional Resonance", color: headingColor))
+        content.append(makeSubheading("9. No Emotional Resonance", color: headingColor))
         content.append(makeBody("""
 If the dialogue doesn't evoke any emotion or reaction in the reader, it might not be serving its purpose effectively.
 
@@ -2102,7 +2123,7 @@ Tip: Use action, beats, and subtext to convey emotion. Let the white space speak
         content.append(makeNewline())
         content.append(makeNewline())
 
-        content.append(makeHeading("10. Lack of Pacing", color: headingColor))
+        content.append(makeSubheading("10. Lack of Pacing", color: headingColor))
         content.append(makeBody("""
 Dialogue that doesn't vary its rhythm can be less engaging. Good dialogue often mixes long, complex sentences with short, impactful ones to create a dynamic pace.
 
@@ -2119,7 +2140,7 @@ Tip: Vary sentence length. Use fragments. Short bursts of dialogue during tense 
         content.append(makeNewline())
         content.append(makeNewline())
 
-        content.append(makeHeading("Summary", color: headingColor))
+        content.append(makeSubheading("Summary", color: headingColor))
         content.append(makeBody("""
 Improving these aspects can make dialogue more engaging, revealing, and true to life. Remember:
 
@@ -2136,7 +2157,7 @@ Improving these aspects can make dialogue more engaging, revealing, and true to 
 QuillPilot's dialogue analysis tool checks for all these issues and provides feedback to help you refine your dialogue.
 """, color: bodyColor))
 
-        normalizeAppNameInDocumentation(content)
+                normalizeAppNameInDocumentation(content)
         textView.textStorage?.setAttributedString(content)
     }
 
@@ -2153,7 +2174,7 @@ QuillPilot's dialogue analysis tool checks for all these issues and provides fee
         content.append(makeTitle("🔢 List Numbering Help", color: titleColor))
         content.append(makeNewline())
 
-        content.append(makeHeading("Numbering Style: 1.1.1", color: headingColor))
+        content.append(makeSubheading("Numbering Style: 1.1.1", color: headingColor))
         content.append(makeNewline())
 
         content.append(makeBody("""
@@ -2162,7 +2183,7 @@ QuillPilot uses a hierarchical numbering system for lists.
         content.append(makeNewline())
         content.append(makeNewline())
 
-        content.append(makeHeading("Creating Numbered Lists", color: headingColor))
+        content.append(makeSubheading("Creating Numbered Lists", color: headingColor))
         content.append(makeBody("""
 • Go to Format → Lists → Numbered List
 • Or use the numbering button in the toolbar
@@ -2171,7 +2192,7 @@ QuillPilot uses a hierarchical numbering system for lists.
         content.append(makeNewline())
         content.append(makeNewline())
 
-        content.append(makeHeading("Indenting (Creating Sub-levels)", color: headingColor))
+        content.append(makeSubheading("Indenting (Creating Sub-levels)", color: headingColor))
         content.append(makeBody("""
 • Press Tab to indent a numbered item
 • This creates a sub-level (e.g., 2. → 2.1.)
@@ -2180,7 +2201,7 @@ QuillPilot uses a hierarchical numbering system for lists.
         content.append(makeNewline())
         content.append(makeNewline())
 
-        content.append(makeHeading("Outdenting (Removing Sub-levels)", color: headingColor))
+        content.append(makeSubheading("Outdenting (Removing Sub-levels)", color: headingColor))
         content.append(makeBody("""
 • Press Shift-Tab to outdent a numbered item
 • This removes one level of nesting (e.g., 2.1. → 2.)
@@ -2188,7 +2209,7 @@ QuillPilot uses a hierarchical numbering system for lists.
         content.append(makeNewline())
         content.append(makeNewline())
 
-        content.append(makeHeading("Restarting Numbering", color: headingColor))
+        content.append(makeSubheading("Restarting Numbering", color: headingColor))
         content.append(makeBody("""
 • Go to Format → Lists → Restart Numbering…
 • Choose a custom starting number
@@ -2197,7 +2218,7 @@ QuillPilot uses a hierarchical numbering system for lists.
         content.append(makeNewline())
         content.append(makeNewline())
 
-        content.append(makeHeading("Auto-Numbering on Return", color: headingColor))
+        content.append(makeSubheading("Auto-Numbering on Return", color: headingColor))
         content.append(makeBody("""
 • Enabled by default in Preferences
 • Can be turned off if you prefer manual control
@@ -2206,7 +2227,7 @@ QuillPilot uses a hierarchical numbering system for lists.
         content.append(makeNewline())
         content.append(makeNewline())
 
-        content.append(makeHeading("Ending a List", color: headingColor))
+        content.append(makeSubheading("Ending a List", color: headingColor))
         content.append(makeBody("""
 • If a numbered item is empty, pressing Return ends the list
 • You can also manually remove numbering via Format → Lists → Numbered List (toggle off)
@@ -2214,14 +2235,14 @@ QuillPilot uses a hierarchical numbering system for lists.
         content.append(makeNewline())
         content.append(makeNewline())
 
-        content.append(makeHeading("Tips", color: headingColor))
+        content.append(makeSubheading("Tips", color: headingColor))
         content.append(makeBody("""
 • Configure auto-numbering behavior in Preferences
 • Use Tab/Shift-Tab to quickly organize hierarchical lists
 • Empty line + Return exits the list automatically
 """, color: bodyColor))
 
-        normalizeAppNameInDocumentation(content)
+                normalizeAppNameInDocumentation(content)
         textView.textStorage?.setAttributedString(content)
     }
 }

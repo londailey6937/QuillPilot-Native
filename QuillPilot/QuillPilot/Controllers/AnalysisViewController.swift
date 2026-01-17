@@ -602,6 +602,31 @@ class AnalysisViewController: NSViewController, NSWindowDelegate {
         }
 
         updateSelectedButton()
+
+        // Apply current theme immediately so Day-mode borders are correct on first launch.
+        applyThemeToMenuButtons(ThemeManager.shared.currentTheme)
+    }
+
+    private func applyThemeToMenuButtons(_ theme: AppTheme) {
+        for button in menuButtons {
+            button.wantsLayer = true
+            button.layer?.masksToBounds = true
+            button.layer?.backgroundColor = NSColor.clear.cgColor
+            button.image?.isTemplate = true
+
+            if #available(macOS 10.14, *) {
+                button.contentTintColor = theme.textColor.withAlphaComponent(0.9)
+            }
+
+            // Day theme: orange border for all sidebar icon buttons (vertical stack).
+            if theme == .day {
+                button.layer?.borderWidth = 1
+                button.layer?.borderColor = theme.pageBorder.cgColor
+                button.layer?.cornerRadius = 10
+            } else {
+                button.layer?.borderWidth = 0
+            }
+        }
     }
 
     private func applyTemplateAdaptiveUI() {
@@ -1758,25 +1783,7 @@ class AnalysisViewController: NSViewController, NSWindowDelegate {
         view.displayIfNeeded()
 
         outlineViewController?.applyTheme(theme)
-        for button in menuButtons {
-            button.wantsLayer = true
-            button.layer?.masksToBounds = true
-            button.layer?.backgroundColor = NSColor.clear.cgColor
-            button.image?.isTemplate = true
-
-            if #available(macOS 10.14, *) {
-                button.contentTintColor = theme.textColor.withAlphaComponent(0.9)
-            }
-
-            // Day theme: orange border for all sidebar icon buttons (vertical stack).
-            if theme == .day {
-                button.layer?.borderWidth = 1
-                button.layer?.borderColor = theme.pageBorder.cgColor
-                button.layer?.cornerRadius = 10
-            } else {
-                button.layer?.borderWidth = 0
-            }
-        }
+        applyThemeToMenuButtons(theme)
         updateSelectedButton()
     }
 

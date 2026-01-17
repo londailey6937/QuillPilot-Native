@@ -210,7 +210,7 @@ class EditorViewController: NSViewController {
         }
     }
 
-    func repairTOCAndIndexFormattingAfterImport() {
+    func repairTOCAndIndexFormattingAfterImport(force: Bool = false) {
         guard let storage = textView.textStorage, storage.length > 0 else { return }
 
         // Match the insertion logic in TOCIndexWindowController.
@@ -226,19 +226,116 @@ class EditorViewController: NSViewController {
             "Index Entry"
         ]
 
+        DebugLog.log("📚TOC[\(qpTS())] start force=\(force) rightTab=\(rightTab) last=\(String(describing: lastTOCRightTab))")
+
         // Heuristic: some imports (or retagging) can misclassify TOC/Index entries as other styles
-        // (commonly "Author Name"). Detect by structure: leader dots + tab + trailing page number.
+        // (commonly "Author Name"). Detect by structure: separator + trailing page number(s).
+        // We also use a capture group to locate the page-number token so we can safely replace
+        // the whitespace before it with a single tab (without rewriting the whole paragraph).
         let tocLineRegex: NSRegularExpression? = {
             // Examples:
             // "Chapter One...............\t12"
-            // "Chapter One\t12" (no leaders)
-            // Keep it conservative: require a TAB and a trailing integer (optionally multiple pages).
-            try? NSRegularExpression(pattern: "\\t\\s*\\d+(?:\\s*,\\s*\\d+)*\\s*$", options: [])
+            // "Chapter One  12" (tab lost on reopen)
+            // "Term..................  12, 14"
+            // Keep it conservative: require a separator and trailing integer(s).
+            try? NSRegularExpression(pattern: "(?:\\t|\\s{2,})\\s*(\\d+(?:\\s*,\\s*\\d+)*)\\s*$", options: [])
         }()
+
+        enum LeaderPattern {
+            case toc
+            case index
+
+            func make(count: Int) -> String {
+                switch self {
+                case .toc:
+                    return " " + String(repeating: ". ", count: count)
+                case .index:
+                    return " " + String(repeating: " .", count: count)
+                }
+            }
+
+            func dotUnitWidth(font: NSFont) -> CGFloat {
+                let attrs: [NSAttributedString.Key: Any] = [.font: font]
+                switch self {
+                case .toc:
+                    let dotWidth = ("." as NSString).size(withAttributes: attrs).width
+                    let spaceWidth = (" " as NSString).size(withAttributes: attrs).width
+                    return dotWidth + spaceWidth
+                case .index:
+                    return (" ." as NSString).size(withAttributes: attrs).width
+                }
+            }
+        }
+
+        func effectiveFont(at location: Int) -> NSFont {
+            (storage.attribute(.font, at: location, effectiveRange: nil) as? NSFont)
+                ?? textView.font
+                ?? NSFont.systemFont(ofSize: NSFont.systemFontSize)
+        }
+
+        func splitTitleAndExistingLeader(from leftPart: String) -> (title: String, dotCount: Int) {
+            // Extract a trailing leader region (spaces + dots) if it looks like a leader run.
+            // Be conservative: require at least 3 dots in the trailing region.
+            var end = leftPart.endIndex
+            while end > leftPart.startIndex, leftPart[leftPart.index(before: end)].isWhitespace {
+                end = leftPart.index(before: end)
+            }
+
+            var dotCount = 0
+            var startOfLeader = end
+            var i = end
+            while i > leftPart.startIndex {
+                let prev = leftPart.index(before: i)
+                let ch = leftPart[prev]
+                if ch == "." {
+                    dotCount += 1
+                    startOfLeader = prev
+                    i = prev
+                    continue
+                }
+                if ch == " " {
+                    startOfLeader = prev
+                    i = prev
+                    continue
+                }
+                break
+            }
+
+            if dotCount >= 3 {
+                let titlePart = String(leftPart[..<startOfLeader]).trimmingCharacters(in: .whitespacesAndNewlines)
+                return (titlePart, dotCount)
+            }
+
+            return (leftPart.trimmingCharacters(in: .whitespacesAndNewlines), 0)
+        }
+
+        func computeNeededLeaderDots(
+            title: String,
+            pageList: String,
+            font: NSFont,
+            leftIndent: CGFloat,
+            rightTab: CGFloat,
+            pattern: LeaderPattern
+        ) -> Int {
+            let attrs: [NSAttributedString.Key: Any] = [.font: font]
+            let titleWidth = (title as NSString).size(withAttributes: attrs).width
+            let pageWidth = (pageList as NSString).size(withAttributes: attrs).width
+
+            switch pattern {
+            case .toc:
+                let spaceWidth = (" " as NSString).size(withAttributes: attrs).width
+                let dotSpaceWidth = pattern.dotUnitWidth(font: font)
+                let availableForDots = max(0, rightTab - leftIndent - titleWidth - pageWidth - (spaceWidth * 4))
+                return max(3, Int(floor(availableForDots / max(1, dotSpaceWidth))))
+            case .index:
+                let dotWidth = pattern.dotUnitWidth(font: font)
+                let availableWidth = max(0, rightTab - leftIndent - titleWidth - pageWidth - 20)
+                return max(3, Int(floor(availableWidth / max(1, dotWidth))))
+            }
+        }
 
         func classifyTOCOrIndex(from paragraph: String, paragraphStyle: NSParagraphStyle) -> String? {
             let trimmed = paragraph.trimmingCharacters(in: .whitespacesAndNewlines)
-            guard trimmed.contains("\t") else { return nil }
             guard let regex = tocLineRegex else { return nil }
             let range = NSRange(location: 0, length: (trimmed as NSString).length)
             guard regex.firstMatch(in: trimmed, options: [], range: range) != nil else { return nil }
@@ -256,14 +353,176 @@ class EditorViewController: NSViewController {
             return "TOC Entry"
         }
 
+        func paragraphHasRightTabStop(_ style: NSParagraphStyle, expectedRightTab: CGFloat) -> Bool {
+            for tab in style.tabStops {
+                // NSTextTab's location is the key; alignment should be right.
+                if tab.alignment == .right && abs(tab.location - expectedRightTab) < 0.75 {
+                    return true
+                }
+            }
+            return false
+        }
+
+        // If we've already applied the same right-tab location, we still need to re-run the repair
+        // when formatting drifts after reloads (tab stops lost / whitespace replaces tabs).
+        if !force, let last = lastTOCRightTab, abs(last - rightTab) < 0.5 {
+            let fullString = storage.string as NSString
+            var location = 0
+            var scanned = 0
+            let maxParagraphsToScan = 6000
+            var foundRepairCandidate = false
+            var breakReason: String = ""
+
+            while location < fullString.length && scanned < maxParagraphsToScan {
+                let paragraphRange = fullString.paragraphRange(for: NSRange(location: location, length: 0))
+                guard paragraphRange.length > 0 else { break }
+                scanned += 1
+
+                let existingStyleName = storage.attribute(styleAttributeKey, at: paragraphRange.location, effectiveRange: nil) as? String
+                let paragraphText = fullString.substring(with: paragraphRange)
+                let existingParagraphStyle = (storage.attribute(.paragraphStyle, at: paragraphRange.location, effectiveRange: nil) as? NSParagraphStyle) ?? NSParagraphStyle.default
+                let inferredTOCStyle = classifyTOCOrIndex(from: paragraphText, paragraphStyle: existingParagraphStyle)
+                let shouldInspect = (existingStyleName != nil && stylesNeedingRightTab.contains(existingStyleName!)) || inferredTOCStyle != nil
+
+                if shouldInspect {
+                    // If a line looks like a TOC/Index entry but lacks the correct style tag,
+                    // we MUST repair even when tabs/tabstops look fine. Otherwise later style
+                    // passes can mis-tag it as a heading, and the outline will navigate to the
+                    // TOC entry (e.g. "Index .... 197") instead of the real Index section.
+                    if let inferred = inferredTOCStyle {
+                        if existingStyleName == nil || !stylesNeedingRightTab.contains(existingStyleName!) {
+                            foundRepairCandidate = true
+                            breakReason = "missingStyleTag(\(inferred))"
+                            break
+                        }
+                    }
+
+                    // If tab stop is missing, or the paragraph lacks a literal tab (common after reopen), we need repair.
+                    if !paragraphHasRightTabStop(existingParagraphStyle, expectedRightTab: rightTab) {
+                        foundRepairCandidate = true
+                        breakReason = "missingRightTabStop"
+                        break
+                    }
+                    if !paragraphText.contains("\t"), inferredTOCStyle != nil {
+                        foundRepairCandidate = true
+                        breakReason = "missingLiteralTab"
+                        break
+                    }
+
+                    // Leader dots can drift even when tab stop survives (geometry/zoom changes).
+                    // Detect mismatch between existing dot-run length and the newly required length.
+                    if let regex = tocLineRegex,
+                       let match = regex.firstMatch(in: paragraphText, options: [], range: NSRange(location: 0, length: (paragraphText as NSString).length)) {
+                        let pageRange = match.range(at: 1)
+                        if pageRange.location != NSNotFound {
+                            let pageList = (paragraphText as NSString).substring(with: pageRange)
+                            let font = effectiveFont(at: paragraphRange.location)
+                            let leftIndent = max(existingParagraphStyle.firstLineHeadIndent, existingParagraphStyle.headIndent)
+                            let isIndex = (existingStyleName == "Index Entry") || (inferredTOCStyle == "Index Entry")
+                            let pattern: LeaderPattern = isIndex ? .index : .toc
+
+                            // Determine left-part (title + existing dots) by splitting at the last tab if present.
+                            let line = paragraphText.trimmingCharacters(in: .newlines)
+                            let leftPart: String
+                            if let tabIdx = line.lastIndex(of: "\t") {
+                                leftPart = String(line[..<tabIdx])
+                            } else {
+                                leftPart = String(line[..<line.index(line.startIndex, offsetBy: pageRange.location)])
+                            }
+                            let parts = splitTitleAndExistingLeader(from: leftPart)
+                            if !parts.title.isEmpty {
+                                let neededDots = computeNeededLeaderDots(
+                                    title: parts.title,
+                                    pageList: pageList,
+                                    font: font,
+                                    leftIndent: leftIndent,
+                                    rightTab: rightTab,
+                                    pattern: pattern
+                                )
+                                if parts.dotCount > 0, abs(parts.dotCount - neededDots) >= 2 {
+                                    foundRepairCandidate = true
+                                    breakReason = "leaderDotsMismatch"
+                                    break
+                                }
+                            }
+                        }
+                    }
+                }
+
+                location = NSMaxRange(paragraphRange)
+            }
+
+            // If we scanned the whole region without finding a repair candidate, skip work.
+            if !foundRepairCandidate {
+                DebugLog.log("📚TOC[\(qpTS())] skip (no drift) scanned=\(scanned) max=\(maxParagraphsToScan)")
+                return
+            }
+            DebugLog.log("📚TOC[\(qpTS())] drift detected reason=\(breakReason) scanned=\(scanned)")
+            // Otherwise: fall through and repair.
+        }
+
         suppressTextChangeNotifications = true
         defer { suppressTextChangeNotifications = false }
 
-        let fullString = storage.string as NSString
-        var location = 0
-        storage.beginEditing()
-        defer { storage.endEditing() }
+        // IMPORTANT: Never mutate the text storage while using a captured `NSString` snapshot
+        // for paragraph iteration. It causes range drift and can corrupt downstream scanning.
+        // We first collect repair actions, then apply them (tab insertions are applied in reverse).
+        struct ParagraphRepair {
+            let paragraphRange: NSRange
+            let inferredStyleName: String?
+            let whitespaceBeforePageNumberRange: NSRange?
+            let lineReplaceRange: NSRange?
+            let lineReplacement: NSAttributedString?
+        }
 
+        let fullString = storage.string as NSString
+        var repairs: [ParagraphRepair] = []
+        repairs.reserveCapacity(64)
+
+        func newlineSuffixLength(_ paragraph: NSString) -> Int {
+            let len = paragraph.length
+            guard len > 0 else { return 0 }
+            if len >= 2 {
+                let lastTwo = paragraph.substring(with: NSRange(location: len - 2, length: 2))
+                if lastTwo == "\r\n" { return 2 }
+            }
+            let lastOne = paragraph.substring(with: NSRange(location: len - 1, length: 1))
+            if lastOne == "\n" || lastOne == "\r" { return 1 }
+            return 0
+        }
+
+        func computeWhitespaceBeforePageNumberRange(paragraphText: NSString, regex: NSRegularExpression) -> NSRange? {
+            // Operate on the paragraph without its trailing newline so offsets match storage.
+            let suffixLen = newlineSuffixLength(paragraphText)
+            let lineLen = max(0, paragraphText.length - suffixLen)
+            guard lineLen > 0 else { return nil }
+
+            let lineRange = NSRange(location: 0, length: lineLen)
+            let line = paragraphText.substring(with: lineRange) as NSString
+            if (line as String).contains("\t") { return nil }
+
+            let matchRange = NSRange(location: 0, length: line.length)
+            guard let match = regex.firstMatch(in: line as String, options: [], range: matchRange) else { return nil }
+            let digitsRange = match.range(at: 1)
+            guard digitsRange.location != NSNotFound, digitsRange.location > 0 else { return nil }
+
+            // Walk backward from the first digit to collapse the immediate whitespace run into a tab.
+            var wsStart = digitsRange.location
+            while wsStart > 0 {
+                let charRange = NSRange(location: wsStart - 1, length: 1)
+                let ch = line.substring(with: charRange)
+                if ch == " " || ch == "\t" {
+                    wsStart -= 1
+                } else {
+                    break
+                }
+            }
+
+            guard wsStart < digitsRange.location else { return nil }
+            return NSRange(location: wsStart, length: digitsRange.location - wsStart)
+        }
+
+        var location = 0
         while location < fullString.length {
             let paragraphRange = fullString.paragraphRange(for: NSRange(location: location, length: 0))
             guard paragraphRange.length > 0 else { break }
@@ -276,23 +535,122 @@ class EditorViewController: NSViewController {
             let shouldRepair = (existingStyleName != nil && stylesNeedingRightTab.contains(existingStyleName!)) || inferredTOCStyle != nil
 
             if shouldRepair {
-                let existing = (storage.attribute(.paragraphStyle, at: paragraphRange.location, effectiveRange: nil) as? NSParagraphStyle) ?? NSParagraphStyle.default
-                let merged = (existing.mutableCopy() as? NSMutableParagraphStyle) ?? NSMutableParagraphStyle()
-
-                merged.lineBreakMode = .byClipping
-                merged.tabStops = [NSTextTab(textAlignment: .right, location: rightTab, options: [:])]
-
-                storage.addAttribute(.paragraphStyle, value: merged.copy() as! NSParagraphStyle, range: paragraphRange)
-
-                // If this paragraph was mis-tagged (e.g., as "Author Name"), fix the tag so the UI
-                // and later operations treat it as TOC/Index content.
-                if let inferredTOCStyle {
-                    storage.addAttribute(styleAttributeKey, value: inferredTOCStyle, range: paragraphRange)
+                let paragraphNSString = paragraphText as NSString
+                let whitespaceRange: NSRange?
+                if let regex = tocLineRegex {
+                    whitespaceRange = computeWhitespaceBeforePageNumberRange(paragraphText: paragraphNSString, regex: regex)
+                } else {
+                    whitespaceRange = nil
                 }
+
+                // Optionally recompute leader dots and rewrite the whole line (preserving attributes).
+                var lineReplaceRange: NSRange? = nil
+                var lineReplacement: NSAttributedString? = nil
+                if let regex = tocLineRegex {
+                    let paraLen = paragraphNSString.length
+                    let suffixLen = newlineSuffixLength(paragraphNSString)
+                    let lineLen = max(0, paraLen - suffixLen)
+                    if lineLen > 0 {
+                        let lineRange = NSRange(location: 0, length: lineLen)
+                        let line = paragraphNSString.substring(with: lineRange)
+                        if let match = regex.firstMatch(in: line, options: [], range: NSRange(location: 0, length: (line as NSString).length)) {
+                            let pageRange = match.range(at: 1)
+                            if pageRange.location != NSNotFound {
+                                let pageList = (line as NSString).substring(with: pageRange)
+
+                                let font = effectiveFont(at: paragraphRange.location)
+                                let leftIndent = max(existingParagraphStyle.firstLineHeadIndent, existingParagraphStyle.headIndent)
+                                let isIndex = (existingStyleName == "Index Entry") || (inferredTOCStyle == "Index Entry")
+                                let pattern: LeaderPattern = isIndex ? .index : .toc
+
+                                let leftPart: String
+                                if let tabIdx = line.lastIndex(of: "\t") {
+                                    leftPart = String(line[..<tabIdx])
+                                } else if let ws = whitespaceRange {
+                                    leftPart = String((line as NSString).substring(with: NSRange(location: 0, length: ws.location)))
+                                } else {
+                                    leftPart = String(line)
+                                }
+
+                                let parts = splitTitleAndExistingLeader(from: leftPart)
+                                if !parts.title.isEmpty {
+                                    let neededDots = computeNeededLeaderDots(
+                                        title: parts.title,
+                                        pageList: pageList,
+                                        font: font,
+                                        leftIndent: leftIndent,
+                                        rightTab: rightTab,
+                                        pattern: pattern
+                                    )
+
+                                    // Rewrite if leader is missing or materially mismatched.
+                                    if parts.dotCount == 0 || abs(parts.dotCount - neededDots) >= 2 {
+                                        let rebuilt = "\(parts.title)\(pattern.make(count: neededDots))\t\(pageList)"
+                                        let baseAttrs = storage.attributes(at: paragraphRange.location, effectiveRange: nil)
+                                        lineReplaceRange = NSRange(location: paragraphRange.location, length: lineLen)
+                                        lineReplacement = NSAttributedString(string: rebuilt, attributes: baseAttrs)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                let absoluteWhitespaceRange = whitespaceRange.map { NSRange(location: paragraphRange.location + $0.location, length: $0.length) }
+                repairs.append(ParagraphRepair(
+                    paragraphRange: paragraphRange,
+                    inferredStyleName: inferredTOCStyle,
+                    whitespaceBeforePageNumberRange: absoluteWhitespaceRange,
+                    lineReplaceRange: lineReplaceRange,
+                    lineReplacement: lineReplacement
+                ))
             }
 
             location = NSMaxRange(paragraphRange)
         }
+
+        guard !repairs.isEmpty else {
+            lastTOCRightTab = rightTab
+            DebugLog.log("📚TOC[\(qpTS())] no matching paragraphs; done")
+            return
+        }
+
+        storage.beginEditing()
+        defer { storage.endEditing() }
+
+        // Apply paragraph-style + style-tag repairs first (no length changes).
+        for repair in repairs {
+            let existing = (storage.attribute(.paragraphStyle, at: repair.paragraphRange.location, effectiveRange: nil) as? NSParagraphStyle) ?? NSParagraphStyle.default
+            let merged = (existing.mutableCopy() as? NSMutableParagraphStyle) ?? NSMutableParagraphStyle()
+            merged.lineBreakMode = .byClipping
+            merged.tabStops = [NSTextTab(textAlignment: .right, location: rightTab, options: [:])]
+            storage.addAttribute(.paragraphStyle, value: merged.copy() as! NSParagraphStyle, range: repair.paragraphRange)
+
+            if let inferred = repair.inferredStyleName {
+                storage.addAttribute(styleAttributeKey, value: inferred, range: repair.paragraphRange)
+            }
+        }
+
+        // Apply whitespace→tab substitutions in reverse order (these change length).
+        var tabInsertions = 0
+        for repair in repairs.reversed() {
+            if let replaceRange = repair.lineReplaceRange, let replacement = repair.lineReplacement {
+                if replaceRange.location + replaceRange.length <= storage.length {
+                    storage.replaceCharacters(in: replaceRange, with: replacement)
+                }
+                // Whole-line rewrite already includes the tab; skip whitespace replacement.
+                continue
+            }
+            guard let wsRange = repair.whitespaceBeforePageNumberRange else { continue }
+            // Guard against drift (e.g., if another operation already fixed it).
+            if wsRange.location + wsRange.length <= storage.length {
+                storage.replaceCharacters(in: wsRange, with: "\t")
+                tabInsertions += 1
+            }
+        }
+
+        lastTOCRightTab = rightTab
+        DebugLog.log("📚TOC[\(qpTS())] applied paragraphRepairs=\(repairs.count) tabInsertions=\(tabInsertions) rightTab=\(rightTab)")
     }
 
     // Helper to register undo/redo and notify text system
@@ -308,6 +666,16 @@ class EditorViewController: NSViewController {
     private var scrollView: NSScrollView!
     private var documentView: NSView!
     private var currentTheme: AppTheme = ThemeManager.shared.currentTheme
+    private var lastTOCRightTab: CGFloat?
+    private var pendingNavigationScroll = false
+    private var pendingNavigationTarget: Int?
+    private var navigationWorkItem: DispatchWorkItem?
+    private var navigationScrollSuppressionUntil: CFAbsoluteTime = 0
+
+    @inline(__always)
+    private func qpTS() -> String {
+        String(format: "%.3f", CFAbsoluteTimeGetCurrent())
+    }
 
     // Multi-page support
     private var pages: [NSView] = []
@@ -570,7 +938,51 @@ class EditorViewController: NSViewController {
             "📄 Pagination.measure: usedRect=\(NSStringFromRect(usedRect)) usedH=\(usedHeight.rounded()) scaledPageH=\(scaledPageHeight.rounded()) neededPages=\(neededPages)"
         )
 
-        setPageCount(neededPages)
+        // During an explicit navigation, don't allow late/partial layout to shrink the page
+        // container (it clamps scroll range and makes the user click repeatedly).
+        if let pageContainerView = pageContainer as? PageContainerView {
+            let now = CFAbsoluteTimeGetCurrent()
+            let suppressShrink = pendingNavigationScroll || now < navigationScrollSuppressionUntil
+            if suppressShrink {
+                let clampedPages = max(pageContainerView.numPages, neededPages)
+                if clampedPages != neededPages {
+                    debugLog("📄 Pagination: suppress shrink needed=\(neededPages) keeping=\(clampedPages)")
+                }
+                setPageCount(clampedPages)
+            } else {
+                setPageCount(neededPages)
+            }
+        } else {
+            setPageCount(neededPages)
+        }
+    }
+
+    private func ensurePageCountForCharacterLocation(_ location: Int) {
+        guard let layoutManager = textView.layoutManager,
+              let textContainer = textView.textContainer,
+              let pageContainerView = pageContainer as? PageContainerView,
+              let storage = textView.textStorage,
+              storage.length > 0 else { return }
+
+        let clamped = min(max(0, location), max(0, storage.length - 1))
+        let ensureRange = NSRange(location: clamped, length: 1)
+        layoutManager.ensureLayout(forCharacterRange: ensureRange)
+
+        let glyphRange = layoutManager.glyphRange(forCharacterRange: ensureRange, actualCharacterRange: nil)
+        let rect = layoutManager.boundingRect(forGlyphRange: glyphRange, in: textContainer)
+        let requiredHeight = max(0, rect.maxY)
+
+        let scaledPageHeight = pageHeight * editorZoom
+        let gap: CGFloat = 20
+        let margin = standardMargin * editorZoom
+        let denominator = max(1, scaledPageHeight + gap)
+        let numerator = requiredHeight + (margin * 2) + gap
+        let neededPages = max(1, Int(ceil(numerator / denominator)))
+
+        if neededPages > pageContainerView.numPages {
+            debugLog("📄 Pagination.ensureForLoc: loc=\(clamped) rectMaxY=\(requiredHeight.rounded()) pages \(pageContainerView.numPages)→\(neededPages)")
+            setPageCount(neededPages)
+        }
     }
 
     /// Set exact page count and resize containers
@@ -1889,12 +2301,8 @@ class EditorViewController: NSViewController {
         let length = storage.length
         guard length > 0 else { return }
 
-        updatePageLayout()
-
-        let endRange = NSRange(location: max(0, length - 1), length: 0)
-        textView.setSelectedRange(endRange)
-        textView.scrollRangeToVisible(NSRange(location: max(0, length - 1), length: 1))
-        textView.scrollToEndOfDocument(nil)
+        let target = max(0, length - 1)
+        navigateToLocation(target)
     }
 
     func scrollToOutlineEntry(_ entry: OutlineEntry) {
@@ -1902,16 +2310,114 @@ class EditorViewController: NSViewController {
         let length = storage.length
         guard length > 0 else { return }
 
-        updatePageLayout()
-
         guard let resolvedRange = resolveOutlineEntryRange(entry) else { return }
         let clampedLocation = min(resolvedRange.location, max(0, length - 1))
-        let targetRange = NSRange(location: clampedLocation, length: 1)
+        navigateToLocation(clampedLocation, flash: true)
+    }
 
-        textView.layoutManager?.ensureLayout(forCharacterRange: targetRange)
-        textView.setSelectedRange(NSRange(location: clampedLocation, length: 0))
-        textView.scrollRangeToVisible(targetRange)
-        flashOutlineLocation(clampedLocation)
+    private func navigateToLocation(_ location: Int, flash: Bool = false) {
+        navigationWorkItem?.cancel()
+
+        // Explicit navigation should win over any delayed centering/layout work that may have
+        // been scheduled by prior text changes (e.g. TOC/Index insertion). Those delayed passes
+        // can restore a pre-jump scroll position and make the user click repeatedly.
+        NSObject.cancelPreviousPerformRequests(withTarget: self, selector: #selector(updatePageCenteringDelayed), object: nil)
+        NSObject.cancelPreviousPerformRequests(withTarget: self, selector: #selector(checkAndUpdateTitleDelayed), object: nil)
+
+        DebugLog.log("🧭NAV[\(qpTS())] request location=\(location) flash=\(flash)")
+
+        let work = DispatchWorkItem { [weak self] in
+            guard let self else { return }
+            guard let storage = self.textView.textStorage, storage.length > 0 else { return }
+
+            // Prevent the layout pipeline from restoring the previous scroll position.
+            self.pendingNavigationScroll = true
+            self.navigationScrollSuppressionUntil = CFAbsoluteTimeGetCurrent() + 2.25
+
+            let clamped = min(max(0, location), max(0, storage.length - 1))
+
+            // Make sure the page container is tall enough to reach the target BEFORE we try to scroll.
+            // This avoids the "click 3 times" symptom when pagination is still settling near the end.
+            self.ensurePageCountForCharacterLocation(clamped)
+            self.view.layoutSubtreeIfNeeded()
+
+            let ensureRange = NSRange(location: clamped, length: 1)
+            self.textView.layoutManager?.ensureLayout(forCharacterRange: ensureRange)
+            self.textView.setSelectedRange(NSRange(location: clamped, length: 0))
+            self.textView.scrollRangeToVisible(ensureRange)
+
+            // Nudge the target into a preferred position (near the top) so a jump doesn't land
+            // with the destination barely visible at the bottom (which feels like it didn't work).
+            if let layoutManager = self.textView.layoutManager, let textContainer = self.textView.textContainer {
+                let glyphRange = layoutManager.glyphRange(forCharacterRange: ensureRange, actualCharacterRange: nil)
+                var rect = layoutManager.boundingRect(forGlyphRange: glyphRange, in: textContainer)
+                rect.origin.x += self.textView.textContainerOrigin.x
+                rect.origin.y += self.textView.textContainerOrigin.y
+                let rectInDoc = self.textView.convert(rect, to: self.documentView)
+                let visible = self.scrollView.documentVisibleRect
+                let preferredTopInset = max(24, visible.height * 0.18)
+                let targetY = max(0, rectInDoc.minY - preferredTopInset)
+                self.scrollView.contentView.scroll(to: NSPoint(x: 0, y: targetY))
+                self.scrollView.reflectScrolledClipView(self.scrollView.contentView)
+            }
+
+            DebugLog.log("🧭NAV[\(self.qpTS())] initial scroll clamped=\(clamped) visY=\(self.scrollView.documentVisibleRect.origin.y.rounded())")
+
+            if flash {
+                self.flashOutlineLocation(clamped)
+            }
+
+            // Late layout passes can still adjust geometry; retry visibility a few times automatically.
+            func verifyAndRescroll(_ attempt: Int) {
+                guard let layoutManager = self.textView.layoutManager, let textContainer = self.textView.textContainer else {
+                    self.pendingNavigationScroll = false
+                    return
+                }
+                let glyphRange = layoutManager.glyphRange(forCharacterRange: ensureRange, actualCharacterRange: nil)
+                var rect = layoutManager.boundingRect(forGlyphRange: glyphRange, in: textContainer)
+                rect.origin.x += self.textView.textContainerOrigin.x
+                rect.origin.y += self.textView.textContainerOrigin.y
+                let rectInDoc = self.textView.convert(rect, to: self.documentView)
+
+                let visible = self.scrollView.documentVisibleRect
+                let preferredTopInset = max(24, visible.height * 0.18)
+                let preferredBottomInset = max(24, visible.height * 0.28)
+                let preferredBand = NSRect(
+                    x: visible.minX,
+                    y: visible.minY + preferredTopInset,
+                    width: visible.width,
+                    height: max(1, visible.height - preferredTopInset - preferredBottomInset)
+                )
+
+                if preferredBand.intersects(rectInDoc) {
+                    DebugLog.log("🧭NAV[\(self.qpTS())] target preferred-visible attempt=\(attempt) rectY=\(rectInDoc.midY.rounded()) visY=\(visible.origin.y.rounded())")
+                    self.pendingNavigationScroll = false
+                    return
+                }
+
+                DebugLog.log("🧭NAV[\(self.qpTS())] target NOT preferred-visible attempt=\(attempt) rectY=\(rectInDoc.midY.rounded()) visY=\(visible.origin.y.rounded())")
+
+                // Scroll so the target lands near the top.
+                let targetY = max(0, rectInDoc.minY - preferredTopInset)
+                self.scrollView.contentView.scroll(to: NSPoint(x: 0, y: targetY))
+                self.scrollView.reflectScrolledClipView(self.scrollView.contentView)
+                // Also ensure selection is visible in case text-view scrolling behaves differently.
+                self.textView.scrollRangeToVisible(ensureRange)
+
+                if attempt >= 3 {
+                    self.pendingNavigationScroll = false
+                    return
+                }
+                DispatchQueue.main.asyncAfter(deadline: .now() + (0.08 * Double(attempt + 1))) {
+                    verifyAndRescroll(attempt + 1)
+                }
+            }
+
+            DispatchQueue.main.async { verifyAndRescroll(0) }
+        }
+
+        navigationWorkItem = work
+        DispatchQueue.main.async(execute: work)
     }
 
     /// Navigate to a specific page number
@@ -2287,6 +2793,8 @@ class EditorViewController: NSViewController {
     func setAttributedContent(_ attributed: NSAttributedString) {
         delegate?.suspendAnalysisForLayout()
 
+        lastTOCRightTab = nil
+
         // Reset manuscript metadata (prevents leaking across documents)
         manuscriptTitle = "Untitled"
         manuscriptAuthor = "Author Name"
@@ -2307,12 +2815,19 @@ class EditorViewController: NSViewController {
         updatePageLayout()
         scrollToTop()
 
+        // Ensure TOC/Index leader alignment survives reopen.
+        DispatchQueue.main.async { [weak self] in
+            self?.repairTOCAndIndexFormattingAfterImport()
+        }
+
         delegate?.resumeAnalysisAfterLayout()
     }
 
     /// Fast content setter for imported documents - runs style inference for outline detection
     func setAttributedContentDirect(_ attributed: NSAttributedString) {
         delegate?.suspendAnalysisForLayout()
+
+        lastTOCRightTab = nil
 
         // Reset manuscript metadata (prevents leaking across documents)
         manuscriptTitle = "Untitled"
@@ -2357,6 +2872,7 @@ class EditorViewController: NSViewController {
                 debugLog("📥 Import: running deferred updatePageLayout (large doc)")
                 self?.updatePageLayout()
                 self?.scrollToTop()
+                self?.repairTOCAndIndexFormattingAfterImport()
                 // Wait for layout to settle before triggering analysis
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
                     self?.delegate?.resumeAnalysisAfterLayout()
@@ -2366,6 +2882,7 @@ class EditorViewController: NSViewController {
             debugLog("📥 Import: running immediate updatePageLayout")
             updatePageLayout()
             scrollToTop()
+            repairTOCAndIndexFormattingAfterImport()
             // For rich imports (RTF/RTFD/HTML/ODT), AppKit may continue layout asynchronously.
             // Recompute pagination after a short delay so page backgrounds match the final flow.
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) { [weak self] in
@@ -5211,6 +5728,12 @@ case "Book Subtitle":
     func updatePageCentering(ensureSelectionVisible: Bool = true) {
         guard let scrollView else { return }
 
+        let now = CFAbsoluteTimeGetCurrent()
+        let suppressRestore = pendingNavigationScroll || now < navigationScrollSuppressionUntil
+        if suppressRestore {
+            DebugLog.log("📐CENTER[\(qpTS())] suppress restore pending=\(pendingNavigationScroll) now=\(now) until=\(navigationScrollSuppressionUntil)")
+        }
+
         // Preserve current cursor position AND scroll position BEFORE any layout changes
         let savedSelection = textView.selectedRange()
         let savedScrollPosition = scrollView.contentView.bounds.origin
@@ -5308,25 +5831,31 @@ case "Book Subtitle":
 
         updateHeadersAndFooters(numPages)
         updateShadowPath()
+        repairTOCAndIndexFormattingAfterImport()
 
         let docWidth = max(visibleWidth, pageX + scaledPageWidth + 20)
         // Keep the document view sized to the content (with a small bottom pad).
         let docHeight = max(totalHeight + 200, scrollView.contentView.bounds.height + 20)
         documentView.frame = NSRect(x: 0, y: 0, width: docWidth, height: docHeight)
 
-        // Restore cursor position AFTER layout changes
-        if savedSelection.location <= textView.string.count {
+        // Restore cursor position AFTER layout changes, except during an explicit navigation.
+        // Navigation will set its own selection and we must not restore a pre-jump selection.
+        if !suppressRestore, savedSelection.location <= textView.string.count {
             textView.setSelectedRange(savedSelection)
         }
 
-        // Restore scroll position to prevent view jumping during layout updates,
-        // but then ensure cursor is visible (which will scroll if needed)
-        scrollView.contentView.scroll(to: savedScrollPosition)
+        if suppressRestore {
+            // Navigation owns scroll/selection visibility.
+        } else {
+            // Restore scroll position to prevent view jumping during layout updates,
+            // but then ensure cursor is visible (which will scroll if needed)
+            scrollView.contentView.scroll(to: savedScrollPosition)
 
-        if ensureSelectionVisible {
-            // Ensure the cursor is visible after layout - this allows natural scrolling
-            // when typing at the end of the document without jumping back up
-            textView.scrollRangeToVisible(textView.selectedRange())
+            if ensureSelectionVisible {
+                // Ensure the cursor is visible after layout - this allows natural scrolling
+                // when typing at the end of the document without jumping back up
+                textView.scrollRangeToVisible(textView.selectedRange())
+            }
         }
     }
 

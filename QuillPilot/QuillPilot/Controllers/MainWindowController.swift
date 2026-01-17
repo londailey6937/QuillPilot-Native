@@ -3995,17 +3995,16 @@ extension ContentViewController: RulerViewDelegate {
 // MARK: - Outline View Controller
 class OutlineViewController: NSViewController {
     final class Node: NSObject {
-        let title: String
-        let level: Int
-        let page: Int?
-        let range: NSRange
+        let entry: EditorViewController.OutlineEntry
         var children: [Node]
 
-        init(title: String, level: Int, page: Int?, range: NSRange, children: [Node] = []) {
-            self.title = title
-            self.level = level
-            self.page = page
-            self.range = range
+        var title: String { entry.title }
+        var level: Int { entry.level }
+        var page: Int? { entry.page }
+        var range: NSRange { entry.range }
+
+        init(entry: EditorViewController.OutlineEntry, children: [Node] = []) {
+            self.entry = entry
             self.children = children
         }
     }
@@ -4188,15 +4187,13 @@ class OutlineViewController: NSViewController {
     @objc private func outlineRowClicked(_ sender: Any?) {
         let targetRow = outlineView.clickedRow
         guard targetRow >= 0, let node = outlineView.item(atRow: targetRow) as? Node else { return }
-        let entry = EditorViewController.OutlineEntry(title: node.title, level: node.level, range: node.range, page: node.page, styleName: nil)
-        onSelect?(entry)
+        onSelect?(node.entry)
     }
 
     @objc private func outlineRowDoubleClicked(_ sender: Any?) {
         let targetRow = outlineView.clickedRow
         guard targetRow >= 0, let node = outlineView.item(atRow: targetRow) as? Node else { return }
-        let entry = EditorViewController.OutlineEntry(title: node.title, level: node.level, range: node.range, page: node.page, styleName: nil)
-        onSelect?(entry)
+        onSelect?(node.entry)
     }
 
     private func buildTree(from entries: [EditorViewController.OutlineEntry]) -> [Node] {
@@ -4204,7 +4201,7 @@ class OutlineViewController: NSViewController {
         var roots: [Node] = []
 
         for entry in entries {
-            let node = Node(title: entry.title, level: entry.level, page: entry.page, range: entry.range)
+            let node = Node(entry: entry)
 
             while let last = stack.last, last.level >= node.level {
                 stack.removeLast()

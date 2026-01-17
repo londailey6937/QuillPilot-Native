@@ -17,6 +17,16 @@ class WelcomeWindowController: NSWindowController {
     private var recentFiles: [URL] = []
     private var recentFilesTableView: NSTableView!
 
+    private var contentBackgroundView: NSView?
+    private var leftPanel: NSView?
+    private var rightPanel: NSView?
+    private var titleLabel: NSTextField?
+    private var taglineLabel1: NSTextField?
+    private var taglineLabel2: NSTextField?
+    private var recentLabel: NSTextField?
+    private var actionButtons: [NSButton] = []
+    private var themeObserver: NSObjectProtocol?
+
     convenience init() {
         let window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 700, height: 450),
@@ -31,6 +41,20 @@ class WelcomeWindowController: NSWindowController {
         self.init(window: window)
         setupUI()
         loadRecentFiles()
+
+        themeObserver = NotificationCenter.default.addObserver(
+            forName: .themeDidChange,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            self?.applyTheme()
+        }
+    }
+
+    deinit {
+        if let themeObserver {
+            NotificationCenter.default.removeObserver(themeObserver)
+        }
     }
 
     private func setupUI() {
@@ -38,14 +62,14 @@ class WelcomeWindowController: NSWindowController {
 
         let contentView = NSView(frame: window.contentView!.bounds)
         contentView.wantsLayer = true
-        contentView.layer?.backgroundColor = NSColor(red: 0.97, green: 0.90, blue: 0.82, alpha: 1.0).cgColor
         window.contentView = contentView
+        contentBackgroundView = contentView
 
         // Left side - Logo and buttons
         let leftPanel = NSView(frame: NSRect(x: 0, y: 0, width: 300, height: 450))
         leftPanel.wantsLayer = true
-        leftPanel.layer?.backgroundColor = NSColor(red: 0.95, green: 0.88, blue: 0.80, alpha: 1.0).cgColor
         contentView.addSubview(leftPanel)
+        self.leftPanel = leftPanel
 
         // Logo
         let logoView = createLogoView()
@@ -55,47 +79,50 @@ class WelcomeWindowController: NSWindowController {
         // App title
         let titleLabel = NSTextField(labelWithString: "Quill Pilot")
         titleLabel.font = NSFont.systemFont(ofSize: 28, weight: .bold)
-        titleLabel.textColor = NSColor(red: 0.17, green: 0.24, blue: 0.31, alpha: 1.0)
         titleLabel.alignment = .center
         titleLabel.frame = NSRect(x: 25, y: 235, width: 250, height: 40)
         leftPanel.addSubview(titleLabel)
+        self.titleLabel = titleLabel
 
         // Tagline - Line 1
         let tagline1 = NSTextField(labelWithString: "Your Writing Tool")
         tagline1.font = NSFont.systemFont(ofSize: 13, weight: .regular)
-        tagline1.textColor = NSColor(red: 0.4, green: 0.4, blue: 0.4, alpha: 1.0)
         tagline1.alignment = .center
         tagline1.frame = NSRect(x: 0, y: 218, width: 300, height: 18)
         leftPanel.addSubview(tagline1)
+        self.taglineLabel1 = tagline1
 
         // Tagline - Line 2
         let tagline2 = NSTextField(labelWithString: "for Fiction & Non-Fiction")
         tagline2.font = NSFont.systemFont(ofSize: 13, weight: .regular)
-        tagline2.textColor = NSColor(red: 0.4, green: 0.4, blue: 0.4, alpha: 1.0)
         tagline2.alignment = .center
         tagline2.frame = NSRect(x: 0, y: 202, width: 300, height: 18)
         leftPanel.addSubview(tagline2)
+        self.taglineLabel2 = tagline2
 
         // New Document button
         let newButton = createActionButton(title: "New Document", icon: "doc.badge.plus", action: #selector(newDocumentClicked))
         newButton.frame = NSRect(x: 50, y: 130, width: 200, height: 44)
         leftPanel.addSubview(newButton)
+        actionButtons.append(newButton)
 
         // Open Document button
         let openButton = createActionButton(title: "Open Document", icon: "folder", action: #selector(openDocumentClicked))
         openButton.frame = NSRect(x: 50, y: 75, width: 200, height: 44)
         leftPanel.addSubview(openButton)
+        actionButtons.append(openButton)
 
         // Right side - Recent files
         let rightPanel = NSView(frame: NSRect(x: 300, y: 0, width: 400, height: 450))
         contentView.addSubview(rightPanel)
+        self.rightPanel = rightPanel
 
         // Recent Documents header
         let recentLabel = NSTextField(labelWithString: "Recent Documents")
         recentLabel.font = NSFont.systemFont(ofSize: 15, weight: .semibold)
-        recentLabel.textColor = NSColor(red: 0.17, green: 0.24, blue: 0.31, alpha: 1.0)
         recentLabel.frame = NSRect(x: 20, y: 405, width: 360, height: 25)
         rightPanel.addSubview(recentLabel)
+        self.recentLabel = recentLabel
 
         // Recent files table
         let scrollView = NSScrollView(frame: NSRect(x: 20, y: 20, width: 360, height: 375))
@@ -110,7 +137,7 @@ class WelcomeWindowController: NSWindowController {
         recentFilesTableView.headerView = nil
         recentFilesTableView.rowHeight = 50
         recentFilesTableView.intercellSpacing = NSSize(width: 0, height: 4)
-        recentFilesTableView.selectionHighlightStyle = .regular
+        recentFilesTableView.selectionHighlightStyle = .none
         recentFilesTableView.delegate = self
         recentFilesTableView.dataSource = self
         recentFilesTableView.doubleAction = #selector(recentFileDoubleClicked)
@@ -122,6 +149,8 @@ class WelcomeWindowController: NSWindowController {
 
         scrollView.documentView = recentFilesTableView
         rightPanel.addSubview(scrollView)
+
+        applyTheme()
     }
 
     private func createLogoView() -> NSView {
@@ -135,26 +164,53 @@ class WelcomeWindowController: NSWindowController {
         button.target = self
         button.action = action
         button.isBordered = false  // Remove default styling
+        button.title = title
+        button.identifier = NSUserInterfaceItemIdentifier(icon)
 
-        // Style the button with explicit colors to isolate from global theme changes
+        // Style the button with theme colors
         button.wantsLayer = true
         button.layer?.cornerRadius = 8
-        button.layer?.backgroundColor = NSColor(red: 0.92, green: 0.85, blue: 0.77, alpha: 1.0).cgColor
         button.layer?.borderWidth = 1
         button.layer?.borderColor = ThemeManager.shared.currentTheme.pageBorder.cgColor
 
-        // Use attributed string for explicit text color control
-        let darkTextColor = NSColor(red: 0.17, green: 0.24, blue: 0.31, alpha: 1.0)
+        applyButtonTheme(button)
 
-        // Build attributed string with icon and text
+        return button
+    }
+
+    private func applyTheme() {
+        let theme = ThemeManager.shared.currentTheme
+
+        contentBackgroundView?.layer?.backgroundColor = theme.pageAround.cgColor
+        leftPanel?.layer?.backgroundColor = theme.pageBackground.cgColor
+
+        titleLabel?.textColor = theme.textColor
+        taglineLabel1?.textColor = theme.popoutSecondaryColor
+        taglineLabel2?.textColor = theme.popoutSecondaryColor
+        recentLabel?.textColor = theme.textColor
+
+        for button in actionButtons {
+            applyButtonTheme(button)
+        }
+
+        recentFilesTableView?.reloadData()
+    }
+
+    private func applyButtonTheme(_ button: NSButton) {
+        let theme = ThemeManager.shared.currentTheme
+        button.layer?.backgroundColor = theme.pageAround.cgColor
+        button.layer?.borderColor = theme.pageBorder.cgColor
+
+        let title = button.title
+        let iconName = button.identifier?.rawValue ?? ""
+
         let attachment = NSTextAttachment()
-        if let symbolImage = NSImage(systemSymbolName: icon, accessibilityDescription: title) {
+        if let symbolImage = NSImage(systemSymbolName: iconName, accessibilityDescription: title) {
             let config = NSImage.SymbolConfiguration(pointSize: 14, weight: .medium)
             if let configuredImage = symbolImage.withSymbolConfiguration(config) {
-                // Create a tinted copy of the image
                 let tintedImage = configuredImage.copy() as! NSImage
                 tintedImage.lockFocus()
-                darkTextColor.set()
+                theme.textColor.set()
                 NSRect(origin: .zero, size: tintedImage.size).fill(using: .sourceAtop)
                 tintedImage.unlockFocus()
                 attachment.image = tintedImage
@@ -164,18 +220,15 @@ class WelcomeWindowController: NSWindowController {
         let imageString = NSMutableAttributedString(attachment: attachment)
         let textString = NSAttributedString(string: "  \(title)", attributes: [
             .font: NSFont.systemFont(ofSize: 14, weight: .medium),
-            .foregroundColor: darkTextColor
+            .foregroundColor: theme.textColor
         ])
         imageString.append(textString)
 
-        // Center the content
         let paragraphStyle = NSMutableParagraphStyle()
         paragraphStyle.alignment = .center
         imageString.addAttribute(.paragraphStyle, value: paragraphStyle, range: NSRange(location: 0, length: imageString.length))
 
         button.attributedTitle = imageString
-
-        return button
     }
 
     private func loadRecentFiles() {
@@ -212,12 +265,15 @@ extension WelcomeWindowController: NSTableViewDelegate, NSTableViewDataSource {
     func tableView(_ tableView: NSTableView, viewFor tableColumn: NSTableColumn?, row: Int) -> NSView? {
         let cellView = NSTableCellView()
         cellView.wantsLayer = true
+        let theme = ThemeManager.shared.currentTheme
+        let isSelected = tableView.selectedRow == row
+        cellView.layer?.backgroundColor = isSelected ? theme.pageBorder.withAlphaComponent(0.15).cgColor : NSColor.clear.cgColor
 
         if recentFiles.isEmpty {
             // Show empty state
             let label = NSTextField(labelWithString: "No recent documents")
             label.font = NSFont.systemFont(ofSize: 13)
-            label.textColor = .secondaryLabelColor
+            label.textColor = theme.popoutSecondaryColor
             label.frame = NSRect(x: 10, y: 15, width: 320, height: 20)
             cellView.addSubview(label)
         } else {
@@ -232,7 +288,7 @@ extension WelcomeWindowController: NSTableViewDelegate, NSTableViewDataSource {
             // Filename
             let nameLabel = NSTextField(labelWithString: url.deletingPathExtension().lastPathComponent)
             nameLabel.font = NSFont.systemFont(ofSize: 13, weight: .medium)
-            nameLabel.textColor = NSColor(red: 0.17, green: 0.24, blue: 0.31, alpha: 1.0)
+            nameLabel.textColor = theme.textColor
             nameLabel.frame = NSRect(x: 48, y: 26, width: 280, height: 18)
             nameLabel.lineBreakMode = .byTruncatingTail
             cellView.addSubview(nameLabel)
@@ -240,7 +296,7 @@ extension WelcomeWindowController: NSTableViewDelegate, NSTableViewDataSource {
             // File path
             let pathLabel = NSTextField(labelWithString: url.deletingLastPathComponent().path)
             pathLabel.font = NSFont.systemFont(ofSize: 11)
-            pathLabel.textColor = .secondaryLabelColor
+            pathLabel.textColor = theme.popoutSecondaryColor
             pathLabel.frame = NSRect(x: 48, y: 8, width: 280, height: 16)
             pathLabel.lineBreakMode = .byTruncatingMiddle
             cellView.addSubview(pathLabel)
@@ -251,5 +307,9 @@ extension WelcomeWindowController: NSTableViewDelegate, NSTableViewDataSource {
 
     func tableView(_ tableView: NSTableView, shouldSelectRow row: Int) -> Bool {
         return !recentFiles.isEmpty
+    }
+
+    func tableViewSelectionDidChange(_ notification: Notification) {
+        recentFilesTableView?.reloadData()
     }
 }

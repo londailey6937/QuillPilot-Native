@@ -18,6 +18,7 @@ class ThemeWindowController: NSWindowController, NSTextViewDelegate {
     private var textView: NSTextView?
     private var saveTimer: Timer?
     private var currentDocumentURL: URL?
+    private let headerDescription = "Describe the central idea, question, or insight the story explores."
 
     convenience init() {
         let window = NSWindow(
@@ -114,11 +115,14 @@ class ThemeWindowController: NSWindowController, NSTextViewDelegate {
         // Title
         content.append(makeTitle("Story Theme", color: titleColor))
         content.append(makeNewline())
+        content.append(makeDescription(headerDescription, color: theme.popoutSecondaryColor))
+        content.append(makeNewline())
         content.append(makeNewline())
 
-        // Load saved theme or use default
         let savedTheme = StoryNotesStore.shared.notes.theme
-        content.append(makeBody(savedTheme, color: bodyColor))
+        if !savedTheme.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            content.append(makeBody(savedTheme, color: bodyColor))
+        }
 
         textView.textStorage?.setAttributedString(content)
 
@@ -147,7 +151,10 @@ class ThemeWindowController: NSWindowController, NSTextViewDelegate {
 
         // Extract just the theme content, not the title
         let lines = text.components(separatedBy: .newlines)
-        let contentLines = lines.filter { !$0.isEmpty && !$0.contains("Story Theme") }
+        let contentLines = lines.filter { line in
+            let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
+            return !trimmed.isEmpty && trimmed != "Story Theme" && trimmed != headerDescription
+        }
         let themeContent = contentLines.joined(separator: "\n")
 
         StoryNotesStore.shared.setDocumentURL(currentDocumentURL)
@@ -185,6 +192,18 @@ class ThemeWindowController: NSWindowController, NSTextViewDelegate {
         let attributes: [NSAttributedString.Key: Any] = [
             .font: NSFont.boldSystemFont(ofSize: 18),
             .foregroundColor: color
+        ]
+        return NSAttributedString(string: text, attributes: attributes)
+    }
+
+    private func makeDescription(_ text: String, color: NSColor) -> NSAttributedString {
+        let paragraphStyle = NSMutableParagraphStyle()
+        paragraphStyle.lineSpacing = 2
+        paragraphStyle.paragraphSpacing = 8
+        let attributes: [NSAttributedString.Key: Any] = [
+            .font: NSFont.systemFont(ofSize: 13),
+            .foregroundColor: color,
+            .paragraphStyle: paragraphStyle
         ]
         return NSAttributedString(string: text, attributes: attributes)
     }

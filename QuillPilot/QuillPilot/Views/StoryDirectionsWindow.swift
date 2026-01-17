@@ -14,6 +14,7 @@ class StoryDirectionsWindowController: NSWindowController, NSTextViewDelegate {
     private var textView: NSTextView?
     private var saveTimer: Timer?
     private var currentDocumentURL: URL?
+    private let headerDescription = "Capture possible next moves or alternate paths for the story."
 
     convenience init() {
         let window = NSWindow(
@@ -110,6 +111,8 @@ class StoryDirectionsWindowController: NSWindowController, NSTextViewDelegate {
         // Title
         content.append(makeTitle("Potential Story Directions", color: titleColor))
         content.append(makeNewline())
+        content.append(makeDescription(headerDescription, color: theme.popoutSecondaryColor))
+        content.append(makeNewline())
         content.append(makeNewline())
 
         let saved = StoryNotesStore.shared.notes.directions
@@ -138,7 +141,10 @@ class StoryDirectionsWindowController: NSWindowController, NSTextViewDelegate {
               let text = textView.textStorage?.string else { return }
 
         let lines = text.components(separatedBy: .newlines)
-        let contentLines = lines.filter { !$0.contains("Potential Story Directions") }
+        let contentLines = lines.filter { line in
+            let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
+            return !trimmed.isEmpty && trimmed != "Potential Story Directions" && trimmed != headerDescription
+        }
         let directionsContent = contentLines.joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
 
         StoryNotesStore.shared.setDocumentURL(currentDocumentURL)
@@ -168,6 +174,18 @@ class StoryDirectionsWindowController: NSWindowController, NSTextViewDelegate {
             .font: NSFont.systemFont(ofSize: 14),
             .foregroundColor: color,
             .paragraphStyle: bodyParagraphStyle()
+        ]
+        return NSAttributedString(string: text, attributes: attributes)
+    }
+
+    private func makeDescription(_ text: String, color: NSColor) -> NSAttributedString {
+        let paragraphStyle = NSMutableParagraphStyle()
+        paragraphStyle.lineSpacing = 2
+        paragraphStyle.paragraphSpacing = 8
+        let attributes: [NSAttributedString.Key: Any] = [
+            .font: NSFont.systemFont(ofSize: 13),
+            .foregroundColor: color,
+            .paragraphStyle: paragraphStyle
         ]
         return NSAttributedString(string: text, attributes: attributes)
     }

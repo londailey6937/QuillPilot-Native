@@ -22,6 +22,12 @@ final class SceneInspectorWindowController: NSWindowController {
     private var sceneWriterTextView: NSTextView!
     private var sceneWriterStatusLabel: NSTextField!
     private var sceneWriterStatusIcon: NSTextField!
+    private var sceneWriterTitleLabel: NSTextField?
+    private var dramaticHeaderLabel: NSTextField?
+    private var saveButton: NSButton?
+    private var cancelButton: NSButton?
+    private var copyButton: NSButton?
+    private var saveWriterButton: NSButton?
 
     private var currentScene: Scene?
     private var onSave: ((Scene) -> Void)?
@@ -221,8 +227,9 @@ final class SceneInspectorWindowController: NSWindowController {
         let dramaticHeader = NSTextField(labelWithString: "Dramatic Elements")
         dramaticHeader.frame = NSRect(x: 10, y: y, width: 200, height: 18)
         dramaticHeader.font = NSFont.systemFont(ofSize: 11, weight: .semibold)
-        dramaticHeader.textColor = NSColor.secondaryLabelColor
+        dramaticHeader.textColor = ThemeManager.shared.currentTheme.popoutSecondaryColor
         panel.addSubview(dramaticHeader)
+        dramaticHeaderLabel = dramaticHeader
         y -= rowHeight
 
         // Goal
@@ -282,17 +289,17 @@ final class SceneInspectorWindowController: NSWindowController {
 
         // Save button
         let saveButton = NSButton(title: "Save", target: self, action: #selector(saveScene))
-        saveButton.bezelStyle = .rounded
         saveButton.keyEquivalent = "\r"
         saveButton.frame = NSRect(x: panel.bounds.width - 90, y: 15, width: 80, height: 32)
         panel.addSubview(saveButton)
+        self.saveButton = saveButton
 
         // Cancel button
         let cancelButton = NSButton(title: "Cancel", target: self, action: #selector(cancelEdit))
-        cancelButton.bezelStyle = .rounded
         cancelButton.keyEquivalent = "\u{1b}"
         cancelButton.frame = NSRect(x: panel.bounds.width - 180, y: 15, width: 80, height: 32)
         panel.addSubview(cancelButton)
+        self.cancelButton = cancelButton
     }
 
     private func setupSceneWriterPanel(_ panel: NSView) {
@@ -305,6 +312,7 @@ final class SceneInspectorWindowController: NSWindowController {
         titleLabel.frame = NSRect(x: 15, y: 10, width: 150, height: 20)
         titleLabel.font = NSFont.systemFont(ofSize: 14, weight: .semibold)
         headerView.addSubview(titleLabel)
+        sceneWriterTitleLabel = titleLabel
 
         // Status icon and label
         sceneWriterStatusIcon = NSTextField(labelWithString: "⚪️")
@@ -317,7 +325,7 @@ final class SceneInspectorWindowController: NSWindowController {
         sceneWriterStatusLabel.frame = NSRect(x: panel.bounds.width - 85, y: 10, width: 70, height: 20)
         sceneWriterStatusLabel.autoresizingMask = [.minXMargin]
         sceneWriterStatusLabel.font = NSFont.systemFont(ofSize: 11)
-        sceneWriterStatusLabel.textColor = NSColor.secondaryLabelColor
+        sceneWriterStatusLabel.textColor = ThemeManager.shared.currentTheme.popoutSecondaryColor
         headerView.addSubview(sceneWriterStatusLabel)
 
         // Text view with scroll view
@@ -373,17 +381,17 @@ final class SceneInspectorWindowController: NSWindowController {
 
         // Copy to Clipboard button
         let copyButton = NSButton(title: "Copy to Clipboard", target: self, action: #selector(copyToClipboard))
-        copyButton.bezelStyle = .rounded
         copyButton.frame = NSRect(x: panel.bounds.width - 165, y: 10, width: 145, height: 32)
         copyButton.autoresizingMask = [.minXMargin]
         buttonContainer.addSubview(copyButton)
+        self.copyButton = copyButton
 
         // Save button
         let saveWriterButton = NSButton(title: "Save", target: self, action: #selector(saveSceneWriter))
-        saveWriterButton.bezelStyle = .rounded
         saveWriterButton.frame = NSRect(x: panel.bounds.width - 300, y: 10, width: 125, height: 32)
         saveWriterButton.autoresizingMask = [.minXMargin]
         buttonContainer.addSubview(saveWriterButton)
+        self.saveWriterButton = saveWriterButton
     }
 
     @objc private func statusChanged() {
@@ -473,9 +481,33 @@ final class SceneInspectorWindowController: NSWindowController {
         // Labels
         let labelColor = theme.popoutTextColor.withAlphaComponent(0.7)
         allLabels.forEach { $0.textColor = labelColor }
+        dramaticHeaderLabel?.textColor = theme.popoutSecondaryColor
+        sceneWriterTitleLabel?.textColor = theme.popoutTextColor
+        sceneWriterStatusLabel?.textColor = theme.popoutSecondaryColor
+
+        [saveButton, cancelButton, copyButton, saveWriterButton].forEach { button in
+            guard let button else { return }
+            styleActionButton(button, theme: theme)
+        }
 
         intentPopup?.qpApplyDropdownBorder(theme: theme)
         statePopup?.qpApplyDropdownBorder(theme: theme)
+    }
+
+    private func styleActionButton(_ button: NSButton, theme: AppTheme) {
+        button.isBordered = false
+        button.wantsLayer = true
+        button.layer?.cornerRadius = 6
+        button.layer?.backgroundColor = theme.pageAround.cgColor
+        button.layer?.borderWidth = 1
+        button.layer?.borderColor = theme.pageBorder.cgColor
+        button.contentTintColor = theme.textColor
+
+        let title = button.title
+        button.attributedTitle = NSAttributedString(string: title, attributes: [
+            .font: NSFont.systemFont(ofSize: 13, weight: .medium),
+            .foregroundColor: theme.textColor
+        ])
     }
 
     private func updateSubviewBackgrounds(_ view: NSView, theme: AppTheme) {

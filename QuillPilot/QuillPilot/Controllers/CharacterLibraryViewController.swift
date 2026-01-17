@@ -17,6 +17,9 @@ class CharacterLibraryViewController: NSViewController {
     private var currentTheme: AppTheme = ThemeManager.shared.currentTheme
     private var selectedCharacter: CharacterProfile?
     private var isEditing = false
+    private var characterListHeaderLabel: NSTextField?
+    private var characterListHeaderView: NSStackView?
+    private var characterListAddButton: NSButton?
 
     // Detail view controls
     private var detailScrollView: NSScrollView!
@@ -151,11 +154,15 @@ class CharacterLibraryViewController: NSViewController {
         header.orientation = .horizontal
         header.spacing = 8
         header.edgeInsets = NSEdgeInsets(top: 8, left: 12, bottom: 8, right: 12)
+        header.wantsLayer = true
+        header.layer?.backgroundColor = currentTheme.pageAround.cgColor
 
         let titleLabel = NSTextField(labelWithString: "📚 Characters")
         titleLabel.font = .boldSystemFont(ofSize: 14)
-        titleLabel.textColor = currentTheme.popoutTextColor
+        titleLabel.textColor = currentTheme.textColor
         header.addArrangedSubview(titleLabel)
+        characterListHeaderLabel = titleLabel
+        characterListHeaderView = header
 
         let spacer = NSView()
         spacer.translatesAutoresizingMaskIntoConstraints = false
@@ -166,6 +173,7 @@ class CharacterLibraryViewController: NSViewController {
         addButton.font = .boldSystemFont(ofSize: 14)
         addButton.toolTip = "Add New Character"
         header.addArrangedSubview(addButton)
+        characterListAddButton = addButton
 
         container.addSubview(header)
 
@@ -259,7 +267,7 @@ class CharacterLibraryViewController: NSViewController {
         detailContentStack.arrangedSubviews.forEach { $0.removeFromSuperview() }
         let placeholder = NSTextField(labelWithString: "Select a character to view details\nor click + to create a new one")
         placeholder.alignment = .center
-        placeholder.textColor = .secondaryLabelColor
+        placeholder.textColor = currentTheme.popoutSecondaryColor
         placeholder.font = .systemFont(ofSize: 14)
         placeholder.maximumNumberOfLines = 0
         placeholder.lineBreakMode = .byWordWrapping
@@ -483,7 +491,7 @@ class CharacterLibraryViewController: NSViewController {
 
         let label = NSTextField(labelWithString: title)
         label.font = .boldSystemFont(ofSize: 13)
-        label.textColor = currentTheme.headerBackground
+        label.textColor = currentTheme.popoutSecondaryColor
         detailContentStack.addArrangedSubview(label)
 
         let divider = NSBox()
@@ -804,9 +812,61 @@ class CharacterLibraryViewController: NSViewController {
             detailDocView.layer?.backgroundColor = theme.popoutBackground.cgColor
         }
 
+        characterListHeaderView?.layer?.backgroundColor = theme.pageAround.cgColor
+        characterListHeaderLabel?.textColor = theme.textColor
+        characterListAddButton?.contentTintColor = theme.textColor
+
         refreshCharacterList()
         if selectedCharacter != nil {
             showCharacterDetail()
+        }
+
+        applyFieldTheme()
+    }
+
+    private func applyFieldTheme() {
+        let theme = currentTheme
+
+        let textFields: [NSTextField?] = [
+            nameField,
+            nicknameField,
+            ageField,
+            occupationField,
+            educationField,
+            residenceField,
+            petsField
+        ]
+
+        for field in textFields {
+            guard let field else { continue }
+            field.textColor = theme.textColor
+            field.backgroundColor = theme.pageAround
+            field.isBezeled = true
+            field.bezelStyle = .roundedBezel
+            field.drawsBackground = true
+        }
+
+        rolePopup?.qpApplyDropdownBorder(theme: theme)
+
+        let textAreas: [NSTextView?] = [
+            appearanceField,
+            backgroundField,
+            familyField,
+            traitsField,
+            principlesField,
+            skillsField,
+            motivationsField,
+            weaknessesField,
+            connectionsField,
+            quotesField,
+            notesField
+        ]
+
+        for textView in textAreas {
+            guard let textView else { continue }
+            textView.textColor = theme.textColor
+            textView.backgroundColor = theme.pageAround
+            textView.insertionPointColor = theme.insertionPointColor
         }
     }
 

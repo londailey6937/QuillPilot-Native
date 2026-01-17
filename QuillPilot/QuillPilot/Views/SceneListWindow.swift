@@ -168,6 +168,7 @@ final class SceneListWindowController: NSWindowController {
         tableView.allowsMultipleSelection = false
         tableView.doubleAction = #selector(doubleClickScene)
         tableView.target = self
+        tableView.selectionHighlightStyle = .none
 
         // Enable drag and drop for reordering
         tableView.registerForDraggedTypes([.string])
@@ -401,6 +402,10 @@ extension SceneListWindowController: NSTableViewDelegate {
         let scene = filteredScenes[row]
 
         let cellView = NSTableCellView(frame: NSRect(x: 0, y: 0, width: tableColumn?.width ?? 280, height: 48))
+        cellView.wantsLayer = true
+        let theme = ThemeManager.shared.currentTheme
+        let isSelected = tableView.selectedRow == row
+        cellView.layer?.backgroundColor = isSelected ? theme.pageBorder.withAlphaComponent(0.18).cgColor : NSColor.clear.cgColor
 
         // Container for layout
         let container = NSView(frame: cellView.bounds)
@@ -414,7 +419,6 @@ extension SceneListWindowController: NSTableViewDelegate {
         container.addSubview(statusLabel)
 
         // Title
-        let theme = ThemeManager.shared.currentTheme
         let titleLabel = NSTextField(labelWithString: scene.title)
         titleLabel.frame = NSRect(x: 32, y: 26, width: container.bounds.width - 80, height: 18)
         titleLabel.font = NSFont.systemFont(ofSize: 13, weight: .medium)
@@ -465,16 +469,15 @@ extension SceneListWindowController: NSTableViewDelegate {
 
         // Toolbar
         toolbar?.wantsLayer = true
-        toolbar?.layer?.backgroundColor = theme.toolbarBackground.cgColor
+        toolbar?.layer?.backgroundColor = theme.pageAround.cgColor
 
         // Filter bar
         filterBar?.wantsLayer = true
-        filterBar?.layer?.backgroundColor = theme.pageBackground.withAlphaComponent(0.95).cgColor
+        filterBar?.layer?.backgroundColor = theme.pageAround.cgColor
 
         // Labels
-        let labelColor = theme.textColor.withAlphaComponent(0.7)
-        countLabel?.textColor = labelColor
-        filterLabel?.textColor = labelColor
+        countLabel?.textColor = theme.textColor.withAlphaComponent(0.7)
+        filterLabel?.textColor = theme.textColor.withAlphaComponent(0.7)
 
         // Table view
         tableView?.backgroundColor = theme.pageBackground
@@ -482,6 +485,8 @@ extension SceneListWindowController: NSTableViewDelegate {
 
         stateFilterPopup?.qpApplyDropdownBorder(theme: theme)
         intentFilterPopup?.qpApplyDropdownBorder(theme: theme)
+        stateFilterPopup?.contentTintColor = theme.textColor
+        intentFilterPopup?.contentTintColor = theme.textColor
 
         // Update button content colors (text color for rounded buttons)
         if let add = addButton {

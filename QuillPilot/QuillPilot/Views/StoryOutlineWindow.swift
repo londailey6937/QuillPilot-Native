@@ -14,6 +14,7 @@ class StoryOutlineWindowController: NSWindowController, NSTextViewDelegate {
         private var textView: NSTextView?
         private var saveTimer: Timer?
         private var currentDocumentURL: URL?
+        private let headerDescription = "Map the structure, beats, or scene flow for this draft."
 
     convenience init() {
         let window = NSWindow(
@@ -108,6 +109,8 @@ class StoryOutlineWindowController: NSWindowController, NSTextViewDelegate {
         let content = NSMutableAttributedString()
         content.append(makeTitle("Story Outline", color: titleColor))
         content.append(makeNewline())
+        content.append(makeDescription(headerDescription, color: theme.popoutSecondaryColor))
+        content.append(makeNewline())
         content.append(makeNewline())
 
         let saved = StoryNotesStore.shared.notes.outline
@@ -134,7 +137,10 @@ class StoryOutlineWindowController: NSWindowController, NSTextViewDelegate {
               let text = textView.textStorage?.string else { return }
 
         let lines = text.components(separatedBy: .newlines)
-        let contentLines = lines.filter { !$0.contains("Story Outline") }
+        let contentLines = lines.filter { line in
+            let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
+            return !trimmed.isEmpty && trimmed != "Story Outline" && trimmed != headerDescription
+        }
         let outlineContent = contentLines.joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
 
         StoryNotesStore.shared.setDocumentURL(currentDocumentURL)
@@ -145,7 +151,7 @@ class StoryOutlineWindowController: NSWindowController, NSTextViewDelegate {
 
     private func makeTitle(_ text: String, color: NSColor) -> NSAttributedString {
         let attributes: [NSAttributedString.Key: Any] = [
-            .font: NSFont.boldSystemFont(ofSize: 28),
+            .font: NSFont.boldSystemFont(ofSize: 24),
             .foregroundColor: color
         ]
         return NSAttributedString(string: text, attributes: attributes)
@@ -163,6 +169,18 @@ class StoryOutlineWindowController: NSWindowController, NSTextViewDelegate {
         let attributes: [NSAttributedString.Key: Any] = [
             .font: NSFont.boldSystemFont(ofSize: 16),
             .foregroundColor: color
+        ]
+        return NSAttributedString(string: text, attributes: attributes)
+    }
+
+    private func makeDescription(_ text: String, color: NSColor) -> NSAttributedString {
+        let paragraphStyle = NSMutableParagraphStyle()
+        paragraphStyle.lineSpacing = 2
+        paragraphStyle.paragraphSpacing = 8
+        let attributes: [NSAttributedString.Key: Any] = [
+            .font: NSFont.systemFont(ofSize: 13),
+            .foregroundColor: color,
+            .paragraphStyle: paragraphStyle
         ]
         return NSAttributedString(string: text, attributes: attributes)
     }

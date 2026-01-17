@@ -969,7 +969,22 @@ class EditorViewController: NSViewController {
         layoutManager.ensureLayout(forCharacterRange: ensureRange)
 
         let glyphRange = layoutManager.glyphRange(forCharacterRange: ensureRange, actualCharacterRange: nil)
-        let rect = layoutManager.boundingRect(forGlyphRange: glyphRange, in: textContainer)
+        var rect = layoutManager.boundingRect(forGlyphRange: glyphRange, in: textContainer)
+
+        // If the text system hasn't fully laid out far-down content yet (common right after DOCX/RTF import),
+        // boundingRect can be empty which would incorrectly keep the page container at 1 page.
+        // Force a broader layout pass and retry so late-document headings (e.g. "Index") can be navigated to immediately.
+        if rect.isEmpty || rect.maxY <= 1 {
+            layoutManager.ensureLayout(for: textContainer)
+            rect = layoutManager.boundingRect(forGlyphRange: glyphRange, in: textContainer)
+
+            if rect.isEmpty || rect.maxY <= 1 {
+                updatePageLayout()
+                layoutManager.ensureLayout(forCharacterRange: ensureRange)
+                rect = layoutManager.boundingRect(forGlyphRange: glyphRange, in: textContainer)
+            }
+        }
+
         let requiredHeight = max(0, rect.maxY)
 
         let scaledPageHeight = pageHeight * editorZoom
@@ -2330,11 +2345,19 @@ class EditorViewController: NSViewController {
             guard let self else { return }
             guard let storage = self.textView.textStorage, storage.length > 0 else { return }
 
+            // Outline-driven navigation (flash=true) should land on stable geometry.
+            // After import/reopen, AppKit can be partially laid out; as layout finishes, glyph Y
+            // positions can shift and it feels like a snap/jump when the user scrolls. Force a bounded
+            // full layout + pagination pass first.
+            let clamped = min(max(0, location), max(0, storage.length - 1))
+            if flash, storage.length <= 1_000_000, let layoutManager = self.textView.layoutManager {
+                layoutManager.ensureLayout(forCharacterRange: NSRange(location: 0, length: storage.length))
+                self.updatePageLayout()
+            }
+
             // Prevent the layout pipeline from restoring the previous scroll position.
             self.pendingNavigationScroll = true
-            self.navigationScrollSuppressionUntil = CFAbsoluteTimeGetCurrent() + 2.25
-
-            let clamped = min(max(0, location), max(0, storage.length - 1))
+            self.navigationScrollSuppressionUntil = CFAbsoluteTimeGetCurrent() + 4.5
 
             // Make sure the page container is tall enough to reach the target BEFORE we try to scroll.
             // This avoids the "click 3 times" symptom when pagination is still settling near the end.
@@ -5288,6 +5311,19 @@ case "Book Subtitle":
             return []
         }
 
+        // Ensure page numbers reflect *final* layout.
+        // Immediately after DOCX/RTF import/reopen, the text system can be partially laid out,
+        // which commonly causes the last headings (e.g. Index) to show incorrect page numbers.
+        // Force a bounded full layout and run pagination once before scanning headings.
+        if storage.length > 0 {
+            if storage.length <= 1_000_000 {
+                layoutManager.ensureLayout(forCharacterRange: NSRange(location: 0, length: storage.length))
+            } else {
+                layoutManager.ensureLayout(for: textContainer)
+            }
+            updatePageLayout()
+        }
+
         DebugLog.log("📋🔍 buildOutlineEntries: Starting scan of \(storage.length) characters")
         DebugLog.log("📋🔍 styleAttributeKey: \(styleAttributeKey)")
         if StyleCatalog.shared.isPoetryTemplate {
@@ -5351,12 +5387,7 @@ case "Book Subtitle":
                 if let level = levels[styleName] {
                     let rawTitle = fullString.substring(with: paragraphRange).trimmingCharacters(in: .whitespacesAndNewlines)
                     if !rawTitle.isEmpty {
-                        let glyphRange = layoutManager.glyphRange(forCharacterRange: paragraphRange, actualCharacterRange: nil)
-                        let bounds = layoutManager.boundingRect(forGlyphRange: glyphRange, in: textContainer)
-                        let scaledPageHeight = pageHeight * editorZoom
-                        let pageGap: CGFloat = 20
-                        // Account for page gaps when calculating page number
-                        let pageIndex = max(0, Int(floor(bounds.midY / (scaledPageHeight + pageGap)))) + 1
+                        let pageIndex = getPageNumber(forCharacterPosition: paragraphRange.location)
                         results.append(OutlineEntry(title: rawTitle, level: level, range: paragraphRange, page: pageIndex, styleName: styleName))
                         if results.count <= 3 {
                             DebugLog.log("📋✅ Found: '\(rawTitle)' style='\(styleName)' level=\(level)")
@@ -5366,18 +5397,10 @@ case "Book Subtitle":
             } else if isScreenplayTemplate {
                 let rawTitle = fullString.substring(with: paragraphRange).trimmingCharacters(in: .whitespacesAndNewlines)
                 if looksLikeScreenplaySlugline(rawTitle) {
-                    let glyphRange = layoutManager.glyphRange(forCharacterRange: paragraphRange, actualCharacterRange: nil)
-                    let bounds = layoutManager.boundingRect(forGlyphRange: glyphRange, in: textContainer)
-                    let scaledPageHeight = pageHeight * editorZoom
-                    let pageGap: CGFloat = 20
-                    let pageIndex = max(0, Int(floor(bounds.midY / (scaledPageHeight + pageGap)))) + 1
+                    let pageIndex = getPageNumber(forCharacterPosition: paragraphRange.location)
                     results.append(OutlineEntry(title: rawTitle, level: 1, range: paragraphRange, page: pageIndex, styleName: "Screenplay — Slugline"))
                 } else if looksLikeScreenplayActHeading(rawTitle) {
-                    let glyphRange = layoutManager.glyphRange(forCharacterRange: paragraphRange, actualCharacterRange: nil)
-                    let bounds = layoutManager.boundingRect(forGlyphRange: glyphRange, in: textContainer)
-                    let scaledPageHeight = pageHeight * editorZoom
-                    let pageGap: CGFloat = 20
-                    let pageIndex = max(0, Int(floor(bounds.midY / (scaledPageHeight + pageGap)))) + 1
+                    let pageIndex = getPageNumber(forCharacterPosition: paragraphRange.location)
                     results.append(OutlineEntry(title: rawTitle, level: 0, range: paragraphRange, page: pageIndex, styleName: "Screenplay — Act"))
                 }
             }
@@ -5430,11 +5453,7 @@ case "Book Subtitle":
         var stanzaLineCount = 0
 
         func pageIndexForParagraph(_ paragraphRange: NSRange) -> Int {
-            let glyphRange = layoutManager.glyphRange(forCharacterRange: paragraphRange, actualCharacterRange: nil)
-            let bounds = layoutManager.boundingRect(forGlyphRange: glyphRange, in: textContainer)
-            let scaledPageHeight = pageHeight * editorZoom
-            let pageGap: CGFloat = 20
-            return max(0, Int(floor(bounds.midY / (scaledPageHeight + pageGap)))) + 1
+            getPageNumber(forCharacterPosition: paragraphRange.location)
         }
 
         func finalizeStanzaIfNeeded() {

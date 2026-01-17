@@ -3994,6 +3994,26 @@ extension ContentViewController: RulerViewDelegate {
 
 // MARK: - Outline View Controller
 class OutlineViewController: NSViewController {
+    private final class ThemedOutlineRowView: NSTableRowView {
+        var themeProvider: (() -> AppTheme)?
+
+        override func drawSelection(in dirtyRect: NSRect) {
+            guard isSelected, let theme = themeProvider?() else { return }
+
+            let selectionColor: NSColor
+            if ThemeManager.shared.isDarkMode {
+                selectionColor = theme.pageBorder.withAlphaComponent(0.22)
+            } else {
+                // Cream selection (avoid macOS accent blue)
+                selectionColor = theme.pageBackground
+            }
+
+            selectionColor.setFill()
+            let path = NSBezierPath(roundedRect: bounds.insetBy(dx: 2, dy: 1), xRadius: 6, yRadius: 6)
+            path.fill()
+        }
+    }
+
     final class Node: NSObject {
         let entry: EditorViewController.OutlineEntry
         var children: [Node]
@@ -4092,6 +4112,9 @@ class OutlineViewController: NSViewController {
         outlineView.headerView = nil
         outlineView.usesAlternatingRowBackgroundColors = false
         outlineView.rowSizeStyle = .small
+        outlineView.allowsEmptySelection = true
+        outlineView.allowsMultipleSelection = false
+        outlineView.selectionHighlightStyle = .none
         outlineView.delegate = self
         outlineView.dataSource = self
         outlineView.target = self
@@ -4181,10 +4204,22 @@ class OutlineViewController: NSViewController {
         roots = buildTree(from: entries)
         outlineView.reloadData()
         outlineView.expandItem(nil, expandChildren: true)
+        // Some OS behaviors can re-select row 0 after reload if empty selection isn't allowed.
+        // Keep the outline unselected until the user explicitly clicks.
+        outlineView.deselectAll(nil)
         isUpdating = false
     }
 
     @objc private func outlineRowClicked(_ sender: Any?) {
+        // Only navigate for genuine mouse interaction; avoid programmatic/restore selection side-effects.
+        if let event = NSApp.currentEvent {
+            switch event.type {
+            case .leftMouseDown, .leftMouseUp:
+                break
+            default:
+                return
+            }
+        }
         let targetRow = outlineView.clickedRow
         guard targetRow >= 0, let node = outlineView.item(atRow: targetRow) as? Node else { return }
         onSelect?(node.entry)
@@ -4249,6 +4284,12 @@ class OutlineViewController: NSViewController {
 }
 
 extension OutlineViewController: NSOutlineViewDataSource, NSOutlineViewDelegate {
+    func outlineView(_ outlineView: NSOutlineView, rowViewForItem item: Any) -> NSTableRowView? {
+        let row = ThemedOutlineRowView()
+        row.themeProvider = { [weak self] in self?.currentTheme ?? ThemeManager.shared.currentTheme }
+        return row
+    }
+
     func outlineView(_ outlineView: NSOutlineView, numberOfChildrenOfItem item: Any?) -> Int {
         if let node = item as? Node { return node.children.count }
         return roots.count

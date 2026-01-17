@@ -48,6 +48,7 @@ let package = Package(
                 "Views/HeaderFooterSettingsWindow.swift",
                 "Views/StyleEditorWindow.swift",
                 "Views/DocumentationWindow.swift",
+                "Views/StoryDataStorageHelpWindow.swift",
                 "Views/CharacterLibraryWindow.swift",
                 "Views/ThemeWindow.swift",
                 "Views/PreferencesWindowController.swift",

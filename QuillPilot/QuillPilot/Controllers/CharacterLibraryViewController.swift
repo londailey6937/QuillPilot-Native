@@ -578,6 +578,7 @@ class CharacterLibraryViewController: NSViewController {
             popup.addItem(withTitle: role.rawValue)
         }
         popup.selectItem(withTitle: selected.rawValue)
+        popup.qpApplyDropdownBorder(theme: ThemeManager.shared.currentTheme)
 
         container.addArrangedSubview(popup)
         detailContentStack.addArrangedSubview(container)

@@ -45,8 +45,7 @@ final class PreferencesWindowController: NSWindowController {
 
         // Theme
         themePopup = NSPopUpButton(frame: .zero, pullsDown: false)
-        // Light mode (Day) removed: keep Cream plus dark variants.
-        themePopup.addItems(withTitles: ["Cream", "Night", "Dusk"])
+        themePopup.addItems(withTitles: ["Day", "Cream", "Night", "Dusk"])
         themePopup.target = self
         themePopup.action = #selector(themeChanged(_:))
         themedPopups.append(themePopup)
@@ -198,20 +197,21 @@ final class PreferencesWindowController: NSWindowController {
             if #available(macOS 10.14, *) {
                 p.contentTintColor = labelColor
             }
+            p.qpApplyDropdownBorder(theme: theme)
         }
     }
 
     private func loadFromSettings() {
         // Theme
         switch ThemeManager.shared.currentTheme {
+        case .day:
+            themePopup.selectItem(withTitle: "Day")
         case .cream:
             themePopup.selectItem(withTitle: "Cream")
         case .night:
             themePopup.selectItem(withTitle: "Night")
         case .dusk:
             themePopup.selectItem(withTitle: "Dusk")
-        case .day:
-            themePopup.selectItem(withTitle: "Cream")
         }
 
         // Auto-save
@@ -248,10 +248,12 @@ final class PreferencesWindowController: NSWindowController {
         let selection = themePopup.indexOfSelectedItem
         switch selection {
         case 0:
-            ThemeManager.shared.currentTheme = .cream
+            ThemeManager.shared.currentTheme = .day
         case 1:
-            ThemeManager.shared.currentTheme = .night
+            ThemeManager.shared.currentTheme = .cream
         case 2:
+            ThemeManager.shared.currentTheme = .night
+        case 3:
             ThemeManager.shared.currentTheme = .dusk
         default:
             ThemeManager.shared.currentTheme = .cream

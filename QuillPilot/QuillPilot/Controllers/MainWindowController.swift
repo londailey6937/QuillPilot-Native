@@ -2383,6 +2383,17 @@ class HeaderView: NSView {
         taglineLabel.textColor = theme.headerText.withAlphaComponent(0.75)
         specsPanel.applyTheme(theme)
 
+        // Day theme: apply orange border to header icon button.
+        themeToggleButton.wantsLayer = true
+        themeToggleButton.layer?.masksToBounds = true
+        if theme == .day {
+            themeToggleButton.layer?.borderWidth = 1
+            themeToggleButton.layer?.borderColor = theme.pageBorder.cgColor
+            themeToggleButton.layer?.cornerRadius = 6
+        } else {
+            themeToggleButton.layer?.borderWidth = 0
+        }
+
         // Icon-only toggle that reflects the current theme.
         if #available(macOS 11.0, *) {
             let imageName: String
@@ -2414,7 +2425,9 @@ class HeaderView: NSView {
 
     private func themeDisplayName(for theme: AppTheme) -> String {
         switch theme {
-        case .cream, .day:
+        case .day:
+            return "Day"
+        case .cream:
             return "Cream"
         case .night:
             return "Night"
@@ -2931,6 +2944,14 @@ class FormattingToolbar: NSView {
                 }
 
                 // Force the popup to redraw
+                if theme == .day {
+                    popup.wantsLayer = true
+                    popup.layer?.borderWidth = 1
+                    popup.layer?.borderColor = theme.pageBorder.cgColor
+                    popup.layer?.cornerRadius = 6
+                } else {
+                    popup.layer?.borderWidth = 0
+                }
                 popup.needsDisplay = true
             } else if let button = control as? NSButton {
                 button.contentTintColor = theme.textColor
@@ -2953,6 +2974,18 @@ class FormattingToolbar: NSView {
                         button.image?.isTemplate = true
                     }
                 }
+
+                // Day theme: apply orange border to all toolbar buttons (icons + text buttons).
+                button.wantsLayer = true
+                button.layer?.masksToBounds = true
+                if theme == .day {
+                    button.layer?.borderWidth = 1
+                    button.layer?.borderColor = theme.pageBorder.cgColor
+                    button.layer?.cornerRadius = 6
+                } else {
+                    button.layer?.borderWidth = 0
+                }
+
                 let currentFontSize = button.font?.pointSize ?? 14
                 let attributes: [NSAttributedString.Key: Any] = [
                     .foregroundColor: theme.textColor,
@@ -3726,6 +3759,21 @@ class ContentViewController: NSViewController {
         analysisViewController?.applyTheme(theme)
         view.wantsLayer = true
         view.layer?.backgroundColor = theme.pageAround.cgColor
+
+        // Day theme: apply orange border to the persistent outline reveal icon.
+        outlineRevealButton?.wantsLayer = true
+        outlineRevealButton?.layer?.masksToBounds = true
+        outlineRevealButton?.image?.isTemplate = true
+        if #available(macOS 10.14, *) {
+            outlineRevealButton?.contentTintColor = theme.textColor
+        }
+        if theme == .day {
+            outlineRevealButton?.layer?.borderWidth = 1
+            outlineRevealButton?.layer?.borderColor = theme.pageBorder.cgColor
+            outlineRevealButton?.layer?.cornerRadius = 8
+        } else {
+            outlineRevealButton?.layer?.borderWidth = 0
+        }
     }
 
     /// Notify both sidebars that the document has changed
@@ -4260,6 +4308,21 @@ class OutlineViewController: NSViewController {
         view.layer?.backgroundColor = theme.outlineBackground.cgColor
         headerLabel.textColor = theme.textColor
         outlineView.backgroundColor = theme.outlineBackground
+
+        // Day theme: apply orange border to the header outline toggle icon (visible in Poetry).
+        helpButton?.wantsLayer = true
+        helpButton?.layer?.masksToBounds = true
+        helpButton?.image?.isTemplate = true
+        if #available(macOS 10.14, *) {
+            helpButton?.contentTintColor = theme.textColor
+        }
+        if theme == .day {
+            helpButton?.layer?.borderWidth = 1
+            helpButton?.layer?.borderColor = theme.pageBorder.cgColor
+            helpButton?.layer?.cornerRadius = 8
+        } else {
+            helpButton?.layer?.borderWidth = 0
+        }
 
         // Reload data to apply new colors
         outlineView.reloadData()

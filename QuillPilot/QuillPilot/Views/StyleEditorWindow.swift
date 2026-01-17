@@ -26,6 +26,8 @@ final class StyleEditorWindowController: NSWindowController {
 final class StyleEditorViewController: NSViewController {
     private weak var editor: StyleEditorPresenter?
 
+    private var themeObserver: NSObjectProtocol?
+
     private var templatePopup: NSPopUpButton!
     private var stylePopup: NSPopUpButton!
     private var fontPopup: NSPopUpButton!
@@ -52,17 +54,29 @@ final class StyleEditorViewController: NSViewController {
         fatalError("init(coder:) has not been implemented")
     }
 
+    deinit {
+        if let themeObserver {
+            NotificationCenter.default.removeObserver(themeObserver)
+        }
+    }
+
     override func loadView() {
+        let theme = ThemeManager.shared.currentTheme
+
         view = NSView()
         view.translatesAutoresizingMaskIntoConstraints = false
+        view.wantsLayer = true
+        view.layer?.backgroundColor = theme.pageAround.cgColor
 
         templatePopup = NSPopUpButton()
         templatePopup.target = self
         templatePopup.action = #selector(templateChanged)
+        templatePopup.qpApplyDropdownBorder(theme: theme)
 
         stylePopup = NSPopUpButton()
         stylePopup.target = self
         stylePopup.action = #selector(styleChanged)
+        stylePopup.qpApplyDropdownBorder(theme: theme)
 
         fontPopup = NSPopUpButton()
         fontPopup.addItems(withTitles: [
@@ -76,6 +90,7 @@ final class StyleEditorViewController: NSViewController {
             "Courier New",
             "SF Pro"
         ])
+        fontPopup.qpApplyDropdownBorder(theme: theme)
 
         sizeField = NSTextField(string: "12")
         sizeField.controlSize = .small
@@ -95,11 +110,19 @@ final class StyleEditorViewController: NSViewController {
         firstLineField = NSTextField(string: "36")
         tailIndentField = NSTextField(string: "0")
 
-        preview = NSTextView()
+        preview = NSTextView(frame: NSRect(x: 0, y: 0, width: 480, height: 180))
         preview.isEditable = false
         preview.isSelectable = false
+        preview.drawsBackground = true
         preview.string = "Preview sample text."
-        preview.backgroundColor = ThemeManager.shared.currentTheme.pageBackground
+        preview.textContainerInset = NSSize(width: 12, height: 12)
+        preview.isHorizontallyResizable = false
+        preview.isVerticallyResizable = true
+        preview.autoresizingMask = [.width]
+        preview.textColor = theme.textColor
+        preview.backgroundColor = theme.pageBackground
+        preview.textContainer?.widthTracksTextView = true
+        preview.textContainer?.heightTracksTextView = false
 
         let grid = NSGridView(views: [
             [NSTextField(labelWithString: "Template:"), templatePopup],
@@ -123,6 +146,8 @@ final class StyleEditorViewController: NSViewController {
 
         let previewContainer = NSScrollView()
         previewContainer.hasVerticalScroller = true
+        previewContainer.drawsBackground = true
+        previewContainer.backgroundColor = theme.pageAround
         previewContainer.documentView = preview
         previewContainer.borderType = .bezelBorder
         previewContainer.translatesAutoresizingMaskIntoConstraints = false
@@ -154,6 +179,26 @@ final class StyleEditorViewController: NSViewController {
         reloadTemplates()
         reloadStyles()
         loadCurrentStyle()
+
+        // Live theme updates (so borders/backgrounds follow theme changes).
+        themeObserver = NotificationCenter.default.addObserver(
+            forName: .themeDidChange,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            self?.applyTheme(ThemeManager.shared.currentTheme)
+        }
+    }
+
+    private func applyTheme(_ theme: AppTheme) {
+        view.layer?.backgroundColor = theme.pageAround.cgColor
+
+        templatePopup?.qpApplyDropdownBorder(theme: theme)
+        stylePopup?.qpApplyDropdownBorder(theme: theme)
+        fontPopup?.qpApplyDropdownBorder(theme: theme)
+
+        preview?.textColor = theme.textColor
+        preview?.backgroundColor = theme.pageBackground
     }
 
     private func reloadTemplates() {

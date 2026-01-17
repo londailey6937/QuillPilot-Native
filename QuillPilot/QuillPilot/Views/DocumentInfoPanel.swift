@@ -135,14 +135,17 @@ class DocumentInfoPanel: NSView {
         let interval = QuillPilotSettings.autoSaveIntervalSeconds
         let isOff = interval <= 0
 
+        // Use the app's orange accent for the auto-save status (matches Day-mode borders).
+        let accent = NSColor.systemOrange
+
         if isOff {
             autoSaveStatusLabel.stringValue = "Auto-save: Off"
-            autoSaveStatusLabel.textColor = NSColor.systemRed
+            autoSaveStatusLabel.textColor = accent.withAlphaComponent(0.90)
             return
         }
 
         autoSaveStatusLabel.stringValue = "Auto-save: \(formatAutoSaveInterval(seconds: interval))"
-        autoSaveStatusLabel.textColor = ThemeManager.shared.currentTheme.headerText.withAlphaComponent(0.85)
+        autoSaveStatusLabel.textColor = accent
     }
 
     private func formatAutoSaveInterval(seconds: TimeInterval) -> String {

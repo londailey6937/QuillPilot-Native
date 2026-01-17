@@ -166,8 +166,12 @@ class EnhancedRulerView: NSView {
 
     func applyTheme(_ theme: AppTheme) {
         layer?.backgroundColor = theme.rulerBackground.cgColor
-        layer?.borderWidth = 1
-        layer?.borderColor = theme.rulerBorder.cgColor
+        if theme == .cream {
+            layer?.borderWidth = 0
+        } else {
+            layer?.borderWidth = 1
+            layer?.borderColor = theme.rulerBorder.cgColor
+        }
         markingsColor = theme.rulerMarkings
         needsDisplay = true
     }

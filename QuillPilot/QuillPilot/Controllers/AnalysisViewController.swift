@@ -1759,8 +1759,22 @@ class AnalysisViewController: NSViewController, NSWindowDelegate {
 
         outlineViewController?.applyTheme(theme)
         for button in menuButtons {
+            button.wantsLayer = true
+            button.layer?.masksToBounds = true
+            button.layer?.backgroundColor = NSColor.clear.cgColor
+            button.image?.isTemplate = true
+
             if #available(macOS 10.14, *) {
                 button.contentTintColor = theme.textColor.withAlphaComponent(0.9)
+            }
+
+            // Day theme: orange border for all sidebar icon buttons (vertical stack).
+            if theme == .day {
+                button.layer?.borderWidth = 1
+                button.layer?.borderColor = theme.pageBorder.cgColor
+                button.layer?.cornerRadius = 10
+            } else {
+                button.layer?.borderWidth = 0
             }
         }
         updateSelectedButton()
@@ -4660,6 +4674,7 @@ extension AnalysisViewController {
         }
         metricPopup.target = self
         metricPopup.action = #selector(metricChanged(_:))
+        metricPopup.qpApplyDropdownBorder(theme: currentTheme)
         toolbar.addSubview(metricPopup)
 
         // X-axis mode selector (Scenes / Acts)

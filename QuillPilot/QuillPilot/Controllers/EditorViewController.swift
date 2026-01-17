@@ -5336,6 +5336,7 @@ case "Book Subtitle":
             "Part Title": 0,
             "Chapter Number": 1,
             "Chapter Title": 1,
+            "Chapter Heading": 1,
             "Heading 1": 1,
             "Heading 2": 2,
             "Heading 3": 3,

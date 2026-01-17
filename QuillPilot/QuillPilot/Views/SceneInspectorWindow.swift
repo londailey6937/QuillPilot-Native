@@ -473,6 +473,9 @@ final class SceneInspectorWindowController: NSWindowController {
         // Labels
         let labelColor = theme.popoutTextColor.withAlphaComponent(0.7)
         allLabels.forEach { $0.textColor = labelColor }
+
+        intentPopup?.qpApplyDropdownBorder(theme: theme)
+        statePopup?.qpApplyDropdownBorder(theme: theme)
     }
 
     private func updateSubviewBackgrounds(_ view: NSView, theme: AppTheme) {

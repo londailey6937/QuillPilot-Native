@@ -9,7 +9,7 @@
 import Cocoa
 import WebKit
 
-class DocumentationWindowController: NSWindowController {
+class DocumentationWindowController: NSWindowController, NSWindowDelegate {
 
         private struct HelpHeadingLocation {
                 let tabIdentifier: String
@@ -28,6 +28,12 @@ class DocumentationWindowController: NSWindowController {
         private var searchField: NSSearchField!
         private var headingIndex: [HelpHeadingLocation] = []
 
+        private var headerView: NSView?
+        private var tabBarScrollView: NSScrollView?
+        private var tabBarStack: NSStackView?
+        private var tabButtonsByIdentifier: [String: NSButton] = [:]
+        private var themeObserver: NSObjectProtocol?
+
     convenience init() {
         let window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 900, height: 700),
@@ -37,11 +43,27 @@ class DocumentationWindowController: NSWindowController {
         )
         window.title = "Quill Pilot Help"
         window.minSize = NSSize(width: 700, height: 500)
+                window.isReleasedWhenClosed = false
 
         self.init(window: window)
+                window.delegate = self
         setupUI()
         loadDocumentation()
+
+                themeObserver = NotificationCenter.default.addObserver(
+                        forName: .themeDidChange,
+                        object: nil,
+                        queue: .main
+                ) { [weak self] _ in
+                        self?.applyTheme()
+                }
     }
+
+        deinit {
+                if let themeObserver {
+                        NotificationCenter.default.removeObserver(themeObserver)
+                }
+        }
 
     private func setupUI() {
         guard let window = window else { return }
@@ -49,6 +71,13 @@ class DocumentationWindowController: NSWindowController {
         let contentView = NSView(frame: window.contentView!.bounds)
         contentView.autoresizingMask = [.width, .height]
         contentView.wantsLayer = true
+
+                // Header background (search strip)
+                let header = NSView(frame: .zero)
+                header.translatesAutoresizingMaskIntoConstraints = false
+                header.wantsLayer = true
+                contentView.addSubview(header)
+                self.headerView = header
 
                 // Help heading search
                 searchField = NSSearchField(frame: .zero)
@@ -62,7 +91,8 @@ class DocumentationWindowController: NSWindowController {
         // Create tab view
                 tabView = NSTabView(frame: .zero)
                 tabView.translatesAutoresizingMaskIntoConstraints = false
-        tabView.tabViewType = .topTabsBezelBorder
+        // Use a custom tab bar so light mode doesn't use the system accent blue.
+        tabView.tabViewType = .noTabsNoBorder
 
         // Create tabs
         createTab(title: "❓ Why Quill Pilot?", identifier: "why")
@@ -75,16 +105,29 @@ class DocumentationWindowController: NSWindowController {
         createTab(title: "🔢 List Numbering", identifier: "numbering")
         createTab(title: "⌨️ Shortcuts", identifier: "shortcuts")
 
+        let tabBar = makeTabBar()
+        contentView.addSubview(tabBar)
+
         contentView.addSubview(tabView)
         window.contentView = contentView
 
                 NSLayoutConstraint.activate([
-                        searchField.topAnchor.constraint(equalTo: contentView.topAnchor, constant: 10),
-                        searchField.leadingAnchor.constraint(equalTo: contentView.leadingAnchor, constant: 12),
-                        searchField.trailingAnchor.constraint(equalTo: contentView.trailingAnchor, constant: -12),
+                        header.topAnchor.constraint(equalTo: contentView.topAnchor),
+                        header.leadingAnchor.constraint(equalTo: contentView.leadingAnchor),
+                        header.trailingAnchor.constraint(equalTo: contentView.trailingAnchor),
+                        header.heightAnchor.constraint(equalToConstant: 44),
+
+                        searchField.centerYAnchor.constraint(equalTo: header.centerYAnchor),
+                        searchField.leadingAnchor.constraint(equalTo: header.leadingAnchor, constant: 12),
+                        searchField.trailingAnchor.constraint(equalTo: header.trailingAnchor, constant: -12),
                         searchField.heightAnchor.constraint(equalToConstant: 26),
 
-                        tabView.topAnchor.constraint(equalTo: searchField.bottomAnchor, constant: 8),
+                        tabBar.topAnchor.constraint(equalTo: header.bottomAnchor),
+                        tabBar.leadingAnchor.constraint(equalTo: contentView.leadingAnchor),
+                        tabBar.trailingAnchor.constraint(equalTo: contentView.trailingAnchor),
+                        tabBar.heightAnchor.constraint(equalToConstant: 36),
+
+                        tabView.topAnchor.constraint(equalTo: tabBar.bottomAnchor),
                         tabView.leadingAnchor.constraint(equalTo: contentView.leadingAnchor),
                         tabView.trailingAnchor.constraint(equalTo: contentView.trailingAnchor),
                         tabView.bottomAnchor.constraint(equalTo: contentView.bottomAnchor)
@@ -92,6 +135,102 @@ class DocumentationWindowController: NSWindowController {
 
         applyTheme()
     }
+
+        private func makeTabBar() -> NSView {
+                let scroller = NSScrollView(frame: .zero)
+                scroller.translatesAutoresizingMaskIntoConstraints = false
+                scroller.hasHorizontalScroller = true
+                scroller.hasVerticalScroller = false
+                scroller.autohidesScrollers = true
+                scroller.scrollerStyle = .overlay
+                scroller.drawsBackground = true
+                scroller.borderType = .noBorder
+
+                let clip = scroller.contentView
+                clip.postsBoundsChangedNotifications = true
+
+                let document = NSView(frame: .zero)
+                document.translatesAutoresizingMaskIntoConstraints = false
+                document.wantsLayer = true
+
+                let stack = NSStackView()
+                stack.orientation = .horizontal
+                stack.alignment = .centerY
+                stack.spacing = 8
+                stack.edgeInsets = NSEdgeInsets(top: 4, left: 10, bottom: 4, right: 10)
+                stack.translatesAutoresizingMaskIntoConstraints = false
+
+                document.addSubview(stack)
+                NSLayoutConstraint.activate([
+                        stack.leadingAnchor.constraint(equalTo: document.leadingAnchor),
+                        stack.trailingAnchor.constraint(equalTo: document.trailingAnchor),
+                        stack.topAnchor.constraint(equalTo: document.topAnchor),
+                        stack.bottomAnchor.constraint(equalTo: document.bottomAnchor)
+                ])
+
+                scroller.documentView = document
+
+                tabBarScrollView = scroller
+                tabBarStack = stack
+
+                rebuildTabBarButtons()
+                return scroller
+        }
+
+        private func rebuildTabBarButtons() {
+                tabButtonsByIdentifier.removeAll(keepingCapacity: true)
+                tabBarStack?.arrangedSubviews.forEach { v in
+                        tabBarStack?.removeArrangedSubview(v)
+                        v.removeFromSuperview()
+                }
+
+                guard let tabView else { return }
+                for item in tabView.tabViewItems {
+                        guard let identifier = item.identifier as? String else { continue }
+                        let button = NSButton(title: item.label, target: self, action: #selector(tabButtonTapped(_:)))
+                        button.bezelStyle = .rounded
+                        button.isBordered = false
+                        button.wantsLayer = true
+                        button.layer?.cornerRadius = 8
+                        button.translatesAutoresizingMaskIntoConstraints = false
+                        button.setContentHuggingPriority(.required, for: .horizontal)
+                        button.identifier = NSUserInterfaceItemIdentifier(identifier)
+                        tabButtonsByIdentifier[identifier] = button
+                        tabBarStack?.addArrangedSubview(button)
+                }
+
+                updateTabBarSelectionUI()
+        }
+
+        @objc private func tabButtonTapped(_ sender: NSButton) {
+                guard let identifier = sender.identifier?.rawValue else { return }
+                selectTab(identifier: identifier)
+                updateTabBarSelectionUI()
+        }
+
+        private func updateTabBarSelectionUI() {
+                guard let tabView else { return }
+                let selectedIdentifier = tabView.selectedTabViewItem?.identifier as? String
+                let theme = ThemeManager.shared.currentTheme
+
+                for (identifier, button) in tabButtonsByIdentifier {
+                        let isSelected = (identifier == selectedIdentifier)
+
+                        button.layer?.borderWidth = 1
+                        button.layer?.borderColor = theme.pageBorder.withAlphaComponent(isSelected ? 1.0 : 0.25).cgColor
+                        button.layer?.backgroundColor = (isSelected ? theme.pageBorder : theme.pageBackground).cgColor
+
+                        let titleColor: NSColor = isSelected ? .white : theme.textColor
+                        let font = NSFont.systemFont(ofSize: 12, weight: .semibold)
+                        button.attributedTitle = NSAttributedString(
+                                string: button.title,
+                                attributes: [
+                                        .foregroundColor: titleColor,
+                                        .font: font
+                                ]
+                        )
+                }
+        }
 
     private func createTab(title: String, identifier: String) {
         let tabViewItem = NSTabViewItem(identifier: identifier)
@@ -135,10 +274,28 @@ class DocumentationWindowController: NSWindowController {
     private func applyTheme() {
         let theme = ThemeManager.shared.currentTheme
 
-                searchField.textColor = theme.textColor
-                searchField.backgroundColor = theme.pageAround
+        // Window + header styling
+        let isDarkMode = ThemeManager.shared.isDarkMode
+        window?.appearance = NSAppearance(named: isDarkMode ? .darkAqua : .aqua)
+        window?.backgroundColor = theme.pageAround
+        window?.contentView?.layer?.backgroundColor = theme.pageAround.cgColor
+
+        headerView?.layer?.backgroundColor = theme.headerBackground.cgColor
+        headerView?.layer?.borderWidth = 1
+        headerView?.layer?.borderColor = theme.pageBorder.withAlphaComponent(0.35).cgColor
+
+        tabBarScrollView?.backgroundColor = theme.pageBackground
+        tabBarScrollView?.contentView.layer?.backgroundColor = theme.pageBackground.cgColor
+        tabBarScrollView?.documentView?.wantsLayer = true
+        tabBarScrollView?.documentView?.layer?.backgroundColor = theme.pageBackground.cgColor
+
+                // Header controls (search field + its built-in buttons)
+                searchField.textColor = theme.headerText
+                searchField.backgroundColor = theme.headerBackground
                 searchField.drawsBackground = true
-                searchField.appearance = NSAppearance(named: ThemeManager.shared.isDarkMode ? .darkAqua : .aqua)
+                searchField.appearance = NSAppearance(named: isDarkMode ? .darkAqua : .aqua)
+
+                updateTabBarSelectionUI()
 
         for (index, textView) in textViews.enumerated() {
             textView.backgroundColor = theme.pageAround
@@ -146,6 +303,11 @@ class DocumentationWindowController: NSWindowController {
             scrollViews[index].backgroundColor = theme.pageAround
         }
     }
+
+        func windowDidResignKey(_ notification: Notification) {
+                // Dismiss Help when the user clicks back into the main UI.
+                window?.close()
+        }
 
         @objc private func helpSearchSubmitted(_ sender: NSSearchField) {
                 let rawQuery = sender.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -259,6 +421,7 @@ class DocumentationWindowController: NSWindowController {
                 guard let tabView else { return }
                 guard let item = tabView.tabViewItems.first(where: { ($0.identifier as? String) == identifier }) else { return }
                 tabView.selectTabViewItem(item)
+                updateTabBarSelectionUI()
 
                 if let scrollView = item.view as? NSScrollView {
                         scrollView.contentView.scroll(to: .zero)
@@ -334,6 +497,20 @@ Your analysis tools don't live in spreadsheets or notebooks—they surface struc
 • Emotional trajectory analysis
 
 QuillPilot replaces the external bookkeeping that serious novelists already maintain, making patterns visible without breaking your writing flow.
+""", color: bodyColor))
+        content.append(makeNewline())
+
+        content.append(makeHeading("Story Data Files (Story Notes & Character Library)", color: headingColor))
+        content.append(makeBody("""
+Quill Pilot keeps certain per-document data separate from your manuscript text so it can persist notes without rewriting your document file.
+
+Story Notes (Theme, Locations, Outline, Directions) are saved as small JSON files under:
+~/Library/Application Support/Quill Pilot/StoryNotes/
+
+Character Library entries are saved per document as a sidecar JSON file next to your manuscript:
+MyStory.docx.characters.json
+
+If you delete these files, Quill Pilot will treat that data as empty for the affected document.
 """, color: bodyColor))
         content.append(makeNewline())
 

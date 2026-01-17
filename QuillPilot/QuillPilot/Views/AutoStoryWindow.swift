@@ -85,6 +85,7 @@ class AutoStoryWindowController: NSWindowController {
             "ChatGPT (API Key Required)"
         ])
         apiSelector.selectItem(at: 0)
+        apiSelector.qpApplyDropdownBorder(theme: theme)
         controlPanel.addSubview(apiSelector)
 
         // Length Slider

@@ -480,6 +480,9 @@ extension SceneListWindowController: NSTableViewDelegate {
         tableView?.backgroundColor = theme.pageBackground
         tableView?.reloadData()
 
+        stateFilterPopup?.qpApplyDropdownBorder(theme: theme)
+        intentFilterPopup?.qpApplyDropdownBorder(theme: theme)
+
         // Update button content colors (text color for rounded buttons)
         if let add = addButton {
             add.contentTintColor = theme.textColor

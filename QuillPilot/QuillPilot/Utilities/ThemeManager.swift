@@ -8,6 +8,28 @@
 
 import Cocoa
 
+extension NSPopUpButton {
+    /// Apply Quill Pilot's dropdown border styling.
+    /// Mirrors the Day-theme orange border used in the main toolbar.
+    func qpApplyDropdownBorder(theme: AppTheme) {
+        // Ensure consistent geometry so the layer border is actually visible.
+        bezelStyle = .rounded
+        wantsLayer = true
+        layer?.masksToBounds = true
+        layer?.cornerRadius = 6
+
+        if theme == .day {
+            layer?.borderWidth = 1
+            layer?.borderColor = theme.pageBorder.cgColor
+        } else {
+            layer?.borderWidth = 0
+            layer?.borderColor = nil
+        }
+
+        needsDisplay = true
+    }
+}
+
 enum AppTheme: String {
     case day = "day"
     case cream = "cream"
@@ -47,7 +69,7 @@ enum AppTheme: String {
     var pageBorder: NSColor {
         switch self {
         case .day:
-            return NSColor(hex: "#CEBCA7") ?? .gray
+            return .systemOrange
         case .cream:
             // Tome Orange (accent) for borders and separators in Cream mode.
             return NSColor(hex: "#C65A1E") ?? .gray
@@ -158,7 +180,7 @@ enum AppTheme: String {
     var rulerBorder: NSColor {
         switch self {
         case .day:
-            return NSColor(hex: "#CEBCA7") ?? .gray
+            return .systemOrange
         case .cream:
             return NSColor(hex: "#C65A1E") ?? .gray
         case .night:
@@ -243,8 +265,7 @@ class ThemeManager {
     private init() {
         if let savedTheme = UserDefaults.standard.string(forKey: themeKey),
            let theme = AppTheme(rawValue: savedTheme) {
-            // Light mode (Day) has been removed; migrate any saved Day selection to Cream.
-            currentTheme = (theme == .day) ? .cream : theme
+            currentTheme = theme
         } else {
             // Default new installs to the warm Cream theme for experimentation.
             currentTheme = .cream
@@ -252,15 +273,15 @@ class ThemeManager {
     }
 
     func toggleTheme() {
-        // Light mode (Day) is no longer supported.
-        // Cycle through the three supported themes for the header toggle.
         switch currentTheme {
+        case .day:
+            currentTheme = .cream
+        case .cream:
+            currentTheme = .night
         case .night:
             currentTheme = .dusk
         case .dusk:
-            currentTheme = .cream
-        case .cream, .day:
-            currentTheme = .night
+            currentTheme = .day
         }
     }
 }

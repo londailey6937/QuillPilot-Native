@@ -25,6 +25,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let brandedAppName = "Quill Pilot"
     private var mainWindowController: MainWindowController?
     private var documentationWindow: DocumentationWindowController?
+    private var storyDataStorageHelpWindow: StoryDataStorageHelpWindowController?
     private var preferencesWindow: PreferencesWindowController?
     private var aboutWindow: NSWindow?
     private var welcomeWindow: WelcomeWindowController?
@@ -604,6 +605,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         documentationItem.target = self
         helpMenu.addItem(documentationItem)
 
+        let storyNotesHelpItem = NSMenuItem(title: "Story Data Storage…", action: #selector(showStoryNotesStorageHelp(_:)), keyEquivalent: "")
+        storyNotesHelpItem.target = self
+        helpMenu.addItem(storyNotesHelpItem)
+
         NSApp.mainMenu = mainMenu
         enforceBrandedAppMenuTitle()
         NSApp.windowsMenu = windowMenu
@@ -694,6 +699,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc private func showDocumentation(_ sender: Any?) {
         openDocumentation(tabIdentifier: nil)
+    }
+
+    @objc private func showStoryNotesStorageHelp(_ sender: Any?) {
+        if storyDataStorageHelpWindow == nil {
+            storyDataStorageHelpWindow = StoryDataStorageHelpWindowController(
+                onRevealStoryNotesFolder: { [weak self] in
+                    guard let folder = StoryNotesStore.storyNotesDirectoryURL() else { return }
+                    try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true, attributes: nil)
+                    NSWorkspace.shared.activateFileViewerSelecting([folder])
+                    _ = self // keep capture explicit
+                },
+                onOpenHelp: { [weak self] in
+                    self?.openDocumentation(tabIdentifier: "why")
+                }
+            )
+        }
+
+        let host = mainWindowController?.window ?? NSApp.keyWindow
+        storyDataStorageHelpWindow?.present(relativeTo: host)
     }
 
     @objc private func showAboutWindow(_ sender: Any?) {

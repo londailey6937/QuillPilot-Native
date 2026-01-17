@@ -537,6 +537,9 @@ class TOCIndexWindowController: NSWindowController, NSWindowDelegate, NSOutlineV
         window.appearance = NSAppearance(named: isDarkMode ? .darkAqua : .aqua)
         window.backgroundColor = theme.pageAround
         window.contentView?.layer?.backgroundColor = theme.pageAround.cgColor
+
+        pageNumberFormatPopup?.qpApplyDropdownBorder(theme: theme)
+        addCategoryPopup?.qpApplyDropdownBorder(theme: theme)
     }
 
     private func setupUI() {

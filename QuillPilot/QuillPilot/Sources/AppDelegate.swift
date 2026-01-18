@@ -309,6 +309,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         mainWindowController?.mainContentViewController?.editorViewController.applyOpticalKerning(to: nil)
     }
 
+    @objc private func insertColumnBreak(_ sender: Any?) {
+        mainWindowController?.mainContentViewController?.editorViewController.insertColumnBreak()
+    }
+
     @MainActor
     @objc private func restartNumberingPrompt(_ sender: Any?) {
         guard let editor = mainWindowController?.mainContentViewController?.editorViewController else {
@@ -518,6 +522,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let infoItem = NSMenuItem(title: "ℹ️ Ligatures & smart quotes enabled by default", action: nil, keyEquivalent: "")
         infoItem.isEnabled = false
         typographyMenu.addItem(infoItem)
+
+        formatMenu.addItem(.separator())
+
+        let insertColumnBreakItem = NSMenuItem(title: "Insert Column Break", action: #selector(insertColumnBreak(_:)), keyEquivalent: "")
+        insertColumnBreakItem.target = self
+        formatMenu.addItem(insertColumnBreakItem)
 
         formatMenu.addItem(.separator())
 

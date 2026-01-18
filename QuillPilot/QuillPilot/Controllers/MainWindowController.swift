@@ -599,6 +599,16 @@ extension MainWindowController: FormattingToolbarDelegate {
         insertBtn.contentTintColor = theme.headerBackground
         stackView.addArrangedSubview(insertBtn)
 
+        let breakBtn = NSButton(title: "Insert Column Break", target: nil, action: nil)
+        breakBtn.bezelStyle = .rounded
+        breakBtn.contentTintColor = theme.headerBackground
+        stackView.addArrangedSubview(breakBtn)
+
+        let balanceBtn = NSButton(title: "Balance Columns", target: nil, action: nil)
+        balanceBtn.bezelStyle = .rounded
+        balanceBtn.contentTintColor = theme.headerBackground
+        stackView.addArrangedSubview(balanceBtn)
+
         let deleteBtn = NSButton(title: "Delete Column at Cursor", target: nil, action: nil)
         deleteBtn.bezelStyle = .rounded
         deleteBtn.contentTintColor = theme.headerBackground
@@ -623,6 +633,12 @@ extension MainWindowController: FormattingToolbarDelegate {
 
         insertBtn.target = self
         insertBtn.action = #selector(handleInsertColumnFromSheet)
+
+        breakBtn.target = self
+        breakBtn.action = #selector(handleInsertColumnBreakFromDialog)
+
+        balanceBtn.target = self
+        balanceBtn.action = #selector(handleBalanceColumnsFromSheet)
 
         deleteBtn.target = self
         deleteBtn.action = #selector(handleDeleteColumnFromSheet(_:))
@@ -856,6 +872,10 @@ extension MainWindowController: FormattingToolbarDelegate {
         mainContentViewController.editorViewController.insertColumnBreak()
     }
 
+    @objc private func handleBalanceColumnsFromSheet() {
+        mainContentViewController.editorViewController.balanceColumnsAtCursor()
+    }
+
     @objc private func handleDeleteColumnFromDialog() {
         mainContentViewController.editorViewController.deleteColumnAtCursor()
     }
@@ -932,16 +952,10 @@ extension MainWindowController: FormattingToolbarDelegate {
 
     @objc private func handleCloseTableSheet(_ sender: NSButton) {
         guard let window = sender.window else { return }
-        let rows = max(1, min(10, Int(self.tableRowsSheetField?.stringValue ?? "3") ?? 3))
-        let cols = max(1, min(6, Int(self.tableColsSheetField?.stringValue ?? "3") ?? 3))
-        debugLog("handleCloseTableSheet: rows='\(self.tableRowsSheetField?.stringValue ?? "nil")'->\(rows) cols='\(self.tableColsSheetField?.stringValue ?? "nil")'->\(cols)")
-
+        debugLog("handleCloseTableSheet: closing table sheet without insert")
         self.window?.endSheet(window)
         self.tableRowsSheetField = nil
         self.tableColsSheetField = nil
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [weak self] in
-            self?.mainContentViewController.editorViewController.insertTable(rows: rows, columns: cols)
-        }
     }
 
     @objc private func handleAddTableRow() {
@@ -953,6 +967,7 @@ extension MainWindowController: FormattingToolbarDelegate {
     }
 
     @objc private func handleDeleteTableRow() {
+        debugLog("handleDeleteTableRow: invoked")
         mainContentViewController.editorViewController.deleteTableRow()
     }
 

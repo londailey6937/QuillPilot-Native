@@ -35,14 +35,14 @@ class DocumentationWindowController: NSWindowController, NSWindowDelegate {
         private var themeObserver: NSObjectProtocol?
 
     convenience init() {
-        let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 900, height: 700),
+                let window = NSWindow(
+                        contentRect: NSRect(x: 0, y: 0, width: 1180, height: 700),
             styleMask: [.titled, .closable, .resizable, .miniaturizable],
             backing: .buffered,
             defer: false
         )
         window.title = "Quill Pilot Help"
-        window.minSize = NSSize(width: 700, height: 500)
+                window.minSize = NSSize(width: 900, height: 500)
                 window.isReleasedWhenClosed = false
 
         self.init(window: window)
@@ -102,7 +102,7 @@ class DocumentationWindowController: NSWindowController, NSWindowDelegate {
         createTab(title: "📖 Plot & Structure", identifier: "plot")
         createTab(title: "🎬 Scenes", identifier: "scenes")
         createTab(title: "💬 Dialogue Tips", identifier: "dialogue")
-        createTab(title: "🔢 List Numbering", identifier: "numbering")
+        createTab(title: "🧰 Toolbar", identifier: "toolbar")
         createTab(title: "⌨️ Shortcuts", identifier: "shortcuts")
 
         let tabBar = makeTabBar()
@@ -290,9 +290,16 @@ class DocumentationWindowController: NSWindowController, NSWindowDelegate {
         tabBarScrollView?.documentView?.layer?.backgroundColor = theme.pageBackground.cgColor
 
                 // Header controls (search field + its built-in buttons)
-                searchField.textColor = theme.headerText
-                searchField.backgroundColor = theme.headerBackground
+                searchField.textColor = theme.textColor
+                searchField.backgroundColor = theme.pageBackground
                 searchField.drawsBackground = true
+                searchField.placeholderAttributedString = NSAttributedString(
+                        string: "Search help headings…",
+                        attributes: [
+                                .foregroundColor: theme.popoutSecondaryColor,
+                                .font: NSFont.systemFont(ofSize: 12)
+                        ]
+                )
                 searchField.appearance = NSAppearance(named: isDarkMode ? .darkAqua : .aqua)
 
                 updateTabBarSelectionUI()
@@ -437,7 +444,7 @@ class DocumentationWindowController: NSWindowController, NSWindowDelegate {
         loadPlotTab()
         loadScenesTab()
         loadDialogueTab()
-        loadNumberingTab()
+        loadToolbarTab()
         loadShortcutsTab()
 
                 // Build the search index after content is loaded.
@@ -2161,8 +2168,8 @@ QuillPilot's dialogue analysis tool checks for all these issues and provides fee
         textView.textStorage?.setAttributedString(content)
     }
 
-    // MARK: - List Numbering Tab
-    private func loadNumberingTab() {
+    // MARK: - Toolbar Tab
+    private func loadToolbarTab() {
                 guard textViews.count > 7, let textView = textViews[safe: 7] else { return }
         let theme = ThemeManager.shared.currentTheme
         let titleColor = theme.textColor
@@ -2171,9 +2178,44 @@ QuillPilot's dialogue analysis tool checks for all these issues and provides fee
 
         let content = NSMutableAttributedString()
 
-        content.append(makeTitle("🔢 List Numbering Help", color: titleColor))
+        content.append(makeTitle("🧰 Toolbar", color: titleColor))
         content.append(makeNewline())
 
+        content.append(makeHeading("Tables", color: headingColor))
+        content.append(makeBody("""
+Use the table button (⊞) in the toolbar to open Table Operations.
+
+Insert a new table
+• Choose Rows and Columns, then click Insert Table.
+
+Edit an existing table
+• Insert Row adds a row below your current row.
+• Delete Row removes the row containing your cursor.
+• Delete Table removes the entire table.
+
+Note: Column delete is not supported in-place; recreate the table with the desired column count if you need fewer columns.
+""", color: bodyColor))
+        content.append(makeNewline())
+
+        content.append(makeHeading("Columns", color: headingColor))
+        content.append(makeBody("""
+Use the columns button (⫼) to create multi-column layouts.
+
+Set columns
+• Choose 2–4 columns from the sheet and apply.
+
+Insert column breaks
+• Use Insert Column Break (toolbar button or Format → Insert Column Break) to force text into the next column. This only affects text when a multi-column layout is active.
+
+Balance columns
+• Use Balance Columns in the Column Operations sheet to reflow text evenly across columns.
+
+Delete columns
+• Delete Column removes the column at the cursor.
+""", color: bodyColor))
+        content.append(makeNewline())
+
+        content.append(makeHeading("List Numbering", color: headingColor))
         content.append(makeSubheading("Numbering Style: 1.1.1", color: headingColor))
         content.append(makeNewline())
 

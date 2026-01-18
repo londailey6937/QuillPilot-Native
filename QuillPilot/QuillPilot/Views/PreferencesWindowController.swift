@@ -45,7 +45,7 @@ final class PreferencesWindowController: NSWindowController {
 
         // Theme
         themePopup = NSPopUpButton(frame: .zero, pullsDown: false)
-        themePopup.addItems(withTitles: ["Day", "Cream", "Night", "Dusk"])
+        themePopup.addItems(withTitles: ["Day", "Cream", "Night"])
         themePopup.target = self
         themePopup.action = #selector(themeChanged(_:))
         themedPopups.append(themePopup)
@@ -210,8 +210,6 @@ final class PreferencesWindowController: NSWindowController {
             themePopup.selectItem(withTitle: "Cream")
         case .night:
             themePopup.selectItem(withTitle: "Night")
-        case .dusk:
-            themePopup.selectItem(withTitle: "Dusk")
         }
 
         // Auto-save
@@ -253,8 +251,6 @@ final class PreferencesWindowController: NSWindowController {
             ThemeManager.shared.currentTheme = .cream
         case 2:
             ThemeManager.shared.currentTheme = .night
-        case 3:
-            ThemeManager.shared.currentTheme = .dusk
         default:
             ThemeManager.shared.currentTheme = .cream
         }

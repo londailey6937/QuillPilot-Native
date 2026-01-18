@@ -2347,7 +2347,7 @@ class HeaderView: NSView {
         specsPanel.translatesAutoresizingMaskIntoConstraints = false
         addSubview(specsPanel)
 
-        // Theme toggle (right) - single button cycles Cream/Night/Dusk
+        // Theme toggle (right) - single button cycles Night → Cream → Day
         themeToggleButton = NSButton(title: "", target: self, action: #selector(themeToggleClicked(_:)))
         themeToggleButton.translatesAutoresizingMaskIntoConstraints = false
         // Borderless icon-only button avoids macOS accent (blue) tint.
@@ -2355,7 +2355,7 @@ class HeaderView: NSView {
         themeToggleButton.isBordered = false
         themeToggleButton.controlSize = .small
         themeToggleButton.setButtonType(.momentaryPushIn)
-        themeToggleButton.toolTip = "Cycle theme (Night → Dusk → Cream)"
+        themeToggleButton.toolTip = "Cycle theme (Night → Cream → Day)"
         themeToggleButton.setContentHuggingPriority(.required, for: .horizontal)
         addSubview(themeToggleButton)
 
@@ -2415,8 +2415,6 @@ class HeaderView: NSView {
             switch theme {
             case .night:
                 imageName = "moon.stars.fill"
-            case .dusk:
-                imageName = "sun.haze.fill"
             case .cream, .day:
                 imageName = "sun.max.fill"
             }
@@ -2431,7 +2429,7 @@ class HeaderView: NSView {
                 themeToggleButton.contentTintColor = theme.headerText.withAlphaComponent(0.92)
             }
             let label = themeDisplayName(for: theme)
-            themeToggleButton.toolTip = "Theme: \(label). Click to cycle (Night → Dusk → Cream)."
+            themeToggleButton.toolTip = "Theme: \(label). Click to cycle (Night → Cream → Day)."
         } else {
             // Fallback for older macOS: show a short text label.
             themeToggleButton.title = themeDisplayName(for: theme)
@@ -2446,8 +2444,6 @@ class HeaderView: NSView {
             return "Cream"
         case .night:
             return "Night"
-        case .dusk:
-            return "Dusk"
         }
     }
 

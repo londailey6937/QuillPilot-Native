@@ -1854,7 +1854,7 @@ Add ⇧ (Shift) to select while moving
         content.append(makeHeading("🎨 Themes & Notes", color: headingColor))
         content.append(makeBody("""
 Themes:
-• Use the theme button in the header (top-right) to cycle Night → Dusk → Cream.
+• Use the theme button in the header (top-right) to cycle Night → Cream → Day.
 • You can also set a specific theme in Preferences.
 
 General Notes:

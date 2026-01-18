@@ -15,12 +15,20 @@ enum DebugLog {
     @inline(__always)
     static func log(_ message: @autoclosure () -> String) {
         guard enabled else { return }
-        NSLog("%@", message())
+        let msg = message()
+        if msg.hasPrefix("📚TOC") || msg.hasPrefix("📄") || msg.hasPrefix("📋") || msg.hasPrefix("📊") {
+            return
+        }
+        NSLog("%@", msg)
     }
 }
 
 @inline(__always)
 func debugLog(_ message: @autoclosure () -> String) {
     guard DebugLog.enabled else { return }
-    NSLog("%@", message())
+    let msg = message()
+    if msg.hasPrefix("📚TOC") || msg.hasPrefix("📄") || msg.hasPrefix("📋") || msg.hasPrefix("📊") {
+        return
+    }
+    NSLog("%@", msg)
 }

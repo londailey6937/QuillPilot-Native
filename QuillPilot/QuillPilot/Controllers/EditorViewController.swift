@@ -17,7 +17,6 @@ private final class AttachmentClickableTextView: NSTextView {
     var onImageDrop: ((NSImage, URL?, NSPoint, NSRange?) -> Void)?
     private var draggedAttachmentRange: NSRange?
     private var draggedAttachmentImage: NSImage?
-    private var draggedAttachmentSourceURL: URL?
     private var pendingAttachmentSelection: NSRange?
 
     private func acceptedDragOperation(for sender: NSDraggingInfo) -> NSDragOperation {
@@ -64,7 +63,6 @@ private final class AttachmentClickableTextView: NSTextView {
 
         draggedAttachmentRange = nil
         draggedAttachmentImage = nil
-        draggedAttachmentSourceURL = nil
 
         // If the user clicked an image attachment, select it and prep for dragging.
         if let layoutManager = layoutManager,
@@ -85,7 +83,6 @@ private final class AttachmentClickableTextView: NSTextView {
 
             let hit = attachmentAt(index) ?? (index > 0 ? attachmentAt(index - 1) : nil)
             if let (range, attachment) = hit {
-                DebugLog.log("🖼️Drag mouseDown attachment hit range=\(range) idx=\(index)")
                 window?.makeFirstResponder(self)
                 setSelectedRange(range)
                 draggedAttachmentRange = range
@@ -95,7 +92,6 @@ private final class AttachmentClickableTextView: NSTextView {
                     attachment.image = NSImage(data: data)
                 }
                 draggedAttachmentImage = attachment.image
-                DebugLog.log("🖼️Drag mouseDown attachment image=\(draggedAttachmentImage != nil ? "yes" : "no")")
 
                 // Notify owner (selection-based UI like image controls) and keep selection.
                 onMouseDownInTextView?(point)
@@ -125,7 +121,6 @@ private final class AttachmentClickableTextView: NSTextView {
             setSelectedRange(range)
             pendingAttachmentSelection = nil
 
-            DebugLog.log("🖼️Drag mouseDragged: begin custom drag range=\(range) imgSize=\(NSStringFromSize(image.size))")
 
             let pasteboardItem = NSPasteboardItem()
             if let tiff = image.tiffRepresentation {
@@ -161,8 +156,6 @@ private final class AttachmentClickableTextView: NSTextView {
         }
     }
 
-
-
     override func draggingSession(_ session: NSDraggingSession, sourceOperationMaskFor context: NSDraggingContext) -> NSDragOperation {
         return context == .withinApplication ? .move : .copy
     }
@@ -171,7 +164,6 @@ private final class AttachmentClickableTextView: NSTextView {
         super.draggingSession(session, endedAt: screenPoint, operation: operation)
         draggedAttachmentRange = nil
         draggedAttachmentImage = nil
-        draggedAttachmentSourceURL = nil
     }
 
     override func draggingEntered(_ sender: NSDraggingInfo) -> NSDragOperation {
@@ -181,8 +173,6 @@ private final class AttachmentClickableTextView: NSTextView {
         }
 
         let op = acceptedDragOperation(for: sender)
-        let types = sender.draggingPasteboard.types?.map { $0.rawValue }.joined(separator: ",") ?? "(none)"
-        DebugLog.log("🖼️Drag draggingEntered op=\(op.rawValue) internal=\(sender.draggingSource as? AttachmentClickableTextView != nil) types=[\(types)]")
         if op != [] {
             window?.makeFirstResponder(self)
         }
@@ -221,15 +211,10 @@ private final class AttachmentClickableTextView: NSTextView {
         let pasteboard = sender.draggingPasteboard
         let dropPoint = convert(sender.draggingLocation, from: nil)
 
-        let types = pasteboard.types?.map { $0.rawValue }.joined(separator: ",") ?? "(none)"
-        DebugLog.log("🖼️Drag performDragOperation dropPoint=\(NSStringFromPoint(dropPoint)) types=[\(types)]")
-
         if let urls = pasteboard.readObjects(forClasses: [NSURL.self], options: nil) as? [URL],
            let url = urls.first {
-            DebugLog.log("🖼️Drag performDragOperation url=\(url.absoluteString)")
             let sourceRange = (sender.draggingSource as? AttachmentClickableTextView)?.draggedAttachmentRange
             if url.isFileURL, let image = NSImage(contentsOf: url) {
-                DebugLog.log("🖼️Drag performDragOperation fileURL imageLoaded=yes")
                 // Defer insertion to the next runloop tick; mutating text storage during the drop
                 // can coincide with AppKit/CA commit and result in no-op inserts.
                 DispatchQueue.main.async { [weak self] in
@@ -240,7 +225,6 @@ private final class AttachmentClickableTextView: NSTextView {
 
             // Remote URLs can block the main thread if we fetch synchronously. Fetch in the background.
             if let scheme = url.scheme?.lowercased(), scheme == "http" || scheme == "https" {
-                DebugLog.log("🖼️Drag performDragOperation remoteURL fetch background")
                 DispatchQueue.global(qos: .userInitiated).async { [weak self] in
                     guard let self else { return }
                     let data = try? Data(contentsOf: url)
@@ -268,7 +252,6 @@ private final class AttachmentClickableTextView: NSTextView {
 
         if let images = pasteboard.readObjects(forClasses: [NSImage.self], options: nil) as? [NSImage],
            let image = images.first {
-            DebugLog.log("🖼️Drag performDragOperation pasteboard NSImage=yes size=\(NSStringFromSize(image.size))")
             let sourceRange = (sender.draggingSource as? AttachmentClickableTextView)?.draggedAttachmentRange
             DispatchQueue.main.async { [weak self] in
                 self?.onImageDrop?(image, nil, dropPoint, sourceRange)
@@ -295,7 +278,6 @@ private final class AttachmentClickableTextView: NSTextView {
         }
 
         if let tiffData = pasteboard.data(forType: .tiff), let image = NSImage(data: tiffData) {
-            DebugLog.log("🖼️Drag performDragOperation tiffData=yes size=\(NSStringFromSize(image.size))")
             let sourceRange = (sender.draggingSource as? AttachmentClickableTextView)?.draggedAttachmentRange
             DispatchQueue.main.async { [weak self] in
                 self?.onImageDrop?(image, nil, dropPoint, sourceRange)
@@ -304,7 +286,6 @@ private final class AttachmentClickableTextView: NSTextView {
         }
 
         if let pngData = pasteboard.data(forType: .png), let image = NSImage(data: pngData) {
-            DebugLog.log("🖼️Drag performDragOperation pngData=yes size=\(NSStringFromSize(image.size))")
             let sourceRange = (sender.draggingSource as? AttachmentClickableTextView)?.draggedAttachmentRange
             DispatchQueue.main.async { [weak self] in
                 self?.onImageDrop?(image, nil, dropPoint, sourceRange)
@@ -1074,12 +1055,6 @@ class EditorViewController: NSViewController {
         initialPageContainer.pageGap = 20
         initialPageContainer.numPages = initialPages
         pageContainer = initialPageContainer
-        // Disable layer backing to allow traditional view drawing for all pages
-        // pageContainer.wantsLayer = true
-        // pageContainer.layer?.masksToBounds = false
-        // pageContainer.layer?.shadowOpacity = 0.35
-        // pageContainer.layer?.shadowOffset = NSSize(width: 0, height: 2)
-        // pageContainer.layer?.shadowRadius = 10
 
         // Create text view. We manage its height via our page container sizing logic
         // so it stays aligned with drawn page backgrounds.
@@ -1123,7 +1098,6 @@ class EditorViewController: NSViewController {
         clickable.onImageDrop = { [weak self, weak clickable] image, url, point, sourceRange in
             guard let self, let textView = clickable else { return }
             let insertionPoint = self.insertionIndex(for: point)
-            DebugLog.log("🖼️Drop onImageDrop point=\(NSStringFromPoint(point)) insertionPoint=\(insertionPoint) storageLen=\(textView.textStorage?.length ?? -1) url=\(url?.absoluteString ?? "(nil)") sourceRange=\(String(describing: sourceRange))")
             textView.setSelectedRange(NSRange(location: insertionPoint, length: 0))
             self.insertImage(image, sourceURL: url, insertionPoint: insertionPoint, sourceRange: sourceRange)
         }
@@ -2089,7 +2063,6 @@ class EditorViewController: NSViewController {
     }
 
     private func insertImage(_ image: NSImage, sourceURL: URL?, insertionPoint: Int?, sourceRange: NSRange?) {
-        DebugLog.log("🖼️Insert insertImage begin insertionPoint=\(String(describing: insertionPoint)) selected=\(textView.selectedRange()) storageLen=\(textView.textStorage?.length ?? -1)")
         // Calculate max width based on text container width (accounts for margins and zoom)
         let textContainerWidth = textView.textContainer?.size.width ?? ((pageWidth - standardMargin * 2) * editorZoom)
         // Default to 50% of text width to prevent images from blowing out text
@@ -2181,7 +2154,6 @@ class EditorViewController: NSViewController {
         finalImageString.addAttribute(NSAttributedString.Key("QuillPilotImageSize"), value: NSStringFromRect(NSRect(origin: .zero, size: targetSize)), range: NSRange(location: 0, length: finalImageString.length))
 
         if !textView.shouldChangeText(in: insertionRange, replacementString: "\u{FFFC}") {
-            DebugLog.log("🖼️Insert shouldChangeText=NO at range=\(insertionRange) isInTableCell=\(isInTableCell)")
             return
         }
         if let storage = textView.textStorage {
@@ -2190,7 +2162,6 @@ class EditorViewController: NSViewController {
             storage.endEditing()
             textView.didChangeText()
         }
-        DebugLog.log("🖼️Insert inserted attachment at \(insertionRange.location)")
 
         // Images can change layout height significantly; recompute pagination now,
         // and repeat shortly after to catch any async attachment/layout settling.
@@ -7925,14 +7896,6 @@ extension EditorViewController: NSTextViewDelegate {
     func textViewDidChangeSelection(_ notification: Notification) {
         // Skip if we're suppressing notifications (e.g., during column insertion)
         guard !suppressTextChangeNotifications else { return }
-
-        let selection = textView.selectedRange()
-        if selection.length <= 1,
-           let storage = textView.textStorage,
-           selection.location < storage.length,
-           storage.attribute(.attachment, at: selection.location, effectiveRange: nil) != nil {
-            DebugLog.log("🖼️Selection changed attachment at \(selection.location)")
-        }
 
         showImageControlsIfNeeded()
 

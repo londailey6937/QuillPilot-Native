@@ -14,21 +14,17 @@ enum DebugLog {
 
     @inline(__always)
     static func log(_ message: @autoclosure () -> String) {
+        #if DEBUG
         guard enabled else { return }
-        let msg = message()
-        if msg.hasPrefix("📚TOC") || msg.hasPrefix("📄") || msg.hasPrefix("📋") || msg.hasPrefix("📊") {
-            return
-        }
-        NSLog("%@", msg)
+        NSLog("%@", message())
+        #endif
     }
 }
 
 @inline(__always)
 func debugLog(_ message: @autoclosure () -> String) {
+    #if DEBUG
     guard DebugLog.enabled else { return }
-    let msg = message()
-    if msg.hasPrefix("📚TOC") || msg.hasPrefix("📄") || msg.hasPrefix("📋") || msg.hasPrefix("📊") {
-        return
-    }
-    NSLog("%@", msg)
+    NSLog("%@", message())
+    #endif
 }

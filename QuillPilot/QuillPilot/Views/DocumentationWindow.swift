@@ -2197,6 +2197,16 @@ Note: Column delete is not supported in-place; recreate the table with the desir
 """, color: bodyColor))
         content.append(makeNewline())
 
+        content.append(makeHeading("Images", color: headingColor))
+        content.append(makeBody("""
+Click an image to show its controls. Use Move to reposition the image:
+• Click Move in the image controls.
+• Click the destination in the document (including table cells).
+
+The image is removed from the original location and inserted at the new position.
+""", color: bodyColor))
+        content.append(makeNewline())
+
         content.append(makeHeading("Columns", color: headingColor))
         content.append(makeBody("""
 Use the columns button (⫼) to create multi-column layouts.

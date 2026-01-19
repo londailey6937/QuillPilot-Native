@@ -27,6 +27,7 @@ extension NSAlert {
         if let icon = NSAlert.getQuillPilotIcon() {
             self.icon = icon
         }
+        applyQuillPilotTheme()
         self.beginSheetModal(for: window) { response in
             completionHandler?(response)
         }
@@ -39,8 +40,7 @@ extension NSAlert {
         if let icon = NSAlert.getQuillPilotIcon() {
             self.icon = icon
         }
-        let isDarkMode = ThemeManager.shared.isDarkMode
-        self.window.appearance = NSAppearance(named: isDarkMode ? .darkAqua : .aqua)
+        applyQuillPilotTheme()
         return self.runModal()
     }
 
@@ -82,6 +82,35 @@ extension NSAlert {
             alert.icon = icon
         }
         return alert
+    }
+
+    private func applyQuillPilotTheme() {
+        let theme = ThemeManager.shared.currentTheme
+        let isDarkMode = ThemeManager.shared.isDarkMode
+
+        let alertWindow = self.window
+        alertWindow.appearance = NSAppearance(named: isDarkMode ? .darkAqua : .aqua)
+        alertWindow.backgroundColor = theme.pageAround
+
+        for (index, button) in buttons.enumerated() {
+            let isPrimary = (index == 0)
+            button.wantsLayer = true
+            button.isBordered = false
+            button.layer?.cornerRadius = 8
+            button.layer?.borderWidth = 1
+            button.layer?.borderColor = theme.pageBorder.cgColor
+            button.layer?.backgroundColor = (isPrimary ? theme.pageBorder : theme.pageBackground).cgColor
+
+            let font = button.font ?? NSFont.systemFont(ofSize: NSFont.systemFontSize)
+            let titleColor: NSColor = isPrimary ? .white : theme.textColor
+            button.attributedTitle = NSAttributedString(
+                string: button.title,
+                attributes: [
+                    .foregroundColor: titleColor,
+                    .font: font
+                ]
+            )
+        }
     }
 }
 

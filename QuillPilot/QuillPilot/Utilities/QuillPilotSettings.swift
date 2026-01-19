@@ -12,11 +12,17 @@ enum QuillPilotSettings {
 
     enum NumberingScheme: String, CaseIterable {
         case decimalDotted = "decimalDotted"
+        case alphabetUpper = "alphabetUpper"
+        case alphabetLower = "alphabetLower"
 
         var displayName: String {
             switch self {
             case .decimalDotted:
                 return "1.1.1"
+            case .alphabetUpper:
+                return "A. B. C."
+            case .alphabetLower:
+                return "a. b. c."
             }
         }
     }

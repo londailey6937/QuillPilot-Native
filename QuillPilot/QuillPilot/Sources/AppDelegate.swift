@@ -321,12 +321,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         let alert = NSAlert()
         alert.messageText = "Restart Numbering"
-        alert.informativeText = "Choose the starting number for this list level."
+        let scheme = QuillPilotSettings.numberingScheme
+        alert.informativeText = scheme == .decimalDotted
+            ? "Choose the starting number for this list level."
+            : "Choose the starting letter (or number) for this list level."
         alert.addButton(withTitle: "Restart")
         alert.addButton(withTitle: "Cancel")
 
-        let field = NSTextField(string: "1")
-        field.placeholderString = "1"
+        let field = NSTextField(string: scheme == .decimalDotted ? "1" : "A")
+        field.placeholderString = scheme == .decimalDotted ? "1" : "A"
         field.alignment = .center
         field.frame = NSRect(x: 0, y: 0, width: 120, height: 24)
         alert.accessoryView = field
@@ -334,8 +337,31 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let response = alert.runModal()
         guard response == .alertFirstButtonReturn else { return }
 
-        let startAt = Int(field.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)) ?? 1
+        let rawValue = field.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        let startAt: Int
+        switch scheme {
+        case .decimalDotted:
+            startAt = Int(rawValue) ?? 1
+        case .alphabetUpper, .alphabetLower:
+            if let value = alphabeticValue(from: rawValue) {
+                startAt = value
+            } else {
+                startAt = Int(rawValue) ?? 1
+            }
+        }
         editor.restartNumbering(startAt: startAt)
+    }
+
+    private func alphabeticValue(from text: String) -> Int? {
+        let letters = text.trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
+        guard !letters.isEmpty else { return nil }
+        var value = 0
+        for scalar in letters.unicodeScalars {
+            let v = Int(scalar.value)
+            guard v >= 65 && v <= 90 else { return nil }
+            value = value * 26 + (v - 64)
+        }
+        return value
     }
 
 
@@ -633,6 +659,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func enforceBrandedAppMenuTitle() {
         // The menu bar uses the title of the first item (Application menu).
         NSApp.mainMenu?.item(at: 0)?.title = brandedAppName
+        enforcePreferencesMenuTitle()
+    }
+
+    private func enforcePreferencesMenuTitle() {
+        guard let appMenu = NSApp.mainMenu?.item(at: 0)?.submenu else { return }
+        for item in appMenu.items {
+            if item.action == #selector(showPreferences(_:)) || item.keyEquivalent == "," {
+                item.title = "Preferences…"
+                continue
+            }
+            if item.title == "Settings…" || item.title == "Settings..." {
+                item.title = "Preferences…"
+            }
+        }
     }
 
     @objc private func showPreferences(_ sender: Any?) {

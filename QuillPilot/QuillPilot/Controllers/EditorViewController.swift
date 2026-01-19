@@ -1702,19 +1702,56 @@ class EditorViewController: NSViewController {
     }
 
     func toggleNumberedList() {
+        let scheme = QuillPilotSettings.numberingScheme
         togglePrefixList(
             isPrefixed: { line in
-                let trimmed = line
-                guard let dot = trimmed.firstIndex(of: ".") else { return false }
-                if dot == trimmed.startIndex { return false }
-                let numberPart = trimmed[..<dot]
-                return numberPart.allSatisfy { $0.isNumber } && trimmed[trimmed.index(after: dot)...].hasPrefix(" ")
+                return parseNumberPrefix(in: line, scheme: scheme) != nil
             },
-            makePrefix: { index in "\(index + 1). " }
+            makePrefix: { index in
+                return makeNumberPrefix(from: [index + 1], scheme: scheme)
+            }
         )
     }
 
-    private func parseNumberPrefix(in line: String) -> (components: [Int], prefixLength: Int, hasTabAfter: Bool)? {
+    private func alphabeticValue(from text: String) -> Int? {
+        let letters = text.uppercased()
+        guard !letters.isEmpty else { return nil }
+        var value = 0
+        for scalar in letters.unicodeScalars {
+            let v = Int(scalar.value)
+            guard v >= 65 && v <= 90 else { return nil }
+            value = value * 26 + (v - 64)
+        }
+        return value
+    }
+
+    private func alphabeticString(for number: Int, uppercase: Bool) -> String {
+        guard number > 0 else { return uppercase ? "A" : "a" }
+        var n = number
+        var chars: [UnicodeScalar] = []
+        while n > 0 {
+            n -= 1
+            let remainder = n % 26
+            let scalar = UnicodeScalar(65 + remainder)!
+            chars.append(scalar)
+            n /= 26
+        }
+        let string = String(String.UnicodeScalarView(chars.reversed()))
+        return uppercase ? string : string.lowercased()
+    }
+
+    private func parseNumberPrefix(in line: String, scheme: QuillPilotSettings.NumberingScheme) -> (components: [Int], prefixLength: Int, hasTabAfter: Bool)? {
+        switch scheme {
+        case .decimalDotted:
+            return parseDecimalPrefix(in: line)
+        case .alphabetUpper:
+            return parseAlphabeticPrefix(in: line, uppercase: true)
+        case .alphabetLower:
+            return parseAlphabeticPrefix(in: line, uppercase: false)
+        }
+    }
+
+    private func parseDecimalPrefix(in line: String) -> (components: [Int], prefixLength: Int, hasTabAfter: Bool)? {
         // Accept: "1. ", "1.\t", "1.2. ", "1.2.\t".
         // We treat a trailing dot before whitespace/tab as required.
         var idx = line.startIndex
@@ -1772,8 +1809,52 @@ class EditorViewController: NSViewController {
         return (components, prefixLength, hasTabAfter)
     }
 
-    private func makeNumberPrefix(from components: [Int]) -> String {
-        components.map(String.init).joined(separator: ".") + ". "
+    private func parseAlphabeticPrefix(in line: String, uppercase: Bool) -> (components: [Int], prefixLength: Int, hasTabAfter: Bool)? {
+        var idx = line.startIndex
+        let start = idx
+        while idx < line.endIndex, line[idx].isLetter {
+            idx = line.index(after: idx)
+        }
+        guard start != idx else { return nil }
+        guard idx < line.endIndex, line[idx] == "." else { return nil }
+
+        let letters = String(line[start..<idx])
+        if uppercase, letters != letters.uppercased() { return nil }
+        if !uppercase, letters != letters.lowercased() { return nil }
+        guard let value = alphabeticValue(from: letters) else { return nil }
+
+        idx = line.index(after: idx)
+
+        guard idx < line.endIndex else { return nil }
+        var hasTabAfter = false
+        if line[idx] == "\t" {
+            hasTabAfter = true
+        } else if line[idx] == " " {
+            while idx < line.endIndex, line[idx] == " " {
+                idx = line.index(after: idx)
+            }
+            if idx < line.endIndex, line[idx] == "\t" {
+                hasTabAfter = true
+            }
+        } else {
+            return nil
+        }
+
+        let prefixLength = line.distance(from: line.startIndex, to: idx)
+        return ([value], prefixLength, hasTabAfter)
+    }
+
+    private func makeNumberPrefix(from components: [Int], scheme: QuillPilotSettings.NumberingScheme) -> String {
+        switch scheme {
+        case .decimalDotted:
+            return components.map(String.init).joined(separator: ".") + ". "
+        case .alphabetUpper:
+            let value = components.first ?? 1
+            return "\(alphabeticString(for: value, uppercase: true)). "
+        case .alphabetLower:
+            let value = components.first ?? 1
+            return "\(alphabeticString(for: value, uppercase: false)). "
+        }
     }
 
     private func restartNumberingAtCursor() {
@@ -1793,7 +1874,8 @@ class EditorViewController: NSViewController {
         let full = storage.string as NSString
         let paragraphRange = full.paragraphRange(for: NSRange(location: selection.location, length: 0))
         let paragraphText = full.substring(with: paragraphRange)
-        guard let parsed = parseNumberPrefix(in: paragraphText) else { return }
+        let scheme = QuillPilotSettings.numberingScheme
+        guard let parsed = parseNumberPrefix(in: paragraphText, scheme: scheme) else { return }
 
         let levelCount = parsed.components.count
         var baseComponents = parsed.components
@@ -1807,7 +1889,7 @@ class EditorViewController: NSViewController {
         while cursor < full.length {
             let pr = full.paragraphRange(for: NSRange(location: cursor, length: 0))
             let text = full.substring(with: pr)
-            guard let p = parseNumberPrefix(in: text) else { break }
+            guard let p = parseNumberPrefix(in: text, scheme: scheme) else { break }
             guard p.components.count == levelCount else { break }
             targetParagraphs.append((pr, p.prefixLength, p.hasTabAfter))
             cursor = NSMaxRange(pr)
@@ -1823,7 +1905,7 @@ class EditorViewController: NSViewController {
             let n = startAt + running + idx
             var comps = baseComponents
             comps[levelCount - 1] = n
-            let prefix = makeNumberPrefix(from: comps)
+            let prefix = makeNumberPrefix(from: comps, scheme: scheme)
             // Replace the prefix (and optional tab that follows it).
             let replaceLen = item.existingPrefixLen + (item.hasTab ? 1 : 0)
             let replaceRange = NSRange(location: item.range.location, length: min(replaceLen, item.range.length))
@@ -7706,7 +7788,7 @@ extension EditorViewController: NSTextViewDelegate {
         if commandSelector == #selector(insertTab(_:)) {
             // Tab indents numbered list items (adds a sub-level: 1. -> 1.1.).
             guard QuillPilotSettings.numberingScheme == .decimalDotted else { return false }
-            guard parseNumberPrefix(in: paragraphText) != nil else { return false }
+            guard parseNumberPrefix(in: paragraphText, scheme: .decimalDotted) != nil else { return false }
             indent()
             return true
         }
@@ -7714,7 +7796,7 @@ extension EditorViewController: NSTextViewDelegate {
         if commandSelector == #selector(insertBacktab(_:)) {
             // Shift-Tab outdents numbered list items (removes a sub-level: 1.1. -> 1.).
             guard QuillPilotSettings.numberingScheme == .decimalDotted else { return false }
-            guard parseNumberPrefix(in: paragraphText) != nil else { return false }
+            guard parseNumberPrefix(in: paragraphText, scheme: .decimalDotted) != nil else { return false }
             outdent()
             return true
         }
@@ -7722,7 +7804,8 @@ extension EditorViewController: NSTextViewDelegate {
         guard commandSelector == #selector(insertNewline(_:)) else { return false }
         guard QuillPilotSettings.autoNumberOnReturn else { return false }
 
-        guard let parsed = parseNumberPrefix(in: paragraphText) else { return false }
+        let scheme = QuillPilotSettings.numberingScheme
+        guard let parsed = parseNumberPrefix(in: paragraphText, scheme: scheme) else { return false }
 
         // If the list item is empty (only a prefix), pressing Return should end the list.
         let contentStart = min(paragraphText.count, parsed.prefixLength + (parsed.hasTabAfter ? 1 : 0))
@@ -7737,7 +7820,7 @@ extension EditorViewController: NSTextViewDelegate {
         // Insert a newline plus the next number prefix.
         var next = parsed.components
         next[next.count - 1] += 1
-        let nextPrefix = makeNumberPrefix(from: next) + (parsed.hasTabAfter ? "\t" : "")
+        let nextPrefix = makeNumberPrefix(from: next, scheme: scheme) + (parsed.hasTabAfter ? "\t" : "")
         textView.insertText("\n" + nextPrefix, replacementRange: sel)
         return true
     }
@@ -7930,7 +8013,7 @@ private extension EditorViewController {
         var anyChanged = false
         performUndoableTextStorageEdit(in: paragraphsRange, actionName: delta > 0 ? "Indent" : "Outdent") { storage in
             for para in paragraphs.reversed() {
-                guard let parsed = parseNumberPrefix(in: para.text) else { continue }
+                guard let parsed = parseNumberPrefix(in: para.text, scheme: .decimalDotted) else { continue }
                 var nextComponents = parsed.components
 
                 if delta > 0 {
@@ -7942,7 +8025,7 @@ private extension EditorViewController {
 
                 let replaceLen = parsed.prefixLength + (parsed.hasTabAfter ? 1 : 0)
                 let replaceRange = NSRange(location: para.range.location, length: min(replaceLen, para.range.length))
-                let replacement = makeNumberPrefix(from: nextComponents) + (parsed.hasTabAfter ? "\t" : "")
+                let replacement = makeNumberPrefix(from: nextComponents, scheme: .decimalDotted) + (parsed.hasTabAfter ? "\t" : "")
                 storage.replaceCharacters(in: replaceRange, with: replacement)
                 anyChanged = true
             }

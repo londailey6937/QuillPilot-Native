@@ -100,6 +100,7 @@ class DocumentationWindowController: NSWindowController, NSWindowDelegate {
         createTab(title: "👥 Character Library", identifier: "characterLibrary")
         createTab(title: "👥 Character Analysis Tools", identifier: "characters")
         createTab(title: "📖 Plot & Structure", identifier: "plot")
+        createTab(title: "🧭 Navigator", identifier: "navigator")
         createTab(title: "🎬 Scenes", identifier: "scenes")
         createTab(title: "💬 Dialogue Tips", identifier: "dialogue")
         createTab(title: "🧰 Toolbar", identifier: "toolbar")
@@ -442,6 +443,7 @@ class DocumentationWindowController: NSWindowController, NSWindowDelegate {
                 loadCharacterLibraryTab()
         loadCharactersTab()
         loadPlotTab()
+        loadNavigatorTab()
         loadScenesTab()
         loadDialogueTab()
         loadToolbarTab()
@@ -586,18 +588,6 @@ Open analysis from the right-side Analysis panel:
 • Use the character tool buttons listed under the analysis buttons (each tool has its own icon)
 
 If results aren’t available yet, QuillPilot runs analysis automatically the first time you open any analysis view.
-""", color: bodyColor))
-        content.append(makeNewline())
-
-        content.append(makeSubheading("Thematic Resonance Map", color: headingColor))
-        content.append(makeBody("""
-Status: Not currently implemented.
-""", color: bodyColor))
-        content.append(makeNewline())
-
-        content.append(makeSubheading("Failure Pattern Charts", color: headingColor))
-        content.append(makeBody("""
-Status: Not currently implemented.
 """, color: bodyColor))
         content.append(makeNewline())
 
@@ -1334,10 +1324,28 @@ Common checks
 • Novel: If the curve lives under 30%, add micro-conflicts or sharper reversals; aim for a visible slope into midpoint and crisis.
 • Screenplay: Ensure pinch points and climax sit clearly above the mid-line; if peaks clip near 100%, the chart adds headroom so labels stay readable.
 """, color: bodyColor))
-        content.append(makeNewline())
 
-        content.append(makeHeading("📊 Story Outline", color: headingColor))
-        content.append(makeBody("""
+                normalizeAppNameInDocumentation(content)
+        textView.textStorage?.setAttributedString(content)
+    }
+
+        // MARK: - Tab: Navigator
+
+        private func loadNavigatorTab() {
+                guard textViews.count > 5 else { return }
+                let textView = textViews[5]
+                let theme = ThemeManager.shared.currentTheme
+                let titleColor = theme.textColor
+                let headingColor = theme.textColor
+                let bodyColor = theme.textColor
+
+                let content = NSMutableAttributedString()
+
+                content.append(makeTitle("Navigator", color: titleColor))
+                content.append(makeNewline())
+
+                content.append(makeHeading("📊 Story Outline", color: headingColor))
+                content.append(makeBody("""
 Access: Click 📖 in Navigator panel
 
 Features:
@@ -1353,10 +1361,10 @@ Perfect for:
 • Finding specific scenes
 • Reorganization planning
 """, color: bodyColor))
-        content.append(makeNewline())
+                content.append(makeNewline())
 
-        content.append(makeHeading("🗺️ Locations & Directions", color: headingColor))
-        content.append(makeBody("""
+                content.append(makeHeading("🗺️ Locations & Directions", color: headingColor))
+                content.append(makeBody("""
 Track settings and story progression.
 
 Locations (🗺️ in Navigator):
@@ -1372,15 +1380,15 @@ Story Directions (🧭 in Navigator):
 • Plan story progression
 """, color: bodyColor))
 
-                normalizeAppNameInDocumentation(content)
-        textView.textStorage?.setAttributedString(content)
-    }
+                                normalizeAppNameInDocumentation(content)
+                textView.textStorage?.setAttributedString(content)
+        }
 
-    // MARK: - Tab 5: Scenes
+        // MARK: - Tab 6: Scenes
 
     private func loadScenesTab() {
-        guard textViews.count > 5 else { return }
-        let textView = textViews[5]
+                guard textViews.count > 6 else { return }
+                let textView = textViews[6]
         let theme = ThemeManager.shared.currentTheme
         let titleColor = theme.textColor
         let headingColor = theme.textColor
@@ -1699,11 +1707,11 @@ A: As many as your story needs. A 80,000-word novel might have 40-80 scenes, but
         textView.textStorage?.setAttributedString(content)
     }
 
-    // MARK: - Tab 6: Keyboard Shortcuts
+        // MARK: - Tab 8: Keyboard Shortcuts
 
     private func loadShortcutsTab() {
-        guard textViews.count > 8 else { return }
-        let textView = textViews[8]
+                guard textViews.count > 9 else { return }
+                let textView = textViews[9]
         let theme = ThemeManager.shared.currentTheme
         let titleColor = theme.textColor
         let headingColor = theme.textColor
@@ -1967,9 +1975,9 @@ Tip: Auto-analyze behavior can be configured in Preferences.
         )
     }
 
-    // MARK: - Dialogue Tips Tab
+        // MARK: - Dialogue Tips Tab
     private func loadDialogueTab() {
-                guard textViews.count > 6, let textView = textViews[safe: 6] else { return }
+                                guard textViews.count > 7, let textView = textViews[safe: 7] else { return }
         let theme = ThemeManager.shared.currentTheme
         let titleColor = theme.textColor
         let headingColor = theme.textColor
@@ -2168,9 +2176,9 @@ QuillPilot's dialogue analysis tool checks for all these issues and provides fee
         textView.textStorage?.setAttributedString(content)
     }
 
-    // MARK: - Toolbar Tab
+        // MARK: - Toolbar Tab
     private func loadToolbarTab() {
-                guard textViews.count > 7, let textView = textViews[safe: 7] else { return }
+                                guard textViews.count > 8, let textView = textViews[safe: 8] else { return }
         let theme = ThemeManager.shared.currentTheme
         let titleColor = theme.textColor
         let headingColor = theme.textColor
@@ -2231,6 +2239,11 @@ Delete columns
 
         content.append(makeBody("""
 QuillPilot uses a hierarchical numbering system for lists.
+
+Numbering styles (Preferences → Numbering style):
+• 1.1.1 (decimal dotted)
+• A. B. C. (alphabetic uppercase)
+• a. b. c. (alphabetic lowercase)
 """, color: bodyColor))
         content.append(makeNewline())
         content.append(makeNewline())

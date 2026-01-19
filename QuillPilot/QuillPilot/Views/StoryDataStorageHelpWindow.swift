@@ -1,12 +1,13 @@
 import Cocoa
 
-final class StoryDataStorageHelpWindowController: NSWindowController {
+final class StoryDataStorageHelpWindowController: NSWindowController, NSWindowDelegate {
     private var logoView: LogoView?
     private var titleLabel: NSTextField?
     private var bodyLabel: NSTextField?
     private var revealButton: NSButton?
     private var helpButton: NSButton?
-    private var okButton: NSButton?
+
+    private var clickOutsideMonitor: Any?
 
     private let onRevealStoryNotesFolder: (() -> Void)
     private let onOpenHelp: (() -> Void)
@@ -28,6 +29,7 @@ final class StoryDataStorageHelpWindowController: NSWindowController {
         window.center()
 
         super.init(window: window)
+        window.delegate = self
 
         setupUI()
         applyTheme()
@@ -53,12 +55,12 @@ final class StoryDataStorageHelpWindowController: NSWindowController {
 
     func present(relativeTo hostWindow: NSWindow?) {
         guard let window else { return }
-        if let hostWindow {
-            hostWindow.beginSheet(window)
-        } else {
-            showWindow(nil)
-            window.makeKeyAndOrderFront(nil)
-        }
+        window.level = .floating
+        window.collectionBehavior = [.moveToActiveSpace, .fullScreenAuxiliary, .transient]
+        window.hidesOnDeactivate = true
+        installClickOutsideMonitor()
+        showWindow(nil)
+        window.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
     }
 
@@ -95,11 +97,7 @@ final class StoryDataStorageHelpWindowController: NSWindowController {
         let help = NSButton(title: "Open Help", target: self, action: #selector(helpTapped))
         help.bezelStyle = .rounded
 
-        let ok = NSButton(title: "OK", target: self, action: #selector(okTapped))
-        ok.bezelStyle = .rounded
-        ok.keyEquivalent = "\r"
-
-        let buttonStack = NSStackView(views: [ok, help, reveal])
+        let buttonStack = NSStackView(views: [help, reveal])
         buttonStack.orientation = .horizontal
         buttonStack.alignment = .centerY
         buttonStack.spacing = 8
@@ -144,7 +142,6 @@ final class StoryDataStorageHelpWindowController: NSWindowController {
         self.bodyLabel = body
         self.revealButton = reveal
         self.helpButton = help
-        self.okButton = ok
     }
 
     private func applyTheme() {
@@ -220,7 +217,6 @@ If you delete these files, Quill Pilot will treat that data as empty for the aff
             )
         }
 
-        styleButton(okButton, isPrimary: true)
         styleButton(helpButton, isPrimary: false)
         styleButton(revealButton, isPrimary: false)
     }
@@ -233,12 +229,34 @@ If you delete these files, Quill Pilot will treat that data as empty for the aff
         onOpenHelp()
     }
 
-    @objc private func okTapped() {
+    private func closeWindow() {
         guard let window else { return }
         if let parent = window.sheetParent {
             parent.endSheet(window)
         } else {
             window.close()
         }
+    }
+
+    private func installClickOutsideMonitor() {
+        removeClickOutsideMonitor()
+        clickOutsideMonitor = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { [weak self] event in
+            guard let self, let window = self.window, window.isVisible else { return event }
+            if event.window !== window {
+                self.closeWindow()
+            }
+            return event
+        }
+    }
+
+    private func removeClickOutsideMonitor() {
+        if let monitor = clickOutsideMonitor {
+            NSEvent.removeMonitor(monitor)
+            clickOutsideMonitor = nil
+        }
+    }
+
+    func windowWillClose(_ notification: Notification) {
+        removeClickOutsideMonitor()
     }
 }

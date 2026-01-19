@@ -90,7 +90,11 @@ class MainWindowController: NSWindowController {
         window.minSize = NSSize(width: 900, height: 650)
         window.isReleasedWhenClosed = false
         window.isRestorable = false
-        window.center()
+        if let screenFrame = NSScreen.main?.visibleFrame {
+            window.setFrame(screenFrame, display: false)
+        } else {
+            window.center()
+        }
 
         self.init(window: window)
         setupUI()
@@ -367,8 +371,11 @@ class MainWindowController: NSWindowController {
             .showsPaperSize,
             .showsScaling
         ]
-
         activePrintOperation = printOperation // keep alive while printing
+        let previousAppearance = NSApp.appearance
+        let isDarkMode = ThemeManager.shared.isDarkMode
+        NSApp.appearance = NSAppearance(named: isDarkMode ? .darkAqua : .aqua)
+        defer { NSApp.appearance = previousAppearance }
         let printerName = printOperation.printInfo.printer.name
         debugLog("Starting print operation (printer: \(printerName), shows panel: \(printOperation.showsPrintPanel), shows progress: \(printOperation.showsProgressPanel))")
         let success = printOperation.run()

@@ -102,8 +102,8 @@ class DocumentationWindowController: NSWindowController, NSWindowDelegate {
         createTab(title: "📖 Plot & Structure", identifier: "plot")
         createTab(title: "🧭 Navigator", identifier: "navigator")
         createTab(title: "🎬 Scenes", identifier: "scenes")
-        createTab(title: "💬 Dialogue Tips", identifier: "dialogue")
         createTab(title: "🧰 Toolbar", identifier: "toolbar")
+        createTab(title: "🎨 Typography & Styles", identifier: "typography")
         createTab(title: "⌨️ Shortcuts", identifier: "shortcuts")
 
         let tabBar = makeTabBar()
@@ -445,8 +445,8 @@ class DocumentationWindowController: NSWindowController, NSWindowDelegate {
         loadPlotTab()
         loadNavigatorTab()
         loadScenesTab()
-        loadDialogueTab()
         loadToolbarTab()
+        loadTypographyTab()
         loadShortcutsTab()
 
                 // Build the search index after content is loaded.
@@ -586,6 +586,14 @@ Open analysis from the right-side Analysis panel:
 • Click 📊 (Analysis) to open the main analysis popout
 • Click 📖 (Plot Structure) for plot/structure visualizations
 • Use the character tool buttons listed under the analysis buttons (each tool has its own icon)
+
+Quick access:
+• 📊 Analysis — document-level metrics, writing-quality flags, dialogue metrics, and Poetry Analysis when using Poetry templates
+• 📖 Plot Structure — plot/structure visualizations
+• 👥 Character Analysis Tools — character-focused tools and maps
+
+Tip: In this Help window, use the “📊 Analysis Tools”, “👥 Character Library”, “👥 Character Analysis Tools”, and “📖 Plot & Structure” tabs for in-depth documentation.
+Tip: Auto-analyze behavior can be configured in Preferences.
 
 If results aren’t available yet, QuillPilot runs analysis automatically the first time you open any analysis view.
 """, color: bodyColor))
@@ -1344,41 +1352,75 @@ Common checks
                 content.append(makeTitle("Navigator", color: titleColor))
                 content.append(makeNewline())
 
-                content.append(makeHeading("📊 Story Outline", color: headingColor))
+                content.append(makeHeading("Document Outline (list.bullet.indent)", color: headingColor))
                 content.append(makeBody("""
-Access: Click 📖 in Navigator panel
+        Access: Click the Document Outline icon in the Navigator panel
 
-Features:
-• Hierarchical outline based on your styles
-• Chapter, section, and scene organization
-• Click any entry to navigate to that section
-• Live updates as you write
-• Uses Chapter Title, Heading styles
+        What it shows:
+        • Live outline generated from your heading styles
+        • Chapters, sections, and scene headers (when styled)
+        • Click any entry to jump to that location
 
-Perfect for:
-• Quick navigation in long manuscripts
-• Structural overview
-• Finding specific scenes
-• Reorganization planning
-""", color: bodyColor))
+        Best for:
+        • Fast navigation
+        • Structural overview
+        • Finding specific scenes
+        """, color: bodyColor))
                 content.append(makeNewline())
 
-                content.append(makeHeading("🗺️ Locations & Directions", color: headingColor))
+                content.append(makeHeading("Story Theme (theatermasks)", color: headingColor))
                 content.append(makeBody("""
-Track settings and story progression.
+        Describe the central idea, question, or insight the story explores.
+        """, color: bodyColor))
+                content.append(makeNewline())
 
-Locations (🗺️ in Navigator):
-• Create location profiles
-• Add descriptions and details
-• Track scenes set in each location
-• Maintain setting consistency
+                content.append(makeHeading("Scenes (film)", color: headingColor))
+                content.append(makeBody("""
+        See the Scenes tab in Help for the full breakdown of how Scenes work and how to use them effectively.
+        """, color: bodyColor))
+                content.append(makeNewline())
 
-Story Directions (🧭 in Navigator):
-• Define story direction and goals
-• Track thematic elements
-• Document narrative throughlines
-• Plan story progression
-""", color: bodyColor))
+                content.append(makeHeading("Story Outline (book)", color: headingColor))
+                content.append(makeBody("""
+        Access: Click the Story Outline icon in the Navigator panel
+
+        Features:
+        • Hierarchical outline based on your styles
+        • Chapter, section, and scene organization
+        • Click any entry to navigate to that section
+        • Live updates as you write
+        • Uses Chapter Title, Heading styles
+
+        Perfect for:
+        • Quick navigation in long manuscripts
+        • Structural overview
+        • Finding specific scenes
+        • Reorganization planning
+        """, color: bodyColor))
+                content.append(makeNewline())
+
+                content.append(makeHeading("Locations & Directions (map)", color: headingColor))
+                content.append(makeBody("""
+        Track settings and story progression.
+
+        Locations (map icon in Navigator):
+        • Create location profiles
+        • Add descriptions and details
+        • Track scenes set in each location
+        • Maintain setting consistency
+
+        Story Directions (compass icon in Navigator):
+        • Define story direction and goals
+        • Track thematic elements
+        • Document narrative throughlines
+        • Plan story progression
+        """, color: bodyColor))
+                content.append(makeNewline())
+
+                content.append(makeHeading("General Notes (note.text)", color: headingColor))
+                content.append(makeBody("""
+        Capture free-form ideas, reminders, or planning notes tied to your document.
+        """, color: bodyColor))
 
                                 normalizeAppNameInDocumentation(content)
                 textView.textStorage?.setAttributedString(content)
@@ -1709,9 +1751,9 @@ A: As many as your story needs. A 80,000-word novel might have 40-80 scenes, but
 
         // MARK: - Tab 8: Keyboard Shortcuts
 
-    private func loadShortcutsTab() {
-                guard textViews.count > 9 else { return }
-                let textView = textViews[9]
+        private func loadShortcutsTab() {
+                                guard textViews.count > 9 else { return }
+                                let textView = textViews[9]
         let theme = ThemeManager.shared.currentTheme
         let titleColor = theme.textColor
         let headingColor = theme.textColor
@@ -1775,68 +1817,6 @@ Format menu:
 """, color: bodyColor))
         content.append(makeNewline())
 
-        content.append(makeSubheading("✨ Typography", color: headingColor))
-        content.append(makeBody("""
-QuillPilot includes professional typography features:
-
-Automatic Features:
-• Ligatures - Automatically enabled for serif fonts (fi, fl, ff, ffi, ffl)
-• Smart Quotes - Converts straight quotes to curly quotes
-• Smart Dashes - Converts double/triple hyphens to en/em dashes
-
-Format > Typography Menu:
-• Apply Drop Cap - Creates a decorative large initial letter (3 lines tall)
-        How to use: Place the cursor anywhere in the paragraph you want to affect, then choose Apply Drop Cap.
-        Undo: ⌘Z immediately removes it.
-
-• Use Old-Style Numerals - Enables old-style (lowercase-style) numerals via OpenType features
-        How to use: Select text containing numbers (recommended) then choose Use Old-Style Numerals.
-        If nothing is selected, it applies to the current paragraph.
-        Note: Some fonts don’t include old-style numerals, so the result can look identical.
-        Undo: ⌘Z.
-
-• Apply Optical Kerning - Uses font kerning features for better visual spacing
-        How to use: Select a word/sentence (recommended) then choose Apply Optical Kerning.
-        If nothing is selected, it applies to the current paragraph.
-        Note: Optical kerning is subtle and font-dependent; it’s easiest to see at larger font sizes.
-        Undo: ⌘Z.
-
-These features work best with professional fonts like Times New Roman, Georgia, Baskerville, Garamond, Palatino, and Hoefler Text.
-""", color: bodyColor))
-        content.append(makeNewline())
-
-        content.append(makeSubheading("📚 Style Templates", color: headingColor))
-        content.append(makeBody("""
-Templates in QuillPilot are complete style sets (Body Text, headings, chapter formats, TOC/Index styles, etc.) tuned around a specific typeface.
-
-Current templates:
-• Minion Pro
-• Arial
-• Times New Roman
-• Calibre
-• Inter
-• Helvetica
-• Poetry
-• Screenplay
-• Baskerville Classic
-• Garamond Elegant
-• Palatino
-• Hoefler Text
-• Bradley Hand (Script)
-• Snell Roundhand (Script)
-
-How to switch templates:
-1. Use the Template dropdown in the toolbar
-2. Your selection is saved automatically
-3. Style names and previews update instantly for the selected template
-
-Notes:
-• Switching templates changes which style definitions are available; it doesn’t automatically rewrite existing paragraphs unless you apply styles.
-• TOC/Index insertion uses your current template’s typography.
-• Import note: Import justification can depend on the active template when the imported text doesn’t include reliable paragraph styles. In those cases, QuillPilot fills the gaps using the current template’s defaults.
-""", color: bodyColor))
-        content.append(makeNewline())
-
         content.append(makeHeading("🔍 Navigation", color: headingColor))
         content.append(makeBody("""
 ⌘↑ - Move to beginning of document
@@ -1858,42 +1838,6 @@ Add ⇧ (Shift) to select while moving
 ⌘? - Show this help (QuillPilot Help)
 """, color: bodyColor))
         content.append(makeNewline())
-
-        content.append(makeHeading("🎨 Themes & Notes", color: headingColor))
-        content.append(makeBody("""
-Themes:
-• Use the theme button in the header (top-right) to cycle Night → Cream → Day.
-• You can also set a specific theme in Preferences.
-
-General Notes:
-• Click the Notes button at the bottom-right to open a General Notes window.
-• Use this window to keep free-form writing notes, ideas, or reminders.
-• Notes are saved per document and reloaded automatically when you reopen that document.
-""", color: bodyColor))
-        content.append(makeNewline())
-
-        content.append(makeHeading("🧠 Analysis", color: headingColor))
-        content.append(makeBody("""
-Analysis tools are available from the right-side Analysis panel.
-
-Quick access:
-• 📊 Analysis — document-level metrics, writing-quality flags, dialogue metrics, and Poetry Analysis when using Poetry templates
-• 📖 Plot Structure — plot/structure visualizations
-• 👥 Character Analysis Tools — character-focused tools and maps
-
-Tip: In this Help window, use the “📊 Analysis Tools”, “👥 Character Library”, “👥 Character Analysis Tools”, and “📖 Plot & Structure” tabs for in-depth documentation.
-Tip: Auto-analyze behavior can be configured in Preferences.
-""", color: bodyColor))
-        content.append(makeNewline())
-
-        content.append(makeHeading("💡 Tips", color: headingColor))
-        content.append(makeBody("""
-• Use ⌥ (Option) with arrow keys for word-by-word navigation
-• Combine ⇧ (Shift) with navigation for precise selections
-• Format Painter (🖌️) works great with keyboard selections
-• Press Enter in Find dialog to find next match
-• Use ⌘F to quickly search your document
-""", color: bodyColor))
 
                 normalizeAppNameInDocumentation(content)
         textView.textStorage?.setAttributedString(content)
@@ -1975,210 +1919,9 @@ Tip: Auto-analyze behavior can be configured in Preferences.
         )
     }
 
-        // MARK: - Dialogue Tips Tab
-    private func loadDialogueTab() {
-                                guard textViews.count > 7, let textView = textViews[safe: 7] else { return }
-        let theme = ThemeManager.shared.currentTheme
-        let titleColor = theme.textColor
-        let headingColor = theme.textColor
-        let bodyColor = theme.textColor
-
-        let content = NSMutableAttributedString()
-
-        content.append(makeTitle("💬 Writing Better Dialogue", color: titleColor))
-        content.append(makeBody("Dialogue can be considered \"basic and thin\" for several reasons. Here are the most common issues and how to fix them:", color: bodyColor))
-        content.append(makeNewline())
-        content.append(makeNewline())
-
-        content.append(makeSubheading("1. Lack of Depth", color: headingColor))
-        content.append(makeBody("""
-When characters only say exactly what they mean without any subtext or nuance, it can make the dialogue feel shallow.
-
-✓ Good Example:
-\"Everything's fine,\" she said, not meeting his eyes.
-
-✗ Avoid:
-\"I am upset with you because you forgot my birthday.\"
-
-Tip: Let characters hide emotions, use subtext, and leave things unsaid. What characters don't say is often more powerful than what they do say.
-""", color: bodyColor))
-        content.append(makeNewline())
-        content.append(makeNewline())
-
-        content.append(makeSubheading("2. Repetition", color: headingColor))
-        content.append(makeBody("""
-Reiterating the same ideas or phrases can drain the dialogue of any weight or importance.
-
-✗ Avoid:
-\"I'm scared. Really scared. I've never been this scared before.\"
-
-✓ Better:
-\"I'm scared.\" Her voice cracked. \"I've never felt like this before.\"
-
-Tip: Say it once, say it well. Use action and description to reinforce emotions rather than repeating them.
-""", color: bodyColor))
-        content.append(makeNewline())
-        content.append(makeNewline())
-
-        content.append(makeSubheading("3. Overuse of Filler", color: headingColor))
-        content.append(makeBody("""
-Excessive use of filler words like \"uh,\" \"um,\" \"well,\" etc., can dilute the impact of the dialogue.
-
-✗ Avoid:
-\"Well, um, I was thinking, you know, that maybe we could, like, go to the movies?\"
-
-✓ Better:
-\"Want to catch a movie?\"
-
-Tip: Use filler words sparingly and only when characterizing nervous or uncertain speech patterns. Most dialogue should be cleaner than real conversation.
-""", color: bodyColor))
-        content.append(makeNewline())
-        content.append(makeNewline())
-
-        content.append(makeSubheading("4. Monotony", color: headingColor))
-        content.append(makeBody("""
-If all characters have the same speaking style or voice, the dialogue can be boring and uninformative.
-
-✗ Avoid:
-\"Hello, John. How are you today?\" Mary said.
-\"I am well, Mary. Thank you for asking,\" John said.
-
-✓ Better:
-\"Hey.\" John nodded.
-\"You look tired,\" Mary said, studying his face.
-
-Tip: Give each character a distinct voice through word choice, sentence length, formality level, and speech patterns. A teenager speaks differently than a professor.
-""", color: bodyColor))
-        content.append(makeNewline())
-        content.append(makeNewline())
-
-        content.append(makeSubheading("5. Predictability", color: headingColor))
-        content.append(makeBody("""
-When dialogue follows very predictable patterns or uses clichéd phrases, it lacks originality.
-
-✗ Avoid Clichés:
-• \"We need to talk.\"
-• \"It's not what it looks like!\"
-• \"I can explain everything.\"
-• \"This isn't over.\"
-
-✓ Better:
-Create fresh, character-specific lines that feel authentic to your story and characters.
-
-Tip: If you've heard it in a movie or read it in another book, find a new way to say it.
-""", color: bodyColor))
-        content.append(makeNewline())
-        content.append(makeNewline())
-
-        content.append(makeSubheading("6. No Character Growth or Plot Advancement", color: headingColor))
-        content.append(makeBody("""
-Good dialogue often reveals something new about a character or advances the plot in some way. \"Thin\" dialogue does neither.
-
-✗ Avoid Filler Conversation:
-\"Nice weather today.\"
-\"Yes, it is quite pleasant.\"
-
-✓ Better:
-\"Nice weather for a funeral,\" she said, buttoning her coat.
-
-Tip: Every line of dialogue should serve a purpose—reveal character, advance plot, create tension, or provide essential information. If it doesn't, cut it.
-""", color: bodyColor))
-        content.append(makeNewline())
-        content.append(makeNewline())
-
-        content.append(makeSubheading("7. Over-Exposition", color: headingColor))
-        content.append(makeBody("""
-Dialogue that is used purely to convey information in a very straightforward manner can be dull and unengaging.
-
-✗ Avoid Info-Dumping:
-\"As you know, Bob, we've been working on this project for three years, and the deadline is next Tuesday. The client, Mr. Johnson from Acme Corp, is expecting the full report with all the data we collected from the 500 survey participants.\"
-
-✓ Better:
-\"Three years of work. One week left.\"
-\"Johnson's going to want every detail.\"
-
-Tip: Break up information naturally. Show through action when possible. Let readers discover information gradually.
-""", color: bodyColor))
-        content.append(makeNewline())
-        content.append(makeNewline())
-
-        content.append(makeSubheading("8. Lack of Conflict or Tension", color: headingColor))
-        content.append(makeBody("""
-Engaging dialogue often includes some level of disagreement, tension, or conflict. Without this, the dialogue may lack dynamism.
-
-✗ Avoid Too Much Agreement:
-\"That's a good idea.\"
-\"Thank you. I think so too.\"
-\"We should definitely do that.\"
-
-✓ Better:
-\"That's a terrible idea.\"
-\"Got a better one?\"
-She didn't.
-
-Tip: Characters should want different things. Even allies can disagree on methods. Conflict creates interest.
-""", color: bodyColor))
-        content.append(makeNewline())
-        content.append(makeNewline())
-
-        content.append(makeSubheading("9. No Emotional Resonance", color: headingColor))
-        content.append(makeBody("""
-If the dialogue doesn't evoke any emotion or reaction in the reader, it might not be serving its purpose effectively.
-
-✗ Avoid Flat Delivery:
-\"My brother died,\" he said.
-\"That's sad,\" she said.
-
-✓ Better:
-\"My brother died.\" He stared at his hands.
-She reached across the table but stopped short of touching him.
-
-Tip: Use action, beats, and subtext to convey emotion. Let the white space speak. Sometimes what isn't said carries more weight.
-""", color: bodyColor))
-        content.append(makeNewline())
-        content.append(makeNewline())
-
-        content.append(makeSubheading("10. Lack of Pacing", color: headingColor))
-        content.append(makeBody("""
-Dialogue that doesn't vary its rhythm can be less engaging. Good dialogue often mixes long, complex sentences with short, impactful ones to create a dynamic pace.
-
-✗ Avoid Monotonous Rhythm:
-\"I think we should go to the store. We need to buy milk. We also need bread. And maybe some eggs too.\"
-
-✓ Better:
-\"We need milk.\"
-\"And bread. And eggs. Basically, we need to go shopping.\"
-\"Fine.\"
-
-Tip: Vary sentence length. Use fragments. Short bursts of dialogue during tense scenes. Longer speeches when a character needs to explain or persuade.
-""", color: bodyColor))
-        content.append(makeNewline())
-        content.append(makeNewline())
-
-        content.append(makeSubheading("Summary", color: headingColor))
-        content.append(makeBody("""
-Improving these aspects can make dialogue more engaging, revealing, and true to life. Remember:
-
-• Use subtext and nuance
-• Avoid repetition and filler words
-• Give each character a unique voice
-• Create fresh, unpredictable lines
-• Make every line count
-• Show, don't tell (avoid exposition dumps)
-• Include conflict and tension
-• Evoke emotion through action and subtext
-• Vary pacing with sentence length
-
-QuillPilot's dialogue analysis tool checks for all these issues and provides feedback to help you refine your dialogue.
-""", color: bodyColor))
-
-                normalizeAppNameInDocumentation(content)
-        textView.textStorage?.setAttributedString(content)
-    }
-
-        // MARK: - Toolbar Tab
+                // MARK: - Toolbar Tab
     private func loadToolbarTab() {
-                                guard textViews.count > 8, let textView = textViews[safe: 8] else { return }
+                        guard textViews.count > 7, let textView = textViews[safe: 7] else { return }
         let theme = ThemeManager.shared.currentTheme
         let titleColor = theme.textColor
         let headingColor = theme.textColor
@@ -2305,6 +2048,84 @@ Numbering styles (Preferences → Numbering style):
 • Configure auto-numbering behavior in Preferences
 • Use Tab/Shift-Tab to quickly organize hierarchical lists
 • Empty line + Return exits the list automatically
+""", color: bodyColor))
+
+                normalizeAppNameInDocumentation(content)
+        textView.textStorage?.setAttributedString(content)
+    }
+
+    // MARK: - Typography & Styles Tab
+    private func loadTypographyTab() {
+        guard textViews.count > 8, let textView = textViews[safe: 8] else { return }
+        let theme = ThemeManager.shared.currentTheme
+        let titleColor = theme.textColor
+        let headingColor = theme.textColor
+        let bodyColor = theme.textColor
+
+        let content = NSMutableAttributedString()
+
+        content.append(makeTitle("Typography & Styles", color: titleColor))
+        content.append(makeNewline())
+
+        content.append(makeHeading("✨ Typography", color: headingColor))
+        content.append(makeBody("""
+QuillPilot includes professional typography features:
+
+Automatic Features:
+• Ligatures - Automatically enabled for serif fonts (fi, fl, ff, ffi, ffl)
+• Smart Quotes - Converts straight quotes to curly quotes
+• Smart Dashes - Converts double/triple hyphens to en/em dashes
+
+Format > Typography Menu:
+• Apply Drop Cap - Creates a decorative large initial letter (3 lines tall)
+        How to use: Place the cursor anywhere in the paragraph you want to affect, then choose Apply Drop Cap.
+        Undo: ⌘Z immediately removes it.
+
+• Use Old-Style Numerals - Enables old-style (lowercase-style) numerals via OpenType features
+        How to use: Select text containing numbers (recommended) then choose Use Old-Style Numerals.
+        If nothing is selected, it applies to the current paragraph.
+        Note: Some fonts don’t include old-style numerals, so the result can look identical.
+        Undo: ⌘Z.
+
+• Apply Optical Kerning - Uses font kerning features for better visual spacing
+        How to use: Select a word/sentence (recommended) then choose Apply Optical Kerning.
+        If nothing is selected, it applies to the current paragraph.
+        Note: Optical kerning is subtle and font-dependent; it’s easiest to see at larger font sizes.
+        Undo: ⌘Z.
+
+These features work best with professional fonts like Times New Roman, Georgia, Baskerville, Garamond, Palatino, and Hoefler Text.
+""", color: bodyColor))
+        content.append(makeNewline())
+
+        content.append(makeHeading("📚 Style Templates", color: headingColor))
+        content.append(makeBody("""
+Templates in QuillPilot are complete style sets (Body Text, headings, chapter formats, TOC/Index styles, etc.) tuned around a specific typeface.
+
+Current templates:
+• Minion Pro
+• Arial
+• Times New Roman
+• Calibre
+• Inter
+• Helvetica
+• Poetry
+• Screenplay
+• Baskerville Classic
+• Garamond Elegant
+• Palatino
+• Hoefler Text
+• Bradley Hand (Script)
+• Snell Roundhand (Script)
+
+How to switch templates:
+1. Use the Template dropdown in the toolbar
+2. Your selection is saved automatically
+3. Style names and previews update instantly for the selected template
+
+Notes:
+• Switching templates changes which style definitions are available; it doesn’t automatically rewrite existing paragraphs unless you apply styles.
+• TOC/Index insertion uses your current template’s typography.
+• Import note: Import justification can depend on the active template when the imported text doesn’t include reliable paragraph styles. In those cases, QuillPilot fills the gaps using the current template’s defaults.
 """, color: bodyColor))
 
                 normalizeAppNameInDocumentation(content)

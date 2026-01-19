@@ -645,6 +645,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         storyNotesHelpItem.target = self
         helpMenu.addItem(storyNotesHelpItem)
 
+        helpMenu.addItem(.separator())
+
+        let supportItem = NSMenuItem(title: "support@quillpilot.ai", action: #selector(openSupportEmail(_:)), keyEquivalent: "")
+        supportItem.target = self
+        helpMenu.addItem(supportItem)
+
         NSApp.mainMenu = mainMenu
         enforceBrandedAppMenuTitle()
         NSApp.windowsMenu = windowMenu
@@ -683,6 +689,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         preferencesWindow?.window?.makeKeyAndOrderFront(nil)
         preferencesWindow?.window?.collectionBehavior = [.moveToActiveSpace, .fullScreenAuxiliary]
         NSApp.activate(ignoringOtherApps: true)
+    }
+
+    @objc private func openSupportEmail(_ sender: Any?) {
+        guard let url = URL(string: "mailto:support@quillpilot.ai") else { return }
+        NSWorkspace.shared.open(url)
     }
 
     @objc private func exportDocument(_ sender: Any?) {

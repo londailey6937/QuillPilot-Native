@@ -2002,9 +2002,11 @@ Numbering styles (Preferences → Numbering style):
 
         content.append(makeSubheading("Indenting (Creating Sub-levels)", color: headingColor))
         content.append(makeBody("""
-• Press Tab to indent a numbered item
-• This creates a sub-level (e.g., 2. → 2.1.)
+• Press Tab while the cursor is on a numbered line
+• The next Return creates a sub-level on the next line
+• The caret stays on the indented line so you can keep typing
 • You can nest multiple levels (1.1.1.1, etc.)
+• Lettered lists alternate case by level (A → a → A …)
 """, color: bodyColor))
         content.append(makeNewline())
         content.append(makeNewline())

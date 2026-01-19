@@ -1006,6 +1006,7 @@ class EditorViewController: NSViewController {
     private var headerViews: [NSTextField] = []
     private var footerViews: [NSTextField] = []
     private var headerFooterDecorationViews: [NSView] = []
+    private var pendingListIndentOnReturn = false
 
     // Manuscript metadata
     var manuscriptTitle: String = "Untitled"
@@ -1811,19 +1812,33 @@ class EditorViewController: NSViewController {
 
     private func parseAlphabeticPrefix(in line: String, uppercase: Bool) -> (components: [Int], prefixLength: Int, hasTabAfter: Bool)? {
         var idx = line.startIndex
-        let start = idx
-        while idx < line.endIndex, line[idx].isLetter {
-            idx = line.index(after: idx)
+        var components: [Int] = []
+
+        func readLetters() -> Int? {
+            let start = idx
+            while idx < line.endIndex, line[idx].isLetter {
+                idx = line.index(after: idx)
+            }
+            if start == idx { return nil }
+            let letters = String(line[start..<idx])
+            return alphabeticValue(from: letters)
         }
-        guard start != idx else { return nil }
-        guard idx < line.endIndex, line[idx] == "." else { return nil }
 
-        let letters = String(line[start..<idx])
-        if uppercase, letters != letters.uppercased() { return nil }
-        if !uppercase, letters != letters.lowercased() { return nil }
-        guard let value = alphabeticValue(from: letters) else { return nil }
+        guard let first = readLetters() else { return nil }
+        components.append(first)
 
-        idx = line.index(after: idx)
+        while idx < line.endIndex, line[idx] == "." {
+            let nextIndex = line.index(after: idx)
+            if nextIndex >= line.endIndex { return nil }
+            let ch = line[nextIndex]
+            if ch == " " || ch == "\t" {
+                idx = nextIndex
+                break
+            }
+            idx = nextIndex
+            guard let value = readLetters() else { return nil }
+            components.append(value)
+        }
 
         guard idx < line.endIndex else { return nil }
         var hasTabAfter = false
@@ -1841,7 +1856,7 @@ class EditorViewController: NSViewController {
         }
 
         let prefixLength = line.distance(from: line.startIndex, to: idx)
-        return ([value], prefixLength, hasTabAfter)
+        return (components, prefixLength, hasTabAfter)
     }
 
     private func makeNumberPrefix(from components: [Int], scheme: QuillPilotSettings.NumberingScheme) -> String {
@@ -1849,11 +1864,15 @@ class EditorViewController: NSViewController {
         case .decimalDotted:
             return components.map(String.init).joined(separator: ".") + ". "
         case .alphabetUpper:
-            let value = components.first ?? 1
-            return "\(alphabeticString(for: value, uppercase: true)). "
+            let level = max(1, components.count)
+            let value = components.last ?? 1
+            let isUpper = (level % 2 == 1)
+            return "\(alphabeticString(for: value, uppercase: isUpper)). "
         case .alphabetLower:
-            let value = components.first ?? 1
-            return "\(alphabeticString(for: value, uppercase: false)). "
+            let level = max(1, components.count)
+            let value = components.last ?? 1
+            let isUpper = (level % 2 == 0)
+            return "\(alphabeticString(for: value, uppercase: isUpper)). "
         }
     }
 
@@ -3139,13 +3158,30 @@ class EditorViewController: NSViewController {
     }
 
     func indent() {
-        _ = adjustNumberingLevelInSelection(by: 1)
+        if isSelectionInNumberedList() {
+            _ = adjustNumberingLevelInSelection(by: 1)
+            return
+        }
         adjustIndent(by: standardIndentStep)
     }
 
     func outdent() {
-        _ = adjustNumberingLevelInSelection(by: -1)
+        if isSelectionInNumberedList() {
+            _ = adjustNumberingLevelInSelection(by: -1)
+            return
+        }
         adjustIndent(by: -standardIndentStep)
+    }
+
+    private func isSelectionInNumberedList() -> Bool {
+        guard let storage = textView.textStorage else { return false }
+        let sel = textView.selectedRange()
+        guard sel.location <= storage.length else { return false }
+        let full = storage.string as NSString
+        let paragraphRange = full.paragraphRange(for: NSRange(location: sel.location, length: 0))
+        let paragraphText = full.substring(with: paragraphRange)
+        let scheme = QuillPilotSettings.numberingScheme
+        return parseNumberPrefix(in: paragraphText, scheme: scheme) != nil
     }
 
     func setPageMargins(left: CGFloat, right: CGFloat) {
@@ -7684,6 +7720,68 @@ case "Book Subtitle":
         }
     }
 
+    private func currentListLevel(for paragraphRange: NSRange) -> Int {
+        guard let storage = textView.textStorage, paragraphRange.location < storage.length else { return 1 }
+        let style = (storage.attribute(.paragraphStyle, at: paragraphRange.location, effectiveRange: nil) as? NSParagraphStyle)
+            ?? textView.defaultParagraphStyle
+            ?? NSParagraphStyle.default
+        let base = standardIndentStep
+        let indent = style.firstLineHeadIndent
+        if indent <= base + 0.5 { return 1 }
+        let delta = max(0, indent - base)
+        let levelOffset = Int(round(delta / standardIndentStep))
+        return max(1, levelOffset + 1)
+    }
+
+    private func normalizedComponents(_ components: [Int], for level: Int, scheme: QuillPilotSettings.NumberingScheme) -> [Int] {
+        guard scheme != .decimalDotted else { return components }
+        let target = max(1, level)
+        if components.count == target { return components }
+        if components.count > target { return Array(components.prefix(target)) }
+        var padded = components
+        while padded.count < target {
+            padded.append(1)
+        }
+        return padded
+    }
+
+    private func applyListIndent(levelCount: Int, paragraphRange: NSRange) {
+        guard let storage = textView.textStorage else { return }
+        let clampedLevel = max(1, levelCount)
+        let levelOffset = CGFloat(clampedLevel - 1) * standardIndentStep
+        let firstLineIndent = standardIndentStep + levelOffset
+
+        let font = (storage.attribute(.font, at: paragraphRange.location, effectiveRange: nil) as? NSFont)
+            ?? textView.font
+            ?? NSFont.systemFont(ofSize: 12)
+
+        storage.enumerateAttribute(.paragraphStyle, in: paragraphRange, options: []) { value, range, _ in
+            let current = (value as? NSParagraphStyle) ?? textView.defaultParagraphStyle ?? NSParagraphStyle.default
+            guard let mutable = current.mutableCopy() as? NSMutableParagraphStyle else { return }
+
+            let paragraphText = (storage.string as NSString).substring(with: range)
+            let scheme = QuillPilotSettings.numberingScheme
+            let prefixString: String
+            if let parsed = parseNumberPrefix(in: paragraphText, scheme: scheme) {
+                let endIndex = paragraphText.index(paragraphText.startIndex, offsetBy: parsed.prefixLength)
+                prefixString = String(paragraphText[..<endIndex])
+            } else if paragraphText.hasPrefix("• ") {
+                prefixString = "• "
+            } else {
+                prefixString = ""
+            }
+            let prefixWidth = (prefixString as NSString).size(withAttributes: [.font: font]).width
+            let tabLocation = max(firstLineIndent + 18, firstLineIndent + prefixWidth + 8)
+
+            let tabStop = NSTextTab(textAlignment: .left, location: tabLocation, options: [:])
+            mutable.tabStops = [tabStop]
+            mutable.defaultTabInterval = 0
+            mutable.firstLineHeadIndent = firstLineIndent
+            mutable.headIndent = tabLocation
+            storage.addAttribute(.paragraphStyle, value: mutable.copy() as! NSParagraphStyle, range: range)
+        }
+    }
+
     private func togglePrefixList(isPrefixed: (String) -> Bool, makePrefix: (Int) -> String) {
         guard let textStorage = textView.textStorage else { return }
         guard let selectedRange = textView.selectedRanges.first?.rangeValue else { return }
@@ -7706,10 +7804,19 @@ case "Book Subtitle":
                 // Remove prefix and hanging indent
                 if isPrefixed(para.text) {
                     // Calculate prefix length including the tab character we inserted
-                    var prefixLen = (para.text.hasPrefix("• ") ? 2 : (para.text.firstIndex(of: ".") ?? para.text.startIndex).utf16Offset(in: para.text) + 2)
-                    // Also remove the tab if present
-                    if para.text.count > prefixLen && para.text[para.text.index(para.text.startIndex, offsetBy: prefixLen)] == "\t" {
-                        prefixLen += 1
+                    var prefixLen: Int
+                    if para.text.hasPrefix("• ") {
+                        prefixLen = 2
+                        if para.text.count > prefixLen && para.text[para.text.index(para.text.startIndex, offsetBy: prefixLen)] == "\t" {
+                            prefixLen += 1
+                        }
+                    } else if let parsed = parseNumberPrefix(in: para.text, scheme: QuillPilotSettings.numberingScheme) {
+                        prefixLen = parsed.prefixLength + (parsed.hasTabAfter ? 1 : 0)
+                    } else {
+                        prefixLen = (para.text.firstIndex(of: ".") ?? para.text.startIndex).utf16Offset(in: para.text) + 2
+                        if para.text.count > prefixLen && para.text[para.text.index(para.text.startIndex, offsetBy: prefixLen)] == "\t" {
+                            prefixLen += 1
+                        }
                     }
                     let removeRange = NSRange(location: para.range.location, length: min(prefixLen, para.range.length))
                     textStorage.replaceCharacters(in: removeRange, with: "")
@@ -7786,22 +7893,25 @@ extension EditorViewController: NSTextViewDelegate {
         let paragraphText = full.substring(with: paragraphRange)
 
         if commandSelector == #selector(insertTab(_:)) {
-            // Tab indents numbered list items (adds a sub-level: 1. -> 1.1.).
-            guard QuillPilotSettings.numberingScheme == .decimalDotted else { return false }
-            guard parseNumberPrefix(in: paragraphText, scheme: .decimalDotted) != nil else { return false }
-            indent()
+            // Tab sets the next Return to create a sub-level without changing the current line.
+            let scheme = QuillPilotSettings.numberingScheme
+            guard parseNumberPrefix(in: paragraphText, scheme: scheme) != nil else { return false }
+            pendingListIndentOnReturn = true
             return true
         }
 
         if commandSelector == #selector(insertBacktab(_:)) {
-            // Shift-Tab outdents numbered list items (removes a sub-level: 1.1. -> 1.).
-            guard QuillPilotSettings.numberingScheme == .decimalDotted else { return false }
-            guard parseNumberPrefix(in: paragraphText, scheme: .decimalDotted) != nil else { return false }
+            // Shift-Tab outdents numbered list items (removes a sub-level: 1.1. -> 1. or A.A. -> A.).
+            let scheme = QuillPilotSettings.numberingScheme
+            guard parseNumberPrefix(in: paragraphText, scheme: scheme) != nil else { return false }
             outdent()
             return true
         }
 
-        guard commandSelector == #selector(insertNewline(_:)) else { return false }
+        guard commandSelector == #selector(insertNewline(_:)) else {
+            pendingListIndentOnReturn = false
+            return false
+        }
         guard QuillPilotSettings.autoNumberOnReturn else { return false }
 
         let scheme = QuillPilotSettings.numberingScheme
@@ -7817,11 +7927,28 @@ extension EditorViewController: NSTextViewDelegate {
             return false
         }
 
+        if pendingListIndentOnReturn {
+            let currentLevel = currentListLevel(for: paragraphRange)
+            var next = normalizedComponents(parsed.components, for: currentLevel, scheme: scheme)
+            next.append(1)
+            let nextPrefix = makeNumberPrefix(from: next, scheme: scheme) + (parsed.hasTabAfter ? "\t" : "")
+            textView.insertText("\n" + nextPrefix, replacementRange: sel)
+
+            let newSelection = textView.selectedRange()
+            let newParagraphRange = full.paragraphRange(for: NSRange(location: newSelection.location, length: 0))
+            applyListIndent(levelCount: next.count, paragraphRange: newParagraphRange)
+
+            pendingListIndentOnReturn = false
+            return true
+        }
+
         // Insert a newline plus the next number prefix.
-        var next = parsed.components
+        let currentLevel = currentListLevel(for: paragraphRange)
+        var next = normalizedComponents(parsed.components, for: currentLevel, scheme: scheme)
         next[next.count - 1] += 1
         let nextPrefix = makeNumberPrefix(from: next, scheme: scheme) + (parsed.hasTabAfter ? "\t" : "")
         textView.insertText("\n" + nextPrefix, replacementRange: sel)
+        pendingListIndentOnReturn = false
         return true
     }
 
@@ -7980,6 +8107,8 @@ extension EditorViewController: NSTextViewDelegate {
         // Skip if we're suppressing notifications (e.g., during column insertion)
         guard !suppressTextChangeNotifications else { return }
 
+        pendingListIndentOnReturn = false
+
         showImageControlsIfNeeded()
 
         // If format painter is active and user makes a selection, apply the formatting
@@ -7997,7 +8126,7 @@ extension EditorViewController: NSTextViewDelegate {
 private extension EditorViewController {
     func adjustNumberingLevelInSelection(by delta: Int) -> Bool {
         guard delta != 0 else { return false }
-        guard QuillPilotSettings.numberingScheme == .decimalDotted else { return false }
+        let scheme = QuillPilotSettings.numberingScheme
         guard let textStorage = textView.textStorage else { return false }
         guard let selectedRange = textView.selectedRanges.first?.rangeValue else { return false }
 
@@ -8013,8 +8142,9 @@ private extension EditorViewController {
         var anyChanged = false
         performUndoableTextStorageEdit(in: paragraphsRange, actionName: delta > 0 ? "Indent" : "Outdent") { storage in
             for para in paragraphs.reversed() {
-                guard let parsed = parseNumberPrefix(in: para.text, scheme: .decimalDotted) else { continue }
-                var nextComponents = parsed.components
+                guard let parsed = parseNumberPrefix(in: para.text, scheme: scheme) else { continue }
+                let currentLevel = currentListLevel(for: para.range)
+                var nextComponents = normalizedComponents(parsed.components, for: currentLevel, scheme: scheme)
 
                 if delta > 0 {
                     nextComponents.append(1)
@@ -8025,8 +8155,12 @@ private extension EditorViewController {
 
                 let replaceLen = parsed.prefixLength + (parsed.hasTabAfter ? 1 : 0)
                 let replaceRange = NSRange(location: para.range.location, length: min(replaceLen, para.range.length))
-                let replacement = makeNumberPrefix(from: nextComponents, scheme: .decimalDotted) + (parsed.hasTabAfter ? "\t" : "")
+                let prefix = makeNumberPrefix(from: nextComponents, scheme: scheme)
+                let replacement = prefix + (parsed.hasTabAfter ? "\t" : "")
                 storage.replaceCharacters(in: replaceRange, with: replacement)
+
+                applyListIndent(levelCount: nextComponents.count, paragraphRange: para.range)
+
                 anyChanged = true
             }
         }

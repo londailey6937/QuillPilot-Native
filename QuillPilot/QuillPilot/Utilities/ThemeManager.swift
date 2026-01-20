@@ -18,13 +18,8 @@ extension NSPopUpButton {
         layer?.masksToBounds = true
         layer?.cornerRadius = 6
 
-        if theme == .day {
-            layer?.borderWidth = 1
-            layer?.borderColor = theme.pageBorder.cgColor
-        } else {
-            layer?.borderWidth = 0
-            layer?.borderColor = nil
-        }
+        layer?.borderWidth = 1
+        layer?.borderColor = theme.pageBorder.cgColor
 
         needsDisplay = true
     }

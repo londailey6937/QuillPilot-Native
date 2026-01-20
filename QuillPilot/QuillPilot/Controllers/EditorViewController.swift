@@ -1007,6 +1007,7 @@ class EditorViewController: NSViewController {
     private var footerViews: [NSTextField] = []
     private var headerFooterDecorationViews: [NSView] = []
     private var pendingListIndentOnReturn = false
+    private var pendingListIndentTargetLevel: Int?
 
     // Manuscript metadata
     var manuscriptTitle: String = "Untitled"
@@ -1141,15 +1142,7 @@ class EditorViewController: NSViewController {
             .png
         ])
 
-        let font = NSFont(name: "Times New Roman", size: 12) ?? NSFont.systemFont(ofSize: 12)
-        textView.font = font
-
-        let paragraphStyle = NSMutableParagraphStyle()
-        paragraphStyle.lineHeightMultiple = 2.0
-        paragraphStyle.paragraphSpacing = 12
-        paragraphStyle.headIndent = 0
-        paragraphStyle.firstLineHeadIndent = standardIndentStep
-        textView.defaultParagraphStyle = paragraphStyle.copy() as? NSParagraphStyle
+        textView.font = NSFont(name: "Times New Roman", size: 12) ?? NSFont.systemFont(ofSize: 12)
 
         // Ensure undo works predictably (one step per Cmd-Z)
         textView.allowsUndo = true
@@ -1178,6 +1171,7 @@ class EditorViewController: NSViewController {
         ])
 
         applyTheme(currentTheme)
+        applyDefaultTypingAttributes()
         updateShadowPath()
         updatePageCentering()
     }
@@ -3176,9 +3170,10 @@ class EditorViewController: NSViewController {
     private func isSelectionInNumberedList() -> Bool {
         guard let storage = textView.textStorage else { return false }
         let sel = textView.selectedRange()
-        guard sel.location <= storage.length else { return false }
+        guard storage.length > 0 else { return false }
+        let safeLocation = min(sel.location, max(0, storage.length - 1))
         let full = storage.string as NSString
-        let paragraphRange = full.paragraphRange(for: NSRange(location: sel.location, length: 0))
+        let paragraphRange = full.paragraphRange(for: NSRange(location: safeLocation, length: 0))
         let paragraphText = full.substring(with: paragraphRange)
         let scheme = QuillPilotSettings.numberingScheme
         return parseNumberPrefix(in: paragraphText, scheme: scheme) != nil
@@ -3296,12 +3291,22 @@ class EditorViewController: NSViewController {
             return mutable.copy() as! NSParagraphStyle
         }
 
+        func resolveStyleDefinition(for styleName: String) -> StyleDefinition? {
+            if let def = StyleCatalog.shared.style(named: styleName) {
+                return def
+            }
+            if let templateName = StyleCatalog.shared.templateName(containingStyleName: styleName) {
+                return StyleCatalog.shared.style(named: styleName, inTemplate: templateName)
+            }
+            return nil
+        }
+
         // Reapply catalog-defined paragraph and font attributes based on stored style name
         var location = 0
         while location < fullString.length {
             let paragraphRange = fullString.paragraphRange(for: NSRange(location: location, length: 0))
-            if let styleName = normalized.attribute(styleAttributeKey, at: paragraphRange.location, effectiveRange: nil) as? String,
-               let definition = StyleCatalog.shared.style(named: styleName) {
+                if let styleName = normalized.attribute(styleAttributeKey, at: paragraphRange.location, effectiveRange: nil) as? String,
+                    let definition = resolveStyleDefinition(for: styleName) {
                 let catalogParagraph = paragraphStyle(from: definition)
                 let font = font(from: definition)
                 let textColor = color(fromHex: definition.textColorHex, fallback: defaultColor)
@@ -3341,7 +3346,7 @@ class EditorViewController: NSViewController {
 
                 let inferredStyleName = inferStyle(font: font, paragraphStyle: paragraph, text: paragraphText)
 
-                if let definition = StyleCatalog.shared.style(named: inferredStyleName) {
+                if let definition = resolveStyleDefinition(for: inferredStyleName) {
                     let para = paragraphStyle(from: definition)
                     let styleFont = self.font(from: definition)
                     let styleColor = color(fromHex: definition.textColorHex, fallback: defaultColor)
@@ -3909,6 +3914,36 @@ class EditorViewController: NSViewController {
     }
 
     private func applyDefaultTypingAttributes() {
+        let defaultStyleName: String
+        if StyleCatalog.shared.isScreenplayTemplate {
+            defaultStyleName = "Screenplay — Action"
+        } else if StyleCatalog.shared.isPoetryTemplate {
+            defaultStyleName = "Verse"
+        } else {
+            defaultStyleName = "Body Text"
+        }
+
+        if let definition = StyleCatalog.shared.style(named: defaultStyleName) {
+            let paragraph = paragraphStyle(from: definition)
+            let font = self.font(from: definition)
+            textView.defaultParagraphStyle = paragraph
+            textView.font = font
+
+            var newTypingAttributes = textView.typingAttributes
+            newTypingAttributes[.font] = font
+            newTypingAttributes[.foregroundColor] = currentTheme.textColor
+            newTypingAttributes[.paragraphStyle] = paragraph
+            newTypingAttributes[styleAttributeKey] = defaultStyleName
+            if let backgroundHex = definition.backgroundColorHex {
+                newTypingAttributes[.backgroundColor] = color(fromHex: backgroundHex, fallback: .clear)
+            } else {
+                newTypingAttributes.removeValue(forKey: .backgroundColor)
+            }
+            textView.typingAttributes = newTypingAttributes
+            refreshTypingAttributesUsingDefaultParagraphStyle()
+            return
+        }
+
         let neutralParagraph = NSMutableParagraphStyle()
         neutralParagraph.alignment = .left
         neutralParagraph.lineHeightMultiple = 2.0
@@ -3919,7 +3954,9 @@ class EditorViewController: NSViewController {
         let defaultFont = NSFont(name: "Times New Roman", size: 14) ?? NSFont.systemFont(ofSize: 14)
         var newTypingAttributes = textView.typingAttributes
         newTypingAttributes[.font] = defaultFont
+        newTypingAttributes[.foregroundColor] = currentTheme.textColor
         newTypingAttributes[.paragraphStyle] = neutralParagraph
+        newTypingAttributes[styleAttributeKey] = defaultStyleName
         textView.typingAttributes = newTypingAttributes
         refreshTypingAttributesUsingDefaultParagraphStyle()
     }
@@ -4292,22 +4329,8 @@ class EditorViewController: NSViewController {
         // Clear all text
         textView.string = ""
 
-        // Reset to default formatting
-        let font = NSFont(name: "Times New Roman", size: 12) ?? NSFont.systemFont(ofSize: 12)
-        textView.font = font
-
-        let paragraphStyle = NSMutableParagraphStyle()
-        paragraphStyle.lineHeightMultiple = 2.0
-        paragraphStyle.paragraphSpacing = 12
-        paragraphStyle.firstLineHeadIndent = standardIndentStep
-        textView.defaultParagraphStyle = paragraphStyle.copy() as? NSParagraphStyle
-
-        textView.typingAttributes = [
-            .font: font,
-            .foregroundColor: currentTheme.textColor,
-            .paragraphStyle: paragraphStyle.copy() as Any,
-            styleAttributeKey: "Body Text"
-        ]
+        // Reset to template default formatting
+        applyDefaultTypingAttributes()
 
         delegate?.textDidChange()
         updatePageCentering()
@@ -7622,14 +7645,14 @@ case "Book Subtitle":
             let firstLineDelta = style.firstLineHeadIndent - style.headIndent
             let newHeadIndent = max(0, style.headIndent + delta)
             style.headIndent = newHeadIndent
-            style.firstLineHeadIndent = newHeadIndent + firstLineDelta
+            style.firstLineHeadIndent = max(0, newHeadIndent + firstLineDelta)
         }
 
         if let defaultStyle = (textView.defaultParagraphStyle as? NSMutableParagraphStyle)?.mutableCopy() as? NSMutableParagraphStyle {
             let firstLineDelta = defaultStyle.firstLineHeadIndent - defaultStyle.headIndent
             let newHeadIndent = max(0, defaultStyle.headIndent + delta)
             defaultStyle.headIndent = newHeadIndent
-            defaultStyle.firstLineHeadIndent = newHeadIndent + firstLineDelta
+            defaultStyle.firstLineHeadIndent = max(0, newHeadIndent + firstLineDelta)
             textView.defaultParagraphStyle = defaultStyle.copy() as? NSParagraphStyle
             refreshTypingAttributesUsingDefaultParagraphStyle()
         }
@@ -7637,9 +7660,14 @@ case "Book Subtitle":
 
     private func applyParagraphEditsToSelectedParagraphs(_ edit: (NSMutableParagraphStyle) -> Void) {
         guard let textStorage = textView.textStorage else { return }
+        guard textStorage.length > 0 else { return }
         guard let selected = textView.selectedRanges.first?.rangeValue else { return }
         let fullText = (textStorage.string as NSString)
-        let paragraphsRange = fullText.paragraphRange(for: selected)
+        let safeLocation = min(selected.location, max(0, textStorage.length - 1))
+        let safeRange = NSRange(location: safeLocation, length: selected.length)
+        let paragraphsRange = fullText.paragraphRange(for: safeRange)
+        guard paragraphsRange.location < textStorage.length else { return }
+        guard paragraphsRange.length > 0 else { return }
 
         performUndoableTextStorageEdit(in: paragraphsRange, actionName: "Paragraph Formatting") { storage in
             storage.enumerateAttribute(.paragraphStyle, in: paragraphsRange, options: []) { value, range, _ in
@@ -7734,7 +7762,7 @@ case "Book Subtitle":
     }
 
     private func normalizedComponents(_ components: [Int], for level: Int, scheme: QuillPilotSettings.NumberingScheme) -> [Int] {
-        guard scheme != .decimalDotted else { return components }
+        if scheme == .decimalDotted { return components }
         let target = max(1, level)
         if components.count == target { return components }
         if components.count > target { return Array(components.prefix(target)) }
@@ -7747,9 +7775,13 @@ case "Book Subtitle":
 
     private func applyListIndent(levelCount: Int, paragraphRange: NSRange) {
         guard let storage = textView.textStorage else { return }
+        guard storage.length > 0 else { return }
+        guard paragraphRange.location < storage.length else { return }
+        guard paragraphRange.length > 0 else { return }
         let clampedLevel = max(1, levelCount)
+        let baseIndent: CGFloat = (clampedLevel <= 1) ? 0 : standardIndentStep
         let levelOffset = CGFloat(clampedLevel - 1) * standardIndentStep
-        let firstLineIndent = standardIndentStep + levelOffset
+        let firstLineIndent = baseIndent + levelOffset
 
         let font = (storage.attribute(.font, at: paragraphRange.location, effectiveRange: nil) as? NSFont)
             ?? textView.font
@@ -7842,20 +7874,21 @@ case "Book Subtitle":
                 let tabInsertLocation = para.range.location + prefix.count
                 textStorage.replaceCharacters(in: NSRange(location: tabInsertLocation, length: 0), with: "\t")
 
-                // Set up hanging indent with tab stop
+                // Set up hanging indent with tab stop (level 1 starts at the margin)
                 let adjustedRange = NSRange(location: para.range.location, length: para.range.length + prefix.count + 1)
                 textStorage.enumerateAttribute(.paragraphStyle, in: adjustedRange, options: []) { value, range, _ in
                     let current = (value as? NSParagraphStyle) ?? textView.defaultParagraphStyle ?? NSParagraphStyle.default
                     guard let mutable = current.mutableCopy() as? NSMutableParagraphStyle else { return }
 
                     // Set up tab stop for alignment
-                    let tabLocation = standardIndentStep + 18 // Tab position after bullet
+                    let prefixWidth = (prefix as NSString).size(withAttributes: [.font: textView.font ?? NSFont.systemFont(ofSize: 12)]).width
+                    let tabLocation = max(18, prefixWidth + 8)
                     let tabStop = NSTextTab(textAlignment: .left, location: tabLocation, options: [:])
                     mutable.tabStops = [tabStop]
                     mutable.defaultTabInterval = 0
 
-                    // Hanging indent: first line at standard indent, wrapped lines at tab position
-                    mutable.firstLineHeadIndent = standardIndentStep
+                    // Hanging indent: first line at margin, wrapped lines at tab position
+                    mutable.firstLineHeadIndent = 0
                     mutable.headIndent = tabLocation
 
                     textStorage.addAttribute(.paragraphStyle, value: mutable.copy() as! NSParagraphStyle, range: range)
@@ -7868,6 +7901,9 @@ case "Book Subtitle":
 
 extension EditorViewController: NSTextViewDelegate {
     func textView(_ textView: NSTextView, doCommandBy commandSelector: Selector) -> Bool {
+        if commandSelector == #selector(insertBacktab(_:)) {
+            return false
+        }
         if commandSelector == #selector(NSResponder.moveToEndOfDocument(_:)) {
             scrollToBottom()
             return true
@@ -7880,8 +7916,9 @@ extension EditorViewController: NSTextViewDelegate {
 
         guard let storage = textView.textStorage else { return false }
         let sel = textView.selectedRange()
-        guard sel.length == 0 else { return false }
         guard sel.location <= storage.length else { return false }
+
+        guard sel.length == 0 else { return false }
 
         // Avoid interfering with complex structures.
         if isCurrentPositionInTable() || isCurrentPositionInColumns() {
@@ -7897,19 +7934,14 @@ extension EditorViewController: NSTextViewDelegate {
             let scheme = QuillPilotSettings.numberingScheme
             guard parseNumberPrefix(in: paragraphText, scheme: scheme) != nil else { return false }
             pendingListIndentOnReturn = true
-            return true
-        }
-
-        if commandSelector == #selector(insertBacktab(_:)) {
-            // Shift-Tab outdents numbered list items (removes a sub-level: 1.1. -> 1. or A.A. -> A.).
-            let scheme = QuillPilotSettings.numberingScheme
-            guard parseNumberPrefix(in: paragraphText, scheme: scheme) != nil else { return false }
-            outdent()
+            let currentLevel = currentListLevel(for: paragraphRange)
+            pendingListIndentTargetLevel = currentLevel + 1
             return true
         }
 
         guard commandSelector == #selector(insertNewline(_:)) else {
             pendingListIndentOnReturn = false
+            pendingListIndentTargetLevel = nil
             return false
         }
         guard QuillPilotSettings.autoNumberOnReturn else { return false }
@@ -7929,16 +7961,19 @@ extension EditorViewController: NSTextViewDelegate {
 
         if pendingListIndentOnReturn {
             let currentLevel = currentListLevel(for: paragraphRange)
-            var next = normalizedComponents(parsed.components, for: currentLevel, scheme: scheme)
+            let targetLevel = pendingListIndentTargetLevel ?? (currentLevel + 1)
+            var next = normalizedComponents(parsed.components, for: max(1, targetLevel - 1), scheme: scheme)
             next.append(1)
             let nextPrefix = makeNumberPrefix(from: next, scheme: scheme) + (parsed.hasTabAfter ? "\t" : "")
             textView.insertText("\n" + nextPrefix, replacementRange: sel)
 
             let newSelection = textView.selectedRange()
-            let newParagraphRange = full.paragraphRange(for: NSRange(location: newSelection.location, length: 0))
+            let updatedFull = textView.string as NSString
+            let newParagraphRange = updatedFull.paragraphRange(for: NSRange(location: newSelection.location, length: 0))
             applyListIndent(levelCount: next.count, paragraphRange: newParagraphRange)
 
             pendingListIndentOnReturn = false
+            pendingListIndentTargetLevel = nil
             return true
         }
 
@@ -7948,7 +7983,12 @@ extension EditorViewController: NSTextViewDelegate {
         next[next.count - 1] += 1
         let nextPrefix = makeNumberPrefix(from: next, scheme: scheme) + (parsed.hasTabAfter ? "\t" : "")
         textView.insertText("\n" + nextPrefix, replacementRange: sel)
+        let newSelection = textView.selectedRange()
+        let updatedFull = textView.string as NSString
+        let newParagraphRange = updatedFull.paragraphRange(for: NSRange(location: newSelection.location, length: 0))
+        applyListIndent(levelCount: currentLevel, paragraphRange: newParagraphRange)
         pendingListIndentOnReturn = false
+        pendingListIndentTargetLevel = nil
         return true
     }
 
@@ -8014,7 +8054,9 @@ extension EditorViewController: NSTextViewDelegate {
 
     private func isCurrentPositionInTable() -> Bool {
         guard let textStorage = textView?.textStorage else { return false }
-        let location = textView.selectedRange().location
+        guard textStorage.length > 0 else { return false }
+        let selection = textView.selectedRange()
+        let location = min(selection.location, max(0, textStorage.length - 1))
         guard location < textStorage.length else { return false }
 
         let attrs = textStorage.attributes(at: location, effectiveRange: nil)
@@ -8031,7 +8073,9 @@ extension EditorViewController: NSTextViewDelegate {
 
     private func isCurrentPositionInColumns() -> Bool {
         guard let textStorage = textView?.textStorage else { return false }
-        let location = textView.selectedRange().location
+        guard textStorage.length > 0 else { return false }
+        let selection = textView.selectedRange()
+        let location = min(selection.location, max(0, textStorage.length - 1))
         guard location < textStorage.length else { return false }
 
         let attrs = textStorage.attributes(at: location, effectiveRange: nil)
@@ -8108,6 +8152,7 @@ extension EditorViewController: NSTextViewDelegate {
         guard !suppressTextChangeNotifications else { return }
 
         pendingListIndentOnReturn = false
+        pendingListIndentTargetLevel = nil
 
         showImageControlsIfNeeded()
 
@@ -8128,10 +8173,15 @@ private extension EditorViewController {
         guard delta != 0 else { return false }
         let scheme = QuillPilotSettings.numberingScheme
         guard let textStorage = textView.textStorage else { return false }
+        guard textStorage.length > 0 else { return false }
         guard let selectedRange = textView.selectedRanges.first?.rangeValue else { return false }
 
         let fullText = textStorage.string as NSString
-        let paragraphsRange = fullText.paragraphRange(for: selectedRange)
+        let safeLocation = min(selectedRange.location, max(0, textStorage.length - 1))
+        let safeRange = NSRange(location: safeLocation, length: selectedRange.length)
+        let paragraphsRange = fullText.paragraphRange(for: safeRange)
+        guard paragraphsRange.location < textStorage.length else { return false }
+        guard paragraphsRange.length > 0 else { return false }
 
         var paragraphs: [(range: NSRange, text: String)] = []
         fullText.enumerateSubstrings(in: paragraphsRange, options: [.byParagraphs, .substringNotRequired]) { _, subrange, _, _ in

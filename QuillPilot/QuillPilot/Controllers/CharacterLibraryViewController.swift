@@ -20,6 +20,8 @@ class CharacterLibraryViewController: NSViewController {
     private var characterListHeaderLabel: NSTextField?
     private var characterListHeaderView: NSStackView?
     private var characterListAddButton: NSButton?
+    private var detailSaveButton: NSButton?
+    private var detailDeleteButton: NSButton?
 
     // Detail view controls
     private var detailScrollView: NSScrollView!
@@ -43,6 +45,12 @@ class CharacterLibraryViewController: NSViewController {
     private var connectionsField: NSTextView!
     private var quotesField: NSTextView!
     private var notesField: NSTextView!
+
+    // Keep row widths aligned to the visible stack content area (stack bounds minus edgeInsets).
+    private var detailContentWidthOffset: CGFloat {
+        guard let stack = detailContentStack else { return 0 }
+        return -(stack.edgeInsets.left + stack.edgeInsets.right)
+    }
 
     override func loadView() {
         view = NSView()
@@ -135,11 +143,11 @@ class CharacterLibraryViewController: NSViewController {
         splitContainer.addArrangedSubview(detailView)
 
         NSLayoutConstraint.activate([
-            splitContainer.topAnchor.constraint(equalTo: view.topAnchor),
-            splitContainer.leadingAnchor.constraint(equalTo: view.leadingAnchor),
-            splitContainer.trailingAnchor.constraint(equalTo: view.trailingAnchor),
-            splitContainer.bottomAnchor.constraint(equalTo: view.bottomAnchor),
-            listPanel.widthAnchor.constraint(equalToConstant: 200),
+            splitContainer.topAnchor.constraint(equalTo: view.topAnchor, constant: 18),
+            splitContainer.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 18),
+            splitContainer.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -18),
+            splitContainer.bottomAnchor.constraint(equalTo: view.bottomAnchor, constant: -18),
+            listPanel.widthAnchor.constraint(equalToConstant: 220),
             separator.widthAnchor.constraint(equalToConstant: 1)
         ])
     }
@@ -153,9 +161,13 @@ class CharacterLibraryViewController: NSViewController {
         header.translatesAutoresizingMaskIntoConstraints = false
         header.orientation = .horizontal
         header.spacing = 8
-        header.edgeInsets = NSEdgeInsets(top: 8, left: 12, bottom: 8, right: 12)
+        header.edgeInsets = NSEdgeInsets(top: 8, left: 18, bottom: 8, right: 12)
         header.wantsLayer = true
         header.layer?.backgroundColor = currentTheme.pageAround.cgColor
+        header.layer?.cornerRadius = 8
+        header.layer?.masksToBounds = true
+        header.layer?.borderWidth = 1
+        header.layer?.borderColor = currentTheme.pageBorder.cgColor
 
         let titleLabel = NSTextField(labelWithString: "📚 Characters")
         titleLabel.font = .boldSystemFont(ofSize: 14)
@@ -236,8 +248,9 @@ class CharacterLibraryViewController: NSViewController {
         detailContentStack.translatesAutoresizingMaskIntoConstraints = false
         detailContentStack.orientation = .vertical
         detailContentStack.alignment = .leading
-        detailContentStack.spacing = 16
-        detailContentStack.edgeInsets = NSEdgeInsets(top: 16, left: 16, bottom: 16, right: 16)
+        detailContentStack.spacing = 24
+        // Extra right padding so fields don't run to the edge.
+        detailContentStack.edgeInsets = NSEdgeInsets(top: 34, left: 34, bottom: 34, right: 64)
 
         // Use a flipped document view so content starts at top
         let documentView = FlippedView()
@@ -426,15 +439,27 @@ class CharacterLibraryViewController: NSViewController {
         let titleLabel = NSTextField(labelWithString: character.displayName.isEmpty ? "New Character" : character.displayName)
         titleLabel.font = NSFont.boldSystemFont(ofSize: 18)
         titleLabel.textColor = character.role.color
+        titleLabel.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
         headerStack.addArrangedSubview(titleLabel)
 
         let spacer = NSView()
+        spacer.setContentHuggingPriority(.defaultLow, for: .horizontal)
+        spacer.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
         headerStack.addArrangedSubview(spacer)
+
+        let saveButton = NSButton(title: "Save Changes", target: self, action: #selector(saveCharacterTapped))
+        saveButton.bezelStyle = .rounded
+        saveButton.controlSize = .small
+        saveButton.setContentCompressionResistancePriority(.required, for: .horizontal)
+        headerStack.addArrangedSubview(saveButton)
+        detailSaveButton = saveButton
 
         let deleteButton = NSButton(title: "Delete", target: self, action: #selector(deleteCharacterTapped))
         deleteButton.bezelStyle = .rounded
         deleteButton.controlSize = .small
+        deleteButton.setContentCompressionResistancePriority(.required, for: .horizontal)
         headerStack.addArrangedSubview(deleteButton)
+        detailDeleteButton = deleteButton
 
         detailContentStack.addArrangedSubview(headerStack)
 
@@ -473,14 +498,11 @@ class CharacterLibraryViewController: NSViewController {
         addSection("Notes")
         notesField = addTextArea("Additional Notes", value: character.notes, height: 80)
 
-        let saveButton = NSButton(title: "Save Changes", target: self, action: #selector(saveCharacterTapped))
-        saveButton.bezelStyle = .rounded
-        saveButton.translatesAutoresizingMaskIntoConstraints = false
-        detailContentStack.addArrangedSubview(saveButton)
-
         NSLayoutConstraint.activate([
-            headerStack.widthAnchor.constraint(equalTo: detailContentStack.widthAnchor, constant: -32)
+            headerStack.widthAnchor.constraint(equalTo: detailContentStack.widthAnchor, constant: detailContentWidthOffset)
         ])
+
+        applyFieldTheme()
     }
 
     private func addSection(_ title: String) {
@@ -498,33 +520,47 @@ class CharacterLibraryViewController: NSViewController {
         divider.boxType = .separator
         divider.translatesAutoresizingMaskIntoConstraints = false
         detailContentStack.addArrangedSubview(divider)
-        divider.widthAnchor.constraint(equalTo: detailContentStack.widthAnchor, constant: -32).isActive = true
+        divider.widthAnchor.constraint(equalTo: detailContentStack.widthAnchor, constant: detailContentWidthOffset).isActive = true
     }
 
     private func addTextField(_ label: String, value: String) -> NSTextField {
         let container = NSStackView()
         container.orientation = .horizontal
-        container.spacing = 8
+        container.spacing = 12
         container.alignment = .centerY
+        container.distribution = .fill
         container.translatesAutoresizingMaskIntoConstraints = false
+        container.edgeInsets = NSEdgeInsets(top: 6, left: 0, bottom: 6, right: 0)
 
         let labelView = NSTextField(labelWithString: label + ":")
         labelView.font = .systemFont(ofSize: 12)
         labelView.textColor = currentTheme.popoutSecondaryColor
         labelView.translatesAutoresizingMaskIntoConstraints = false
-        labelView.widthAnchor.constraint(equalToConstant: 120).isActive = true
+        labelView.widthAnchor.constraint(equalToConstant: 140).isActive = true
         container.addArrangedSubview(labelView)
 
         let textField = NSTextField(string: value)
         textField.font = .systemFont(ofSize: 12)
         textField.isEditable = true
-        textField.isBezeled = true
-        textField.bezelStyle = .roundedBezel
+        textField.isBezeled = false
+        textField.isBordered = false
         textField.translatesAutoresizingMaskIntoConstraints = false
+        textField.setContentHuggingPriority(.defaultLow, for: .horizontal)
+        textField.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        textField.widthAnchor.constraint(greaterThanOrEqualToConstant: 220).isActive = true
+        textField.heightAnchor.constraint(equalToConstant: 28).isActive = true
+        textField.textColor = currentTheme.textColor
+        textField.backgroundColor = currentTheme.pageBackground
+        textField.drawsBackground = true
+        textField.focusRingType = .none
+        textField.wantsLayer = true
+        textField.layer?.borderWidth = 1
+        textField.layer?.cornerRadius = 4
+        textField.layer?.borderColor = currentTheme.pageBorder.cgColor
         container.addArrangedSubview(textField)
 
         detailContentStack.addArrangedSubview(container)
-        container.widthAnchor.constraint(equalTo: detailContentStack.widthAnchor, constant: -32).isActive = true
+        container.widthAnchor.constraint(equalTo: detailContentStack.widthAnchor, constant: detailContentWidthOffset).isActive = true
 
         return textField
     }
@@ -534,32 +570,43 @@ class CharacterLibraryViewController: NSViewController {
         labelView.font = .systemFont(ofSize: 12)
         labelView.textColor = currentTheme.popoutSecondaryColor
         detailContentStack.addArrangedSubview(labelView)
+        detailContentStack.setCustomSpacing(6, after: labelView)
 
         let scrollView = NSScrollView()
         scrollView.translatesAutoresizingMaskIntoConstraints = false
         scrollView.hasVerticalScroller = true
         scrollView.hasHorizontalScroller = false
-        scrollView.borderType = .bezelBorder
+        scrollView.borderType = .noBorder
         scrollView.autohidesScrollers = true
+        scrollView.wantsLayer = true
+        scrollView.drawsBackground = true
+        scrollView.backgroundColor = currentTheme.pageBackground
+        scrollView.layer?.borderWidth = 1
+        scrollView.layer?.cornerRadius = 6
+        scrollView.layer?.borderColor = currentTheme.pageBorder.cgColor
+        scrollView.contentInsets = NSEdgeInsets(top: 2, left: 2, bottom: 2, right: 2)
 
         let textView = NSTextView()
         textView.font = .systemFont(ofSize: 12)
         textView.string = value
         textView.isEditable = true
         textView.isRichText = false
-        textView.textContainerInset = NSSize(width: 4, height: 4)
+        textView.textContainerInset = NSSize(width: 8, height: 6)
         textView.isVerticallyResizable = true
         textView.isHorizontallyResizable = false
         textView.autoresizingMask = [.width]
         textView.textContainer?.containerSize = NSSize(width: 0, height: CGFloat.greatestFiniteMagnitude)
         textView.textContainer?.widthTracksTextView = true
+        textView.textColor = currentTheme.textColor
+        textView.backgroundColor = currentTheme.pageBackground
+        textView.insertionPointColor = currentTheme.insertionPointColor
 
         scrollView.documentView = textView
         detailContentStack.addArrangedSubview(scrollView)
 
         NSLayoutConstraint.activate([
             scrollView.heightAnchor.constraint(equalToConstant: height),
-            scrollView.widthAnchor.constraint(equalTo: detailContentStack.widthAnchor, constant: -32)
+            scrollView.widthAnchor.constraint(equalTo: detailContentStack.widthAnchor, constant: detailContentWidthOffset)
         ])
 
         return textView
@@ -568,7 +615,7 @@ class CharacterLibraryViewController: NSViewController {
     private func addRolePopup(_ label: String, selected: CharacterRole) -> NSPopUpButton {
         let container = NSStackView()
         container.orientation = .horizontal
-        container.spacing = 8
+        container.spacing = 12
         container.alignment = .centerY
         container.translatesAutoresizingMaskIntoConstraints = false
 
@@ -576,7 +623,7 @@ class CharacterLibraryViewController: NSViewController {
         labelView.font = .systemFont(ofSize: 12)
         labelView.textColor = currentTheme.popoutSecondaryColor
         labelView.translatesAutoresizingMaskIntoConstraints = false
-        labelView.widthAnchor.constraint(equalToConstant: 120).isActive = true
+        labelView.widthAnchor.constraint(equalToConstant: 140).isActive = true
         container.addArrangedSubview(labelView)
 
         let popup = NSPopUpButton()
@@ -587,10 +634,11 @@ class CharacterLibraryViewController: NSViewController {
         }
         popup.selectItem(withTitle: selected.rawValue)
         popup.qpApplyDropdownBorder(theme: ThemeManager.shared.currentTheme)
+        popup.focusRingType = .none
 
         container.addArrangedSubview(popup)
         detailContentStack.addArrangedSubview(container)
-        container.widthAnchor.constraint(equalTo: detailContentStack.widthAnchor, constant: -32).isActive = true
+        container.widthAnchor.constraint(equalTo: detailContentStack.widthAnchor, constant: detailContentWidthOffset).isActive = true
 
         return popup
     }
@@ -694,100 +742,18 @@ class CharacterLibraryViewController: NSViewController {
     @objc private func deleteCharacterTapped() {
         guard let character = selectedCharacter else { return }
 
-        // Show themed confirmation dialog
-        showThemedDeleteConfirmation(for: character)
-    }
-
-    private func showThemedDeleteConfirmation(for character: CharacterProfile) {
-        let theme = ThemeManager.shared.currentTheme
-        let isDarkMode = ThemeManager.shared.isDarkMode
-
-        // Create custom panel for themed alert
-        let panel = NSPanel(
-            contentRect: NSRect(x: 0, y: 0, width: 340, height: 180),
-            styleMask: [.titled, .closable],
-            backing: .buffered,
-            defer: false
-        )
-        panel.title = ""
-        panel.isFloatingPanel = true
-        panel.becomesKeyOnlyIfNeeded = false
-        panel.backgroundColor = theme.popoutBackground
-        panel.appearance = NSAppearance(named: isDarkMode ? .darkAqua : .aqua)
-
-        let contentView = NSView(frame: panel.contentView!.bounds)
-        contentView.wantsLayer = true
-        contentView.layer?.backgroundColor = theme.popoutBackground.cgColor
-        panel.contentView = contentView
-
-        // Logo image
-        let logoSize: CGFloat = 48
-        let logoView = NSImageView(frame: NSRect(x: 20, y: contentView.bounds.height - logoSize - 20, width: logoSize, height: logoSize))
-        if let feather = NSImage.quillPilotFeatherImage() {
-            logoView.image = feather
-        } else {
-            logoView.image = NSApp.applicationIconImage
+        showThemedConfirmation(
+            title: "Delete Character?",
+            message: "Are you sure you want to delete \(character.displayName)? This cannot be undone.",
+            confirmTitle: "Delete",
+            cancelTitle: "Cancel"
+        ) { [weak self] confirmed in
+            guard let self else { return }
+            guard confirmed else { return }
+            CharacterLibrary.shared.deleteCharacter(character)
+            self.selectedCharacter = nil
+            self.showPlaceholder()
         }
-        logoView.imageScaling = .scaleProportionallyUpOrDown
-        contentView.addSubview(logoView)
-
-        // Title label
-        let titleLabel = NSTextField(labelWithString: "Delete Character?")
-        titleLabel.frame = NSRect(x: 80, y: contentView.bounds.height - 45, width: 240, height: 24)
-        titleLabel.font = NSFont.boldSystemFont(ofSize: 16)
-        titleLabel.textColor = theme.popoutTextColor
-        contentView.addSubview(titleLabel)
-
-        // Info label
-        let infoLabel = NSTextField(labelWithString: "Are you sure you want to delete \(character.displayName)? This cannot be undone.")
-        infoLabel.frame = NSRect(x: 80, y: contentView.bounds.height - 95, width: 240, height: 54)
-        infoLabel.font = NSFont.systemFont(ofSize: 13)
-        infoLabel.textColor = theme.popoutTextColor.withAlphaComponent(0.8)
-        infoLabel.cell?.lineBreakMode = .byWordWrapping
-        infoLabel.maximumNumberOfLines = 3
-        contentView.addSubview(infoLabel)
-
-        // Cancel button
-        let cancelButton = NSButton(title: "Cancel", target: nil, action: nil)
-        cancelButton.bezelStyle = .rounded
-        cancelButton.frame = NSRect(x: contentView.bounds.width - 170, y: 15, width: 70, height: 32)
-        cancelButton.keyEquivalent = "\u{1b}"
-        cancelButton.target = panel
-        cancelButton.action = #selector(NSPanel.close)
-        contentView.addSubview(cancelButton)
-
-        // Delete button
-        let deleteButton = NSButton(title: "Delete", target: nil, action: nil)
-        deleteButton.bezelStyle = .rounded
-        deleteButton.frame = NSRect(x: contentView.bounds.width - 90, y: 15, width: 70, height: 32)
-        deleteButton.keyEquivalent = "\r"
-        deleteButton.action = #selector(handleDeleteConfirmed)
-        deleteButton.target = self
-        contentView.addSubview(deleteButton)
-
-        // Store character and panel for deletion handler
-        self.pendingDeleteCharacter = character
-        self.deleteConfirmationPanel = panel
-
-        // Center and show
-        panel.center()
-        panel.makeKeyAndOrderFront(nil)
-    }
-
-    // Temporary storage for delete confirmation
-    private var pendingDeleteCharacter: CharacterProfile?
-    private var deleteConfirmationPanel: NSPanel?
-
-    @objc private func handleDeleteConfirmed() {
-        guard let character = pendingDeleteCharacter else { return }
-
-        CharacterLibrary.shared.deleteCharacter(character)
-        selectedCharacter = nil
-        showPlaceholder()
-
-        deleteConfirmationPanel?.close()
-        deleteConfirmationPanel = nil
-        pendingDeleteCharacter = nil
     }
 
     func applyTheme(_ theme: AppTheme) {
@@ -813,8 +779,12 @@ class CharacterLibraryViewController: NSViewController {
         }
 
         characterListHeaderView?.layer?.backgroundColor = theme.pageAround.cgColor
+        characterListHeaderView?.layer?.borderWidth = 1
+        characterListHeaderView?.layer?.borderColor = theme.pageBorder.cgColor
         characterListHeaderLabel?.textColor = theme.textColor
-        characterListAddButton?.contentTintColor = theme.textColor
+        if let add = characterListAddButton {
+            styleActionButton(add, theme: theme, primary: false)
+        }
 
         refreshCharacterList()
         if selectedCharacter != nil {
@@ -822,6 +792,48 @@ class CharacterLibraryViewController: NSViewController {
         }
 
         applyFieldTheme()
+
+        // Catch-all: borders for any editable controls outside the detail stack
+        // (e.g., list header controls), so the window is consistent.
+        applyThemeToEditableControls(in: view, theme: theme)
+    }
+
+    private func styleActionButton(_ button: NSButton, theme: AppTheme, primary: Bool) {
+        button.wantsLayer = true
+        button.isBordered = false
+        button.focusRingType = .none
+        button.layer?.cornerRadius = 8
+        button.layer?.borderWidth = 1
+        button.layer?.borderColor = theme.pageBorder.cgColor
+        button.layer?.backgroundColor = (primary ? theme.pageBorder : theme.pageBackground).cgColor
+
+        let titleColor: NSColor = primary ? .white : theme.textColor
+        let font = button.font ?? NSFont.systemFont(ofSize: NSFont.systemFontSize)
+        button.attributedTitle = NSAttributedString(
+            string: button.title,
+            attributes: [
+                .foregroundColor: titleColor,
+                .font: font
+            ]
+        )
+    }
+
+    private func styleTextAreaScrollView(_ scrollView: NSScrollView, theme: AppTheme) {
+        // NSScrollView is sometimes finicky about rendering its own layer border.
+        // Styling the clip view (contentView) is more reliable visually.
+        scrollView.drawsBackground = true
+        scrollView.backgroundColor = theme.pageBackground
+        scrollView.wantsLayer = true
+        scrollView.layer?.backgroundColor = theme.pageBackground.cgColor
+        scrollView.layer?.cornerRadius = 6
+        scrollView.layer?.masksToBounds = false
+
+        scrollView.contentView.wantsLayer = true
+        scrollView.contentView.layer?.backgroundColor = theme.pageBackground.cgColor
+        scrollView.contentView.layer?.borderWidth = 1
+        scrollView.contentView.layer?.cornerRadius = 6
+        scrollView.contentView.layer?.borderColor = theme.pageBorder.cgColor
+        scrollView.contentView.layer?.masksToBounds = true
     }
 
     private func applyFieldTheme() {
@@ -840,10 +852,15 @@ class CharacterLibraryViewController: NSViewController {
         for field in textFields {
             guard let field else { continue }
             field.textColor = theme.textColor
-            field.backgroundColor = theme.pageAround
-            field.isBezeled = true
-            field.bezelStyle = .roundedBezel
+            field.backgroundColor = theme.pageBackground
+            field.isBezeled = false
+            field.isBordered = false
             field.drawsBackground = true
+            field.focusRingType = .none
+            field.wantsLayer = true
+            field.layer?.borderWidth = 1
+            field.layer?.cornerRadius = 4
+            field.layer?.borderColor = theme.pageBorder.cgColor
         }
 
         rolePopup?.qpApplyDropdownBorder(theme: theme)
@@ -865,16 +882,77 @@ class CharacterLibraryViewController: NSViewController {
         for textView in textAreas {
             guard let textView else { continue }
             textView.textColor = theme.textColor
-            textView.backgroundColor = theme.pageAround
+            textView.backgroundColor = theme.pageBackground
             textView.insertionPointColor = theme.insertionPointColor
+            if let scrollView = textView.enclosingScrollView {
+                styleTextAreaScrollView(scrollView, theme: theme)
+            } else {
+                textView.wantsLayer = true
+                textView.layer?.borderWidth = 1
+                textView.layer?.cornerRadius = 6
+                textView.layer?.borderColor = theme.pageBorder.cgColor
+            }
+        }
+
+        // Catch-all: ensure EVERY editable control in the detail panel is themed.
+        // This prevents "some fields have borders, others don't" when controls are
+        // created/recreated or not referenced by stored properties.
+        if let root = detailContentStack {
+            applyThemeToEditableControls(in: root, theme: theme)
+        }
+
+        if let save = detailSaveButton {
+            styleActionButton(save, theme: theme, primary: false)
+        }
+        if let del = detailDeleteButton {
+            styleActionButton(del, theme: theme, primary: true)
+        }
+    }
+
+    private func applyThemeToEditableControls(in root: NSView, theme: AppTheme) {
+        // NSTextField (editable inputs)
+        if let field = root as? NSTextField, field.isEditable {
+            field.textColor = theme.textColor
+            field.backgroundColor = theme.pageBackground
+            field.isBezeled = false
+            field.isBordered = false
+            field.drawsBackground = true
+            field.focusRingType = .none
+            field.wantsLayer = true
+            field.layer?.borderWidth = 1
+            field.layer?.cornerRadius = 4
+            field.layer?.borderColor = theme.pageBorder.cgColor
+        }
+
+        // Dropdowns
+        if let popup = root as? NSPopUpButton {
+            popup.qpApplyDropdownBorder(theme: theme)
+            popup.focusRingType = .none
+        }
+
+        // Text areas (NSTextView typically inside an NSScrollView)
+        if let scrollView = root as? NSScrollView,
+           let textView = scrollView.documentView as? NSTextView {
+            textView.textColor = theme.textColor
+            textView.backgroundColor = theme.pageBackground
+            textView.insertionPointColor = theme.insertionPointColor
+
+            styleTextAreaScrollView(scrollView, theme: theme)
+        }
+
+        for subview in root.subviews {
+            applyThemeToEditableControls(in: subview, theme: theme)
         }
     }
 
     private func updateAllSubviewBackgrounds(_ view: NSView, theme: AppTheme) {
-        view.wantsLayer = true
-        // Set background for containers but not for controls like buttons
-        if !(view is NSButton) && !(view is NSTextField) && !(view is NSPopUpButton) && !(view is NSTextView) {
-            view.layer?.backgroundColor = theme.popoutBackground.cgColor
+        // Avoid painting empty spacer views (they create odd "boxes" in layouts).
+        if !view.subviews.isEmpty {
+            view.wantsLayer = true
+            // Set background for containers but not for controls like buttons
+            if !(view is NSButton) && !(view is NSTextField) && !(view is NSPopUpButton) && !(view is NSTextView) {
+                view.layer?.backgroundColor = theme.popoutBackground.cgColor
+            }
         }
         for subview in view.subviews {
             updateAllSubviewBackgrounds(subview, theme: theme)

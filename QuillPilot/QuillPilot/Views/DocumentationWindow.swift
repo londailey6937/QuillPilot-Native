@@ -33,6 +33,7 @@ class DocumentationWindowController: NSWindowController, NSWindowDelegate {
         private var tabBarStack: NSStackView?
         private var tabButtonsByIdentifier: [String: NSButton] = [:]
         private var themeObserver: NSObjectProtocol?
+        private var keyDownMonitor: Any?
 
     convenience init() {
                 let window = NSWindow(
@@ -50,6 +51,19 @@ class DocumentationWindowController: NSWindowController, NSWindowDelegate {
         setupUI()
         loadDocumentation()
 
+                keyDownMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+                        guard let self,
+                              let window = self.window,
+                              window.isKeyWindow else { return event }
+                        if event.modifierFlags.contains(.command),
+                           let chars = event.charactersIgnoringModifiers,
+                           chars.lowercased() == "w" {
+                                window.performClose(nil)
+                                return nil
+                        }
+                        return event
+                }
+
                 themeObserver = NotificationCenter.default.addObserver(
                         forName: .themeDidChange,
                         object: nil,
@@ -62,6 +76,16 @@ class DocumentationWindowController: NSWindowController, NSWindowDelegate {
         deinit {
                 if let themeObserver {
                         NotificationCenter.default.removeObserver(themeObserver)
+                }
+                if let keyDownMonitor {
+                        NSEvent.removeMonitor(keyDownMonitor)
+                }
+        }
+
+        func windowWillClose(_ notification: Notification) {
+                searchField?.stringValue = ""
+                for view in textViews {
+                        view.setSelectedRange(NSRange(location: 0, length: 0))
                 }
         }
 
@@ -516,6 +540,14 @@ Character Library entries are saved per document as a sidecar JSON file next to 
 MyStory.docx.characters.json
 
 If you delete these files, Quill Pilot will treat that data as empty for the affected document.
+""", color: bodyColor))
+        content.append(makeNewline())
+
+        content.append(makeSubheading("📦 Working Format: RTFD (Recommended)", color: headingColor))
+        content.append(makeBody("""
+RTFD is a macOS-native rich-text format stored as a package (a folder that looks like a single file). It preserves text styling and embedded images reliably, and is usually the best choice while drafting in QuillPilot.
+
+For sharing, collaboration, or cross-platform editing, exporting is often better than distributing your working RTFD. Use Export to generate Word (.docx), OpenDocument (.odt), PDF, HTML, or plain text depending on where the document needs to go.
 """, color: bodyColor))
 
         content.append(makeHeading("Who QuillPilot Is For", color: headingColor))
@@ -1778,14 +1810,6 @@ Note: Auto-save runs periodically for saved documents (default 1 minute; configu
 """, color: bodyColor))
         content.append(makeNewline())
 
-        content.append(makeSubheading("📦 Working Format: RTFD (Recommended)", color: headingColor))
-        content.append(makeBody("""
-RTFD is a macOS-native rich-text format stored as a package (a folder that looks like a single file). It preserves text styling and embedded images reliably, and is usually the best choice while drafting in QuillPilot.
-
-For sharing, collaboration, or cross-platform editing, exporting is often better than distributing your working RTFD. Use Export to generate Word (.docx), OpenDocument (.odt), PDF, HTML, or plain text depending on where the document needs to go.
-""", color: bodyColor))
-        content.append(makeNewline())
-
         content.append(makeSubheading("✂️ Editing", color: headingColor))
         content.append(makeBody("""
 ⌘Z - Undo
@@ -1794,7 +1818,7 @@ For sharing, collaboration, or cross-platform editing, exporting is often better
 ⌘C - Copy
 ⌘V - Paste
 ⌘A - Select All
-⌘F - Find & Replace
+⌘F - Find & Replace (opens the Find panel)
 """, color: bodyColor))
         content.append(makeNewline())
 
@@ -1808,7 +1832,6 @@ For sharing, collaboration, or cross-platform editing, exporting is often better
 ⌘] - Align right
 ⌘\\ - Align center
 ⌘E - Center text
-⌘{ - Decrease indent
 ⌘} - Increase indent
 
 Format menu:
@@ -1958,6 +1981,77 @@ The image is removed from the original location and inserted at the new position
 """, color: bodyColor))
         content.append(makeNewline())
 
+        content.append(makeHeading("Format Painter", color: headingColor))
+        content.append(makeBody("""
+Use the paintbrush button to copy formatting from one selection and apply it to another.
+
+How to use
+• Select text with the formatting you want.
+• Click Format Painter, then select the target text.
+• The formatting is applied once and the tool turns off.
+
+Tips
+• Best for copying mixed formatting (font, size, paragraph style, inline bold/italic).
+• Use it before or after applying a catalog style to fix small mismatches.
+""", color: bodyColor))
+        content.append(makeNewline())
+
+        content.append(makeHeading("Sidebar Toggle", color: headingColor))
+        content.append(makeBody("""
+Use the sidebar button to show or hide both sidebars (left navigation + right panels).
+
+Tips
+• Hide the sidebar for a distraction-free writing space.
+• Reopen it when you need navigation or analysis panels.
+""", color: bodyColor))
+        content.append(makeNewline())
+
+        content.append(makeHeading("Style Editor", color: headingColor))
+        content.append(makeBody("""
+Use the style editor button to open the Style Editor and customize the current template.
+
+What it does
+• Edit font, size, spacing, and indents for each style.
+• Save changes to your active template.
+
+Tips
+• Start with Body Text, then adjust headings and chapter styles to match.
+• Use small, consistent changes to preserve layout across the manuscript.
+• To remove overrides and return to defaults, use Reset Template Overrides in Preferences.
+""", color: bodyColor))
+        content.append(makeNewline())
+
+        content.append(makeHeading("Find & Replace", color: headingColor))
+        content.append(makeBody("""
+Use the Find & Replace button in the toolbar (or Edit → Find & Replace…, ⌘F) to open the search panel.
+
+What you can do
+• Find next/previous occurrences
+• Replace single matches or Replace All
+• Go to Page: jump to a specific page number and see current page info
+""", color: bodyColor))
+        content.append(makeNewline())
+
+        content.append(makeHeading("Indentation", color: headingColor))
+        content.append(makeBody("""
+Use the increase/decrease indent buttons to adjust paragraph indentation.
+
+Tips
+• ⌘} increases indent
+• Indentation affects the current paragraph or selected paragraphs
+""", color: bodyColor))
+        content.append(makeNewline())
+
+        content.append(makeHeading("Bulleted Lists", color: headingColor))
+        content.append(makeBody("""
+Use the bulleted list button (or Format → Lists → Bulleted List) to toggle bullets.
+
+Tips
+• Press Return to continue bullets
+• Press Return on an empty bullet to end the list
+""", color: bodyColor))
+        content.append(makeNewline())
+
         content.append(makeHeading("Columns", color: headingColor))
         content.append(makeBody("""
 Use the columns button (⫼) to create multi-column layouts.
@@ -2003,18 +2097,10 @@ Numbering styles (Preferences → Numbering style):
         content.append(makeSubheading("Indenting (Creating Sub-levels)", color: headingColor))
         content.append(makeBody("""
 • Press Tab while the cursor is on a numbered line
-• The next Return creates a sub-level on the next line
-• The caret stays on the indented line so you can keep typing
+• Tab does not change the current line — it queues the next Return to create a sub-level
+• Press Return to create the indented sub-item on the next line
 • You can nest multiple levels (1.1.1.1, etc.)
 • Lettered lists alternate case by level (A → a → A …)
-""", color: bodyColor))
-        content.append(makeNewline())
-        content.append(makeNewline())
-
-        content.append(makeSubheading("Outdenting (Removing Sub-levels)", color: headingColor))
-        content.append(makeBody("""
-• Press Shift-Tab to outdent a numbered item
-• This removes one level of nesting (e.g., 2.1. → 2.)
 """, color: bodyColor))
         content.append(makeNewline())
         content.append(makeNewline())
@@ -2048,7 +2134,7 @@ Numbering styles (Preferences → Numbering style):
         content.append(makeSubheading("Tips", color: headingColor))
         content.append(makeBody("""
 • Configure auto-numbering behavior in Preferences
-• Use Tab/Shift-Tab to quickly organize hierarchical lists
+• Use Tab to quickly organize hierarchical lists
 • Empty line + Return exits the list automatically
 """, color: bodyColor))
 
@@ -2128,6 +2214,7 @@ Notes:
 • Switching templates changes which style definitions are available; it doesn’t automatically rewrite existing paragraphs unless you apply styles.
 • TOC/Index insertion uses your current template’s typography.
 • Import note: Import justification can depend on the active template when the imported text doesn’t include reliable paragraph styles. In those cases, QuillPilot fills the gaps using the current template’s defaults.
+• When you open a document, QuillPilot applies the currently selected template even if the document was saved with a different template.
 """, color: bodyColor))
 
                 normalizeAppNameInDocumentation(content)

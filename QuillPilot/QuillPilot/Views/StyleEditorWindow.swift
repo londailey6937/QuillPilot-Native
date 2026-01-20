@@ -8,7 +8,7 @@ final class StyleEditorWindowController: NSWindowController {
     init(editor: StyleEditorPresenter) {
         let viewController = StyleEditorViewController(editor: editor)
         let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 520, height: 620),
+            contentRect: NSRect(x: 0, y: 0, width: 560, height: 680),
             styleMask: [.titled, .closable],
             backing: .buffered,
             defer: false
@@ -36,7 +36,9 @@ final class StyleEditorViewController: NSViewController {
     private var italicCheckbox: NSButton!
     private var textColorWell: NSColorWell!
     private var backgroundColorWell: NSColorWell!
-    private var alignmentSegment: NSSegmentedControl!
+    private var alignmentButtons: [NSButton] = []
+    private var alignmentButtonStack: NSStackView!
+    private var alignmentSelectedIndex: Int = 0
     private var lineHeightField: NSTextField!
     private var beforeField: NSTextField!
     private var afterField: NSTextField!
@@ -44,6 +46,10 @@ final class StyleEditorViewController: NSViewController {
     private var firstLineField: NSTextField!
     private var tailIndentField: NSTextField!
     private var preview: NSTextView!
+    private var previewContainer: NSScrollView!
+    private var applyButton: NSButton!
+    private var resetButton: NSButton!
+    private var closeButton: NSButton!
 
     init(editor: StyleEditorPresenter) {
         self.editor = editor
@@ -72,11 +78,13 @@ final class StyleEditorViewController: NSViewController {
         templatePopup.target = self
         templatePopup.action = #selector(templateChanged)
         templatePopup.qpApplyDropdownBorder(theme: theme)
+        templatePopup.focusRingType = .none
 
         stylePopup = NSPopUpButton()
         stylePopup.target = self
         stylePopup.action = #selector(styleChanged)
         stylePopup.qpApplyDropdownBorder(theme: theme)
+        stylePopup.focusRingType = .none
 
         fontPopup = NSPopUpButton()
         fontPopup.addItems(withTitles: [
@@ -91,17 +99,50 @@ final class StyleEditorViewController: NSViewController {
             "SF Pro"
         ])
         fontPopup.qpApplyDropdownBorder(theme: theme)
+        fontPopup.focusRingType = .none
 
         sizeField = NSTextField(string: "12")
         sizeField.controlSize = .small
+        sizeField.focusRingType = .none
 
         boldCheckbox = NSButton(checkboxWithTitle: "Bold", target: nil, action: nil)
+        boldCheckbox.focusRingType = .none
         italicCheckbox = NSButton(checkboxWithTitle: "Italic", target: nil, action: nil)
+        italicCheckbox.focusRingType = .none
 
         textColorWell = NSColorWell()
+        textColorWell.focusRingType = .none
+        textColorWell.wantsLayer = true
+        textColorWell.layer?.borderWidth = 1
+        textColorWell.layer?.cornerRadius = 6
+        textColorWell.layer?.borderColor = theme.pageBorder.cgColor
         backgroundColorWell = NSColorWell()
+        backgroundColorWell.focusRingType = .none
+        backgroundColorWell.wantsLayer = true
+        backgroundColorWell.layer?.borderWidth = 1
+        backgroundColorWell.layer?.cornerRadius = 6
+        backgroundColorWell.layer?.borderColor = theme.pageBorder.cgColor
 
-        alignmentSegment = NSSegmentedControl(labels: ["Left", "Center", "Right", "Just"], trackingMode: .selectOne, target: self, action: #selector(alignmentChanged))
+        alignmentButtons = ["Left", "Center", "Right", "Just"].enumerated().map { index, title in
+            let button = NSButton(title: title, target: self, action: #selector(alignmentButtonTapped(_:)))
+            button.tag = index
+            button.setButtonType(.toggle)
+            button.isBordered = false
+            button.focusRingType = .none
+            button.wantsLayer = true
+            button.layer?.borderWidth = 1
+            button.layer?.cornerRadius = 6
+            button.translatesAutoresizingMaskIntoConstraints = false
+            button.heightAnchor.constraint(equalToConstant: 24).isActive = true
+            return button
+        }
+
+        alignmentButtonStack = NSStackView(views: alignmentButtons)
+        alignmentButtonStack.orientation = .horizontal
+        alignmentButtonStack.alignment = .centerY
+        alignmentButtonStack.distribution = .fillEqually
+        alignmentButtonStack.spacing = 6
+        alignmentButtonStack.translatesAutoresizingMaskIntoConstraints = false
 
         lineHeightField = NSTextField(string: "2.0")
         beforeField = NSTextField(string: "0")
@@ -109,6 +150,9 @@ final class StyleEditorViewController: NSViewController {
         headIndentField = NSTextField(string: "0")
         firstLineField = NSTextField(string: "36")
         tailIndentField = NSTextField(string: "0")
+        [lineHeightField, beforeField, afterField, headIndentField, firstLineField, tailIndentField].forEach { field in
+            field.focusRingType = .none
+        }
 
         preview = NSTextView(frame: NSRect(x: 0, y: 0, width: 480, height: 180))
         preview.isEditable = false
@@ -133,7 +177,7 @@ final class StyleEditorViewController: NSViewController {
             [NSTextField(labelWithString: "Italic:"), italicCheckbox],
             [NSTextField(labelWithString: "Text Color:"), textColorWell],
             [NSTextField(labelWithString: "Background:"), backgroundColorWell],
-            [NSTextField(labelWithString: "Alignment:"), alignmentSegment],
+            [NSTextField(labelWithString: "Alignment:"), alignmentButtonStack],
             [NSTextField(labelWithString: "Line Height:"), lineHeightField],
             [NSTextField(labelWithString: "Before:"), beforeField],
             [NSTextField(labelWithString: "After:"), afterField],
@@ -144,18 +188,31 @@ final class StyleEditorViewController: NSViewController {
         grid.rowSpacing = 6
         grid.columnSpacing = 8
 
-        let previewContainer = NSScrollView()
+        previewContainer = NSScrollView()
         previewContainer.hasVerticalScroller = true
         previewContainer.drawsBackground = true
         previewContainer.backgroundColor = theme.pageAround
         previewContainer.documentView = preview
-        previewContainer.borderType = .bezelBorder
+        previewContainer.borderType = .noBorder
+        previewContainer.wantsLayer = true
+        previewContainer.layer?.borderWidth = 1
+        previewContainer.layer?.cornerRadius = 6
+        previewContainer.layer?.borderColor = theme.pageBorder.cgColor
         previewContainer.translatesAutoresizingMaskIntoConstraints = false
         previewContainer.heightAnchor.constraint(equalToConstant: 180).isActive = true
 
-        let applyButton = NSButton(title: "Apply to Selection", target: self, action: #selector(applyTapped))
-        let resetButton = NSButton(title: "Reset to Default", target: self, action: #selector(resetTapped))
-        let closeButton = NSButton(title: "Close", target: self, action: #selector(closeTapped))
+        applyButton = NSButton(title: "Apply to Selection", target: self, action: #selector(applyTapped))
+        resetButton = NSButton(title: "Reset to Default", target: self, action: #selector(resetTapped))
+        closeButton = NSButton(title: "Close", target: self, action: #selector(closeTapped))
+        [applyButton, resetButton, closeButton].forEach { button in
+            button?.focusRingType = .none
+            button?.isBordered = false
+            button?.wantsLayer = true
+            button?.layer?.borderWidth = 1
+            button?.layer?.cornerRadius = 6
+            button?.layer?.backgroundColor = theme.pageAround.cgColor
+            button?.layer?.borderColor = theme.pageBorder.cgColor
+        }
 
         let buttonStack = NSStackView(views: [applyButton, resetButton, closeButton])
         buttonStack.orientation = .horizontal
@@ -165,20 +222,21 @@ final class StyleEditorViewController: NSViewController {
         let vStack = NSStackView(views: [grid, previewContainer, buttonStack])
         vStack.orientation = .vertical
         vStack.spacing = 12
-        vStack.edgeInsets = NSEdgeInsets(top: 12, left: 12, bottom: 12, right: 12)
         vStack.translatesAutoresizingMaskIntoConstraints = false
 
         view.addSubview(vStack)
         NSLayoutConstraint.activate([
-            vStack.topAnchor.constraint(equalTo: view.topAnchor),
-            vStack.leadingAnchor.constraint(equalTo: view.leadingAnchor),
-            vStack.trailingAnchor.constraint(equalTo: view.trailingAnchor),
-            vStack.bottomAnchor.constraint(equalTo: view.bottomAnchor)
+            vStack.topAnchor.constraint(equalTo: view.topAnchor, constant: 26),
+            vStack.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 26),
+            vStack.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -26),
+            vStack.bottomAnchor.constraint(equalTo: view.bottomAnchor, constant: -26)
         ])
 
         reloadTemplates()
         reloadStyles()
         loadCurrentStyle()
+        setAlignmentSelectedIndex(alignmentSelectedIndex)
+        applyTheme(theme)
 
         // Live theme updates (so borders/backgrounds follow theme changes).
         themeObserver = NotificationCenter.default.addObserver(
@@ -197,8 +255,60 @@ final class StyleEditorViewController: NSViewController {
         stylePopup?.qpApplyDropdownBorder(theme: theme)
         fontPopup?.qpApplyDropdownBorder(theme: theme)
 
+        applyAlignmentButtonTheme(theme)
+
         preview?.textColor = theme.textColor
         preview?.backgroundColor = theme.pageBackground
+        previewContainer?.backgroundColor = theme.pageAround
+        previewContainer?.layer?.borderColor = theme.pageBorder.cgColor
+        textColorWell?.layer?.borderColor = theme.pageBorder.cgColor
+        backgroundColorWell?.layer?.borderColor = theme.pageBorder.cgColor
+
+        let fieldBackground = theme.pageBackground
+        let borderColor = theme.pageBorder.cgColor
+        let fields: [NSTextField?] = [sizeField, lineHeightField, beforeField, afterField, headIndentField, firstLineField, tailIndentField]
+        for field in fields {
+            guard let field else { continue }
+            field.textColor = theme.textColor
+            field.backgroundColor = fieldBackground
+            field.isBezeled = false
+            field.isBordered = false
+            field.drawsBackground = true
+            field.wantsLayer = true
+            field.layer?.borderWidth = 1
+            field.layer?.cornerRadius = 4
+            field.layer?.borderColor = borderColor
+        }
+
+        let buttons: [NSButton?] = [applyButton, resetButton, closeButton]
+        for button in buttons {
+            guard let button else { continue }
+            let font = button.font ?? NSFont.systemFont(ofSize: NSFont.systemFontSize)
+            button.attributedTitle = NSAttributedString(
+                string: button.title,
+                attributes: [
+                    .foregroundColor: theme.textColor,
+                    .font: font
+                ]
+            )
+            button.layer?.borderColor = theme.pageBorder.cgColor
+            // Ensure the background updates with theme changes (prevents white buttons with white text in Night mode).
+            button.layer?.backgroundColor = theme.pageBackground.cgColor
+        }
+
+        let checkboxes: [NSButton?] = [boldCheckbox, italicCheckbox]
+        for checkbox in checkboxes {
+            guard let checkbox else { continue }
+            let font = checkbox.font ?? NSFont.systemFont(ofSize: NSFont.systemFontSize)
+            checkbox.attributedTitle = NSAttributedString(
+                string: checkbox.title,
+                attributes: [
+                    .foregroundColor: theme.textColor,
+                    .font: font
+                ]
+            )
+        }
+
     }
 
     private func reloadTemplates() {
@@ -243,7 +353,7 @@ final class StyleEditorViewController: NSViewController {
         } else {
             backgroundColorWell.color = .clear
         }
-        alignmentSegment.selectedSegment = segmentIndex(for: def.alignmentRawValue)
+        setAlignmentSelectedIndex(segmentIndex(for: def.alignmentRawValue))
         lineHeightField.stringValue = String(format: "%.2f", def.lineHeightMultiple)
         beforeField.stringValue = String(format: "%.1f", def.spacingBefore)
         afterField.stringValue = String(format: "%.1f", def.spacingAfter)
@@ -260,7 +370,7 @@ final class StyleEditorViewController: NSViewController {
         let isItalic = italicCheckbox.state == .on
         let textHex = hex(from: textColorWell.color)
         let bgHex = backgroundColorWell.color.alphaComponent > 0 ? hex(from: backgroundColorWell.color) : nil
-        let alignment = alignmentValue(for: alignmentSegment.selectedSegment)
+        let alignment = alignmentValue(for: alignmentSelectedIndex)
         let lineHeight = CGFloat(max(0.5, lineHeightField.doubleValue))
         let before = CGFloat(beforeField.doubleValue)
         let after = CGFloat(afterField.doubleValue)
@@ -298,6 +408,9 @@ final class StyleEditorViewController: NSViewController {
         if def.isBold {
             font = NSFontManager.shared.convert(font, toHaveTrait: .boldFontMask)
         }
+        let theme = ThemeManager.shared.currentTheme
+        backgroundColorWell.layer?.backgroundColor = theme.pageBackground.cgColor
+        textColorWell.layer?.backgroundColor = theme.pageBackground.cgColor
         if def.isItalic {
             font = NSFontManager.shared.convert(font, toHaveTrait: .italicFontMask)
         }
@@ -327,8 +440,33 @@ final class StyleEditorViewController: NSViewController {
         loadCurrentStyle()
     }
 
-    @objc private func alignmentChanged() {
-        // no-op; alignment stored when saving
+    @objc private func alignmentButtonTapped(_ sender: NSButton) {
+        setAlignmentSelectedIndex(sender.tag)
+    }
+
+    private func setAlignmentSelectedIndex(_ index: Int) {
+        alignmentSelectedIndex = max(0, min(3, index))
+        alignmentButtons.enumerated().forEach { idx, button in
+            button.state = (idx == alignmentSelectedIndex) ? .on : .off
+        }
+        applyAlignmentButtonTheme(ThemeManager.shared.currentTheme)
+    }
+
+    private func applyAlignmentButtonTheme(_ theme: AppTheme) {
+        for (idx, button) in alignmentButtons.enumerated() {
+            let isSelected = idx == alignmentSelectedIndex
+            button.layer?.borderColor = theme.pageBorder.cgColor
+            button.layer?.backgroundColor = (isSelected ? theme.pageBorder : theme.pageBackground).cgColor
+            let titleColor: NSColor = isSelected ? .white : theme.textColor
+            let font = button.font ?? NSFont.systemFont(ofSize: NSFont.systemFontSize)
+            button.attributedTitle = NSAttributedString(
+                string: button.title,
+                attributes: [
+                    .foregroundColor: titleColor,
+                    .font: font
+                ]
+            )
+        }
     }
 
     @objc private func applyTapped() {

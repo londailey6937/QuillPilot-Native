@@ -203,6 +203,45 @@ final class StyleCatalog {
         currentTemplateName.lowercased().contains("poetry")
     }
 
+    func style(named name: String, inTemplate templateName: String) -> StyleDefinition? {
+        let isPoetry = templateName.lowercased().contains("poetry")
+        let candidateNames: [String]
+        if isPoetry {
+            switch name {
+            case "Verse":
+                candidateNames = ["Verse", "Body Text – No Indent", "Body Text"]
+            case "Stanza", "Poem", "Body Text", "Body Text – No Indent", "Poetry — Verse", "Poetry — Stanza":
+                candidateNames = ["Verse", "Body Text – No Indent", "Body Text", name]
+            default:
+                candidateNames = [name]
+            }
+        } else {
+            candidateNames = [name]
+        }
+
+        let overrides = loadOverrides(for: templateName)
+        for key in candidateNames {
+            if let override = overrides[key] {
+                return override
+            }
+        }
+        for key in candidateNames {
+            if let def = templates[templateName]?.styles[key] {
+                return def
+            }
+        }
+        return nil
+    }
+
+    func templateName(containingStyleName styleName: String) -> String? {
+        for (name, template) in templates {
+            if template.styles[styleName] != nil {
+                return name
+            }
+        }
+        return nil
+    }
+
     func style(named name: String) -> StyleDefinition? {
         // Poetry model:
         // - Poem is structural (container) and should not define writer-facing appearance.

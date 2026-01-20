@@ -2683,7 +2683,7 @@ class FormattingToolbar: NSView {
         stylePopup.toolTip = "Paragraph Style"
         stylePopup.setAccessibilityLabel("Paragraph Style")
 
-        editStylesButton = createToolbarButton("Edit…")
+        editStylesButton = createToolbarButton("Style Editor")
         editStylesButton.target = self
         editStylesButton.action = #selector(openStyleEditorTapped)
         editStylesButton.toolTip = "Open Style Editor"
@@ -4539,10 +4539,12 @@ enum ExportFormat: String, CaseIterable {
 
 // MARK: - DOCX Style Sheet Builder
 private enum StyleSheetBuilder {
-    static func makeStylesXml() -> String {
+    static func makeStylesXml(using styleNames: [String]) -> String {
         let catalog = StyleCatalog.shared
         // Export must include hidden/legacy keys too so style IDs round-trip correctly.
-        let names = catalog.allStyleKeys(for: catalog.currentTemplateName)
+        let names = styleNames.isEmpty
+            ? catalog.allStyleKeys(for: catalog.currentTemplateName)
+            : styleNames
 
         var styleNodes: [String] = []
 
@@ -4565,7 +4567,9 @@ private enum StyleSheetBuilder {
         """)
 
         for name in names {
-            guard let def = catalog.style(named: name) else { continue }
+            let def = catalog.style(named: name)
+                ?? catalog.templateName(containingStyleName: name).flatMap { catalog.style(named: name, inTemplate: $0) }
+            guard let def else { continue }
             let styleId = name.components(separatedBy: CharacterSet.alphanumerics.inverted).joined()
             if styleId == "Normal" { continue } // Skip if user named a style Normal (unlikely but safe)
 
@@ -4698,7 +4702,8 @@ private enum DocxBuilder {
         // First pass: collect images and generate document XML
         var images: [ImageInfo] = []
         let documentXml = makeDocumentXml(from: attributed, images: &images)
-        let stylesXml = StyleSheetBuilder.makeStylesXml()
+        let usedStyleNames = collectStyleNames(from: attributed)
+        let stylesXml = StyleSheetBuilder.makeStylesXml(using: usedStyleNames)
 
         // Build content types with image extensions
         var defaultTypes = """
@@ -4784,6 +4789,23 @@ private enum DocxBuilder {
           </w:body>
         </w:document>
         """
+    }
+
+    private static func collectStyleNames(from attributed: NSAttributedString) -> [String] {
+        let fullString = attributed.string as NSString
+        var location = 0
+        var names = Set<String>()
+
+        while location < fullString.length {
+            let paragraphRange = fullString.paragraphRange(for: NSRange(location: location, length: 0))
+            if let styleName = attributed.attribute(NSAttributedString.Key("QuillStyleName"), at: paragraphRange.location, effectiveRange: nil) as? String,
+               !styleName.isEmpty {
+                names.insert(styleName)
+            }
+            location = NSMaxRange(paragraphRange)
+        }
+
+        return names.sorted()
     }
 
     private static func makeParagraphs(from attributed: NSAttributedString, images: inout [ImageInfo]) -> String {

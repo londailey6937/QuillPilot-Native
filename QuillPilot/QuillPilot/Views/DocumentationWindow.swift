@@ -119,7 +119,7 @@ class DocumentationWindowController: NSWindowController, NSWindowDelegate {
         tabView.tabViewType = .noTabsNoBorder
 
         // Create tabs
-        createTab(title: "❓ Why Quill Pilot?", identifier: "why")
+        createTab(title: "About", identifier: "why")
         createTab(title: "📊 Analysis Tools", identifier: "analysis")
         createTab(title: "👥 Character Library", identifier: "characterLibrary")
         createTab(title: "👥 Character Analysis Tools", identifier: "characters")
@@ -482,9 +482,9 @@ class DocumentationWindowController: NSWindowController, NSWindowDelegate {
                 _ = content.mutableString.replaceOccurrences(of: "QuillPilot", with: "Quill Pilot", options: [], range: fullRange)
         }
 
-        // MARK: - Tab: Why QuillPilot?
+        // MARK: - Tab: About
 
-    private func loadWhyTab() {
+        private func loadWhyTab() {
         guard textViews.count > 0 else { return }
         let textView = textViews[0]
         let theme = ThemeManager.shared.currentTheme
@@ -494,107 +494,139 @@ class DocumentationWindowController: NSWindowController, NSWindowDelegate {
 
         let content = NSMutableAttributedString()
 
-        content.append(makeTitle("Why QuillPilot?", color: titleColor))
-        content.append(makeBody("""
-QuillPilot is a writing environment that prioritizes how words feel on the page, not just how they're organized in a project. It's designed for experienced fiction writers who already understand story structure and want tools that enhance execution, not manage exploration.
-""", color: bodyColor))
-        content.append(makeNewline())
+                content.append(makeTitle("About Quill Pilot", color: titleColor))
+                content.append(makeBody("""
+        Quill Pilot is a writing environment that prioritizes how words feel on the page, not just how they’re organized in a project.
 
-        content.append(makeHeading("What Makes QuillPilot Different", color: headingColor))
+        It’s primarily designed for experienced fiction writers who already understand story structure and want tools that enhance execution, not exploration. That said, it’s equally capable for non-fiction work, supporting lists, tables, columns, and other structures common in books and publications.
 
-        content.append(makeSubheading("Output-First Writing", color: headingColor))
-        content.append(makeBody("""
-What you see is what you submit. No compile step. No export-format-revise cycle.
+        At its core, Quill Pilot is about refining what you’ve already learned—making strong writing clearer, more consistent, and more intentional.
+        """, color: bodyColor))
+                content.append(makeNewline())
 
-For professional novelists, this changes how you judge pacing, feel paragraph density, evaluate dialogue rhythm, and spot visual monotony. The manuscript you write is the manuscript you send.
-""", color: bodyColor))
+                content.append(makeHeading("Writing as Final Output", color: headingColor))
+                content.append(makeSubheading("Output-First Writing", color: headingColor))
+                content.append(makeBody("""
+        What you see is what you submit.
+        No compile step. No export-format-revise cycle.
 
-        content.append(makeSubheading("Typography as a Writing Tool", color: headingColor))
-        content.append(makeBody("""
-Good typography reduces cognitive load, improves rereading accuracy, and makes structural problems visible earlier.
+        The manuscript you write is the manuscript you send.
 
-QuillPilot treats typography as part of thinking on the page—not output polish. Professional templates (Baskerville, Garamond, Hoefler Text) give your manuscript submission-quality presentation while you draft.
-""", color: bodyColor))
+        For professional novelists, this changes how you:
+        • Judge pacing
+        • Feel paragraph density
+        • Evaluate dialogue rhythm
+        • Spot visual monotony early
 
-        content.append(makeSubheading("Integrated Narrative Intelligence", color: headingColor))
-        content.append(makeBody("""
-Your analysis tools don't live in spreadsheets or notebooks—they surface structure automatically:
+        Quill Pilot removes the mental split between drafting and presentation.
+        """, color: bodyColor))
+                content.append(makeNewline())
 
-• Belief shift tracking across character arcs
-• Tension curve visualization over time
-• Relationship evolution mapping
-• Scene-level decision consequence chains
-• Emotional trajectory analysis
+                content.append(makeHeading("Typography as a Cognitive Tool", color: headingColor))
+                content.append(makeBody("""
+        Good typography reduces cognitive load, improves rereading accuracy, and makes structural problems visible earlier.
 
-QuillPilot replaces the external bookkeeping that serious novelists already maintain, making patterns visible without breaking your writing flow.
-""", color: bodyColor))
+        Quill Pilot treats typography as part of thinking on the page—not as output polish added later. Professional templates (Baskerville, Garamond, Hoefler Text) give your manuscript submission-quality presentation while you draft.
 
-        content.append(makeSubheading("Story Data Files (Story Notes & Character Library)", color: headingColor))
-        content.append(makeBody("""
-Quill Pilot keeps certain per-document data separate from your manuscript text so it can persist notes without rewriting your document file.
+        Typography isn’t decoration here; it’s feedback.
+        """, color: bodyColor))
+                content.append(makeNewline())
 
-Story Notes (Theme, Locations, Outline, Directions) are saved as small JSON files under:
-~/Library/Application Support/Quill Pilot/StoryNotes/
+                content.append(makeHeading("Narrative Analysis & Story Intelligence", color: headingColor))
+                content.append(makeBody("""
+        One of Quill Pilot’s major strengths is its integrated analysis system, designed to surface patterns and weaknesses without pulling you out of the writing flow.
 
-Character Library entries are saved per document as a sidecar JSON file next to your manuscript:
-MyStory.docx.characters.json
+        Instead of spreadsheets or notebooks, narrative intelligence lives alongside the manuscript:
+        • Belief-shift tracking across character arcs
+        • Tension-curve visualization over time
+        • Relationship evolution mapping
+        • Scene-level decision and consequence chains
+        • Emotional trajectory analysis
 
-If you delete these files, Quill Pilot will treat that data as empty for the affected document.
-""", color: bodyColor))
-        content.append(makeNewline())
+        These tools help you see relationships, diagnose weaknesses, and examine the deeper mechanics that comprise a story—all while staying inside the manuscript itself.
+        """, color: bodyColor))
+                content.append(makeNewline())
 
-        content.append(makeSubheading("📦 Working Format: RTFD (Recommended)", color: headingColor))
-        content.append(makeBody("""
-RTFD is a macOS-native rich-text format stored as a package (a folder that looks like a single file). It preserves text styling and embedded images reliably, and is usually the best choice while drafting in QuillPilot.
+                content.append(makeHeading("Story Data & Persistent Notes", color: headingColor))
+                content.append(makeBody("""
+        Quill Pilot separates certain story data from the manuscript text so it can persist independently.
+        """, color: bodyColor))
 
-For sharing, collaboration, or cross-platform editing, exporting is often better than distributing your working RTFD. Use Export to generate Word (.docx), OpenDocument (.odt), PDF, HTML, or plain text depending on where the document needs to go.
-""", color: bodyColor))
+                content.append(makeSubheading("Story Notes", color: headingColor))
+                content.append(makeBody("""
+        Theme, locations, outlines, and directions are saved as lightweight JSON files at:
 
-        content.append(makeHeading("Who QuillPilot Is For", color: headingColor))
+        ~/Library/Application Support/Quill Pilot/StoryNotes/
+        """, color: bodyColor))
 
-        content.append(makeSubheading("Choose QuillPilot if you:", color: headingColor))
-        content.append(makeBody("""
-• Write primarily novels or screenplays
-• Already understand story structure
-• Care how the page looks while you write
-• Want insight, not organization
-• Submit to agents or publishers regularly
-• Prefer writing in a finished-looking manuscript
-• Value execution refinement over project management
-""", color: bodyColor))
+                content.append(makeSubheading("Character Library", color: headingColor))
+                content.append(makeBody("""
+        Character entries are stored per document as a sidecar file next to your manuscript:
 
-        content.append(makeSubheading("QuillPilot is NOT trying to:", color: headingColor))
-        content.append(makeBody("""
-• Manage research PDFs or web archives
-• Handle citations or footnotes
-• Compile into multiple output formats
-• Serve as a universal project manager
-• Replace Scrivener's binder system
+        MyStory.docx.characters.json
 
-These are legitimate needs—but they're not what QuillPilot optimizes for.
-""", color: bodyColor))
+        If these files are deleted, Quill Pilot treats the associated data as empty for that document.
 
-        content.append(makeSubheading("The Real Comparison", color: headingColor))
-        content.append(makeBody("""
-Many professional fiction writers use:
-• Scrivener for planning, research, and complex projects
-• QuillPilot for drafting and final manuscripts
+        This separation keeps your manuscript clean while preserving deep contextual knowledge.
+        """, color: bodyColor))
+                content.append(makeNewline())
 
-QuillPilot replaces the moment when you export from project management tools and say: "Okay, now let me make this look and read right."
+                content.append(makeHeading("Working Format", color: headingColor))
+                content.append(makeSubheading("📦 RTFD (Recommended)", color: headingColor))
+                content.append(makeBody("""
+        RTFD is a macOS-native rich-text format stored as a package (a folder that appears as a single file). It reliably preserves text styling and embedded images and is generally the best format while drafting in Quill Pilot.
 
-If that's the moment you care about most, QuillPilot wins.
-""", color: bodyColor))
+        For sharing, collaboration, or cross-platform editing, exporting is preferred. Quill Pilot supports export to:
+        • Word (.docx)
+        • OpenDocument (.odt)
+        • PDF
+        • HTML
+        • Plain text
+        """, color: bodyColor))
+                content.append(makeNewline())
 
-        content.append(makeSubheading("Writer Seniority Matters", color: headingColor))
-        content.append(makeBody("""
-QuillPilot feels "simpler" because it assumes you already know how to write. It doesn't teach story structure—it helps you execute it precisely and consistently.
+                content.append(makeHeading("Who Quill Pilot Is For", color: headingColor))
+                content.append(makeSubheading("Choose Quill Pilot if you:", color: headingColor))
+                content.append(makeBody("""
+        • Write primarily novels or screenplays
+        • Already understand story structure
+        • Care how the page looks while you write
+        • Want insight, not organization
+        • Submit to agents or publishers regularly
+        • Prefer writing in a finished-looking manuscript
+        • Value execution refinement over project management
+        """, color: bodyColor))
 
-Early-stage writers benefit from tools that help them think in chunks and move things around.
+                content.append(makeSubheading("Quill Pilot is not trying to:", color: headingColor))
+                content.append(makeBody("""
+        • Manage research PDFs or web archives
+        • Handle citations or footnotes
+        • Compile into multiple output formats
+        • Serve as a universal project manager
+        • Replace Scrivener’s binder system
 
-Mid-to-late career fiction writers benefit from tools that refine execution, maintain consistency, and reduce cognitive overhead.
+        Those are legitimate needs—but they’re not what Quill Pilot optimizes for.
+        """, color: bodyColor))
+                content.append(makeNewline())
 
-QuillPilot is for the latter.
-""", color: bodyColor))
+                content.append(makeHeading("How Professionals Actually Use It", color: headingColor))
+                content.append(makeBody("""
+        Many professional fiction writers use:
+        • Scrivener for planning, research, and complex projects
+        • Quill Pilot for drafting and final manuscripts
+
+        Quill Pilot replaces the moment when you export from a project tool and say:
+
+        “Okay—now let me make this look and read right.”
+
+        If that’s the moment you care about most, Quill Pilot wins.
+        """, color: bodyColor))
+                content.append(makeNewline())
+
+                content.append(makeHeading("Writer Seniority Matters", color: headingColor))
+                content.append(makeBody("""
+        Quill Pilot feels “simpler” because it assumes you already know how to write.
+        """, color: bodyColor))
 
                 normalizeAppNameInDocumentation(content)
         textView.textStorage?.setAttributedString(content)

@@ -6860,6 +6860,7 @@ class SearchPanelController: NSWindowController {
     private var statusLabel: NSTextField!
 
     private var themeObserver: Any?
+    private var resignKeyObserver: Any?
 
     // Go to Page controls
     private var pageNumberField: NSTextField!
@@ -6886,12 +6887,52 @@ class SearchPanelController: NSWindowController {
         themeObserver = NotificationCenter.default.addObserver(forName: .themeDidChange, object: nil, queue: .main) { [weak self] _ in
             self?.applyTheme()
         }
+
+        resignKeyObserver = NotificationCenter.default.addObserver(forName: NSWindow.didResignKeyNotification, object: panel, queue: .main) { [weak self] _ in
+            // Clicking back into the editor (or any other window) should dismiss this utility panel.
+            self?.close()
+        }
     }
 
     deinit {
         if let themeObserver {
             NotificationCenter.default.removeObserver(themeObserver)
         }
+        if let resignKeyObserver {
+            NotificationCenter.default.removeObserver(resignKeyObserver)
+        }
+    }
+
+    private func styleInputField(_ field: NSTextField, theme: AppTheme) {
+        field.textColor = theme.textColor
+        field.drawsBackground = true
+        field.backgroundColor = theme.pageBackground
+        field.isBezeled = false
+        field.isBordered = false
+        field.focusRingType = .none
+        field.wantsLayer = true
+        field.layer?.borderWidth = 1
+        field.layer?.cornerRadius = 6
+        field.layer?.borderColor = theme.pageBorder.cgColor
+    }
+
+    private func styleActionButton(_ button: NSButton, theme: AppTheme) {
+        button.wantsLayer = true
+        button.isBordered = false
+        button.focusRingType = .none
+        button.layer?.cornerRadius = 8
+        button.layer?.borderWidth = 1
+        button.layer?.borderColor = theme.pageBorder.cgColor
+        button.layer?.backgroundColor = theme.pageBackground.cgColor
+
+        let font = button.font ?? NSFont.systemFont(ofSize: NSFont.systemFontSize)
+        button.attributedTitle = NSAttributedString(
+            string: button.title,
+            attributes: [
+                .foregroundColor: theme.textColor,
+                .font: font
+            ]
+        )
     }
 
     private func setupUI() {
@@ -6938,7 +6979,7 @@ class SearchPanelController: NSWindowController {
         findNextButton = NSButton(title: "Next ▶︎", target: self, action: #selector(findNext))
         findNextButton.frame = NSRect(x: 135, y: 110, width: 105, height: 28)
         findNextButton.bezelStyle = .rounded
-        findNextButton.keyEquivalent = "\r"
+        // Keep Enter free for text entry; avoid default-button blue fill.
         contentView.addSubview(findNextButton)
 
         replaceButton = NSButton(title: "Replace", target: self, action: #selector(replace))
@@ -7006,14 +7047,21 @@ class SearchPanelController: NSWindowController {
 
         let inputFields: [NSTextField] = [searchField, replaceField, pageNumberField].compactMap { $0 }
         for field in inputFields {
-            field.textColor = theme.textColor
-            field.drawsBackground = true
-            field.backgroundColor = theme.pageBackground
+            styleInputField(field, theme: theme)
+        }
+
+        let actionButtons: [NSButton] = [findPreviousButton, findNextButton, replaceButton, replaceAllButton, goToPageButton].compactMap { $0 }
+        for button in actionButtons {
+            styleActionButton(button, theme: theme)
         }
 
         let checkboxTitleAttributes: [NSAttributedString.Key: Any] = [.foregroundColor: theme.textColor]
         caseSensitiveCheckbox.attributedTitle = NSAttributedString(string: caseSensitiveCheckbox.title, attributes: checkboxTitleAttributes)
         wholeWordsCheckbox.attributedTitle = NSAttributedString(string: wholeWordsCheckbox.title, attributes: checkboxTitleAttributes)
+
+        // Tint the checkbox control (avoid system accent blue in light mode).
+        caseSensitiveCheckbox.contentTintColor = theme.pageBorder
+        wholeWordsCheckbox.contentTintColor = theme.pageBorder
 
         // Apply text colors to labels
         contentView.subviews.forEach { view in

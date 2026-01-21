@@ -313,6 +313,57 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         mainWindowController?.mainContentViewController?.editorViewController.insertColumnBreak()
     }
 
+    @objc private func toggleAutoNumberOnReturn(_ sender: Any?) {
+        QuillPilotSettings.autoNumberOnReturn.toggle()
+    }
+
+    @MainActor
+    @objc private func resetTemplateOverridesPrompt(_ sender: Any?) {
+        let templateName = StyleCatalog.shared.currentTemplateName
+
+        let alert = NSAlert.themedConfirmation(
+            title: "Reset Template Overrides?",
+            message: "This will reset any custom style edits you made for the “\(templateName)” template back to defaults. This can’t be undone.",
+            confirmTitle: "Reset",
+            cancelTitle: "Cancel"
+        )
+
+        if let window = mainWindowController?.window {
+            alert.runThemedSheet(for: window) { response in
+                guard response == .alertFirstButtonReturn else { return }
+                StyleCatalog.shared.resetAllOverridesAndNotify()
+            }
+        } else {
+            let response = alert.runThemedModal()
+            guard response == .alertFirstButtonReturn else { return }
+            StyleCatalog.shared.resetAllOverridesAndNotify()
+        }
+    }
+
+    @objc private func zoomIn(_ sender: Any?) {
+        if mainWindowController == nil {
+            mainWindowController = MainWindowController()
+        }
+        presentMainWindow(orderingSource: sender)
+        mainWindowController?.zoomIn()
+    }
+
+    @objc private func zoomOut(_ sender: Any?) {
+        if mainWindowController == nil {
+            mainWindowController = MainWindowController()
+        }
+        presentMainWindow(orderingSource: sender)
+        mainWindowController?.zoomOut()
+    }
+
+    @objc private func zoomActualSize(_ sender: Any?) {
+        if mainWindowController == nil {
+            mainWindowController = MainWindowController()
+        }
+        presentMainWindow(orderingSource: sender)
+        mainWindowController?.zoomActualSize()
+    }
+
     @MainActor
     @objc private func restartNumberingPrompt(_ sender: Any?) {
         guard let editor = mainWindowController?.mainContentViewController?.editorViewController else {
@@ -519,6 +570,33 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         removeBlankLinesItem.target = self
         editMenu.addItem(removeBlankLinesItem)
 
+        // Insert Menu
+        let insertMenuItem = NSMenuItem()
+        mainMenu.addItem(insertMenuItem)
+        let insertMenu = NSMenu(title: "Insert")
+        insertMenuItem.submenu = insertMenu
+
+        let headerFooterItem = NSMenuItem(title: "Header & Footer Settings…", action: #selector(showHeaderFooterSettings(_:)), keyEquivalent: "")
+        headerFooterItem.target = self
+        insertMenu.addItem(headerFooterItem)
+
+        let tocIndexItem = NSMenuItem(title: "Table of Contents & Index…", action: #selector(showTOCIndex(_:)), keyEquivalent: "t")
+        tocIndexItem.keyEquivalentModifierMask = [.command, .shift]
+        tocIndexItem.target = self
+        insertMenu.addItem(tocIndexItem)
+
+        insertMenu.addItem(.separator())
+
+        let insertColumnBreakItem = NSMenuItem(title: "Insert Column Break", action: #selector(insertColumnBreak(_:)), keyEquivalent: "")
+        insertColumnBreakItem.target = self
+        insertMenu.addItem(insertColumnBreakItem)
+
+        insertMenu.addItem(.separator())
+
+        let specialCharactersItem = NSMenuItem(title: "Special Characters…", action: #selector(NSApplication.orderFrontCharacterPalette(_:)), keyEquivalent: "")
+        specialCharactersItem.target = NSApp
+        insertMenu.addItem(specialCharactersItem)
+
         // Format Menu
         let formatMenuItem = NSMenuItem()
         mainMenu.addItem(formatMenuItem)
@@ -551,12 +629,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         formatMenu.addItem(.separator())
 
-        let insertColumnBreakItem = NSMenuItem(title: "Insert Column Break", action: #selector(insertColumnBreak(_:)), keyEquivalent: "")
-        insertColumnBreakItem.target = self
-        formatMenu.addItem(insertColumnBreakItem)
-
-        formatMenu.addItem(.separator())
-
         // Lists submenu
         let listsItem = NSMenuItem(title: "Lists", action: nil, keyEquivalent: "")
         let listsMenu = NSMenu(title: "Lists")
@@ -566,6 +638,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // Route these through the responder chain (first responder is the editor text view).
         listsMenu.addItem(NSMenuItem(title: "Bulleted List", action: Selector(("qpToggleBulletedList:")), keyEquivalent: ""))
         listsMenu.addItem(NSMenuItem(title: "Numbered List", action: Selector(("qpToggleNumberedList:")), keyEquivalent: ""))
+        listsMenu.addItem(.separator())
+
+        let autoNumberOnReturnItem = NSMenuItem(title: "Auto-number lists on Return", action: #selector(toggleAutoNumberOnReturn(_:)), keyEquivalent: "")
+        autoNumberOnReturnItem.target = self
+        listsMenu.addItem(autoNumberOnReturnItem)
+
         listsMenu.addItem(.separator())
         listsMenu.addItem(NSMenuItem(title: "Restart Numbering at 1", action: Selector(("qpRestartNumbering:")), keyEquivalent: ""))
         let restartCustom = NSMenuItem(title: "Restart Numbering…", action: #selector(restartNumberingPrompt(_:)), keyEquivalent: "")
@@ -583,6 +661,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         spellingItem.target = self
         toolsMenu.addItem(spellingItem)
 
+        toolsMenu.addItem(.separator())
+
+        let autoAnalyzeOpenItem = NSMenuItem(title: "Auto-run analysis when opening documents/tools", action: #selector(toggleAutoAnalyzeOnOpen(_:)), keyEquivalent: "")
+        autoAnalyzeOpenItem.target = self
+        toolsMenu.addItem(autoAnalyzeOpenItem)
+
+        let autoAnalyzeTypingItem = NSMenuItem(title: "Auto-run analysis while typing", action: #selector(toggleAutoAnalyzeWhileTyping(_:)), keyEquivalent: "")
+        autoAnalyzeTypingItem.target = self
+        toolsMenu.addItem(autoAnalyzeTypingItem)
+
+        toolsMenu.addItem(.separator())
+
+        let resetTemplateOverridesItem = NSMenuItem(title: "Reset Template Overrides…", action: #selector(resetTemplateOverridesPrompt(_:)), keyEquivalent: "")
+        resetTemplateOverridesItem.target = self
+        toolsMenu.addItem(resetTemplateOverridesItem)
+
         // View Menu
         let viewMenuItem = NSMenuItem()
         mainMenu.addItem(viewMenuItem)
@@ -598,24 +692,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         viewMenu.addItem(.separator())
 
-        let headerFooterItem = NSMenuItem(title: "Header & Footer Settings…", action: #selector(showHeaderFooterSettings(_:)), keyEquivalent: "")
-        headerFooterItem.target = self
-        viewMenu.addItem(headerFooterItem)
+        let zoomInItem = NSMenuItem(title: "Zoom In", action: #selector(zoomIn(_:)), keyEquivalent: "=")
+        zoomInItem.keyEquivalentModifierMask = [.command]
+        zoomInItem.target = self
+        viewMenu.addItem(zoomInItem)
 
-        let tocIndexItem = NSMenuItem(title: "Table of Contents & Index…", action: #selector(showTOCIndex(_:)), keyEquivalent: "t")
-        tocIndexItem.keyEquivalentModifierMask = [.command, .shift]
-        tocIndexItem.target = self
-        viewMenu.addItem(tocIndexItem)
+        let zoomOutItem = NSMenuItem(title: "Zoom Out", action: #selector(zoomOut(_:)), keyEquivalent: "-")
+        zoomOutItem.keyEquivalentModifierMask = [.command]
+        zoomOutItem.target = self
+        viewMenu.addItem(zoomOutItem)
 
-        viewMenu.addItem(.separator())
-
-        let autoAnalyzeOpenItem = NSMenuItem(title: "Auto-Analyze on Open", action: #selector(toggleAutoAnalyzeOnOpen(_:)), keyEquivalent: "")
-        autoAnalyzeOpenItem.target = self
-        viewMenu.addItem(autoAnalyzeOpenItem)
-
-        let autoAnalyzeTypingItem = NSMenuItem(title: "Auto-Analyze While Typing", action: #selector(toggleAutoAnalyzeWhileTyping(_:)), keyEquivalent: "")
-        autoAnalyzeTypingItem.target = self
-        viewMenu.addItem(autoAnalyzeTypingItem)
+        let zoomActualItem = NSMenuItem(title: "Actual Size", action: #selector(zoomActualSize(_:)), keyEquivalent: "0")
+        zoomActualItem.keyEquivalentModifierMask = [.command]
+        zoomActualItem.target = self
+        viewMenu.addItem(zoomActualItem)
 
         // Window Menu
         let windowMenuItem = NSMenuItem()
@@ -899,12 +989,27 @@ extension AppDelegate: NSMenuItemValidation {
             return true
         }
 
+        if menuItem.action == #selector(resetTemplateOverridesPrompt(_:)) {
+            return true
+        }
+
+        if menuItem.action == #selector(zoomIn(_:)) ||
+            menuItem.action == #selector(zoomOut(_:)) ||
+            menuItem.action == #selector(zoomActualSize(_:)) {
+            return true
+        }
+
         if menuItem.action == #selector(toggleAutoAnalyzeOnOpen(_:)) {
             menuItem.state = QuillPilotSettings.autoAnalyzeOnOpen ? .on : .off
             return true
         }
         if menuItem.action == #selector(toggleAutoAnalyzeWhileTyping(_:)) {
             menuItem.state = QuillPilotSettings.autoAnalyzeWhileTyping ? .on : .off
+            return true
+        }
+
+        if menuItem.action == #selector(toggleAutoNumberOnReturn(_:)) {
+            menuItem.state = QuillPilotSettings.autoNumberOnReturn ? .on : .off
             return true
         }
 
@@ -922,7 +1027,8 @@ extension AppDelegate: NSMenuItemValidation {
             #selector(applyDropCap(_:)),
             #selector(applyOldStyleNumerals(_:)),
             #selector(applyOpticalKerning(_:)),
-            #selector(analyzeDocumentNow(_:))
+            #selector(analyzeDocumentNow(_:)),
+            #selector(insertColumnBreak(_:)),
         ]
 
         if let action = menuItem.action, requiresWindow.contains(action) {

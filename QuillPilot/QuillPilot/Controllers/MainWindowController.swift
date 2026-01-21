@@ -54,6 +54,7 @@ class MainWindowController: NSWindowController {
     private var toolbarView: FormattingToolbar!
     private var rulerView: EnhancedRulerView!
     private var rulerHeightConstraint: NSLayoutConstraint?
+    private var rulerWidthConstraint: NSLayoutConstraint?
     var mainContentViewController: ContentViewController!
     private var themeObserver: NSObjectProtocol?
     private var settingsObserver: NSObjectProtocol?
@@ -168,6 +169,9 @@ class MainWindowController: NSWindowController {
         rulerView.delegate = mainContentViewController
         mainContentViewController.setRuler(rulerView)
 
+        // Keep the ruler zoom synchronized with the editor zoom.
+        rulerView.rulerZoom = mainContentViewController.editorViewController.editorZoom
+
         // Set up constraints
         var constraints: [NSLayoutConstraint] = [
             // Header at top
@@ -202,7 +206,9 @@ class MainWindowController: NSWindowController {
             // Keep the ruler aligned to the editor page (not the full 3-column content area).
             let editorCenter = mainContentViewController.editorCenterXAnchor ?? contentView.centerXAnchor
             constraints.append(rulerView.centerXAnchor.constraint(equalTo: editorCenter))
-            constraints.append(rulerView.widthAnchor.constraint(equalToConstant: rulerView.scaledPageWidth))
+            let width = rulerView.widthAnchor.constraint(equalToConstant: rulerView.scaledPageWidth)
+            width.isActive = true
+            rulerWidthConstraint = width
             constraints.append(rulerView.leadingAnchor.constraint(greaterThanOrEqualTo: editorLeading))
             constraints.append(rulerView.trailingAnchor.constraint(lessThanOrEqualTo: editorTrailing))
         } else {
@@ -253,6 +259,30 @@ class MainWindowController: NSWindowController {
 
     var isRulerVisible: Bool {
         !(rulerView?.isHidden ?? true) && ((rulerHeightConstraint?.constant ?? 0) > 0)
+    }
+
+    private func syncRulerZoomToEditor() {
+        guard let editor = mainContentViewController?.editorViewController else { return }
+        rulerView?.rulerZoom = editor.editorZoom
+        if let rulerView {
+            rulerWidthConstraint?.constant = rulerView.scaledPageWidth
+        }
+        window?.contentView?.needsLayout = true
+    }
+
+    func zoomIn() {
+        mainContentViewController?.editorViewController.zoomIn()
+        syncRulerZoomToEditor()
+    }
+
+    func zoomOut() {
+        mainContentViewController?.editorViewController.zoomOut()
+        syncRulerZoomToEditor()
+    }
+
+    func zoomActualSize() {
+        mainContentViewController?.editorViewController.zoomActualSize()
+        syncRulerZoomToEditor()
     }
 
     @objc func toggleRulerVisibility(_ sender: Any?) {

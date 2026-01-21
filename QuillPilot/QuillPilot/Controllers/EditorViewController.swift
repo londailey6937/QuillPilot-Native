@@ -592,6 +592,33 @@ class EditorViewController: NSViewController {
     private let standardIndentStep: CGFloat = 36
     var editorZoom: CGFloat = 1.4  // 140% zoom for better readability on large displays
 
+    private let editorZoomMin: CGFloat = 0.6
+    private let editorZoomMax: CGFloat = 2.5
+    private let editorZoomStep: CGFloat = 0.1
+
+    func setEditorZoom(_ zoom: CGFloat) {
+        let clamped = max(editorZoomMin, min(editorZoomMax, zoom))
+        guard abs(clamped - editorZoom) >= 0.001 else { return }
+        editorZoom = clamped
+
+        // Update frames first so pagination measurement uses the new container size.
+        updateShadowPath()
+        updatePageCentering(ensureSelectionVisible: false)
+        updatePageLayout()
+    }
+
+    func zoomIn() {
+        setEditorZoom(editorZoom + editorZoomStep)
+    }
+
+    func zoomOut() {
+        setEditorZoom(editorZoom - editorZoomStep)
+    }
+
+    func zoomActualSize() {
+        setEditorZoom(1.0)
+    }
+
     // Horizontal page margins in points (72pt = 1"). These must drive layout in updatePageCentering.
     private var leftPageMargin: CGFloat = 72
     private var rightPageMargin: CGFloat = 72

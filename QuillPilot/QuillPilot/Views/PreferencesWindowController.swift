@@ -9,14 +9,10 @@ final class PreferencesWindowController: NSWindowController {
     private var autoSavePopup: NSPopUpButton!
     private var defaultExportPopup: NSPopUpButton!
     private var numberingSchemePopup: NSPopUpButton!
-    private var autoNumberOnReturnCheckbox: NSButton!
-    private var autoAnalyzeOnOpenCheckbox: NSButton!
-    private var autoAnalyzeWhileTypingCheckbox: NSButton!
-    private var resetTemplateOverridesButton: NSButton!
 
     convenience init() {
         let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 520, height: 380),
+            contentRect: NSRect(x: 0, y: 0, width: 520, height: 240),
             styleMask: [.titled, .closable, .miniaturizable],
             backing: .buffered,
             defer: false
@@ -39,7 +35,7 @@ final class PreferencesWindowController: NSWindowController {
 
         let container = NSStackView()
         container.orientation = .vertical
-        container.spacing = 16
+        container.spacing = 14
         container.translatesAutoresizingMaskIntoConstraints = false
         container.edgeInsets = NSEdgeInsets(top: 18, left: 18, bottom: 18, right: 18)
 
@@ -75,15 +71,6 @@ final class PreferencesWindowController: NSWindowController {
         numberingSchemePopup.action = #selector(numberingSchemeChanged(_:))
         themedPopups.append(numberingSchemePopup)
 
-        autoNumberOnReturnCheckbox = NSButton(checkboxWithTitle: "Auto-number lists on Return", target: self, action: #selector(numberingTogglesChanged(_:)))
-        themedButtons.append(autoNumberOnReturnCheckbox)
-
-        // Analysis toggles
-        autoAnalyzeOnOpenCheckbox = NSButton(checkboxWithTitle: "Auto-run analysis when opening documents/tools", target: self, action: #selector(analysisTogglesChanged(_:)))
-        autoAnalyzeWhileTypingCheckbox = NSButton(checkboxWithTitle: "Auto-run analysis while typing", target: self, action: #selector(analysisTogglesChanged(_:)))
-        themedButtons.append(autoAnalyzeOnOpenCheckbox)
-        themedButtons.append(autoAnalyzeWhileTypingCheckbox)
-
         let grid = NSGridView(views: [
             [label("Theme"), themePopup],
             [label("Auto-save"), autoSavePopup],
@@ -104,23 +91,6 @@ final class PreferencesWindowController: NSWindowController {
         numberingSchemePopup.widthAnchor.constraint(greaterThanOrEqualToConstant: 180).isActive = true
 
         container.addArrangedSubview(grid)
-        container.addArrangedSubview(NSView())
-        container.addArrangedSubview(autoNumberOnReturnCheckbox)
-        container.addArrangedSubview(autoAnalyzeOnOpenCheckbox)
-        container.addArrangedSubview(autoAnalyzeWhileTypingCheckbox)
-
-        resetTemplateOverridesButton = NSButton(title: "Reset Template Overrides…", target: self, action: #selector(resetTemplateOverrides(_:)))
-        resetTemplateOverridesButton.bezelStyle = .rounded
-        resetTemplateOverridesButton.controlSize = .small
-        resetTemplateOverridesButton.setButtonType(.momentaryPushIn)
-        themedButtons.append(resetTemplateOverridesButton)
-
-        let resetRow = NSStackView()
-        resetRow.orientation = .horizontal
-        resetRow.spacing = 8
-        resetRow.addArrangedSubview(NSView())
-        resetRow.addArrangedSubview(resetTemplateOverridesButton)
-        container.addArrangedSubview(resetRow)
 
         contentView.addSubview(container)
         window.contentView = contentView
@@ -135,22 +105,6 @@ final class PreferencesWindowController: NSWindowController {
         applyTheme(theme)
 
         NotificationCenter.default.addObserver(self, selector: #selector(themeDidChange(_:)), name: .themeDidChange, object: nil)
-    }
-
-    @objc private func resetTemplateOverrides(_ sender: Any?) {
-        let templateName = StyleCatalog.shared.currentTemplateName
-
-        let alert = NSAlert()
-        alert.messageText = "Reset Template Overrides?"
-        alert.informativeText = "This will reset any custom style edits you made for the “\(templateName)” template back to defaults. This can’t be undone."
-        alert.alertStyle = .warning
-        alert.addButton(withTitle: "Reset")
-        alert.addButton(withTitle: "Cancel")
-
-        let response = alert.runModal()
-        guard response == .alertFirstButtonReturn else { return }
-
-        StyleCatalog.shared.resetAllOverridesAndNotify()
     }
 
     private func label(_ text: String) -> NSTextField {
@@ -236,10 +190,6 @@ final class PreferencesWindowController: NSWindowController {
         if let idx = QuillPilotSettings.NumberingScheme.allCases.firstIndex(of: QuillPilotSettings.numberingScheme) {
             numberingSchemePopup.selectItem(at: idx)
         }
-        autoNumberOnReturnCheckbox.state = QuillPilotSettings.autoNumberOnReturn ? .on : .off
-
-        autoAnalyzeOnOpenCheckbox.state = QuillPilotSettings.autoAnalyzeOnOpen ? .on : .off
-        autoAnalyzeWhileTypingCheckbox.state = QuillPilotSettings.autoAnalyzeWhileTyping ? .on : .off
     }
 
     @objc private func themeChanged(_ sender: Any?) {
@@ -279,15 +229,6 @@ final class PreferencesWindowController: NSWindowController {
         let idx = numberingSchemePopup.indexOfSelectedItem
         guard idx >= 0, idx < QuillPilotSettings.NumberingScheme.allCases.count else { return }
         QuillPilotSettings.numberingScheme = QuillPilotSettings.NumberingScheme.allCases[idx]
-    }
-
-    @objc private func numberingTogglesChanged(_ sender: Any?) {
-        QuillPilotSettings.autoNumberOnReturn = (autoNumberOnReturnCheckbox.state == .on)
-    }
-
-    @objc private func analysisTogglesChanged(_ sender: Any?) {
-        QuillPilotSettings.autoAnalyzeOnOpen = (autoAnalyzeOnOpenCheckbox.state == .on)
-        QuillPilotSettings.autoAnalyzeWhileTyping = (autoAnalyzeWhileTypingCheckbox.state == .on)
     }
 
     @objc private func themeDidChange(_ note: Notification) {

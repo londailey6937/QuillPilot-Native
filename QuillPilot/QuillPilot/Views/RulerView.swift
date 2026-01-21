@@ -19,7 +19,13 @@ class EnhancedRulerView: NSView {
     weak var delegate: RulerViewDelegate?
     // Visual scale factor. Margins and pageWidth are stored in unscaled points (72pt = 1 inch).
     // This zoom should match the editor's zoom so ruler markings align with the rendered page.
-    let rulerZoom: CGFloat = 1.4
+    var rulerZoom: CGFloat = 1.4 {
+        didSet {
+            if abs(oldValue - rulerZoom) < 0.001 { return }
+            needsLayout = true
+            needsDisplay = true
+        }
+    }
 
     var scaledPageWidth: CGFloat {
         pageWidth * rulerZoom

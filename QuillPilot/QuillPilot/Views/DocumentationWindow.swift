@@ -2049,7 +2049,7 @@ What it does
 Tips
 • Start with Body Text, then adjust headings and chapter styles to match.
 • Use small, consistent changes to preserve layout across the manuscript.
-• To remove overrides and return to defaults, use Reset Template Overrides in Preferences.
+• To remove overrides and return to defaults, use Tools → Reset Template Overrides.
 """, color: bodyColor))
         content.append(makeNewline())
 
@@ -2092,7 +2092,7 @@ Set columns
 • Choose 2–4 columns from the sheet and apply.
 
 Insert column breaks
-• Use Insert Column Break (toolbar button or Format → Insert Column Break) to force text into the next column. This only affects text when a multi-column layout is active.
+• Use Insert Column Break (toolbar button or Insert → Insert Column Break) to force text into the next column. This only affects text when a multi-column layout is active.
 
 Balance columns
 • Use Balance Columns in the Column Operations sheet to reflow text evenly across columns.

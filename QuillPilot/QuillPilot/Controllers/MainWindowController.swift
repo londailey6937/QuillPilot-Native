@@ -42,6 +42,8 @@ protocol FormattingToolbarDelegate: AnyObject {
     func formattingToolbarDidFormatPainter(_ toolbar: FormattingToolbar)
     func formattingToolbarDidToggleOutlinePanel(_ toolbar: FormattingToolbar)
 
+    func formattingToolbarDidToggleParagraphMarks(_ toolbar: FormattingToolbar)
+
     func formattingToolbarDidOpenStyleEditor(_ toolbar: FormattingToolbar)
 }
 
@@ -241,6 +243,8 @@ class MainWindowController: NSWindowController {
                 return
             }
             self.headerView.specsPanel.updateStats(text: text)
+            let isShown = self.mainContentViewController.editorViewController.paragraphMarksVisible()
+            self.toolbarView.updateParagraphMarksState(isShown)
         }
 
         // Start auto-save timer (interval set in Preferences)
@@ -701,6 +705,11 @@ extension MainWindowController: FormattingToolbarDelegate {
 
     func formattingToolbarDidToggleNumbering(_ toolbar: FormattingToolbar) {
         mainContentViewController.toggleNumberedList()
+    }
+
+    func formattingToolbarDidToggleParagraphMarks(_ toolbar: FormattingToolbar) {
+        let isShown = mainContentViewController.editorViewController.toggleParagraphMarks()
+        toolbarView.updateParagraphMarksState(isShown)
     }
 
     func formattingToolbarDidInsertImage(_ toolbar: FormattingToolbar) {
@@ -1205,7 +1214,7 @@ extension MainWindowController {
             debugLog("✅ RTFD exported to \(url.path)")
 
         case .odt:
-            let content = mainContentViewController.editorExportReadyAttributedContent()
+            let content = normalizedTOCIndexForOpenDocument(mainContentViewController.editorExportReadyAttributedContent())
             let fullRange = NSRange(location: 0, length: content.length)
             let data = try content.data(from: fullRange, documentAttributes: [.documentType: NSAttributedString.DocumentType.openDocument])
             try data.write(to: url, options: Data.WritingOptions.atomic)
@@ -1245,6 +1254,122 @@ extension MainWindowController {
             try mobiData.write(to: url, options: Data.WritingOptions.atomic)
             debugLog("✅ Mobi exported to \(url.path)")
         }
+    }
+
+    private func normalizedTOCIndexForOpenDocument(_ attributed: NSAttributedString) -> NSAttributedString {
+        let mutable = NSMutableAttributedString(attributedString: attributed)
+        let styleKey = NSAttributedString.Key("QuillStyleName")
+        let targetStyles: Set<String> = [
+            "TOC Entry",
+            "TOC Entry Level 1",
+            "TOC Entry Level 2",
+            "TOC Entry Level 3",
+            "Index Entry"
+        ]
+
+        // Printable width for Letter (8.5" minus 1" margins each side), with small right padding.
+        let printableWidth: CGFloat = 612 - (72 * 2)
+        let rightPadding: CGFloat = 10
+        let rightTab = printableWidth - rightPadding
+
+        var location = 0
+        let pageRegex = try? NSRegularExpression(pattern: "([0-9A-Za-z]+(?:\\s*,\\s*[0-9A-Za-z]+)*)\\s*$", options: [])
+
+        while location < mutable.length {
+            let full = mutable.string as NSString
+            let paragraphRange = full.paragraphRange(for: NSRange(location: location, length: 0))
+
+            let paragraphText = (mutable.string as NSString).substring(with: paragraphRange)
+            let hasTrailingNewline = paragraphText.hasSuffix("\n")
+            let trimmed = paragraphText.trimmingCharacters(in: .newlines)
+            let normalizedTrimmed = trimmed.replacingOccurrences(of: "\u{00A0}", with: " ")
+
+            let styleName = (mutable.attribute(styleKey, at: paragraphRange.location, effectiveRange: nil) as? String) ?? ""
+            let styleMatch = targetStyles.contains(styleName)
+
+            var pageText: String?
+            var leftPart: String?
+
+            if let tabIndex = normalizedTrimmed.lastIndex(of: "\t") {
+                leftPart = String(normalizedTrimmed[..<tabIndex])
+                pageText = String(normalizedTrimmed[normalizedTrimmed.index(after: tabIndex)...]).trimmingCharacters(in: .whitespaces)
+            } else if let pageRegex, let match = pageRegex.firstMatch(in: normalizedTrimmed, range: NSRange(location: 0, length: (normalizedTrimmed as NSString).length)) {
+                let pageRange = match.range(at: 1)
+                pageText = (normalizedTrimmed as NSString).substring(with: pageRange).trimmingCharacters(in: .whitespaces)
+                leftPart = (normalizedTrimmed as NSString).substring(to: pageRange.location)
+            }
+
+            if let pageText, var leftPart {
+                leftPart = leftPart.replacingOccurrences(of: "\t", with: " ")
+                // Remove trailing leader dots and extra spacing (including NBSP).
+                leftPart = leftPart.replacingOccurrences(of: "[.·\\s\\u{00A0}]+$", with: "", options: .regularExpression)
+                let leftText = leftPart.trimmingCharacters(in: .whitespacesAndNewlines)
+
+                let isIndex = styleName.contains("Index")
+                let font = (mutable.attribute(.font, at: paragraphRange.location, effectiveRange: nil) as? NSFont)
+                    ?? NSFont.systemFont(ofSize: 12)
+                let leader = makeLeaderDots(leftText: leftText, pageText: pageText, font: font, rightTab: rightTab, isIndex: isIndex)
+                let rebuilt = "\(leftText)\(leader)\u{00A0}\(pageText)" + (hasTrailingNewline ? "\n" : "")
+
+                var attrs = mutable.attributes(at: paragraphRange.location, effectiveRange: nil)
+                if let style = attrs[.paragraphStyle] as? NSParagraphStyle,
+                   let mutableStyle = style.mutableCopy() as? NSMutableParagraphStyle {
+                    // Remove tab stops so ODT doesn't push numbers to new lines.
+                    mutableStyle.tabStops = []
+                    attrs[.paragraphStyle] = mutableStyle.copy() as? NSParagraphStyle
+                }
+
+                if styleMatch || trimmed.contains("\t") || trimmed.contains(".") {
+                    mutable.replaceCharacters(in: paragraphRange, with: NSAttributedString(string: rebuilt, attributes: attrs))
+                }
+            }
+
+            location = NSMaxRange(paragraphRange)
+        }
+
+        return mutable
+    }
+
+    private func makeLeaderDots(leftText: String, pageText: String, font: NSFont, rightTab: CGFloat, isIndex: Bool) -> String {
+        let leftWidth = (leftText as NSString).size(withAttributes: [.font: font]).width
+        let pageWidth = (pageText as NSString).size(withAttributes: [.font: font]).width
+        let spaceWidth = (" " as NSString).size(withAttributes: [.font: font]).width
+        let dotWidth = ((isIndex ? " ." : ". ") as NSString).size(withAttributes: [.font: font]).width
+
+        let available = max(0, rightTab - leftWidth - pageWidth - (spaceWidth * 2))
+        let maxDots = max(3, Int(floor(available / max(1, dotWidth))))
+        let nbsp = "\u{00A0}"
+        let unit = isIndex ? "\(nbsp)." : ".\(nbsp)"
+        return nbsp + String(repeating: unit, count: maxDots)
+    }
+
+    private func stripLeaderDotsBeforeFirstTab(in attributed: NSMutableAttributedString, range: NSRange) {
+        let ns = attributed.string as NSString
+        let paragraphText = ns.substring(with: range) as NSString
+        let tabRange = paragraphText.range(of: "\t")
+        guard tabRange.location != NSNotFound, tabRange.location > 0 else { return }
+
+        var index = tabRange.location - 1
+        var dotCount = 0
+        var spaceCount = 0
+        while index >= 0 {
+            let c = paragraphText.character(at: index)
+            if c == 46 { // '.'
+                dotCount += 1
+            } else if c == 32 { // ' '
+                spaceCount += 1
+            } else {
+                break
+            }
+            index -= 1
+        }
+
+        let leaderStart = index + 1
+        let leaderLength = tabRange.location - leaderStart
+        guard leaderLength > 0, dotCount >= 6, spaceCount >= 6 else { return }
+
+        let deleteRange = NSRange(location: range.location + leaderStart, length: leaderLength)
+        attributed.deleteCharacters(in: deleteRange)
     }
 
     private func exportToURL(_ url: URL, format: ExportFormat) {
@@ -2480,6 +2605,7 @@ class FormattingToolbar: NSView {
     private var editStylesButton: NSButton!
     private var imageButton: NSButton!
     private var outlinePanelButton: NSButton!
+    private var paragraphMarksButton: NSButton!
     private var currentTemplate: String = "Novel"
     private var templateObserver: NSObjectProtocol?
 
@@ -2826,6 +2952,15 @@ class FormattingToolbar: NSView {
         searchBtn.toolTip = "Find & Replace"
         searchBtn.setAccessibilityLabel("Find & Replace")
 
+        // Paragraph marks toggle
+        let paragraphBtn = createToolbarButton("¶", fontSize: 16)
+        paragraphBtn.setButtonType(.toggle)
+        paragraphBtn.target = self
+        paragraphBtn.action = #selector(paragraphMarksTapped)
+        paragraphBtn.toolTip = "Show / Hide paragraph marks"
+        paragraphBtn.setAccessibilityLabel("Show / Hide paragraph marks")
+        paragraphMarksButton = paragraphBtn
+
         // Indentation
         let outdentBtn = registerControl(NSButton(title: "⇤", target: self, action: #selector(outdentTapped)))
         outdentBtn.bezelStyle = .texturedRounded
@@ -2856,7 +2991,7 @@ class FormattingToolbar: NSView {
             imageButton,
             columnsBtn, tableBtn,
             outdentBtn, indentBtn,
-            searchBtn, sidebarBtn
+            searchBtn, paragraphBtn, sidebarBtn
         ])
         toolbarStack.orientation = .horizontal
         toolbarStack.spacing = 8
@@ -3064,6 +3199,14 @@ class FormattingToolbar: NSView {
         ]
         sender.attributedTitle = NSAttributedString(string: displayStyle, attributes: attrs)
         sender.synchronizeTitleAndSelectedItem()
+    }
+
+    @objc private func paragraphMarksTapped() {
+        delegate?.formattingToolbarDidToggleParagraphMarks(self)
+    }
+
+    func updateParagraphMarksState(_ isShown: Bool) {
+        paragraphMarksButton?.state = isShown ? .on : .off
     }
 
     // switchTemplate method removed - templates now in dedicated dropdown in toolbar
@@ -4776,6 +4919,12 @@ private enum DocxBuilder {
 
     private static func makeDocumentXml(from attributed: NSAttributedString, images: inout [ImageInfo]) -> String {
         let body = makeParagraphs(from: attributed, images: &images)
+                // Letter size in twips (1 point = 20 twips). Matches editor defaults (8.5" x 11").
+                let pageWidthTwips = 612 * 20
+                let pageHeightTwips = 792 * 20
+                // 1" margins (72pt) -> 1440 twips. Keep headers/footers inside margins.
+                let marginTwips = 72 * 20
+                let headerFooterTwips = 36 * 20
         return """
         <?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>
         <w:document xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"
@@ -4785,7 +4934,10 @@ private enum DocxBuilder {
                     xmlns:r=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships\">
           <w:body>
             \(body)
-            <w:sectPr/>
+                        <w:sectPr>
+                            <w:pgSz w:w=\"\(pageWidthTwips)\" w:h=\"\(pageHeightTwips)\"/>
+                            <w:pgMar w:top=\"\(marginTwips)\" w:right=\"\(marginTwips)\" w:bottom=\"\(marginTwips)\" w:left=\"\(marginTwips)\" w:header=\"\(headerFooterTwips)\" w:footer=\"\(headerFooterTwips)\" w:gutter=\"0\"/>
+                        </w:sectPr>
           </w:body>
         </w:document>
         """
@@ -4828,7 +4980,19 @@ private enum DocxBuilder {
                 let row = block.startingRow
                 let col = block.startingColumn
 
-                let runs = makeRuns(from: attributed, in: contentRange, images: &images)
+                                let runsSource: NSAttributedString
+                                let runsRange: NSRange
+                                if shouldStripLeaderDotsBeforeTab(styleName: styleName) {
+                                        let mutable = NSMutableAttributedString(attributedString: attributed.attributedSubstring(from: contentRange))
+                                        stripLeaderDotsBeforeFirstTab(in: mutable)
+                                        runsSource = mutable
+                                        runsRange = NSRange(location: 0, length: mutable.length)
+                                } else {
+                                        runsSource = attributed
+                                        runsRange = contentRange
+                                }
+
+                                let runs = makeRuns(from: runsSource, in: runsRange, images: &images)
                 let cellContent = """
                 <w:p>
                   \(paragraphPropertiesXml(from: paragraphStyle, styleName: styleName))\(runs.joined())
@@ -4870,7 +5034,19 @@ private enum DocxBuilder {
                 }
 
                 // Regular paragraph
-                let runs = makeRuns(from: attributed, in: contentRange, images: &images)
+                let runsSource: NSAttributedString
+                let runsRange: NSRange
+                if shouldStripLeaderDotsBeforeTab(styleName: styleName) {
+                    let mutable = NSMutableAttributedString(attributedString: attributed.attributedSubstring(from: contentRange))
+                    stripLeaderDotsBeforeFirstTab(in: mutable)
+                    runsSource = mutable
+                    runsRange = NSRange(location: 0, length: mutable.length)
+                } else {
+                    runsSource = attributed
+                    runsRange = contentRange
+                }
+
+                let runs = makeRuns(from: runsSource, in: runsRange, images: &images)
                 let pPr = paragraphPropertiesXml(from: paragraphStyle, styleName: styleName)
                 let paragraphXml = """
                 <w:p>
@@ -4889,6 +5065,42 @@ private enum DocxBuilder {
         }
 
         return paragraphs.joined(separator: "\n")
+    }
+
+    private static func shouldStripLeaderDotsBeforeTab(styleName: String?) -> Bool {
+        guard let name = styleName?.lowercased() else { return false }
+        // TOC/Index entries are built using manual dot leaders + a right tab.
+        // In DOCX, it's more robust to rely on Word's tab leader dots.
+        return name.contains("toc entry") || name.contains("index entry")
+    }
+
+    private static func stripLeaderDotsBeforeFirstTab(in attributed: NSMutableAttributedString) {
+        let ns = attributed.string as NSString
+        let tabRange = ns.range(of: "\t")
+        guard tabRange.location != NSNotFound, tabRange.location > 0 else { return }
+
+        // Remove a trailing leader region composed only of spaces + '.' before the first tab.
+        // Heuristic: require multiple dots/spaces so we don't accidentally remove legitimate punctuation.
+        var index = tabRange.location - 1
+        var dotCount = 0
+        var spaceCount = 0
+        while index >= 0 {
+            let c = ns.character(at: index)
+            if c == 46 { // '.'
+                dotCount += 1
+            } else if c == 32 { // ' '
+                spaceCount += 1
+            } else {
+                break
+            }
+            index -= 1
+        }
+
+        let leaderStart = index + 1
+        let leaderLength = tabRange.location - leaderStart
+        guard leaderLength > 0, dotCount >= 6, spaceCount >= 6 else { return }
+
+        attributed.deleteCharacters(in: NSRange(location: leaderStart, length: leaderLength))
     }
 
     private static func makeTableXml(rows: [[String]], columns: Int, isColumnLayout: Bool) -> String {
@@ -5119,6 +5331,12 @@ private enum DocxBuilder {
             // e.g. "Heading 1" -> "Heading1", "Body Text" -> "BodyText"
             let styleId = name.components(separatedBy: CharacterSet.alphanumerics.inverted).joined()
             components.append("<w:pStyle w:val=\"\(styleId)\"/>")
+
+            // Keep titles/letters with the following paragraph so headings don't get orphaned at page bottoms.
+            let lower = name.lowercased()
+            if lower.contains("toc title") || lower.contains("index title") || lower.contains("index letter") {
+                components.append("<w:keepNext/>")
+            }
         }
 
         if let style = style {
@@ -5173,23 +5391,41 @@ private enum DocxBuilder {
                 components.append("<w:ind \(indentAttrs.joined(separator: " "))/>")
             }
 
-            // Export tab stops for TOC/Index leader dots and page number alignment
+            // Export tab stops (used for right-aligned page columns in TOC/Index)
             if !style.tabStops.isEmpty {
+                let useDotLeaders: Bool
+                let forcePrintableRightTab: Bool
+                if let name = styleName?.lowercased() {
+                    useDotLeaders = name.contains("toc entry") || name.contains("index entry")
+                    forcePrintableRightTab = useDotLeaders
+                } else {
+                    useDotLeaders = false
+                    forcePrintableRightTab = false
+                }
+
                 var tabXml: [String] = []
-                for tab in style.tabStops {
-                    // Convert points to twentieths of a point (twips)
-                    let posTwips = Int(round(tab.location * 20))
-                    let tabType: String
-                    switch tab.alignment {
-                    case .right: tabType = "right"
-                    case .center: tabType = "center"
-                    default: tabType = "left"
-                    }
-                    // Add leader dots for right-aligned tabs (used in TOC/Index)
-                    if tab.alignment == .right {
-                        tabXml.append("<w:tab w:val=\"\(tabType)\" w:pos=\"\(posTwips)\" w:leader=\"dot\"/>")
-                    } else {
-                        tabXml.append("<w:tab w:val=\"\(tabType)\" w:pos=\"\(posTwips)\"/>")
+                if forcePrintableRightTab {
+                    // Clamp to printable width (Letter: 612pt - 1" margins each side), with a small right padding.
+                    let printableWidth: CGFloat = 612 - (72 * 2)
+                    let rightPadding: CGFloat = 10
+                    let posTwips = Int(round((printableWidth - rightPadding) * 20))
+                    tabXml.append("<w:tab w:val=\"right\" w:pos=\"\(posTwips)\" w:leader=\"dot\"/>")
+                } else {
+                    for tab in style.tabStops {
+                        // Convert points to twentieths of a point (twips)
+                        let posTwips = Int(round(tab.location * 20))
+                        let tabType: String
+                        switch tab.alignment {
+                        case .right: tabType = "right"
+                        case .center: tabType = "center"
+                        default: tabType = "left"
+                        }
+                        // Add leader dots only for QuillPilot TOC/Index entry styles.
+                        if useDotLeaders, tab.alignment == .right {
+                            tabXml.append("<w:tab w:val=\"\(tabType)\" w:pos=\"\(posTwips)\" w:leader=\"dot\"/>")
+                        } else {
+                            tabXml.append("<w:tab w:val=\"\(tabType)\" w:pos=\"\(posTwips)\"/>")
+                        }
                     }
                 }
                 if !tabXml.isEmpty {
@@ -5236,12 +5472,33 @@ private enum DocxBuilder {
         </w:rPr>
         """
 
-        let escapedText = xmlEscape(text)
-        return """
-        <w:r>
-          \(rPrXml)<w:t xml:space=\"preserve\">\(escapedText)</w:t>
-        </w:r>
-        """
+                // WordprocessingML represents tabs as a dedicated element (<w:tab/>).
+                // Leaving raw '\t' inside <w:t> is unreliable and can break TOC/Index leader tab formatting.
+                let parts = text.split(separator: "\t", omittingEmptySubsequences: false).map(String.init)
+                var children: [String] = []
+
+                for (idx, part) in parts.enumerated() {
+                        if !part.isEmpty {
+                                children.append("<w:t xml:space=\"preserve\">\(xmlEscape(part))</w:t>")
+                        } else {
+                                // Preserve consecutive tabs by emitting an empty text node between them.
+                                children.append("<w:t xml:space=\"preserve\"></w:t>")
+                        }
+
+                        if idx < parts.count - 1 {
+                                children.append("<w:tab/>")
+                        }
+                }
+
+                if children.isEmpty {
+                        children = ["<w:t/>"]
+                }
+
+                return """
+                <w:r>
+                    \(rPrXml)\(children.joined())
+                </w:r>
+                """
     }
 
     private static func trimTrailingNewlines(in range: NSRange, string: NSString) -> NSRange {

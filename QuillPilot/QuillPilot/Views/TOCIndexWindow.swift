@@ -1163,11 +1163,7 @@ class TOCIndexWindowController: NSWindowController, NSWindowDelegate, NSOutlineV
             if firstLetter != currentLetter {
                 currentLetter = firstLetter
                 // Avoid inserting a leading blank line before the first letter section.
-                if indexString.string.hasSuffix("Index\n") {
-                    indexString.append(NSAttributedString(string: "\(currentLetter)\n", attributes: letterAttrs))
-                } else {
-                    indexString.append(NSAttributedString(string: "\n\(currentLetter)\n", attributes: letterAttrs))
-                }
+                indexString.append(NSAttributedString(string: "\(currentLetter)\n", attributes: letterAttrs))
             }
 
             // Format page numbers according to selected format

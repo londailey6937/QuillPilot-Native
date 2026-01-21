@@ -46,6 +46,11 @@ private final class AttachmentClickableTextView: NSTextView {
     var onToggleNumberedList: (() -> Void)?
     var onRestartNumbering: (() -> Void)?
 
+    var showsParagraphMarks: Bool = false
+    var paragraphMarksColor: NSColor = .systemOrange
+    private let paragraphGlyph = "¶"
+    private let spaceGlyph = "·"
+
     @objc func qpToggleBulletedList(_ sender: Any?) {
         onToggleBulletedList?()
     }
@@ -153,6 +158,81 @@ private final class AttachmentClickableTextView: NSTextView {
         if let pending = pendingAttachmentSelection {
             setSelectedRange(pending)
             pendingAttachmentSelection = nil
+        }
+    }
+
+    override func draw(_ dirtyRect: NSRect) {
+        super.draw(dirtyRect)
+
+        guard showsParagraphMarks,
+              let layoutManager = layoutManager,
+              let textContainer = textContainer,
+              let textStorage = textStorage else { return }
+
+        let glyphRange = layoutManager.glyphRange(forBoundingRect: dirtyRect, in: textContainer)
+        let textNSString = textStorage.string as NSString
+        let origin = textContainerOrigin
+
+        layoutManager.enumerateLineFragments(forGlyphRange: glyphRange) { rect, usedRect, _, lineGlyphRange, _ in
+            let charRange = layoutManager.characterRange(forGlyphRange: lineGlyphRange, actualGlyphRange: nil)
+            guard charRange.length > 0 else { return }
+
+            let lineString = textNSString.substring(with: charRange)
+            let emptyLineCharacters = CharacterSet.whitespacesAndNewlines.union(CharacterSet(charactersIn: "\u{00A0}"))
+            let isEmptyLine = lineString.trimmingCharacters(in: emptyLineCharacters).isEmpty
+            let fontIndex = max(0, min(max(charRange.location, NSMaxRange(charRange) - 1), textStorage.length - 1))
+            let lineFont = (textStorage.attribute(.font, at: fontIndex, effectiveRange: nil) as? NSFont)
+                ?? self.typingAttributes[.font] as? NSFont
+                ?? self.font
+                ?? NSFont.systemFont(ofSize: 12)
+            let paragraphStyle = (textStorage.attribute(.paragraphStyle, at: fontIndex, effectiveRange: nil) as? NSParagraphStyle)
+                ?? self.defaultParagraphStyle
+                ?? NSParagraphStyle.default
+            let baselineY = rect.minY + layoutManager.defaultBaselineOffset(for: lineFont)
+
+            if isEmptyLine {
+                let drawPoint = NSPoint(x: origin.x + rect.minX, y: origin.y + baselineY)
+                (self.paragraphGlyph as NSString).draw(at: drawPoint, withAttributes: [.font: lineFont, .foregroundColor: self.paragraphMarksColor])
+                return
+            }
+
+            let centeredLine: Bool = {
+                let leftInset = usedRect.minX - rect.minX
+                let rightInset = rect.maxX - usedRect.maxX
+                let symmetry = abs(leftInset - rightInset)
+                return usedRect.width > 0 && symmetry < 2 && leftInset > 6
+            }()
+            let drawSpaceDots = (paragraphStyle.alignment == .left || paragraphStyle.alignment == .justified) && !centeredLine
+            for i in charRange.location..<(NSMaxRange(charRange)) {
+                if textNSString.character(at: i) == 0x20 {
+                    if !drawSpaceDots { continue }
+                    let prevChar = i > charRange.location ? textNSString.character(at: i - 1) : 0
+                    let nextChar = i + 1 < NSMaxRange(charRange) ? textNSString.character(at: i + 1) : 0
+                    if prevChar == 0x2E || nextChar == 0x2E {
+                        continue
+                    }
+                    let glyphIndex = layoutManager.glyphIndexForCharacter(at: i)
+                    let pos = layoutManager.location(forGlyphAt: glyphIndex)
+                    let attrs = textStorage.attributes(at: i, effectiveRange: nil)
+                    let font = (attrs[.font] as? NSFont) ?? NSFont.systemFont(ofSize: 12)
+                    let spaceWidth = (" " as NSString).size(withAttributes: [.font: font]).width
+                    let dotSize = (self.spaceGlyph as NSString).size(withAttributes: [.font: font]).width
+                    let drawPoint = NSPoint(x: origin.x + pos.x + max(0, (spaceWidth - dotSize) / 2), y: origin.y + pos.y)
+                    (self.spaceGlyph as NSString).draw(at: drawPoint, withAttributes: [.font: font, .foregroundColor: self.paragraphMarksColor])
+                }
+            }
+
+            let lastCharIndex = NSMaxRange(charRange) - 1
+            if lastCharIndex >= 0 {
+                let ch = textNSString.character(at: lastCharIndex)
+                let endsWithNewline = (ch == 0x0A || ch == 0x0D)
+                let isDocumentEnd = NSMaxRange(charRange) == textStorage.length
+                if endsWithNewline || isDocumentEnd {
+                    let x = origin.x + (usedRect.width > 0 ? usedRect.maxX : rect.minX)
+                    let drawPoint = NSPoint(x: x, y: origin.y + baselineY)
+                    (self.paragraphGlyph as NSString).draw(at: drawPoint, withAttributes: [.font: lineFont, .foregroundColor: self.paragraphMarksColor])
+                }
+            }
         }
     }
 
@@ -448,6 +528,8 @@ class EditorViewController: NSViewController {
     private var outlineFlashRange: NSRange?
     private var outlineFlashOverlay: OutlineFlashOverlayView?
     private var persistentColumnOutline: (table: NSTextTable, range: NSRange)?
+
+    private var paragraphMarksVisibleState: Bool = false
 
     private final class OutlineFlashOverlayView: NSView {
         var rects: [NSRect] = []
@@ -1104,6 +1186,7 @@ class EditorViewController: NSViewController {
             self.insertImage(image, sourceURL: url, insertionPoint: insertionPoint, sourceRange: sourceRange)
         }
         textView = clickable
+        applyParagraphMarksVisibility()
         textView.minSize = NSSize(width: textFrame.width, height: textFrame.height)
         textView.maxSize = NSSize(width: textFrame.width, height: CGFloat.greatestFiniteMagnitude)
         textView.isVerticallyResizable = false
@@ -1623,6 +1706,33 @@ class EditorViewController: NSViewController {
 
         textView.didChangeText()
         textView.undoManager?.setActionName("Underline")
+    }
+
+    @discardableResult
+    func toggleParagraphMarks() -> Bool {
+        paragraphMarksVisibleState.toggle()
+        applyParagraphMarksVisibility()
+        return paragraphMarksVisibleState
+    }
+
+    func paragraphMarksVisible() -> Bool {
+        paragraphMarksVisibleState
+    }
+
+    private func applyParagraphMarksVisibility() {
+        guard let paragraphTextView = textView as? AttachmentClickableTextView else { return }
+        paragraphTextView.showsParagraphMarks = paragraphMarksVisibleState
+        paragraphTextView.paragraphMarksColor = paragraphMarksColor(for: currentTheme)
+        paragraphTextView.needsDisplay = true
+    }
+
+    private func paragraphMarksColor(for theme: AppTheme) -> NSColor {
+        switch theme {
+        case .night:
+            return theme.insertionPointColor.withAlphaComponent(0.75)
+        case .day, .cream:
+            return theme.pageBorder.withAlphaComponent(0.8)
+        }
     }
 
     func setAlignment(_ alignment: NSTextAlignment) {
@@ -7638,6 +7748,8 @@ case "Book Subtitle":
                 .paragraphStyle: paragraphStyle
             ]
         }
+
+        applyParagraphMarksVisibility()
     }
 
     private func adjustIndent(by delta: CGFloat) {

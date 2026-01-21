@@ -1184,25 +1184,26 @@ extension MainWindowController {
         }
     }
 
-    private func writeDocument(to url: URL, format: ExportFormat) throws {
+    private func writeDocument(to url: URL, format: ExportFormat, content: ExportContent) throws {
         switch format {
         case .docx:
-            let stamped = stampImageSizes(in: mainContentViewController.editorExportReadyAttributedContent())
+            guard case let .attributed(attributed) = content else { return }
+            let stamped = stampImageSizes(in: attributed)
             let data = try DocxBuilder.makeDocxData(from: stamped)
             try data.write(to: url, options: .atomic)
             debugLog("✅ DOCX exported to \(url.path)")
 
         case .rtf:
-            let content = mainContentViewController.editorExportReadyAttributedContent()
-            let fullRange = NSRange(location: 0, length: content.length)
-            let data = try content.data(from: fullRange, documentAttributes: [.documentType: NSAttributedString.DocumentType.rtf])
+            guard case let .attributed(attributed) = content else { return }
+            let fullRange = NSRange(location: 0, length: attributed.length)
+            let data = try attributed.data(from: fullRange, documentAttributes: [.documentType: NSAttributedString.DocumentType.rtf])
             try data.write(to: url, options: .atomic)
             debugLog("✅ RTF exported to \(url.path)")
 
         case .rtfd:
-            let content = mainContentViewController.editorExportReadyAttributedContent()
-            let fullRange = NSRange(location: 0, length: content.length)
-            let wrapper = try content.fileWrapper(
+            guard case let .attributed(attributed) = content else { return }
+            let fullRange = NSRange(location: 0, length: attributed.length)
+            let wrapper = try attributed.fileWrapper(
                 from: fullRange,
                 documentAttributes: [.documentType: NSAttributedString.DocumentType.rtfd]
             )
@@ -1214,45 +1215,68 @@ extension MainWindowController {
             debugLog("✅ RTFD exported to \(url.path)")
 
         case .odt:
-            let content = normalizedTOCIndexForOpenDocument(mainContentViewController.editorExportReadyAttributedContent())
-            let fullRange = NSRange(location: 0, length: content.length)
-            let data = try content.data(from: fullRange, documentAttributes: [.documentType: NSAttributedString.DocumentType.openDocument])
-            try data.write(to: url, options: Data.WritingOptions.atomic)
+            guard case let .attributed(attributed) = content else {
+                debugLog("❌ ODT export: no attributed content")
+                return
+            }
+            debugLog("📄 ODT export: normalizing content...")
+            let normalized = normalizedTOCIndexForOpenDocument(attributed)
+            let fullRange = NSRange(location: 0, length: normalized.length)
+            debugLog("📄 ODT export: converting to ODT data...")
+            var data = try normalized.data(from: fullRange, documentAttributes: [.documentType: NSAttributedString.DocumentType.openDocument])
+            // Post-process the generated ODT to add proper leader-tab stops that OpenOffice/LibreOffice respect.
+            // Cocoa's ODT exporter does not reliably preserve leader tabs/right tab stops.
+            do {
+                data = try postprocessODTForLeaders(data)
+                debugLog("📄 ODT export: applied leader-tab postprocess")
+            } catch {
+                debugLog("⚠️ ODT export: leader-tab postprocess failed, writing original ODT. Error: \(error)")
+            }
+            debugLog("📄 ODT export: writing \(data.count) bytes to \(url.path)")
+            try data.write(to: url)
             debugLog("✅ ODT exported to \(url.path)")
 
         case .txt:
-            let text = mainContentViewController.editorViewController.plainTextContent()
+            guard case let .plainText(text) = content else { return }
             try text.write(to: url, atomically: true, encoding: .utf8)
             debugLog("✅ TXT exported to \(url.path)")
 
         case .markdown:
-            let text = mainContentViewController.editorViewController.plainTextContent()
+            guard case let .plainText(text) = content else { return }
             try text.write(to: url, atomically: true, encoding: .utf8)
             debugLog("✅ Markdown exported to \(url.path)")
 
         case .html:
-            let content = mainContentViewController.editorExportReadyAttributedContent()
-            let fullRange = NSRange(location: 0, length: content.length)
-            let data = try content.data(from: fullRange, documentAttributes: [.documentType: NSAttributedString.DocumentType.html])
+            guard case let .attributed(attributed) = content else { return }
+            let fullRange = NSRange(location: 0, length: attributed.length)
+            let data = try attributed.data(from: fullRange, documentAttributes: [.documentType: NSAttributedString.DocumentType.html])
             try data.write(to: url, options: .atomic)
             debugLog("✅ HTML exported to \(url.path)")
 
         case .pdf:
-            let data = mainContentViewController.editorPDFData()
+            guard case let .pdf(data) = content else { return }
             try data.write(to: url, options: .atomic)
             debugLog("✅ PDF exported to \(url.path)")
 
         case .epub:
-            let content = mainContentViewController.editorExportReadyAttributedContent()
-            let epubData = try self.generateEPub(from: content, url: url)
+            guard case let .attributed(attributed) = content else { return }
+            let epubData = try self.generateEPub(from: attributed, url: url)
             try epubData.write(to: url, options: Data.WritingOptions.atomic)
             debugLog("✅ ePub exported to \(url.path)")
 
         case .mobi:
-            let content = mainContentViewController.editorExportReadyAttributedContent()
-            let mobiData = try self.generateMobi(from: content, url: url)
+            guard case let .attributed(attributed) = content else { return }
+            let mobiData = try self.generateMobi(from: attributed, url: url)
             try mobiData.write(to: url, options: Data.WritingOptions.atomic)
             debugLog("✅ Mobi exported to \(url.path)")
+        }
+
+        if !FileManager.default.fileExists(atPath: url.path) {
+            throw NSError(
+                domain: "QuillPilot",
+                code: 21,
+                userInfo: [NSLocalizedDescriptionKey: "Export failed to create file at \(url.path)"]
+            )
         }
     }
 
@@ -1267,25 +1291,39 @@ extension MainWindowController {
             "Index Entry"
         ]
 
-        // Printable width for Letter (8.5" minus 1" margins each side), with small right padding.
-        let printableWidth: CGFloat = 612 - (72 * 2)
-        let rightPadding: CGFloat = 10
-        let rightTab = printableWidth - rightPadding
-
+        // Collect paragraph ranges first to avoid mutation during iteration
+        var paragraphRanges: [NSRange] = []
         var location = 0
+        let originalString = attributed.string as NSString
+        while location < originalString.length {
+            let range = originalString.paragraphRange(for: NSRange(location: location, length: 0))
+            paragraphRanges.append(range)
+            location = NSMaxRange(range)
+        }
+
+        // Regex to find page number at end of line
         let pageRegex = try? NSRegularExpression(pattern: "([0-9A-Za-z]+(?:\\s*,\\s*[0-9A-Za-z]+)*)\\s*$", options: [])
 
-        while location < mutable.length {
-            let full = mutable.string as NSString
-            let paragraphRange = full.paragraphRange(for: NSRange(location: location, length: 0))
+        // Strict leader detection to avoid corrupting body paragraphs.
+        // Matches lines that include an obvious leader run (many dots or dot+space patterns) before the trailing page token.
+        let leaderRegex = try? NSRegularExpression(pattern: "(\\.{4,}|(?:\\s*\\.\\s*){8,}|[·•]{6,}|[~∼˜]{6,})\\s*[0-9A-Za-z]+\\s*$", options: [])
 
-            let paragraphText = (mutable.string as NSString).substring(with: paragraphRange)
+        debugLog("📄 ODT normalization: processing \(paragraphRanges.count) paragraphs")
+
+        // Process in reverse to preserve earlier ranges when modifying
+        for paragraphRange in paragraphRanges.reversed() {
+            guard paragraphRange.location < mutable.length else { continue }
+            let safeRange = NSRange(location: paragraphRange.location, length: min(paragraphRange.length, mutable.length - paragraphRange.location))
+            guard safeRange.length > 0 else { continue }
+
+            let paragraphText = (mutable.string as NSString).substring(with: safeRange)
             let hasTrailingNewline = paragraphText.hasSuffix("\n")
             let trimmed = paragraphText.trimmingCharacters(in: .newlines)
             let normalizedTrimmed = trimmed.replacingOccurrences(of: "\u{00A0}", with: " ")
 
-            let styleName = (mutable.attribute(styleKey, at: paragraphRange.location, effectiveRange: nil) as? String) ?? ""
+            let styleName = (mutable.attribute(styleKey, at: safeRange.location, effectiveRange: nil) as? String) ?? ""
             let styleMatch = targetStyles.contains(styleName)
+            let hasLeaderRun = leaderRegex?.firstMatch(in: normalizedTrimmed, range: NSRange(location: 0, length: (normalizedTrimmed as NSString).length)) != nil
 
             var pageText: String?
             var leftPart: String?
@@ -1301,33 +1339,221 @@ extension MainWindowController {
 
             if let pageText, var leftPart {
                 leftPart = leftPart.replacingOccurrences(of: "\t", with: " ")
-                // Remove trailing leader dots and extra spacing (including NBSP).
-                leftPart = leftPart.replacingOccurrences(of: "[.·\\s\\u{00A0}]+$", with: "", options: .regularExpression)
-                let leftText = leftPart.trimmingCharacters(in: .whitespacesAndNewlines)
-
-                let isIndex = styleName.contains("Index")
-                let font = (mutable.attribute(.font, at: paragraphRange.location, effectiveRange: nil) as? NSFont)
-                    ?? NSFont.systemFont(ofSize: 12)
-                let leader = makeLeaderDots(leftText: leftText, pageText: pageText, font: font, rightTab: rightTab, isIndex: isIndex)
-                let rebuilt = "\(leftText)\(leader)\u{00A0}\(pageText)" + (hasTrailingNewline ? "\n" : "")
-
-                var attrs = mutable.attributes(at: paragraphRange.location, effectiveRange: nil)
-                if let style = attrs[.paragraphStyle] as? NSParagraphStyle,
-                   let mutableStyle = style.mutableCopy() as? NSMutableParagraphStyle {
-                    // Remove tab stops so ODT doesn't push numbers to new lines.
-                    mutableStyle.tabStops = []
-                    attrs[.paragraphStyle] = mutableStyle.copy() as? NSParagraphStyle
+                // Remove trailing leader dots and extra spacing.
+                // Use a loop to strip all trailing dots, spaces, and common leader characters
+                var cleanedLeft = leftPart
+                let leaderChars = CharacterSet(charactersIn: ". ·~∼˜\u{00A0}\u{0303}")
+                while let lastChar = cleanedLeft.last, leaderChars.contains(lastChar.unicodeScalars.first!) {
+                    cleanedLeft.removeLast()
                 }
+                let leftText = cleanedLeft.trimmingCharacters(in: .whitespacesAndNewlines)
 
-                if styleMatch || trimmed.contains("\t") || trimmed.contains(".") {
-                    mutable.replaceCharacters(in: paragraphRange, with: NSAttributedString(string: rebuilt, attributes: attrs))
+                // Keep a simple explicit leader marker that we'll later convert into a true ODT leader tab.
+                // We use a stable token " .... " so the ODT post-processor can reliably find TOC/Index entries.
+                let rebuilt = "\(leftText) .... \(pageText)" + (hasTrailingNewline ? "\n" : "")
+
+                var attrs = mutable.attributes(at: safeRange.location, effectiveRange: nil)
+                // Clear any tab stops - they cause issues in ODT
+                let mutableStyle: NSMutableParagraphStyle
+                if let style = attrs[.paragraphStyle] as? NSParagraphStyle,
+                   let msCopy = style.mutableCopy() as? NSMutableParagraphStyle {
+                    mutableStyle = msCopy
+                } else {
+                    mutableStyle = NSMutableParagraphStyle()
+                }
+                mutableStyle.tabStops = []
+                attrs[.paragraphStyle] = mutableStyle.copy() as? NSParagraphStyle
+
+                // Remove underline styling - leader dots often have underlines that cause issues in ODT
+                attrs.removeValue(forKey: .underlineStyle)
+                attrs.removeValue(forKey: .underlineColor)
+                attrs.removeValue(forKey: .strikethroughStyle)
+                attrs.removeValue(forKey: .strikethroughColor)
+
+                // Apply normalization ONLY when we have strong evidence this is a TOC/Index line.
+                // This prevents rewriting normal body paragraphs.
+                if styleMatch || trimmed.contains("\t") || hasLeaderRun {
+                    debugLog("📄 Normalizing TOC line: '\(leftText)' -> page \(pageText)")
+                    mutable.replaceCharacters(in: safeRange, with: NSAttributedString(string: rebuilt, attributes: attrs))
                 }
             }
-
-            location = NSMaxRange(paragraphRange)
         }
 
         return mutable
+    }
+
+    // MARK: - ODT Postprocess (Leader Tabs)
+
+    private func postprocessODTForLeaders(_ odtData: Data) throws -> Data {
+        // ODT is a ZIP. We patch content.xml to:
+        // 1) Convert leader dots into <text:tab/> elements
+        // 2) Add leader tab-stops into automatic styles used by TOC/Index paragraphs (P2/P9)
+        //
+        // We intentionally avoid extra dependencies here and do a simple unzip/patch/rezip
+        // using system tools. If this fails for any reason, the caller falls back to the
+        // original Cocoa-generated ODT.
+        let fileManager = FileManager.default
+        let tempDir = fileManager.temporaryDirectory.appendingPathComponent("QuillPilotODT_\(UUID().uuidString)", isDirectory: true)
+        try fileManager.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        defer { try? fileManager.removeItem(at: tempDir) }
+
+        let inURL = tempDir.appendingPathComponent("in.odt")
+        let outURL = tempDir.appendingPathComponent("out.odt")
+        let unpackedDir = tempDir.appendingPathComponent("unpacked", isDirectory: true)
+        try fileManager.createDirectory(at: unpackedDir, withIntermediateDirectories: true)
+        try odtData.write(to: inURL, options: .atomic)
+
+        func runTool(_ executablePath: String, _ args: [String], cwd: URL) throws {
+            let process = Process()
+            process.executableURL = URL(fileURLWithPath: executablePath)
+            process.arguments = args
+            process.currentDirectoryURL = cwd
+
+            let outPipe = Pipe()
+            let errPipe = Pipe()
+            process.standardOutput = outPipe
+            process.standardError = errPipe
+            try process.run()
+            process.waitUntilExit()
+
+            if process.terminationStatus != 0 {
+                let stderr = String(data: errPipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
+                throw NSError(
+                    domain: "QuillPilot",
+                    code: Int(process.terminationStatus),
+                    userInfo: [NSLocalizedDescriptionKey: "Tool failed: \(executablePath) \(args.joined(separator: " "))\n\(stderr)"]
+                )
+            }
+        }
+
+        // Unzip
+        try runTool("/usr/bin/unzip", ["-q", inURL.path, "-d", unpackedDir.path], cwd: tempDir)
+
+        // Patch content.xml if present
+        let contentURL = unpackedDir.appendingPathComponent("content.xml")
+        if fileManager.fileExists(atPath: contentURL.path) {
+            let xml = try String(contentsOf: contentURL, encoding: .utf8)
+            let patched = patchODTContentXMLForLeaderTabs(xml)
+            try patched.write(to: contentURL, atomically: true, encoding: .utf8)
+        }
+
+        // Rezip with ODT-friendly ordering: mimetype first and stored (uncompressed).
+        // Then add the rest deflated.
+        if fileManager.fileExists(atPath: outURL.path) {
+            try? fileManager.removeItem(at: outURL)
+        }
+
+        // zip wants to run from inside the directory being zipped.
+        // Store mimetype (no compression) then add everything else.
+        if fileManager.fileExists(atPath: unpackedDir.appendingPathComponent("mimetype").path) {
+            try runTool("/usr/bin/zip", ["-X0", outURL.path, "mimetype"], cwd: unpackedDir)
+            try runTool("/usr/bin/zip", ["-Xr9D", outURL.path, ".", "-x", "mimetype", "./mimetype"], cwd: unpackedDir)
+        } else {
+            // Fallback: zip everything (some readers still open it, but spec prefers mimetype first).
+            try runTool("/usr/bin/zip", ["-Xr9D", outURL.path, "."], cwd: unpackedDir)
+        }
+
+        return try Data(contentsOf: outURL)
+    }
+
+    private func patchODTContentXMLForLeaderTabs(_ xml: String) -> String {
+        var result = xml
+
+        // 1) Identify TOC/Index paragraph styles that actually contain leader runs.
+        // Cocoa's ODT exporter uses auto-generated styles (often P2 for TOC and P9+ for Index),
+        // but style numbers can vary depending on document contents.
+        var stylesNeedingLeaderTabs = Set<String>(["P2", "P9"])
+
+        // Match both span-wrapped and plain paragraphs.
+        // We accept a run of common leader characters (dots, middle dots, NBSP, spaces, tildes) before the page number.
+        let leaderRun = "(?:[\\.·\\u00B7~∼˜\\u00A0\\s]{3,})"
+        let styleNameCapture = "text:style-name=\\\"(P\\d+)\\\""
+        let patternSpanStyle = "<text:p[^>]*\\b" + styleNameCapture + "[^>]*>\\s*<text:span[^>]*>[^<]*?" + leaderRun + "\\s*[0-9]+\\s*</text:span>\\s*</text:p>"
+        let patternPlainStyle = "<text:p[^>]*\\b" + styleNameCapture + "[^>]*>[^<]*?" + leaderRun + "\\s*[0-9]+\\s*</text:p>"
+
+        for pattern in [patternSpanStyle, patternPlainStyle] {
+            if let re = try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive]) {
+                let ns = result as NSString
+                let range = NSRange(location: 0, length: ns.length)
+                re.enumerateMatches(in: result, options: [], range: range) { match, _, _ in
+                    guard let match, match.numberOfRanges >= 2 else { return }
+                    let styleRange = match.range(at: 1)
+                    guard styleRange.location != NSNotFound else { return }
+                    stylesNeedingLeaderTabs.insert(ns.substring(with: styleRange))
+                }
+            }
+        }
+
+        // 2) Ensure every identified style has a dotted leader right tab stop.
+        // Add/append the leader tab-stop even if other tab-stops are already present.
+        for styleName in stylesNeedingLeaderTabs.sorted() {
+            result = addLeaderTabStop(toStyleNamed: styleName, in: result)
+        }
+
+        // 3) Replace leader runs in paragraphs with <text:tab/> so the leader tab-stop draws dots.
+        // Case A: span-wrapped paragraphs (often TOC entries)
+        let patternSpan = "<text:p([^>]*)>\\s*<text:span([^>]*)>([^<]*?)" + leaderRun + "\\s*([0-9]+)\\s*</text:span>\\s*</text:p>"
+        if let re = try? NSRegularExpression(pattern: patternSpan, options: [.caseInsensitive]) {
+            let range = NSRange(location: 0, length: (result as NSString).length)
+            result = re.stringByReplacingMatches(in: result, options: [], range: range, withTemplate: "<text:p$1><text:span$2>$3</text:span><text:tab/><text:span$2>$4</text:span></text:p>")
+        }
+
+        // Case B: plain paragraphs (often Index entries)
+        let patternPlain = "<text:p([^>]*)>([^<]*?)" + leaderRun + "\\s*([0-9]+)\\s*</text:p>"
+        if let re2 = try? NSRegularExpression(pattern: patternPlain, options: [.caseInsensitive]) {
+            let range = NSRange(location: 0, length: (result as NSString).length)
+            result = re2.stringByReplacingMatches(in: result, options: [], range: range, withTemplate: "<text:p$1>$2<text:tab/>$3</text:p>")
+        }
+
+        return result
+    }
+
+    private func addLeaderTabStop(toStyleNamed styleName: String, in xml: String) -> String {
+        // Adds a leader dotted right tab stop at the right margin (6.5in for Letter with 1" margins).
+        // If the style already contains a matching dotted right tab stop at our position, do nothing.
+        let styleStartToken = "<style:style style:name=\"\(styleName)\""
+        guard let styleStartRange = xml.range(of: styleStartToken) else { return xml }
+
+        guard let styleEndRange = xml.range(of: "</style:style>", range: styleStartRange.lowerBound..<xml.endIndex) else { return xml }
+        let styleBlockRange = styleStartRange.lowerBound..<styleEndRange.upperBound
+        let styleBlock = String(xml[styleBlockRange])
+
+        let desiredTabStop = "<style:tab-stop style:position=\"6.5in\" style:type=\"right\" style:leader-style=\"dotted\" style:leader-text=\".\"/>"
+        if styleBlock.contains(desiredTabStop) {
+            return xml
+        }
+
+        let tabStopsXML = "<style:tab-stops>\(desiredTabStop)</style:tab-stops>"
+
+        // If there is already a <style:tab-stops> section, append our desired stop.
+        if let tabStopsClose = styleBlock.range(of: "</style:tab-stops>") {
+            var updatedBlock = styleBlock
+            updatedBlock.insert(contentsOf: desiredTabStop, at: tabStopsClose.lowerBound)
+            return xml.replacingCharacters(in: styleBlockRange, with: updatedBlock)
+        }
+
+        // Self-closing paragraph-properties: expand to include tab stops.
+        let propsSelfClosingPattern = "<style:paragraph-properties([^>]*)/>"
+        if let re = try? NSRegularExpression(pattern: propsSelfClosingPattern, options: []) {
+            let updatedBlock = re.stringByReplacingMatches(
+                in: styleBlock,
+                options: [],
+                range: NSRange(location: 0, length: (styleBlock as NSString).length),
+                withTemplate: "<style:paragraph-properties$1>\(tabStopsXML)</style:paragraph-properties>"
+            )
+            if updatedBlock != styleBlock {
+                return xml.replacingCharacters(in: styleBlockRange, with: updatedBlock)
+            }
+        }
+
+        // Non-self-closing paragraph-properties: insert tab stops before closing tag.
+        if let propsClose = styleBlock.range(of: "</style:paragraph-properties>") {
+            var updatedBlock = styleBlock
+            updatedBlock.insert(contentsOf: tabStopsXML, at: propsClose.lowerBound)
+            return xml.replacingCharacters(in: styleBlockRange, with: updatedBlock)
+        }
+
+        return xml
     }
 
     private func makeLeaderDots(leftText: String, pageText: String, font: NSFont, rightTab: CGFloat, isIndex: Bool) -> String {
@@ -1338,9 +1564,8 @@ extension MainWindowController {
 
         let available = max(0, rightTab - leftWidth - pageWidth - (spaceWidth * 2))
         let maxDots = max(3, Int(floor(available / max(1, dotWidth))))
-        let nbsp = "\u{00A0}"
-        let unit = isIndex ? "\(nbsp)." : ".\(nbsp)"
-        return nbsp + String(repeating: unit, count: maxDots)
+        let unit = isIndex ? " ." : ". "
+        return " " + String(repeating: unit, count: maxDots)
     }
 
     private func stripLeaderDotsBeforeFirstTab(in attributed: NSMutableAttributedString, range: NSRange) {
@@ -1372,36 +1597,83 @@ extension MainWindowController {
         attributed.deleteCharacters(in: deleteRange)
     }
 
+    private enum ExportContent {
+        case attributed(NSAttributedString)
+        case plainText(String)
+        case pdf(Data)
+    }
+
+    private func captureExportContent(for format: ExportFormat) -> ExportContent {
+        switch format {
+        case .txt, .markdown:
+            return .plainText(mainContentViewController.editorViewController.plainTextContent())
+        case .pdf:
+            return .pdf(mainContentViewController.editorPDFData())
+        default:
+            return .attributed(mainContentViewController.editorExportReadyAttributedContent())
+        }
+    }
+
     private func exportToURL(_ url: URL, format: ExportFormat) {
-        do {
-            try writeDocument(to: url, format: format)
-            NSDocumentController.shared.noteNewRecentDocumentURL(url)
-            RecentDocuments.shared.note(url)
-        } catch {
-            debugLog("❌ Export failed: \(error.localizedDescription)")
-            self.presentErrorAlert(message: "Export failed", details: error.localizedDescription)
+        let content = captureExportContent(for: format)
+        let didAccess = url.startAccessingSecurityScopedResource()
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            defer {
+                if didAccess {
+                    url.stopAccessingSecurityScopedResource()
+                }
+            }
+            do {
+                try self?.writeDocument(to: url, format: format, content: content)
+                DispatchQueue.main.async {
+                    if FileManager.default.fileExists(atPath: url.path) {
+                        NSDocumentController.shared.noteNewRecentDocumentURL(url)
+                        RecentDocuments.shared.note(url)
+                    }
+                }
+            } catch {
+                DispatchQueue.main.async {
+                    self?.debugLog("❌ Export failed: \(error.localizedDescription)")
+                    self?.presentErrorAlert(message: "Export failed", details: error.localizedDescription)
+                }
+            }
         }
     }
 
     private func saveToURL(_ url: URL, format: ExportFormat) {
-        do {
-            try writeDocument(to: url, format: format)
-
-            // Update per-document sidecars/notes to this URL (covers first Save and Save As).
-            mainContentViewController.documentURLDidUpdate(url: url)
-
-            if format == .docx {
-                // Primary document save: attach sidecars (character library) to this URL.
-                CharacterLibrary.shared.setDocumentURL(url)
+        let content = captureExportContent(for: format)
+        let didAccess = url.startAccessingSecurityScopedResource()
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            defer {
+                if didAccess {
+                    url.stopAccessingSecurityScopedResource()
+                }
             }
+            do {
+                try self?.writeDocument(to: url, format: format, content: content)
+                DispatchQueue.main.async {
+                    guard let self else { return }
+                    // Update per-document sidecars/notes to this URL (covers first Save and Save As).
+                    self.mainContentViewController.documentURLDidUpdate(url: url)
 
-            // Ensure Welcome recents are populated (this app is not NSDocument-based).
-            NSDocumentController.shared.noteNewRecentDocumentURL(url)
-            RecentDocuments.shared.note(url)
-            hasUnsavedChanges = false
-        } catch {
-            debugLog("❌ Save failed: \(error.localizedDescription)")
-            self.presentErrorAlert(message: "Save failed", details: error.localizedDescription)
+                    if format == .docx {
+                        // Primary document save: attach sidecars (character library) to this URL.
+                        CharacterLibrary.shared.setDocumentURL(url)
+                    }
+
+                    // Ensure Welcome recents are populated (this app is not NSDocument-based).
+                    if FileManager.default.fileExists(atPath: url.path) {
+                        NSDocumentController.shared.noteNewRecentDocumentURL(url)
+                        RecentDocuments.shared.note(url)
+                    }
+                    self.hasUnsavedChanges = false
+                }
+            } catch {
+                DispatchQueue.main.async {
+                    self?.debugLog("❌ Save failed: \(error.localizedDescription)")
+                    self?.presentErrorAlert(message: "Save failed", details: error.localizedDescription)
+                }
+            }
         }
     }
 

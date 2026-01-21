@@ -42,6 +42,7 @@ Pods/
 
 # Temporary files
 tmp/
+tmp_logs/
 *.tmp
 *.swp
 *~

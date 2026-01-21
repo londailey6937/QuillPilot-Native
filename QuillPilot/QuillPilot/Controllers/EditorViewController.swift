@@ -48,8 +48,10 @@ private final class AttachmentClickableTextView: NSTextView {
 
     var showsParagraphMarks: Bool = false
     var paragraphMarksColor: NSColor = .systemOrange
+    var spaceDotsColor: NSColor = .darkGray
     private let paragraphGlyph = "¶"
-    private let spaceGlyph = "·"
+    private let spaceGlyph = "•"
+    private let tabGlyph = "→"
 
     @objc func qpToggleBulletedList(_ sender: Any?) {
         onToggleBulletedList?()
@@ -173,64 +175,167 @@ private final class AttachmentClickableTextView: NSTextView {
         let textNSString = textStorage.string as NSString
         let origin = textContainerOrigin
 
-        layoutManager.enumerateLineFragments(forGlyphRange: glyphRange) { rect, usedRect, _, lineGlyphRange, _ in
+        layoutManager.enumerateLineFragments(forGlyphRange: glyphRange) { lineFragmentRect, usedRect, _, lineGlyphRange, _ in
             let charRange = layoutManager.characterRange(forGlyphRange: lineGlyphRange, actualGlyphRange: nil)
             guard charRange.length > 0 else { return }
 
             let lineString = textNSString.substring(with: charRange)
             let emptyLineCharacters = CharacterSet.whitespacesAndNewlines.union(CharacterSet(charactersIn: "\u{00A0}"))
             let isEmptyLine = lineString.trimmingCharacters(in: emptyLineCharacters).isEmpty
-            let fontIndex = max(0, min(max(charRange.location, NSMaxRange(charRange) - 1), textStorage.length - 1))
-            let lineFont = (textStorage.attribute(.font, at: fontIndex, effectiveRange: nil) as? NSFont)
-                ?? self.typingAttributes[.font] as? NSFont
-                ?? self.font
-                ?? NSFont.systemFont(ofSize: 12)
-            let paragraphStyle = (textStorage.attribute(.paragraphStyle, at: fontIndex, effectiveRange: nil) as? NSParagraphStyle)
-                ?? self.defaultParagraphStyle
-                ?? NSParagraphStyle.default
-            let baselineY = rect.minY + layoutManager.defaultBaselineOffset(for: lineFont)
+
+            // Find first non-newline character for font lookup
+            let fontIndex: Int = {
+                let end = NSMaxRange(charRange)
+                var idx = charRange.location
+                while idx < end {
+                    let ch = textNSString.character(at: idx)
+                    if ch != 0x0A && ch != 0x0D && ch != 0x2029 && ch != 0x2028 {
+                        return idx
+                    }
+                    idx += 1
+                }
+                return max(0, min(charRange.location, textStorage.length - 1))
+            }()
+
+            let lineFont: NSFont = {
+                if isEmptyLine {
+                    // For empty lines, use previous paragraph's font
+                    let prevIndex = max(0, charRange.location - 1)
+                    if prevIndex < textStorage.length,
+                       let prevFont = textStorage.attribute(.font, at: prevIndex, effectiveRange: nil) as? NSFont {
+                        return prevFont
+                    }
+                    if let typingFont = self.typingAttributes[.font] as? NSFont {
+                        return typingFont
+                    }
+                }
+                return (textStorage.attribute(.font, at: fontIndex, effectiveRange: nil) as? NSFont)
+                    ?? self.typingAttributes[.font] as? NSFont
+                    ?? self.font
+                    ?? NSFont.systemFont(ofSize: 12)
+            }()
+
+            let paragraphStyle: NSParagraphStyle = {
+                if isEmptyLine,
+                   let typingPara = self.typingAttributes[.paragraphStyle] as? NSParagraphStyle {
+                    return typingPara
+                }
+                return (textStorage.attribute(.paragraphStyle, at: fontIndex, effectiveRange: nil) as? NSParagraphStyle)
+                    ?? self.defaultParagraphStyle
+                    ?? NSParagraphStyle.default
+            }()
+
+            // Calculate baseline Y using line fragment rect + glyph location within it
+            // location(forGlyphAt:) returns position where Y is baseline from top of line fragment
+            // NSString.draw(at:) draws with Y as top of glyph, so subtract ascender to align baselines
+            let firstGlyphLocation = layoutManager.location(forGlyphAt: lineGlyphRange.location)
+            let baselineY = origin.y + lineFragmentRect.origin.y + firstGlyphLocation.y - lineFont.ascender
 
             if isEmptyLine {
-                let drawPoint = NSPoint(x: origin.x + rect.minX, y: origin.y + baselineY)
+                let drawX = origin.x + lineFragmentRect.origin.x + paragraphStyle.headIndent
+                let drawPoint = NSPoint(x: drawX, y: baselineY)
                 (self.paragraphGlyph as NSString).draw(at: drawPoint, withAttributes: [.font: lineFont, .foregroundColor: self.paragraphMarksColor])
                 return
             }
 
+            // Check if line is centered (skip space dots for centered text)
             let centeredLine: Bool = {
-                let leftInset = usedRect.minX - rect.minX
-                let rightInset = rect.maxX - usedRect.maxX
+                let leftInset = usedRect.minX - lineFragmentRect.minX
+                let rightInset = lineFragmentRect.maxX - usedRect.maxX
                 let symmetry = abs(leftInset - rightInset)
                 return usedRect.width > 0 && symmetry < 2 && leftInset > 6
             }()
-            let drawSpaceDots = (paragraphStyle.alignment == .left || paragraphStyle.alignment == .justified) && !centeredLine
+
+            let drawSpaceDots = !centeredLine
+
+            // Draw space and tab markers
             for i in charRange.location..<(NSMaxRange(charRange)) {
-                if textNSString.character(at: i) == 0x20 {
+                let ch = textNSString.character(at: i)
+
+                // Skip newline characters
+                if ch == 0x0A || ch == 0x0D || ch == 0x2029 || ch == 0x2028 {
+                    continue
+                }
+
+                // Tab character
+                if ch == 0x09 {
+                    let glyphIndex = layoutManager.glyphIndexForCharacter(at: i)
+                    let glyphLoc = layoutManager.location(forGlyphAt: glyphIndex)
+                    let drawX = origin.x + lineFragmentRect.origin.x + glyphLoc.x
+                    let drawY = origin.y + lineFragmentRect.origin.y + glyphLoc.y - lineFont.ascender
+                    let drawPoint = NSPoint(x: drawX, y: drawY)
+                    (self.tabGlyph as NSString).draw(at: drawPoint, withAttributes: [.font: lineFont, .foregroundColor: self.paragraphMarksColor])
+                    continue
+                }
+
+                // Space characters
+                if ch == 0x20 || ch == 0x00A0 || ch == 0x202F {
                     if !drawSpaceDots { continue }
+                    // Skip space dots adjacent to periods (e.g., ellipsis)
                     let prevChar = i > charRange.location ? textNSString.character(at: i - 1) : 0
                     let nextChar = i + 1 < NSMaxRange(charRange) ? textNSString.character(at: i + 1) : 0
-                    if prevChar == 0x2E || nextChar == 0x2E {
-                        continue
-                    }
+                    if prevChar == 0x2E || nextChar == 0x2E { continue }
+
                     let glyphIndex = layoutManager.glyphIndexForCharacter(at: i)
-                    let pos = layoutManager.location(forGlyphAt: glyphIndex)
+                    let glyphLoc = layoutManager.location(forGlyphAt: glyphIndex)
                     let attrs = textStorage.attributes(at: i, effectiveRange: nil)
-                    let font = (attrs[.font] as? NSFont) ?? NSFont.systemFont(ofSize: 12)
-                    let spaceWidth = (" " as NSString).size(withAttributes: [.font: font]).width
-                    let dotSize = (self.spaceGlyph as NSString).size(withAttributes: [.font: font]).width
-                    let drawPoint = NSPoint(x: origin.x + pos.x + max(0, (spaceWidth - dotSize) / 2), y: origin.y + pos.y)
-                    (self.spaceGlyph as NSString).draw(at: drawPoint, withAttributes: [.font: font, .foregroundColor: self.paragraphMarksColor])
+                    let charFont = (attrs[.font] as? NSFont) ?? lineFont
+
+                    // Get actual rendered space width by checking next glyph position
+                    let actualSpaceWidth: CGFloat
+                    if i + 1 < NSMaxRange(charRange) {
+                        let nextGlyphIndex = layoutManager.glyphIndexForCharacter(at: i + 1)
+                        let nextGlyphLoc = layoutManager.location(forGlyphAt: nextGlyphIndex)
+                        actualSpaceWidth = nextGlyphLoc.x - glyphLoc.x
+                    } else {
+                        actualSpaceWidth = (" " as NSString).size(withAttributes: [.font: charFont]).width
+                    }
+
+                    let dotSize = (self.spaceGlyph as NSString).size(withAttributes: [.font: charFont]).width
+                    let drawX = origin.x + lineFragmentRect.origin.x + glyphLoc.x + (actualSpaceWidth - dotSize) / 2
+                    let drawY = origin.y + lineFragmentRect.origin.y + glyphLoc.y - charFont.ascender
+                    let drawPoint = NSPoint(x: drawX, y: drawY)
+                    (self.spaceGlyph as NSString).draw(at: drawPoint, withAttributes: [.font: charFont, .foregroundColor: self.paragraphMarksColor])
                 }
             }
 
+            // Draw pilcrow at end of paragraph
             let lastCharIndex = NSMaxRange(charRange) - 1
             if lastCharIndex >= 0 {
                 let ch = textNSString.character(at: lastCharIndex)
-                let endsWithNewline = (ch == 0x0A || ch == 0x0D)
+                let endsWithNewline = (ch == 0x0A || ch == 0x0D || ch == 0x2029 || ch == 0x2028)
                 let isDocumentEnd = NSMaxRange(charRange) == textStorage.length
+
                 if endsWithNewline || isDocumentEnd {
-                    let x = origin.x + (usedRect.width > 0 ? usedRect.maxX : rect.minX)
-                    let drawPoint = NSPoint(x: x, y: origin.y + baselineY)
-                    (self.paragraphGlyph as NSString).draw(at: drawPoint, withAttributes: [.font: lineFont, .foregroundColor: self.paragraphMarksColor])
+                    // Find the last visible (non-newline) character to position the pilcrow after it
+                    var endCharIndex = NSMaxRange(charRange) - 1
+                    while endCharIndex >= charRange.location {
+                        let c = textNSString.character(at: endCharIndex)
+                        if c != 0x0A && c != 0x0D && c != 0x2029 && c != 0x2028 {
+                            break
+                        }
+                        if endCharIndex == 0 { break }
+                        endCharIndex -= 1
+                    }
+
+                    // For empty lines (only newline), draw at head indent
+                    if endCharIndex < charRange.location || (endCharIndex == charRange.location && {
+                        let c = textNSString.character(at: endCharIndex)
+                        return c == 0x0A || c == 0x0D || c == 0x2029 || c == 0x2028
+                    }()) {
+                        let drawX = origin.x + lineFragmentRect.origin.x + paragraphStyle.headIndent
+                        let drawPoint = NSPoint(x: drawX, y: baselineY)
+                        (self.paragraphGlyph as NSString).draw(at: drawPoint, withAttributes: [.font: lineFont, .foregroundColor: self.paragraphMarksColor])
+                    } else {
+                        // Draw pilcrow after last visible character
+                        let glyphIndex = layoutManager.glyphIndexForCharacter(at: endCharIndex)
+                        let glyphLoc = layoutManager.location(forGlyphAt: glyphIndex)
+                        let glyphRect = layoutManager.boundingRect(forGlyphRange: NSRange(location: glyphIndex, length: 1), in: textContainer)
+                        let drawX = origin.x + lineFragmentRect.origin.x + glyphLoc.x + glyphRect.width
+                        let drawY = origin.y + lineFragmentRect.origin.y + glyphLoc.y - lineFont.ascender
+                        let drawPoint = NSPoint(x: drawX, y: drawY)
+                        (self.paragraphGlyph as NSString).draw(at: drawPoint, withAttributes: [.font: lineFont, .foregroundColor: self.paragraphMarksColor])
+                    }
                 }
             }
         }
@@ -1723,6 +1828,7 @@ class EditorViewController: NSViewController {
         guard let paragraphTextView = textView as? AttachmentClickableTextView else { return }
         paragraphTextView.showsParagraphMarks = paragraphMarksVisibleState
         paragraphTextView.paragraphMarksColor = paragraphMarksColor(for: currentTheme)
+        paragraphTextView.spaceDotsColor = spaceDotsColor(for: currentTheme)
         paragraphTextView.needsDisplay = true
     }
 
@@ -1732,6 +1838,17 @@ class EditorViewController: NSViewController {
             return theme.insertionPointColor.withAlphaComponent(0.75)
         case .day, .cream:
             return theme.pageBorder.withAlphaComponent(0.8)
+        }
+    }
+
+    private func spaceDotsColor(for theme: AppTheme) -> NSColor {
+        switch theme {
+        case .night:
+            return NSColor.white.withAlphaComponent(0.5)
+        case .day:
+            return NSColor.black.withAlphaComponent(0.35)
+        case .cream:
+            return NSColor(calibratedRed: 0.3, green: 0.25, blue: 0.2, alpha: 0.45)
         }
     }
 

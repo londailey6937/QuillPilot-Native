@@ -609,9 +609,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         formatMenu.addItem(listsItem)
 
         // Route these through the responder chain (first responder is the editor text view).
+        // Bullets
         listsMenu.addItem(NSMenuItem(title: "Bulleted List", action: Selector(("qpToggleBulletedList:")), keyEquivalent: ""))
-        listsMenu.addItem(NSMenuItem(title: "Numbered List", action: Selector(("qpToggleNumberedList:")), keyEquivalent: ""))
-        listsMenu.addItem(.separator())
 
         let bulletStyleItem = NSMenuItem(title: "Bulleted List Style", action: nil, keyEquivalent: "")
         let bulletStyleMenu = NSMenu(title: "Bulleted List Style")
@@ -625,15 +624,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         listsMenu.addItem(bulletStyleItem)
         listsMenu.addItem(.separator())
 
-        let autoNumberOnReturnItem = NSMenuItem(title: "Auto-continue lists on Return", action: #selector(toggleAutoNumberOnReturn(_:)), keyEquivalent: "")
-        autoNumberOnReturnItem.target = self
-        listsMenu.addItem(autoNumberOnReturnItem)
-
-        listsMenu.addItem(.separator())
+        // Numbering
+        listsMenu.addItem(NSMenuItem(title: "Numbered List", action: Selector(("qpToggleNumberedList:")), keyEquivalent: ""))
         listsMenu.addItem(NSMenuItem(title: "Restart Numbering at 1", action: Selector(("qpRestartNumbering:")), keyEquivalent: ""))
         let restartCustom = NSMenuItem(title: "Restart Numbering…", action: #selector(restartNumberingPrompt(_:)), keyEquivalent: "")
         restartCustom.target = self
         listsMenu.addItem(restartCustom)
+        listsMenu.addItem(.separator())
+
+        let autoNumberOnReturnItem = NSMenuItem(title: "Auto-continue lists on Return", action: #selector(toggleAutoNumberOnReturn(_:)), keyEquivalent: "")
+        autoNumberOnReturnItem.target = self
+        listsMenu.addItem(autoNumberOnReturnItem)
 
         // Tools Menu
         let toolsMenuItem = NSMenuItem()

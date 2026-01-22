@@ -57,6 +57,7 @@ let package = Package(
                 "Views/StoryDirectionsWindow.swift",
                 "Views/AutoStoryWindow.swift",
                 "Views/DialogueTipsWindow.swift",
+                "Views/SpecialCharactersWindowController.swift",
                 "Views/GeneralNotesWindow.swift",
                 "Views/SceneListWindow.swift",
                 "Views/SceneInspectorWindow.swift",

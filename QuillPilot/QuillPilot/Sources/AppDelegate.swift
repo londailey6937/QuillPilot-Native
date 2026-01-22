@@ -318,6 +318,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         QuillPilotSettings.autoNumberOnReturn.toggle()
     }
 
+    @objc private func setBulletStyle(_ sender: NSMenuItem) {
+        guard let raw = sender.representedObject as? String,
+              let style = QuillPilotSettings.BulletStyle(rawValue: raw) else { return }
+        QuillPilotSettings.bulletStyle = style
+    }
+
     @MainActor
     @objc private func resetTemplateOverridesPrompt(_ sender: Any?) {
         let templateName = StyleCatalog.shared.currentTemplateName
@@ -607,7 +613,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         listsMenu.addItem(NSMenuItem(title: "Numbered List", action: Selector(("qpToggleNumberedList:")), keyEquivalent: ""))
         listsMenu.addItem(.separator())
 
-        let autoNumberOnReturnItem = NSMenuItem(title: "Auto-number lists on Return", action: #selector(toggleAutoNumberOnReturn(_:)), keyEquivalent: "")
+        let bulletStyleItem = NSMenuItem(title: "Bulleted List Style", action: nil, keyEquivalent: "")
+        let bulletStyleMenu = NSMenu(title: "Bulleted List Style")
+        bulletStyleItem.submenu = bulletStyleMenu
+        for style in QuillPilotSettings.BulletStyle.allCases {
+            let item = NSMenuItem(title: "\(style.displayName)  \(style.rawValue)", action: #selector(setBulletStyle(_:)), keyEquivalent: "")
+            item.target = self
+            item.representedObject = style.rawValue
+            bulletStyleMenu.addItem(item)
+        }
+        listsMenu.addItem(bulletStyleItem)
+        listsMenu.addItem(.separator())
+
+        let autoNumberOnReturnItem = NSMenuItem(title: "Auto-continue lists on Return", action: #selector(toggleAutoNumberOnReturn(_:)), keyEquivalent: "")
         autoNumberOnReturnItem.target = self
         listsMenu.addItem(autoNumberOnReturnItem)
 
@@ -1033,6 +1051,16 @@ extension AppDelegate: NSMenuItemValidation {
 
         if menuItem.action == #selector(toggleAutoNumberOnReturn(_:)) {
             menuItem.state = QuillPilotSettings.autoNumberOnReturn ? .on : .off
+            return true
+        }
+
+        if menuItem.action == #selector(setBulletStyle(_:)) {
+            if let raw = menuItem.representedObject as? String,
+               let style = QuillPilotSettings.BulletStyle(rawValue: raw) {
+                menuItem.state = (QuillPilotSettings.bulletStyle == style) ? .on : .off
+            } else {
+                menuItem.state = .off
+            }
             return true
         }
 

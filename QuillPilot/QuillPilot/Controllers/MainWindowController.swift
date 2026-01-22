@@ -14,10 +14,14 @@ import ObjectiveC
 protocol FormattingToolbarDelegate: AnyObject {
     func formattingToolbarDidNewDocument(_ toolbar: FormattingToolbar)
     func formattingToolbarDidOpenDocument(_ toolbar: FormattingToolbar)
+    func formattingToolbarDidSaveAs(_ toolbar: FormattingToolbar)
     func formattingToolbarDidPrint(_ toolbar: FormattingToolbar)
+    func formattingToolbarDidUndo(_ toolbar: FormattingToolbar)
+    func formattingToolbarDidRedo(_ toolbar: FormattingToolbar)
     func formattingToolbarDidCut(_ toolbar: FormattingToolbar)
     func formattingToolbarDidCopy(_ toolbar: FormattingToolbar)
     func formattingToolbarDidPaste(_ toolbar: FormattingToolbar)
+    func formattingToolbarDidInsertHyperlink(_ toolbar: FormattingToolbar)
 
     func formattingToolbarDidIndent(_ toolbar: FormattingToolbar)
     func formattingToolbarDidOutdent(_ toolbar: FormattingToolbar)
@@ -772,8 +776,20 @@ extension MainWindowController: FormattingToolbarDelegate {
         performOpenDocument(nil)
     }
 
+    func formattingToolbarDidSaveAs(_ toolbar: FormattingToolbar) {
+        performSaveAs(nil)
+    }
+
     func formattingToolbarDidPrint(_ toolbar: FormattingToolbar) {
         printDocument(nil)
+    }
+
+    func formattingToolbarDidUndo(_ toolbar: FormattingToolbar) {
+        NSApp.sendAction(Selector(("undo:")), to: nil, from: toolbar)
+    }
+
+    func formattingToolbarDidRedo(_ toolbar: FormattingToolbar) {
+        NSApp.sendAction(Selector(("redo:")), to: nil, from: toolbar)
     }
 
     func formattingToolbarDidCut(_ toolbar: FormattingToolbar) {
@@ -787,6 +803,10 @@ extension MainWindowController: FormattingToolbarDelegate {
 
     func formattingToolbarDidPaste(_ toolbar: FormattingToolbar) {
         NSApp.sendAction(#selector(NSText.paste(_:)), to: nil, from: toolbar)
+    }
+
+    func formattingToolbarDidInsertHyperlink(_ toolbar: FormattingToolbar) {
+        NSApp.sendAction(#selector(NSTextView.orderFrontLinkPanel(_:)), to: nil, from: toolbar)
     }
 
     func formattingToolbarDidInsertImage(_ toolbar: FormattingToolbar) {
@@ -3344,6 +3364,16 @@ class FormattingToolbar: NSView {
         outlinePanelButton = nil
 
         // File / Clipboard actions
+        let undoBtn = createSymbolToolbarButton(systemName: "arrow.uturn.backward", accessibility: "Undo")
+        undoBtn.target = self
+        undoBtn.action = #selector(undoTapped)
+        undoBtn.toolTip = "Undo"
+
+        let redoBtn = createSymbolToolbarButton(systemName: "arrow.uturn.forward", accessibility: "Redo")
+        redoBtn.target = self
+        redoBtn.action = #selector(redoTapped)
+        redoBtn.toolTip = "Redo"
+
         let newBtn = createSymbolToolbarButton(systemName: "doc.badge.plus", accessibility: "New Document")
         newBtn.target = self
         newBtn.action = #selector(newDocumentTapped)
@@ -3353,6 +3383,11 @@ class FormattingToolbar: NSView {
         openBtn.target = self
         openBtn.action = #selector(openDocumentTapped)
         openBtn.toolTip = "Open…"
+
+        let saveAsBtn = createSymbolToolbarButton(systemName: "square.and.arrow.down", accessibility: "Save As")
+        saveAsBtn.target = self
+        saveAsBtn.action = #selector(saveAsTapped)
+        saveAsBtn.toolTip = "Save As…"
 
         let printBtn = createSymbolToolbarButton(systemName: "printer", accessibility: "Print")
         printBtn.target = self
@@ -3374,9 +3409,14 @@ class FormattingToolbar: NSView {
         pasteBtn.action = #selector(pasteTapped)
         pasteBtn.toolTip = "Paste"
 
+        let hyperlinkBtn = createSymbolToolbarButton(systemName: "link.badge.plus", accessibility: "Insert Hyperlink")
+        hyperlinkBtn.target = self
+        hyperlinkBtn.action = #selector(insertHyperlinkTapped)
+        hyperlinkBtn.toolTip = "Insert Hyperlink…"
+
         // Add all to stack view (all aligned left)
         let toolbarStack = NSStackView(views: [
-            newBtn, openBtn, printBtn, cutBtn, copyBtn, pasteBtn,
+            undoBtn, redoBtn, newBtn, openBtn, saveAsBtn, printBtn, cutBtn, copyBtn, pasteBtn, hyperlinkBtn,
             stylePopup, editStylesButton, formatPainterBtn, templatePopup, decreaseSizeBtn, sizePopup, increaseSizeBtn,
             boldBtn, italicBtn, underlineBtn, superscriptBtn, subscriptBtn,
             alignLeftBtn, alignCenterBtn, alignRightBtn, justifyBtn,
@@ -3646,6 +3686,10 @@ class FormattingToolbar: NSView {
         delegate?.formattingToolbarDidOpenDocument(self)
     }
 
+    @objc private func saveAsTapped() {
+        delegate?.formattingToolbarDidSaveAs(self)
+    }
+
     @objc private func printTapped() {
         delegate?.formattingToolbarDidPrint(self)
     }
@@ -3660,6 +3704,18 @@ class FormattingToolbar: NSView {
 
     @objc private func pasteTapped() {
         delegate?.formattingToolbarDidPaste(self)
+    }
+
+    @objc private func undoTapped() {
+        delegate?.formattingToolbarDidUndo(self)
+    }
+
+    @objc private func redoTapped() {
+        delegate?.formattingToolbarDidRedo(self)
+    }
+
+    @objc private func insertHyperlinkTapped() {
+        delegate?.formattingToolbarDidInsertHyperlink(self)
     }
 
     @objc private func superscriptTapped() {

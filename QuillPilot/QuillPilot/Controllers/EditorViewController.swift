@@ -1943,10 +1943,32 @@ class EditorViewController: NSViewController {
         }
     }
 
+    private func parseBulletPrefix(in line: String) -> (prefix: String, prefixLengthUTF16: Int, hasTabAfter: Bool)? {
+        for style in QuillPilotSettings.BulletStyle.allCases {
+            let prefix = style.prefix
+            guard line.hasPrefix(prefix) else { continue }
+
+            let prefixLen = (prefix as NSString).length
+            let ns = line as NSString
+            let hasTabAfter: Bool
+            if ns.length > prefixLen {
+                hasTabAfter = ns.substring(with: NSRange(location: prefixLen, length: 1)) == "\t"
+            } else {
+                hasTabAfter = false
+            }
+            return (prefix: prefix, prefixLengthUTF16: prefixLen, hasTabAfter: hasTabAfter)
+        }
+        return nil
+    }
+
     func toggleBulletedList() {
+        let bulletPrefixes = QuillPilotSettings.BulletStyle.allCases.map { $0.prefix }
+        let desiredPrefix = QuillPilotSettings.bulletStyle.prefix
         togglePrefixList(
-            isPrefixed: { $0.hasPrefix("• ") },
-            makePrefix: { _ in "• " }
+            isPrefixed: { line in
+                bulletPrefixes.contains(where: { line.hasPrefix($0) })
+            },
+            makePrefix: { _ in desiredPrefix }
         )
     }
 
@@ -8090,8 +8112,8 @@ case "Book Subtitle":
             if let parsed = parseNumberPrefix(in: paragraphText, scheme: scheme) {
                 let endIndex = paragraphText.index(paragraphText.startIndex, offsetBy: parsed.prefixLength)
                 prefixString = String(paragraphText[..<endIndex])
-            } else if paragraphText.hasPrefix("• ") {
-                prefixString = "• "
+            } else if let bullet = parseBulletPrefix(in: paragraphText) {
+                prefixString = bullet.prefix
             } else {
                 prefixString = ""
             }
@@ -8130,11 +8152,8 @@ case "Book Subtitle":
                 if isPrefixed(para.text) {
                     // Calculate prefix length including the tab character we inserted
                     var prefixLen: Int
-                    if para.text.hasPrefix("• ") {
-                        prefixLen = 2
-                        if para.text.count > prefixLen && para.text[para.text.index(para.text.startIndex, offsetBy: prefixLen)] == "\t" {
-                            prefixLen += 1
-                        }
+                    if let bullet = parseBulletPrefix(in: para.text) {
+                        prefixLen = bullet.prefixLengthUTF16 + (bullet.hasTabAfter ? 1 : 0)
                     } else if let parsed = parseNumberPrefix(in: para.text, scheme: QuillPilotSettings.numberingScheme) {
                         prefixLen = parsed.prefixLength + (parsed.hasTabAfter ? 1 : 0)
                     } else {
@@ -8164,11 +8183,11 @@ case "Book Subtitle":
                 textStorage.replaceCharacters(in: NSRange(location: para.range.location, length: 0), with: prefix)
 
                 // Add tab after bullet/number to align text properly
-                let tabInsertLocation = para.range.location + prefix.count
+                let tabInsertLocation = para.range.location + (prefix as NSString).length
                 textStorage.replaceCharacters(in: NSRange(location: tabInsertLocation, length: 0), with: "\t")
 
                 // Set up hanging indent with tab stop (level 1 starts at the margin)
-                let adjustedRange = NSRange(location: para.range.location, length: para.range.length + prefix.count + 1)
+                let adjustedRange = NSRange(location: para.range.location, length: para.range.length + (prefix as NSString).length + 1)
                 textStorage.enumerateAttribute(.paragraphStyle, in: adjustedRange, options: []) { value, range, _ in
                     let current = (value as? NSParagraphStyle) ?? textView.defaultParagraphStyle ?? NSParagraphStyle.default
                     guard let mutable = current.mutableCopy() as? NSMutableParagraphStyle else { return }
@@ -8225,7 +8244,9 @@ extension EditorViewController: NSTextViewDelegate {
         if commandSelector == #selector(insertTab(_:)) {
             // Tab sets the next Return to create a sub-level without changing the current line.
             let scheme = QuillPilotSettings.numberingScheme
-            guard parseNumberPrefix(in: paragraphText, scheme: scheme) != nil else { return false }
+            let isNumbered = parseNumberPrefix(in: paragraphText, scheme: scheme) != nil
+            let isBulleted = parseBulletPrefix(in: paragraphText) != nil
+            guard isNumbered || isBulleted else { return false }
             pendingListIndentOnReturn = true
             let currentLevel = currentListLevel(for: paragraphRange)
             pendingListIndentTargetLevel = currentLevel + 1
@@ -8240,49 +8261,83 @@ extension EditorViewController: NSTextViewDelegate {
         guard QuillPilotSettings.autoNumberOnReturn else { return false }
 
         let scheme = QuillPilotSettings.numberingScheme
-        guard let parsed = parseNumberPrefix(in: paragraphText, scheme: scheme) else { return false }
 
-        // If the list item is empty (only a prefix), pressing Return should end the list.
-        let contentStart = min(paragraphText.count, parsed.prefixLength + (parsed.hasTabAfter ? 1 : 0))
-        let remainder = String(paragraphText.dropFirst(contentStart)).trimmingCharacters(in: .whitespacesAndNewlines)
-        if remainder.isEmpty {
-            // Remove prefix and let AppKit insert a normal newline.
-            let deleteLen = parsed.prefixLength + (parsed.hasTabAfter ? 1 : 0)
-            storage.replaceCharacters(in: NSRange(location: paragraphRange.location, length: min(deleteLen, paragraphRange.length)), with: "")
-            return false
-        }
+        if let parsed = parseNumberPrefix(in: paragraphText, scheme: scheme) {
+            // If the list item is empty (only a prefix), pressing Return should end the list.
+            let contentStart = min(paragraphText.count, parsed.prefixLength + (parsed.hasTabAfter ? 1 : 0))
+            let remainder = String(paragraphText.dropFirst(contentStart)).trimmingCharacters(in: .whitespacesAndNewlines)
+            if remainder.isEmpty {
+                // Remove prefix and let AppKit insert a normal newline.
+                let deleteLen = parsed.prefixLength + (parsed.hasTabAfter ? 1 : 0)
+                storage.replaceCharacters(in: NSRange(location: paragraphRange.location, length: min(deleteLen, paragraphRange.length)), with: "")
+                return false
+            }
 
-        if pendingListIndentOnReturn {
+            if pendingListIndentOnReturn {
+                let currentLevel = currentListLevel(for: paragraphRange)
+                let targetLevel = pendingListIndentTargetLevel ?? (currentLevel + 1)
+                var next = normalizedComponents(parsed.components, for: max(1, targetLevel - 1), scheme: scheme)
+                next.append(1)
+                let nextPrefix = makeNumberPrefix(from: next, scheme: scheme) + (parsed.hasTabAfter ? "\t" : "")
+                textView.insertText("\n" + nextPrefix, replacementRange: sel)
+
+                let newSelection = textView.selectedRange()
+                let updatedFull = textView.string as NSString
+                let newParagraphRange = updatedFull.paragraphRange(for: NSRange(location: newSelection.location, length: 0))
+                applyListIndent(levelCount: next.count, paragraphRange: newParagraphRange)
+
+                pendingListIndentOnReturn = false
+                pendingListIndentTargetLevel = nil
+                return true
+            }
+
+            // Insert a newline plus the next number prefix.
             let currentLevel = currentListLevel(for: paragraphRange)
-            let targetLevel = pendingListIndentTargetLevel ?? (currentLevel + 1)
-            var next = normalizedComponents(parsed.components, for: max(1, targetLevel - 1), scheme: scheme)
-            next.append(1)
+            var next = normalizedComponents(parsed.components, for: currentLevel, scheme: scheme)
+            next[next.count - 1] += 1
             let nextPrefix = makeNumberPrefix(from: next, scheme: scheme) + (parsed.hasTabAfter ? "\t" : "")
             textView.insertText("\n" + nextPrefix, replacementRange: sel)
-
             let newSelection = textView.selectedRange()
             let updatedFull = textView.string as NSString
             let newParagraphRange = updatedFull.paragraphRange(for: NSRange(location: newSelection.location, length: 0))
-            applyListIndent(levelCount: next.count, paragraphRange: newParagraphRange)
-
+            applyListIndent(levelCount: currentLevel, paragraphRange: newParagraphRange)
             pendingListIndentOnReturn = false
             pendingListIndentTargetLevel = nil
             return true
         }
 
-        // Insert a newline plus the next number prefix.
-        let currentLevel = currentListLevel(for: paragraphRange)
-        var next = normalizedComponents(parsed.components, for: currentLevel, scheme: scheme)
-        next[next.count - 1] += 1
-        let nextPrefix = makeNumberPrefix(from: next, scheme: scheme) + (parsed.hasTabAfter ? "\t" : "")
-        textView.insertText("\n" + nextPrefix, replacementRange: sel)
-        let newSelection = textView.selectedRange()
-        let updatedFull = textView.string as NSString
-        let newParagraphRange = updatedFull.paragraphRange(for: NSRange(location: newSelection.location, length: 0))
-        applyListIndent(levelCount: currentLevel, paragraphRange: newParagraphRange)
-        pendingListIndentOnReturn = false
-        pendingListIndentTargetLevel = nil
-        return true
+        if let bullet = parseBulletPrefix(in: paragraphText) {
+            // If the list item is empty (only a prefix), pressing Return should end the list.
+            let deleteLen = bullet.prefixLengthUTF16 + (bullet.hasTabAfter ? 1 : 0)
+            let ns = paragraphText as NSString
+            let remainderStart = min(ns.length, deleteLen)
+            let remainder = ns.substring(from: remainderStart).trimmingCharacters(in: .whitespacesAndNewlines)
+            if remainder.isEmpty {
+                storage.replaceCharacters(in: NSRange(location: paragraphRange.location, length: min(deleteLen, paragraphRange.length)), with: "")
+                return false
+            }
+
+            let currentLevel = currentListLevel(for: paragraphRange)
+            let targetLevel: Int
+            if pendingListIndentOnReturn {
+                targetLevel = pendingListIndentTargetLevel ?? (currentLevel + 1)
+            } else {
+                targetLevel = currentLevel
+            }
+
+            // Continue with the bullet style already in use for this list (not necessarily the current global preference).
+            let nextPrefix = bullet.prefix + "\t"
+            textView.insertText("\n" + nextPrefix, replacementRange: sel)
+            let newSelection = textView.selectedRange()
+            let updatedFull = textView.string as NSString
+            let newParagraphRange = updatedFull.paragraphRange(for: NSRange(location: newSelection.location, length: 0))
+            applyListIndent(levelCount: targetLevel, paragraphRange: newParagraphRange)
+            pendingListIndentOnReturn = false
+            pendingListIndentTargetLevel = nil
+            return true
+        }
+
+        return false
     }
 
     func textDidChange(_ notification: Notification) {

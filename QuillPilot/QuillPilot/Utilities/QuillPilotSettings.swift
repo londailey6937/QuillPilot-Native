@@ -8,6 +8,38 @@ enum QuillPilotSettings {
         static let autoAnalyzeWhileTyping = "QuillPilot.autoAnalyzeWhileTyping"
         static let autoNumberOnReturn = "QuillPilot.autoNumberOnReturn"
         static let numberingScheme = "QuillPilot.numberingScheme"
+        static let bulletStyle = "QuillPilot.bulletStyle"
+    }
+
+    enum BulletStyle: String, CaseIterable {
+        case disc = "•"
+        case hollow = "◦"
+        case square = "▪︎"
+        case dash = "–"
+        case asterisk = "*"
+        case check = "✓"
+
+        var displayName: String {
+            switch self {
+            case .disc:
+                return "Disc"
+            case .hollow:
+                return "Hollow"
+            case .square:
+                return "Square"
+            case .dash:
+                return "Dash"
+            case .asterisk:
+                return "Asterisk"
+            case .check:
+                return "Check"
+            }
+        }
+
+        /// Prefix inserted at the start of each list paragraph (tab is inserted separately).
+        var prefix: String {
+            "\(rawValue) "
+        }
     }
 
     enum NumberingScheme: String, CaseIterable {
@@ -99,6 +131,20 @@ enum QuillPilotSettings {
         }
         set {
             UserDefaults.standard.set(newValue.rawValue, forKey: Keys.numberingScheme)
+            NotificationCenter.default.post(name: .quillPilotSettingsDidChange, object: nil)
+        }
+    }
+
+    static var bulletStyle: BulletStyle {
+        get {
+            if let raw = UserDefaults.standard.string(forKey: Keys.bulletStyle),
+               let style = BulletStyle(rawValue: raw) {
+                return style
+            }
+            return .disc
+        }
+        set {
+            UserDefaults.standard.set(newValue.rawValue, forKey: Keys.bulletStyle)
             NotificationCenter.default.post(name: .quillPilotSettingsDidChange, object: nil)
         }
     }

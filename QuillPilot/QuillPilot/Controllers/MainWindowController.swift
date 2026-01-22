@@ -12,6 +12,13 @@ import ObjectiveC
 
 @MainActor
 protocol FormattingToolbarDelegate: AnyObject {
+    func formattingToolbarDidNewDocument(_ toolbar: FormattingToolbar)
+    func formattingToolbarDidOpenDocument(_ toolbar: FormattingToolbar)
+    func formattingToolbarDidPrint(_ toolbar: FormattingToolbar)
+    func formattingToolbarDidCut(_ toolbar: FormattingToolbar)
+    func formattingToolbarDidCopy(_ toolbar: FormattingToolbar)
+    func formattingToolbarDidPaste(_ toolbar: FormattingToolbar)
+
     func formattingToolbarDidIndent(_ toolbar: FormattingToolbar)
     func formattingToolbarDidOutdent(_ toolbar: FormattingToolbar)
     func formattingToolbarDidSave(_ toolbar: FormattingToolbar)
@@ -21,6 +28,8 @@ protocol FormattingToolbarDelegate: AnyObject {
     func formattingToolbarDidToggleBold(_ toolbar: FormattingToolbar)
     func formattingToolbarDidToggleItalic(_ toolbar: FormattingToolbar)
     func formattingToolbarDidToggleUnderline(_ toolbar: FormattingToolbar)
+    func formattingToolbarDidToggleSuperscript(_ toolbar: FormattingToolbar)
+    func formattingToolbarDidToggleSubscript(_ toolbar: FormattingToolbar)
 
     func formattingToolbar(_ toolbar: FormattingToolbar, didChangeFontFamily family: String)
     func formattingToolbar(_ toolbar: FormattingToolbar, didChangeFontSize size: CGFloat)
@@ -268,6 +277,11 @@ class MainWindowController: NSWindowController {
             rulerWidthConstraint?.constant = rulerView.scaledPageWidth
         }
         window?.contentView?.needsLayout = true
+    }
+
+    func syncParagraphMarksToolbarState() {
+        let isShown = mainContentViewController.editorViewController.paragraphMarksVisible()
+        toolbarView?.updateParagraphMarksState(isShown)
     }
 
     func zoomIn() {
@@ -713,6 +727,14 @@ extension MainWindowController: FormattingToolbarDelegate {
         mainContentViewController.toggleUnderline()
     }
 
+    func formattingToolbarDidToggleSuperscript(_ toolbar: FormattingToolbar) {
+        mainContentViewController.editorViewController.toggleSuperscript()
+    }
+
+    func formattingToolbarDidToggleSubscript(_ toolbar: FormattingToolbar) {
+        mainContentViewController.editorViewController.toggleSubscript()
+    }
+
     func formattingToolbarDidAlignLeft(_ toolbar: FormattingToolbar) {
         mainContentViewController.setAlignment(.left)
     }
@@ -730,16 +752,41 @@ extension MainWindowController: FormattingToolbarDelegate {
     }
 
     func formattingToolbarDidToggleBullets(_ toolbar: FormattingToolbar) {
-        mainContentViewController.toggleBulletedList()
+        mainContentViewController.editorViewController.toggleBulletedList()
     }
 
     func formattingToolbarDidToggleNumbering(_ toolbar: FormattingToolbar) {
-        mainContentViewController.toggleNumberedList()
+        mainContentViewController.editorViewController.toggleNumberedList()
     }
 
     func formattingToolbarDidToggleParagraphMarks(_ toolbar: FormattingToolbar) {
-        let isShown = mainContentViewController.editorViewController.toggleParagraphMarks()
-        toolbarView.updateParagraphMarksState(isShown)
+        _ = mainContentViewController.editorViewController.toggleParagraphMarks()
+        syncParagraphMarksToolbarState()
+    }
+
+    func formattingToolbarDidNewDocument(_ toolbar: FormattingToolbar) {
+        performNewDocument(nil)
+    }
+
+    func formattingToolbarDidOpenDocument(_ toolbar: FormattingToolbar) {
+        performOpenDocument(nil)
+    }
+
+    func formattingToolbarDidPrint(_ toolbar: FormattingToolbar) {
+        printDocument(nil)
+    }
+
+    func formattingToolbarDidCut(_ toolbar: FormattingToolbar) {
+        // Route through responder chain so it hits the active editor text view.
+        NSApp.sendAction(#selector(NSText.cut(_:)), to: nil, from: toolbar)
+    }
+
+    func formattingToolbarDidCopy(_ toolbar: FormattingToolbar) {
+        NSApp.sendAction(#selector(NSText.copy(_:)), to: nil, from: toolbar)
+    }
+
+    func formattingToolbarDidPaste(_ toolbar: FormattingToolbar) {
+        NSApp.sendAction(#selector(NSText.paste(_:)), to: nil, from: toolbar)
     }
 
     func formattingToolbarDidInsertImage(_ toolbar: FormattingToolbar) {
@@ -3118,11 +3165,10 @@ class FormattingToolbar: NSView {
         editStylesButton.setAccessibilityLabel("Open Style Editor")
 
         // Format painter button
-        let formatPainterBtn = createToolbarButton("🖌️")
+        let formatPainterBtn = createSymbolToolbarButton(systemName: "paintbrush", accessibility: "Format Painter")
         formatPainterBtn.target = self
         formatPainterBtn.action = #selector(formatPainterTapped)
         formatPainterBtn.toolTip = "Format Painter (Copy Style)"
-        formatPainterBtn.setAccessibilityLabel("Format Painter")
 
         // Template popup
         templatePopup = registerControl(NSPopUpButton(frame: .zero, pullsDown: false))
@@ -3165,6 +3211,19 @@ class FormattingToolbar: NSView {
         underlineBtn.action = #selector(underlineTapped)
         underlineBtn.toolTip = "Underline"
         underlineBtn.setAccessibilityLabel("Underline")
+
+        // Baseline
+        let superscriptBtn = createToolbarButton("x²", fontSize: 13)
+        superscriptBtn.target = self
+        superscriptBtn.action = #selector(superscriptTapped)
+        superscriptBtn.toolTip = "Superscript"
+        superscriptBtn.setAccessibilityLabel("Superscript")
+
+        let subscriptBtn = createToolbarButton("x₂", fontSize: 13)
+        subscriptBtn.target = self
+        subscriptBtn.action = #selector(subscriptTapped)
+        subscriptBtn.toolTip = "Subscript"
+        subscriptBtn.setAccessibilityLabel("Subscript")
 
         // Alignment
                 let alignLeftBtn = createToolbarButton("≡", fontSize: 20)
@@ -3284,10 +3343,42 @@ class FormattingToolbar: NSView {
         // Keep the toolbar free of an extra outline icon.
         outlinePanelButton = nil
 
+        // File / Clipboard actions
+        let newBtn = createSymbolToolbarButton(systemName: "doc.badge.plus", accessibility: "New Document")
+        newBtn.target = self
+        newBtn.action = #selector(newDocumentTapped)
+        newBtn.toolTip = "New Document"
+
+        let openBtn = createSymbolToolbarButton(systemName: "folder", accessibility: "Open Document")
+        openBtn.target = self
+        openBtn.action = #selector(openDocumentTapped)
+        openBtn.toolTip = "Open…"
+
+        let printBtn = createSymbolToolbarButton(systemName: "printer", accessibility: "Print")
+        printBtn.target = self
+        printBtn.action = #selector(printTapped)
+        printBtn.toolTip = "Print…"
+
+        let cutBtn = createSymbolToolbarButton(systemName: "scissors", accessibility: "Cut")
+        cutBtn.target = self
+        cutBtn.action = #selector(cutTapped)
+        cutBtn.toolTip = "Cut"
+
+        let copyBtn = createSymbolToolbarButton(systemName: "doc.on.doc", accessibility: "Copy")
+        copyBtn.target = self
+        copyBtn.action = #selector(copyTapped)
+        copyBtn.toolTip = "Copy"
+
+        let pasteBtn = createSymbolToolbarButton(systemName: "doc.on.clipboard", accessibility: "Paste")
+        pasteBtn.target = self
+        pasteBtn.action = #selector(pasteTapped)
+        pasteBtn.toolTip = "Paste"
+
         // Add all to stack view (all aligned left)
         let toolbarStack = NSStackView(views: [
+            newBtn, openBtn, printBtn, cutBtn, copyBtn, pasteBtn,
             stylePopup, editStylesButton, formatPainterBtn, templatePopup, decreaseSizeBtn, sizePopup, increaseSizeBtn,
-            boldBtn, italicBtn, underlineBtn,
+            boldBtn, italicBtn, underlineBtn, superscriptBtn, subscriptBtn,
             alignLeftBtn, alignCenterBtn, alignRightBtn, justifyBtn,
             bulletsBtn, numberingBtn,
             imageButton,
@@ -3319,6 +3410,34 @@ class FormattingToolbar: NSView {
             font = NSFont(descriptor: font.fontDescriptor.withSymbolicTraits(.italic), size: fontSize) ?? font
         }
         button.font = font
+        return registerControl(button)
+    }
+
+    private func createSymbolToolbarButton(systemName: String, accessibility: String) -> NSButton {
+        let theme = ThemeManager.shared.currentTheme
+        let config = NSImage.SymbolConfiguration(pointSize: 14, weight: .regular)
+
+        var symbol = (NSImage(systemSymbolName: systemName, accessibilityDescription: accessibility) ?? NSImage())
+        symbol = symbol.withSymbolConfiguration(config) ?? symbol
+
+        // Prefer an explicitly colored symbol so it never falls back to macOS accent (blue).
+        if let colored = symbol.withSymbolConfiguration(NSImage.SymbolConfiguration(paletteColors: [theme.textColor])) {
+            symbol = colored
+            symbol.isTemplate = false
+        } else {
+            symbol.isTemplate = true
+        }
+
+        let button = NSButton(image: symbol, target: nil, action: nil)
+        button.bezelStyle = .texturedRounded
+        button.setButtonType(.momentaryPushIn)
+        button.imagePosition = .imageOnly
+        button.title = ""
+        // Still set tint (helps if the symbol config falls back to template rendering on some OS/GPU combos).
+        button.contentTintColor = theme.textColor
+        // Stash the symbol name so applyTheme can regenerate it when themes change.
+        button.identifier = NSUserInterfaceItemIdentifier("qp.symbol.\(systemName)")
+        button.setAccessibilityLabel(accessibility)
         return registerControl(button)
     }
 
@@ -3423,6 +3542,18 @@ class FormattingToolbar: NSView {
                         }
                         button.image = symbol
                     }
+                } else if let raw = button.identifier?.rawValue, raw.hasPrefix("qp.symbol.") {
+                    let systemName = String(raw.dropFirst("qp.symbol.".count))
+                    let sizeConfig = NSImage.SymbolConfiguration(pointSize: 14, weight: .regular)
+                    var symbol = (NSImage(systemSymbolName: systemName, accessibilityDescription: nil) ?? button.image ?? NSImage())
+                    symbol = symbol.withSymbolConfiguration(sizeConfig) ?? symbol
+                    if let colored = symbol.withSymbolConfiguration(NSImage.SymbolConfiguration(paletteColors: [theme.textColor])) {
+                        symbol = colored
+                        symbol.isTemplate = false
+                    } else {
+                        symbol.isTemplate = true
+                    }
+                    button.image = symbol
                 } else {
                     // Ensure SF Symbols render as template images so `contentTintColor` applies (prevents system accent blue).
                     if button.image != nil {
@@ -3505,6 +3636,38 @@ class FormattingToolbar: NSView {
 
     @objc private func paragraphMarksTapped() {
         delegate?.formattingToolbarDidToggleParagraphMarks(self)
+    }
+
+    @objc private func newDocumentTapped() {
+        delegate?.formattingToolbarDidNewDocument(self)
+    }
+
+    @objc private func openDocumentTapped() {
+        delegate?.formattingToolbarDidOpenDocument(self)
+    }
+
+    @objc private func printTapped() {
+        delegate?.formattingToolbarDidPrint(self)
+    }
+
+    @objc private func cutTapped() {
+        delegate?.formattingToolbarDidCut(self)
+    }
+
+    @objc private func copyTapped() {
+        delegate?.formattingToolbarDidCopy(self)
+    }
+
+    @objc private func pasteTapped() {
+        delegate?.formattingToolbarDidPaste(self)
+    }
+
+    @objc private func superscriptTapped() {
+        delegate?.formattingToolbarDidToggleSuperscript(self)
+    }
+
+    @objc private func subscriptTapped() {
+        delegate?.formattingToolbarDidToggleSubscript(self)
     }
 
     func updateParagraphMarksState(_ isShown: Bool) {

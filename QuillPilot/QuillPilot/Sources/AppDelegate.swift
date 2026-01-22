@@ -29,6 +29,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var preferencesWindow: PreferencesWindowController?
     private var aboutWindow: NSWindow?
     private var welcomeWindow: WelcomeWindowController?
+    private var specialCharactersWindow: SpecialCharactersWindowController?
     private var recentlyOpenedMenu: NSMenu?
     private var viewMenu: NSMenu?
     private var windowMenu: NSMenu?
@@ -562,14 +563,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         editMenu.addItem(.separator())
 
-        let findInvisibleItem = NSMenuItem(title: "Find Invisible Characters…", action: #selector(findInvisibleCharacters(_:)), keyEquivalent: "")
-        findInvisibleItem.target = self
-        editMenu.addItem(findInvisibleItem)
-
-        let removeBlankLinesItem = NSMenuItem(title: "Remove Extra Blank Lines", action: #selector(removeExtraBlankLines(_:)), keyEquivalent: "")
-        removeBlankLinesItem.target = self
-        editMenu.addItem(removeBlankLinesItem)
-
         // Insert Menu
         let insertMenuItem = NSMenuItem()
         mainMenu.addItem(insertMenuItem)
@@ -593,8 +586,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         insertMenu.addItem(.separator())
 
-        let specialCharactersItem = NSMenuItem(title: "Special Characters…", action: #selector(NSApplication.orderFrontCharacterPalette(_:)), keyEquivalent: "")
-        specialCharactersItem.target = NSApp
+        let specialCharactersItem = NSMenuItem(title: "Special Characters…", action: #selector(showSpecialCharacters(_:)), keyEquivalent: "")
+        specialCharactersItem.target = self
         insertMenu.addItem(specialCharactersItem)
 
         // Format Menu
@@ -602,32 +595,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         mainMenu.addItem(formatMenuItem)
         let formatMenu = NSMenu(title: "Format")
         formatMenuItem.submenu = formatMenu
-
-        // Typography submenu
-        let typographyItem = NSMenuItem(title: "Typography", action: nil, keyEquivalent: "")
-        let typographyMenu = NSMenu(title: "Typography")
-        typographyItem.submenu = typographyMenu
-        formatMenu.addItem(typographyItem)
-
-        let dropCapItem = NSMenuItem(title: "Apply Drop Cap", action: #selector(applyDropCap(_:)), keyEquivalent: "")
-        dropCapItem.target = self
-        typographyMenu.addItem(dropCapItem)
-
-        let oldStyleNumItem = NSMenuItem(title: "Use Old-Style Numerals", action: #selector(applyOldStyleNumerals(_:)), keyEquivalent: "")
-        oldStyleNumItem.target = self
-        typographyMenu.addItem(oldStyleNumItem)
-
-        let opticalKernItem = NSMenuItem(title: "Apply Optical Kerning", action: #selector(applyOpticalKerning(_:)), keyEquivalent: "")
-        opticalKernItem.target = self
-        typographyMenu.addItem(opticalKernItem)
-
-        typographyMenu.addItem(.separator())
-
-        let infoItem = NSMenuItem(title: "ℹ️ Ligatures & smart quotes enabled by default", action: nil, keyEquivalent: "")
-        infoItem.isEnabled = false
-        typographyMenu.addItem(infoItem)
-
-        formatMenu.addItem(.separator())
 
         // Lists submenu
         let listsItem = NSMenuItem(title: "Lists", action: nil, keyEquivalent: "")
@@ -820,7 +787,55 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         mainWindowController?.showTOCIndex()
     }
 
+    @objc private func showSpecialCharacters(_ sender: Any?) {
+        if mainWindowController == nil {
+            mainWindowController = MainWindowController()
+        }
+        presentMainWindow(orderingSource: sender)
+
+        if specialCharactersWindow == nil {
+            specialCharactersWindow = SpecialCharactersWindowController(
+                onInsertText: { [weak self] text in
+                    self?.mainWindowController?.mainContentViewController.editorViewController.insertTextAtSelection(text)
+                },
+                onToggleParagraphMarks: { [weak self] in
+                    _ = self?.mainWindowController?.mainContentViewController.editorViewController.toggleParagraphMarks()
+                    self?.mainWindowController?.syncParagraphMarksToolbarState()
+                },
+                onFindInvisibleCharacters: { [weak self] in
+                    self?.findInvisibleCharacters(nil)
+                },
+                onRemoveExtraBlankLines: { [weak self] in
+                    self?.removeExtraBlankLines(nil)
+                },
+                onApplyDropCap: { [weak self] in
+                    self?.applyDropCap(nil)
+                },
+                onApplyOldStyleNumerals: { [weak self] in
+                    self?.applyOldStyleNumerals(nil)
+                },
+                onApplyOpticalKerning: { [weak self] in
+                    self?.applyOpticalKerning(nil)
+                }
+            )
+        }
+
+        // Show it after activation so it doesn't end up behind the main UI.
+        NSApp.activate(ignoringOtherApps: true)
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            self.specialCharactersWindow?.showWindow(nil)
+            self.specialCharactersWindow?.window?.level = .floating
+            self.specialCharactersWindow?.window?.makeKeyAndOrderFront(nil)
+            self.specialCharactersWindow?.window?.orderFrontRegardless()
+        }
+    }
+
     @objc private func findInvisibleCharacters(_ sender: Any?) {
+        if mainWindowController == nil {
+            mainWindowController = MainWindowController()
+        }
+        presentMainWindow(orderingSource: sender)
         mainWindowController?.mainContentViewController.editorViewController.highlightInvisibleCharacters()
     }
 
@@ -829,6 +844,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     @objc private func removeExtraBlankLines(_ sender: Any?) {
+        if mainWindowController == nil {
+            mainWindowController = MainWindowController()
+        }
+        presentMainWindow(orderingSource: sender)
         mainWindowController?.mainContentViewController.editorViewController.removeExtraBlankLines()
     }
 
@@ -999,6 +1018,10 @@ extension AppDelegate: NSMenuItemValidation {
             return true
         }
 
+        if menuItem.action == #selector(showSpecialCharacters(_:)) {
+            return true
+        }
+
         if menuItem.action == #selector(toggleAutoAnalyzeOnOpen(_:)) {
             menuItem.state = QuillPilotSettings.autoAnalyzeOnOpen ? .on : .off
             return true
@@ -1022,8 +1045,6 @@ extension AppDelegate: NSMenuItemValidation {
             #selector(showHeaderFooterSettings(_:)),
             #selector(showTOCIndex(_:)),
             #selector(showFind(_:)),
-            #selector(findInvisibleCharacters(_:)),
-            #selector(removeExtraBlankLines(_:)),
             #selector(applyDropCap(_:)),
             #selector(applyOldStyleNumerals(_:)),
             #selector(applyOpticalKerning(_:)),

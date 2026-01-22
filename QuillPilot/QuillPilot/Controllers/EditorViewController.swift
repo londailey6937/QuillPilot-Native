@@ -4598,6 +4598,23 @@ class EditorViewController: NSViewController {
 
     // MARK: - Efficient Text Insertion
 
+    /// Insert plain text at the current selection, preserving the current typing attributes.
+    func insertTextAtSelection(_ text: String) {
+        guard let selectedRange = textView.selectedRanges.first?.rangeValue else { return }
+        textView.insertText(text, replacementRange: selectedRange)
+        textView.window?.makeFirstResponder(textView)
+    }
+
+    /// Toggle superscript on the selection (or typing attributes if no selection).
+    func toggleSuperscript() {
+        toggleBaselineOffset(desiredOffset: +6)
+    }
+
+    /// Toggle subscript on the selection (or typing attributes if no selection).
+    func toggleSubscript() {
+        toggleBaselineOffset(desiredOffset: -6)
+    }
+
     /// Insert attributed text at the current cursor position while suppressing expensive layout updates
     /// This is useful for large insertions like TOC/Index that would otherwise cause the app to hang
     func insertAttributedTextEfficiently(_ attributedString: NSAttributedString) {
@@ -4665,13 +4682,8 @@ class EditorViewController: NSViewController {
 
         if allRanges.isEmpty {
             DispatchQueue.main.async { [weak self] in
-                guard let window = self?.view.window else { return }
-                let alert = NSAlert()
-                alert.messageText = "Document Clean"
-                alert.informativeText = "No invisible characters found in document."
-                alert.alertStyle = .informational
-                alert.addButton(withTitle: "OK")
-                alert.beginSheetModal(for: window)
+                guard let self else { return }
+                self.showThemedAlert(title: "Document Clean", message: "No invisible characters found in document.")
             }
             return
         }
@@ -4712,13 +4724,13 @@ class EditorViewController: NSViewController {
         }
 
         DispatchQueue.main.async { [weak self] in
-            guard let window = self?.view.window else { return }
-            let alert = NSAlert()
-            alert.messageText = "Invisible Characters Removed"
-            alert.informativeText = report
-            alert.alertStyle = .informational
-            alert.addButton(withTitle: "OK")
-            alert.beginSheetModal(for: window)
+            guard let self else { return }
+            let alert = NSAlert.themedInformational(title: "Invisible Characters Removed", message: report)
+            if let window = self.view.window {
+                alert.runThemedSheet(for: window)
+            } else {
+                _ = alert.runThemedModal()
+            }
         }
     }
 
@@ -4780,13 +4792,13 @@ class EditorViewController: NSViewController {
             debugInfo += "The blank space may be caused by paragraph styling (spacing before/after paragraphs) rather than actual blank lines."
 
             DispatchQueue.main.async { [weak self] in
-                guard let window = self?.view.window else { return }
-                let alert = NSAlert()
-                alert.messageText = "No Extra Blank Lines Found"
-                alert.informativeText = debugInfo
-                alert.alertStyle = .informational
-                alert.addButton(withTitle: "OK")
-                alert.beginSheetModal(for: window)
+                guard let self else { return }
+                let alert = NSAlert.themedInformational(title: "No Extra Blank Lines Found", message: debugInfo)
+                if let window = self.view.window {
+                    alert.runThemedSheet(for: window)
+                } else {
+                    _ = alert.runThemedModal()
+                }
             }
             return
         }
@@ -4816,13 +4828,16 @@ class EditorViewController: NSViewController {
         let totalRemoved = rangesToDelete.reduce(0) { $0 + $1.length }
 
         DispatchQueue.main.async { [weak self] in
-            guard let window = self?.view.window else { return }
-            let alert = NSAlert()
-            alert.messageText = "Extra Blank Lines Removed"
-            alert.informativeText = "Removed \(totalRemoved) extra line break(s), reducing excessive spacing between paragraphs."
-            alert.alertStyle = .informational
-            alert.addButton(withTitle: "OK")
-            alert.beginSheetModal(for: window)
+            guard let self else { return }
+            let alert = NSAlert.themedInformational(
+                title: "Extra Blank Lines Removed",
+                message: "Removed \(totalRemoved) extra line break(s), reducing excessive spacing between paragraphs."
+            )
+            if let window = self.view.window {
+                alert.runThemedSheet(for: window)
+            } else {
+                _ = alert.runThemedModal()
+            }
         }
     }
 
@@ -4855,13 +4870,8 @@ class EditorViewController: NSViewController {
 
         if ranges.isEmpty {
             DispatchQueue.main.async { [weak self] in
-                guard let window = self?.view.window else { return }
-                let alert = NSAlert()
-                alert.messageText = "No Invisible Characters"
-                alert.informativeText = "No invisible characters were found in the document."
-                alert.alertStyle = .informational
-                alert.addButton(withTitle: "OK")
-                alert.beginSheetModal(for: window)
+                guard let self else { return }
+                self.showThemedAlert(title: "No Invisible Characters", message: "No invisible characters were found in the document.")
             }
             return
         }
@@ -4887,7 +4897,7 @@ class EditorViewController: NSViewController {
             alert.addButton(withTitle: "Keep Highlighting")
             alert.addButton(withTitle: "Cancel")
 
-            alert.beginSheetModal(for: window) { response in
+            alert.runThemedSheet(for: window) { response in
                 if response == .alertFirstButtonReturn {
                     // Go to First - scroll to first invisible character
                     if let firstRange = ranges.first {
@@ -6674,6 +6684,33 @@ case "Book Subtitle":
         if selectedRange.length == 0 { return }
         textStorage.beginEditing()
         textStorage.addAttribute(.baselineOffset, value: offset, range: selectedRange)
+        textStorage.endEditing()
+    }
+
+    private func toggleBaselineOffset(desiredOffset: CGFloat) {
+        guard let textStorage = textView.textStorage else { return }
+        guard let selectedRange = textView.selectedRanges.first?.rangeValue else { return }
+
+        if selectedRange.length == 0 {
+            let current = (textView.typingAttributes[.baselineOffset] as? NSNumber)?.doubleValue ?? 0
+            if (desiredOffset > 0 && current > 0) || (desiredOffset < 0 && current < 0) {
+                textView.typingAttributes.removeValue(forKey: .baselineOffset)
+            } else {
+                textView.typingAttributes[.baselineOffset] = desiredOffset
+            }
+            return
+        }
+
+        let attrValue = textStorage.attribute(.baselineOffset, at: selectedRange.location, effectiveRange: nil)
+        let current = (attrValue as? NSNumber)?.doubleValue ?? 0
+        let shouldClear = (desiredOffset > 0 && current > 0) || (desiredOffset < 0 && current < 0)
+
+        textStorage.beginEditing()
+        if shouldClear {
+            textStorage.removeAttribute(.baselineOffset, range: selectedRange)
+        } else {
+            textStorage.addAttribute(.baselineOffset, value: desiredOffset, range: selectedRange)
+        }
         textStorage.endEditing()
     }
 

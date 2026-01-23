@@ -20,7 +20,6 @@ class InsertBookmarkWindowController: NSWindowController {
     private var deleteButton: NSButton!
     private var goToButton: NSButton!
     private var closeButton: NSButton!
-    private var themeObserver: NSObjectProtocol?
 
     var onInsert: ((String) -> Void)?
     var onGoTo: ((String) -> Void)?
@@ -39,18 +38,18 @@ class InsertBookmarkWindowController: NSWindowController {
         self.init(window: window)
         setupUI()
         applyTheme()
-        themeObserver = NotificationCenter.default.addObserver(forName: .themeDidChange, object: nil, queue: .main) { [weak self] _ in
-            self?.applyTheme()
-        }
+        NotificationCenter.default.addObserver(self, selector: #selector(themeDidChange(_:)), name: Notification.Name.themeDidChange, object: nil)
     }
 
     deinit {
-        if let themeObserver {
-            NotificationCenter.default.removeObserver(themeObserver)
-        }
+        NotificationCenter.default.removeObserver(self, name: Notification.Name.themeDidChange, object: nil)
     }
 
     func refreshTheme() {
+        applyTheme()
+    }
+
+    @objc private func themeDidChange(_ note: Notification) {
         applyTheme()
     }
 
@@ -288,7 +287,6 @@ class InsertCrossReferenceWindowController: NSWindowController {
     private var scrollView: NSScrollView!
     private var insertButton: NSButton!
     private var cancelButton: NSButton!
-    private var themeObserver: NSObjectProtocol?
 
     private var targets: [BookmarkTarget] = []
     private var filteredTargets: [BookmarkTarget] = []
@@ -308,18 +306,18 @@ class InsertCrossReferenceWindowController: NSWindowController {
         self.init(window: window)
         setupUI()
         applyTheme()
-        themeObserver = NotificationCenter.default.addObserver(forName: .themeDidChange, object: nil, queue: .main) { [weak self] _ in
-            self?.applyTheme()
-        }
+        NotificationCenter.default.addObserver(self, selector: #selector(themeDidChange(_:)), name: Notification.Name.themeDidChange, object: nil)
     }
 
     deinit {
-        if let themeObserver {
-            NotificationCenter.default.removeObserver(themeObserver)
-        }
+        NotificationCenter.default.removeObserver(self, name: Notification.Name.themeDidChange, object: nil)
     }
 
     func refreshTheme() {
+        applyTheme()
+    }
+
+    @objc private func themeDidChange(_ note: Notification) {
         applyTheme()
     }
 

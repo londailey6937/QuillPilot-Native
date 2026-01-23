@@ -22,7 +22,6 @@ class InsertNoteWindowController: NSWindowController {
     private var goToButton: NSButton!
     private var convertButton: NSButton!
     private var closeButton: NSButton!
-    private var themeObserver: NSObjectProtocol?
 
     var onInsert: ((String) -> Void)?  // Returns note content
     var onGoTo: ((String) -> Void)?    // Pass note ID
@@ -45,9 +44,7 @@ class InsertNoteWindowController: NSWindowController {
         super.init(window: window)
         setupUI()
         applyTheme()
-        themeObserver = NotificationCenter.default.addObserver(forName: .themeDidChange, object: nil, queue: .main) { [weak self] _ in
-            self?.applyTheme()
-        }
+        NotificationCenter.default.addObserver(self, selector: #selector(themeDidChange(_:)), name: Notification.Name.themeDidChange, object: nil)
     }
 
     required init?(coder: NSCoder) {
@@ -55,12 +52,14 @@ class InsertNoteWindowController: NSWindowController {
     }
 
     deinit {
-        if let themeObserver {
-            NotificationCenter.default.removeObserver(themeObserver)
-        }
+        NotificationCenter.default.removeObserver(self, name: Notification.Name.themeDidChange, object: nil)
     }
 
     func refreshTheme() {
+        applyTheme()
+    }
+
+    @objc private func themeDidChange(_ note: Notification) {
         applyTheme()
     }
 

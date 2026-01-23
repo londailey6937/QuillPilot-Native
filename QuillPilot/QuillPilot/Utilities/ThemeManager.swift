@@ -253,5 +253,5 @@ class ThemeManager {
 }
 
 extension Notification.Name {
-    static let themeDidChange = Notification.Name("themeDidChange")
+    nonisolated static let themeDidChange = Notification.Name("themeDidChange")
 }

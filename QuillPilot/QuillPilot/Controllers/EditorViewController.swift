@@ -4970,7 +4970,7 @@ class EditorViewController: NSViewController {
         let baseFont = textView.font ?? NSFont.systemFont(ofSize: 12)
         let smallerFont = NSFontManager.shared.convert(baseFont, toSize: baseFont.pointSize * 0.7)
 
-        var attrs: [NSAttributedString.Key: Any] = [
+        let attrs: [NSAttributedString.Key: Any] = [
             type.attributeKey: note.id,
             .font: smallerFont,
             .foregroundColor: currentTheme.textColor,

@@ -587,6 +587,21 @@ protocol EditorViewControllerDelegate: AnyObject {
 class EditorViewController: NSViewController {
 
     private let styleAttributeKey = NSAttributedString.Key("QuillStyleName")
+    private let baselineOriginalFontKey = NSAttributedString.Key("QPBaselineOriginalFont")
+
+    /// Manages bookmarks and cross-references for this document.
+    private(set) var fieldsManager = DocumentFieldsManager()
+
+    /// Manages footnotes and endnotes for this document.
+    private(set) var notesManager = NotesManager()
+
+    /// Window controllers for bookmark/cross-reference dialogs
+    private var bookmarkWindowController: InsertBookmarkWindowController?
+    private var crossReferenceWindowController: InsertCrossReferenceWindowController?
+
+    /// Window controllers for footnote/endnote dialogs
+    private var footnoteWindowController: InsertNoteWindowController?
+    private var endnoteWindowController: InsertNoteWindowController?
 
     private let standardMargin: CGFloat = 72
     private let standardIndentStep: CGFloat = 36
@@ -1249,6 +1264,12 @@ class EditorViewController: NSViewController {
     override func viewDidLoad() {
         super.viewDidLoad()
         setupTextView()
+
+        // Initialize fields manager with text storage
+        fieldsManager.textStorage = textView.textStorage
+
+        // Initialize notes manager with text storage
+        notesManager.textStorage = textView.textStorage
     }
 
     private func setupTextView() {
@@ -4664,6 +4685,357 @@ class EditorViewController: NSViewController {
         textView.window?.makeFirstResponder(textView)
     }
 
+    /// Show the Insert Footnote dialog (Word-style structured footnotes).
+    func insertFootnote() {
+        showInsertNoteDialog(type: .footnote)
+    }
+
+    /// Show the Insert Endnote dialog (Word-style structured endnotes).
+    func insertEndnote() {
+        showInsertNoteDialog(type: .endnote)
+    }
+
+    /// Show the Insert Bookmark dialog (Word-style bookmark system).
+    func insertBookmark() {
+        showInsertBookmarkDialog()
+    }
+
+    /// Show the Insert Cross-reference dialog (Word-style field reference).
+    func insertCrossReference() {
+        showInsertCrossReferenceDialog()
+    }
+
+    // MARK: - Bookmark Dialog
+
+    func showInsertBookmarkDialog() {
+        if bookmarkWindowController == nil {
+            bookmarkWindowController = InsertBookmarkWindowController()
+        }
+
+        guard let controller = bookmarkWindowController else { return }
+        controller.fieldsManager = fieldsManager
+
+        controller.onInsert = { [weak self] name in
+            self?.insertBookmarkAtCursor(named: name)
+        }
+
+        controller.onGoTo = { [weak self] bookmarkID in
+            self?.goToBookmark(id: bookmarkID)
+        }
+
+        controller.onDelete = { [weak self] bookmarkID in
+            self?.deleteBookmark(id: bookmarkID)
+        }
+
+        controller.reloadBookmarks()
+        controller.refreshTheme()
+        presentUtilityWindow(controller.window)
+    }
+
+    /// Insert a bookmark anchor at the current cursor position.
+    private func insertBookmarkAtCursor(named name: String) {
+        guard let storage = textView.textStorage else { return }
+        let location = textView.selectedRange().location
+
+        // Create the bookmark in the fields manager
+        let bookmark = fieldsManager.createBookmark(name: name, type: .bookmark)
+
+        // Get existing attributes at the insertion point to preserve paragraph style
+        var existingAttrs: [NSAttributedString.Key: Any] = [:]
+        if location > 0 && location <= storage.length {
+            existingAttrs = storage.attributes(at: max(0, location - 1), effectiveRange: nil)
+        } else if storage.length > 0 {
+            existingAttrs = storage.attributes(at: 0, effectiveRange: nil)
+        }
+
+        // Insert an invisible anchor character with bookmark attributes
+        // We use a zero-width space as the anchor
+        let anchorChar = "\u{200B}"
+
+        // Start with existing attributes to preserve paragraph style
+        var attrs = existingAttrs
+        // Add bookmark-specific attributes
+        attrs[.qpBookmarkID] = bookmark.id
+        attrs[.qpBookmarkName] = bookmark.name
+        attrs[.foregroundColor] = NSColor.clear
+        // Keep existing font if available, otherwise use default
+        if attrs[.font] == nil {
+            attrs[.font] = textView.font ?? NSFont.systemFont(ofSize: 12)
+        }
+
+        let anchorString = NSAttributedString(string: anchorChar, attributes: attrs)
+
+        storage.beginEditing()
+        storage.insert(anchorString, at: location)
+        storage.endEditing()
+
+        textView.setSelectedRange(NSRange(location: location + 1, length: 0))
+        delegate?.textDidChange()
+
+        DebugLog.log("Inserted bookmark '\(name)' with ID \(bookmark.id) at location \(location)")
+    }
+
+    /// Navigate to a bookmark by ID.
+    private func goToBookmark(id: String) {
+        guard let location = fieldsManager.findBookmarkLocation(id: id) else {
+            NSSound.beep()
+            return
+        }
+        textView.setSelectedRange(NSRange(location: location, length: 0))
+        textView.scrollRangeToVisible(NSRange(location: location, length: 1))
+        textView.window?.makeFirstResponder(textView)
+    }
+
+    /// Delete a bookmark by ID.
+    private func deleteBookmark(id: String) {
+        guard let storage = textView.textStorage else { return }
+
+        // Find and remove the bookmark anchor from the text
+        var rangeToDelete: NSRange?
+        storage.enumerateAttribute(.qpBookmarkID, in: NSRange(location: 0, length: storage.length), options: []) { value, range, stop in
+            if let bookmarkID = value as? String, bookmarkID == id {
+                rangeToDelete = range
+                stop.pointee = true
+            }
+        }
+
+        if let range = rangeToDelete {
+            storage.beginEditing()
+            storage.deleteCharacters(in: range)
+            storage.endEditing()
+            delegate?.textDidChange()
+        }
+
+        // Remove from fields manager
+        fieldsManager.removeBookmark(id: id)
+
+        DebugLog.log("Deleted bookmark with ID \(id)")
+    }
+
+    // MARK: - Cross-Reference Dialog
+
+    func showInsertCrossReferenceDialog() {
+        if crossReferenceWindowController == nil {
+            crossReferenceWindowController = InsertCrossReferenceWindowController()
+        }
+
+        guard let controller = crossReferenceWindowController else { return }
+        controller.fieldsManager = fieldsManager
+
+        controller.onInsert = { [weak self] field, target in
+            self?.insertCrossReferenceField(field, target: target)
+        }
+
+        controller.reloadTargets()
+        controller.refreshTheme()
+        presentUtilityWindow(controller.window)
+    }
+
+    /// Insert a cross-reference field at the current cursor position.
+    private func insertCrossReferenceField(_ field: CrossReferenceField, target: BookmarkTarget) {
+        guard let storage = textView.textStorage else { return }
+        let insertLocation = textView.selectedRange().location
+
+        // Resolve the initial display text
+        let displayText = fieldsManager.resolveField(field, referenceLocation: insertLocation) { [weak self] charPos in
+            self?.getPageNumber(forCharacterPosition: charPos)
+        }
+
+        // Encode the field data
+        guard let fieldData = field.encode() else {
+            DebugLog.log("Failed to encode cross-reference field")
+            return
+        }
+
+        // Get existing attributes at the insertion point to preserve paragraph style
+        var existingAttrs: [NSAttributedString.Key: Any] = [:]
+        if insertLocation > 0 && insertLocation <= storage.length {
+            existingAttrs = storage.attributes(at: max(0, insertLocation - 1), effectiveRange: nil)
+        } else if storage.length > 0 {
+            existingAttrs = storage.attributes(at: 0, effectiveRange: nil)
+        }
+
+        // Build attributes for the field, preserving paragraph style
+        var attrs = existingAttrs
+        attrs[.qpCrossReferenceField] = fieldData
+        attrs[.foregroundColor] = field.isHyperlink ? NSColor.linkColor : currentTheme.textColor
+        // Keep existing font if available, otherwise use default
+        if attrs[.font] == nil {
+            attrs[.font] = textView.font ?? NSFont.systemFont(ofSize: 12)
+        }
+
+        if field.isHyperlink {
+            attrs[.underlineStyle] = NSUnderlineStyle.single.rawValue
+        }
+
+        let fieldString = NSAttributedString(string: displayText, attributes: attrs)
+
+        storage.beginEditing()
+        storage.insert(fieldString, at: insertLocation)
+        storage.endEditing()
+
+        textView.setSelectedRange(NSRange(location: insertLocation + displayText.count, length: 0))
+        delegate?.textDidChange()
+
+        DebugLog.log("Inserted cross-reference to '\(target.name)' displaying '\(displayText)'")
+    }
+
+    /// Update all cross-reference fields in the document.
+    func updateFields() {
+        fieldsManager.updateAllFields { [weak self] charPos in
+            self?.getPageNumber(forCharacterPosition: charPos)
+        }
+        // Also update note markers
+        notesManager.updateAllNoteMarkers()
+        delegate?.textDidChange()
+        DebugLog.log("Updated all fields and note markers")
+    }
+
+    // MARK: - Footnote/Endnote Dialog
+
+    func showInsertNoteDialog(type: NoteType) {
+        let controller: InsertNoteWindowController
+
+        switch type {
+        case .footnote:
+            if footnoteWindowController == nil {
+                footnoteWindowController = InsertNoteWindowController(noteType: .footnote)
+            }
+            controller = footnoteWindowController!
+        case .endnote:
+            if endnoteWindowController == nil {
+                endnoteWindowController = InsertNoteWindowController(noteType: .endnote)
+            }
+            controller = endnoteWindowController!
+        }
+
+        controller.notesManager = notesManager
+
+        controller.onInsert = { [weak self] content in
+            self?.insertNoteAtCursor(type: type, content: content)
+        }
+
+        controller.onGoTo = { [weak self] noteID in
+            self?.goToNote(id: noteID)
+        }
+
+        controller.onDelete = { [weak self] noteID in
+            self?.deleteNote(id: noteID)
+        }
+
+        controller.onConvert = { [weak self] noteID in
+            self?.convertNote(id: noteID, from: type)
+        }
+
+        controller.reloadNotes()
+        controller.refreshTheme()
+        presentUtilityWindow(controller.window)
+    }
+
+    private func presentUtilityWindow(_ window: NSWindow?) {
+        guard let window else { return }
+        NSApp.activate(ignoringOtherApps: true)
+        window.level = .floating
+        window.hidesOnDeactivate = false
+        window.collectionBehavior = [.moveToActiveSpace, .fullScreenAuxiliary]
+        window.center()
+        window.makeKeyAndOrderFront(nil)
+        window.orderFrontRegardless()
+    }
+
+    /// Insert a footnote or endnote at the current cursor position.
+    private func insertNoteAtCursor(type: NoteType, content: String) {
+        guard let storage = textView.textStorage else { return }
+        let location = textView.selectedRange().location
+
+        // Create the note in the notes manager
+        let note: Note
+        switch type {
+        case .footnote:
+            note = notesManager.createFootnote(content: content)
+        case .endnote:
+            note = notesManager.createEndnote(content: content)
+        }
+
+        // Get the marker text
+        let marker: String
+        switch type {
+        case .footnote:
+            marker = notesManager.footnoteMarker(for: note.id)
+        case .endnote:
+            marker = notesManager.endnoteMarker(for: note.id)
+        }
+
+        // Build attributes for the note reference (superscript)
+        let baseFont = textView.font ?? NSFont.systemFont(ofSize: 12)
+        let smallerFont = NSFontManager.shared.convert(baseFont, toSize: baseFont.pointSize * 0.7)
+
+        var attrs: [NSAttributedString.Key: Any] = [
+            type.attributeKey: note.id,
+            .font: smallerFont,
+            .foregroundColor: currentTheme.textColor,
+            .baselineOffset: 6  // Superscript
+        ]
+
+        let markerString = NSAttributedString(string: marker, attributes: attrs)
+
+        storage.beginEditing()
+        storage.insert(markerString, at: location)
+        storage.endEditing()
+
+        textView.setSelectedRange(NSRange(location: location + marker.count, length: 0))
+        delegate?.textDidChange()
+
+        DebugLog.log("Inserted \(type.rawValue) '\(note.id)' with marker '\(marker)' at location \(location)")
+
+        // Refresh the notes list in the dialog if open
+        switch type {
+        case .footnote:
+            footnoteWindowController?.reloadNotes()
+        case .endnote:
+            endnoteWindowController?.reloadNotes()
+        }
+    }
+
+    /// Navigate to a note reference by ID.
+    private func goToNote(id: String) {
+        guard let location = notesManager.findNoteReferenceLocation(id: id) else {
+            NSSound.beep()
+            return
+        }
+        textView.setSelectedRange(NSRange(location: location, length: 0))
+        textView.scrollRangeToVisible(NSRange(location: location, length: 1))
+        textView.window?.makeFirstResponder(textView)
+    }
+
+    /// Delete a note by ID.
+    private func deleteNote(id: String) {
+        notesManager.deleteNote(id: id)
+        delegate?.textDidChange()
+        DebugLog.log("Deleted note with ID \(id)")
+
+        // Update all remaining note markers to renumber
+        notesManager.updateAllNoteMarkers()
+    }
+
+    /// Convert a note between footnote and endnote.
+    private func convertNote(id: String, from type: NoteType) {
+        switch type {
+        case .footnote:
+            notesManager.convertFootnoteToEndnote(id: id)
+            // Update markers
+            notesManager.updateAllNoteMarkers()
+            footnoteWindowController?.reloadNotes()
+        case .endnote:
+            notesManager.convertEndnoteToFootnote(id: id)
+            // Update markers
+            notesManager.updateAllNoteMarkers()
+            endnoteWindowController?.reloadNotes()
+        }
+        delegate?.textDidChange()
+        DebugLog.log("Converted note \(id) from \(type.rawValue)")
+    }
+
     /// Toggle superscript on the selection (or typing attributes if no selection).
     func toggleSuperscript() {
         toggleBaselineOffset(desiredOffset: +6)
@@ -6742,7 +7114,7 @@ case "Book Subtitle":
         guard let selectedRange = textView.selectedRanges.first?.rangeValue else { return }
         if selectedRange.length == 0 { return }
         textStorage.beginEditing()
-        textStorage.addAttribute(.baselineOffset, value: offset, range: selectedRange)
+        applySupersubscriptAttributes(to: selectedRange, desiredOffset: offset)
         textStorage.endEditing()
     }
 
@@ -6753,9 +7125,21 @@ case "Book Subtitle":
         if selectedRange.length == 0 {
             let current = (textView.typingAttributes[.baselineOffset] as? NSNumber)?.doubleValue ?? 0
             if (desiredOffset > 0 && current > 0) || (desiredOffset < 0 && current < 0) {
+                if let original = textView.typingAttributes[baselineOriginalFontKey] as? NSFont {
+                    textView.typingAttributes[.font] = original
+                }
+                textView.typingAttributes.removeValue(forKey: baselineOriginalFontKey)
                 textView.typingAttributes.removeValue(forKey: .baselineOffset)
             } else {
-                textView.typingAttributes[.baselineOffset] = desiredOffset
+                let baseFont = (textView.typingAttributes[.font] as? NSFont)
+                    ?? textView.font
+                    ?? NSFont.systemFont(ofSize: 12)
+                if textView.typingAttributes[baselineOriginalFontKey] == nil {
+                    textView.typingAttributes[baselineOriginalFontKey] = baseFont
+                }
+                let metrics = supersubscriptMetrics(for: baseFont, desiredOffset: desiredOffset)
+                textView.typingAttributes[.font] = metrics.font
+                textView.typingAttributes[.baselineOffset] = metrics.offset
             }
             return
         }
@@ -6766,11 +7150,66 @@ case "Book Subtitle":
 
         textStorage.beginEditing()
         if shouldClear {
-            textStorage.removeAttribute(.baselineOffset, range: selectedRange)
+            clearSupersubscriptAttributes(in: selectedRange)
         } else {
-            textStorage.addAttribute(.baselineOffset, value: desiredOffset, range: selectedRange)
+            applySupersubscriptAttributes(to: selectedRange, desiredOffset: desiredOffset)
         }
         textStorage.endEditing()
+    }
+
+    private func supersubscriptMetrics(for font: NSFont, desiredOffset: CGFloat) -> (font: NSFont, offset: CGFloat) {
+        let direction: CGFloat = desiredOffset >= 0 ? 1 : -1
+        let offsetMagnitude = max(2, min(6, font.pointSize * 0.3))
+        let scaledSize = max(6, font.pointSize * 0.7)
+        let scaledFont = NSFont(descriptor: font.fontDescriptor, size: scaledSize) ?? NSFont.systemFont(ofSize: scaledSize)
+        return (scaledFont, direction * offsetMagnitude)
+    }
+
+    private func applySupersubscriptAttributes(to range: NSRange, desiredOffset: CGFloat) {
+        guard let textStorage = textView.textStorage else { return }
+        textStorage.enumerateAttribute(.font, in: range, options: []) { value, subrange, _ in
+            let baseFont = (value as? NSFont) ?? textView.font ?? NSFont.systemFont(ofSize: 12)
+            if textStorage.attribute(baselineOriginalFontKey, at: subrange.location, effectiveRange: nil) == nil {
+                textStorage.addAttribute(baselineOriginalFontKey, value: baseFont, range: subrange)
+            }
+            let metrics = supersubscriptMetrics(for: baseFont, desiredOffset: desiredOffset)
+            textStorage.addAttribute(.font, value: metrics.font, range: subrange)
+            textStorage.addAttribute(.baselineOffset, value: metrics.offset, range: subrange)
+        }
+    }
+
+    private func clearSupersubscriptAttributes(in range: NSRange) {
+        guard let textStorage = textView.textStorage else { return }
+        textStorage.enumerateAttribute(baselineOriginalFontKey, in: range, options: []) { value, subrange, _ in
+            if let original = value as? NSFont {
+                textStorage.addAttribute(.font, value: original, range: subrange)
+            }
+        }
+        textStorage.removeAttribute(.baselineOffset, range: range)
+        textStorage.removeAttribute(baselineOriginalFontKey, range: range)
+    }
+
+    private func nextMarkerNumber(counter: inout Int) -> Int {
+        counter += 1
+        return counter
+    }
+
+    private func insertNoteMarker(kind: String, counter: inout Int, desiredOffset: CGFloat) {
+        let number = nextMarkerNumber(counter: &counter)
+        let marker = "\(number)"
+        let insertionRange = textView.selectedRange()
+        textView.insertText(marker, replacementRange: insertionRange)
+        let insertedRange = NSRange(location: insertionRange.location, length: marker.count)
+        if insertedRange.length > 0 {
+            if let storage = textView.textStorage {
+                storage.beginEditing()
+                applySupersubscriptAttributes(to: insertedRange, desiredOffset: desiredOffset)
+                storage.endEditing()
+            }
+        }
+        textView.setSelectedRange(NSRange(location: insertedRange.location + insertedRange.length, length: 0))
+        textView.window?.makeFirstResponder(textView)
+        DebugLog.log("Inserted \(kind) marker \(number)")
     }
 
     private func applySmallCaps() {

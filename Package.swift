@@ -41,6 +41,8 @@ let package = Package(
                 "Utilities/PoetryImporter.swift",
                 "Utilities/FadeInImporter.swift",
                 "Utilities/StoryNotesStore.swift",
+                "Utilities/DocumentFieldsManager.swift",
+                "Utilities/NotesManager.swift",
                 "Extensions/NSColor+Hex.swift",
                 "Extensions/NSAlert+Themed.swift",
                 "Views/DocumentInfoPanel.swift",
@@ -76,7 +78,9 @@ let package = Package(
                 "Views/FailurePatternChartView.swift",
                 "Views/DecisionBeliefLoopView.swift",
                 "Views/CharacterPresenceView.swift",
-                "Views/TOCIndexWindow.swift"
+                "Views/TOCIndexWindow.swift",
+                "Views/BookmarkCrossReferenceWindows.swift",
+                "Views/FootnoteEndnoteWindows.swift"
             ],
             resources: [
                 .process("Assets.xcassets")

@@ -3253,7 +3253,7 @@ class FormattingToolbar: NSView {
 
         // Add all to stack view (all aligned left)
         let toolbarStack = NSStackView(views: [
-            undoBtn, redoBtn, newBtn, openBtn, saveAsBtn, printBtn, cutBtn, copyBtn, pasteBtn,
+            newBtn, openBtn, saveAsBtn, printBtn, cutBtn, copyBtn, pasteBtn, undoBtn, redoBtn,
             stylePopup, formatPainterBtn, decreaseSizeBtn, sizePopup, increaseSizeBtn,
             boldBtn, italicBtn, underlineBtn, strikethroughBtn, superscriptBtn, subscriptBtn,
             alignLeftBtn, alignCenterBtn, alignRightBtn, justifyBtn,

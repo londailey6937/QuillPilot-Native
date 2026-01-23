@@ -310,6 +310,42 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         mainWindowController?.mainContentViewController?.editorViewController.applyOpticalKerning(to: nil)
     }
 
+    @objc private func insertFootnote(_ sender: Any?) {
+        if mainWindowController == nil {
+            mainWindowController = MainWindowController()
+        }
+        presentMainWindow(orderingSource: sender)
+        mainWindowController?.mainContentViewController?.editorViewController.insertFootnote()
+    }
+
+    @objc private func insertEndnote(_ sender: Any?) {
+        if mainWindowController == nil {
+            mainWindowController = MainWindowController()
+        }
+        presentMainWindow(orderingSource: sender)
+        mainWindowController?.mainContentViewController?.editorViewController.insertEndnote()
+    }
+
+    @objc private func insertBookmark(_ sender: Any?) {
+        if mainWindowController == nil {
+            mainWindowController = MainWindowController()
+        }
+        presentMainWindow(orderingSource: sender)
+        mainWindowController?.mainContentViewController?.editorViewController.insertBookmark()
+    }
+
+    @objc private func insertCrossReference(_ sender: Any?) {
+        if mainWindowController == nil {
+            mainWindowController = MainWindowController()
+        }
+        presentMainWindow(orderingSource: sender)
+        mainWindowController?.mainContentViewController?.editorViewController.insertCrossReference()
+    }
+
+    @objc private func updateFields(_ sender: Any?) {
+        mainWindowController?.mainContentViewController?.editorViewController.updateFields()
+    }
+
     @objc private func insertColumnBreak(_ sender: Any?) {
         mainWindowController?.mainContentViewController?.editorViewController.insertColumnBreak()
     }
@@ -385,6 +421,47 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         presentMainWindow(orderingSource: sender)
         mainWindowController?.zoomActualSize()
+    }
+
+    @objc private func showBookmarks(_ sender: Any?) {
+        if mainWindowController == nil {
+            mainWindowController = MainWindowController()
+        }
+        presentMainWindow(orderingSource: sender)
+        mainWindowController?.mainContentViewController?.editorViewController.showInsertBookmarkDialog()
+    }
+
+    @objc private func showCrossReferenceTargets(_ sender: Any?) {
+        if mainWindowController == nil {
+            mainWindowController = MainWindowController()
+        }
+        presentMainWindow(orderingSource: sender)
+        mainWindowController?.mainContentViewController?.editorViewController.showInsertCrossReferenceDialog()
+    }
+
+    @objc private func showFootnotes(_ sender: Any?) {
+        if mainWindowController == nil {
+            mainWindowController = MainWindowController()
+        }
+        presentMainWindow(orderingSource: sender)
+        mainWindowController?.mainContentViewController?.editorViewController.showInsertNoteDialog(type: .footnote)
+    }
+
+    @objc private func showEndnotes(_ sender: Any?) {
+        if mainWindowController == nil {
+            mainWindowController = MainWindowController()
+        }
+        presentMainWindow(orderingSource: sender)
+        mainWindowController?.mainContentViewController?.editorViewController.showInsertNoteDialog(type: .endnote)
+    }
+
+    @objc private func showNotesNavigator(_ sender: Any?) {
+        if mainWindowController == nil {
+            mainWindowController = MainWindowController()
+        }
+        presentMainWindow(orderingSource: sender)
+        // Open footnote dialog as the notes navigator
+        mainWindowController?.mainContentViewController?.editorViewController.showInsertNoteDialog(type: .footnote)
     }
 
     @MainActor
@@ -602,6 +679,31 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         insertMenu.addItem(.separator())
 
+        let insertFootnoteItem = NSMenuItem(title: "Insert Footnote", action: #selector(insertFootnote(_:)), keyEquivalent: "")
+        insertFootnoteItem.target = self
+        insertMenu.addItem(insertFootnoteItem)
+
+        let insertEndnoteItem = NSMenuItem(title: "Insert Endnote", action: #selector(insertEndnote(_:)), keyEquivalent: "")
+        insertEndnoteItem.target = self
+        insertMenu.addItem(insertEndnoteItem)
+
+        let insertBookmarkItem = NSMenuItem(title: "Bookmark…", action: #selector(insertBookmark(_:)), keyEquivalent: "")
+        insertBookmarkItem.target = self
+        insertMenu.addItem(insertBookmarkItem)
+
+        let insertCrossReferenceItem = NSMenuItem(title: "Cross-reference…", action: #selector(insertCrossReference(_:)), keyEquivalent: "")
+        insertCrossReferenceItem.target = self
+        insertMenu.addItem(insertCrossReferenceItem)
+
+        insertMenu.addItem(.separator())
+
+        let updateFieldsItem = NSMenuItem(title: "Update Fields", action: #selector(updateFields(_:)), keyEquivalent: "")
+        updateFieldsItem.keyEquivalentModifierMask = [.command, .shift]
+        updateFieldsItem.target = self
+        insertMenu.addItem(updateFieldsItem)
+
+        insertMenu.addItem(.separator())
+
         let insertColumnBreakItem = NSMenuItem(title: "Insert Column Break", action: #selector(insertColumnBreak(_:)), keyEquivalent: "")
         insertColumnBreakItem.target = self
         insertMenu.addItem(insertColumnBreakItem)
@@ -718,6 +820,30 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         zoomActualItem.keyEquivalentModifierMask = [.command]
         zoomActualItem.target = self
         viewMenu.addItem(zoomActualItem)
+
+        viewMenu.addItem(.separator())
+
+        let showBookmarksItem = NSMenuItem(title: "Show Bookmarks", action: #selector(showBookmarks(_:)), keyEquivalent: "")
+        showBookmarksItem.target = self
+        viewMenu.addItem(showBookmarksItem)
+
+        let showCrossReferencesItem = NSMenuItem(title: "Show Cross-Reference Targets", action: #selector(showCrossReferenceTargets(_:)), keyEquivalent: "")
+        showCrossReferencesItem.target = self
+        viewMenu.addItem(showCrossReferencesItem)
+
+        viewMenu.addItem(.separator())
+
+        let showFootnotesItem = NSMenuItem(title: "Show Footnotes", action: #selector(showFootnotes(_:)), keyEquivalent: "")
+        showFootnotesItem.target = self
+        viewMenu.addItem(showFootnotesItem)
+
+        let showEndnotesItem = NSMenuItem(title: "Show Endnotes", action: #selector(showEndnotes(_:)), keyEquivalent: "")
+        showEndnotesItem.target = self
+        viewMenu.addItem(showEndnotesItem)
+
+        let showNotesSidebarItem = NSMenuItem(title: "Show Notes Navigator", action: #selector(showNotesNavigator(_:)), keyEquivalent: "")
+        showNotesSidebarItem.target = self
+        viewMenu.addItem(showNotesSidebarItem)
 
         // Window Menu
         let windowMenuItem = NSMenuItem()

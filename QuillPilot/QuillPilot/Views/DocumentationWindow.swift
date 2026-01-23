@@ -128,6 +128,7 @@ class DocumentationWindowController: NSWindowController, NSWindowDelegate {
         createTab(title: "🎬 Scenes", identifier: "scenes")
         createTab(title: "🧰 Toolbar", identifier: "toolbar")
         createTab(title: "🎨 Typography & Styles", identifier: "typography")
+        createTab(title: "📝 References & Notes", identifier: "referencesNotes")
         createTab(title: "⌨️ Shortcuts", identifier: "shortcuts")
 
         let tabBar = makeTabBar()
@@ -471,6 +472,7 @@ class DocumentationWindowController: NSWindowController, NSWindowDelegate {
         loadScenesTab()
         loadToolbarTab()
         loadTypographyTab()
+        loadReferencesNotesTab()
         loadShortcutsTab()
 
                 // Build the search index after content is loaded.
@@ -1815,11 +1817,227 @@ A: As many as your story needs. A 80,000-word novel might have 40-80 scenes, but
         textView.textStorage?.setAttributedString(content)
     }
 
-        // MARK: - Tab 8: Keyboard Shortcuts
+        // MARK: - Tab: References & Notes
+
+        private func loadReferencesNotesTab() {
+                guard textViews.count > 9 else { return }
+                let textView = textViews[9]
+                let theme = ThemeManager.shared.currentTheme
+                let titleColor = theme.textColor
+                let headingColor = theme.textColor
+                let bodyColor = theme.textColor
+
+                let content = NSMutableAttributedString()
+
+                content.append(makeTitle("References & Notes", color: titleColor))
+                content.append(makeBody("""
+Quill Pilot provides professional-grade footnotes, endnotes, bookmarks, and cross-references that follow industry-standard document semantics. These features are designed to work like their counterparts in Microsoft Word, ensuring compatibility and proper behavior when exporting to other formats.
+""", color: bodyColor))
+                content.append(makeNewline())
+
+                // MARK: Footnotes & Endnotes
+                content.append(makeHeading("📝 Footnotes & Endnotes", color: headingColor))
+                content.append(makeBody("""
+Footnotes and endnotes in Quill Pilot are structured objects—not just text with superscripts. Each note consists of:
+• A unique internal ID
+• A reference marker in the main text
+• A corresponding note body stored separately
+• Automatic numbering rules
+
+This structure enables powerful features:
+""", color: bodyColor))
+                content.append(makeNewline())
+
+                content.append(makeSubheading("Automatic Renumbering", color: headingColor))
+                content.append(makeBody("""
+Insert a footnote anywhere in your document, and all subsequent footnotes automatically renumber. Delete a footnote, and the numbering adjusts. No manual editing required.
+""", color: bodyColor))
+                content.append(makeNewline())
+
+                content.append(makeSubheading("Conversion Between Types", color: headingColor))
+                content.append(makeBody("""
+Convert any footnote to an endnote (or vice versa) with a single click. The note's content is preserved; only its placement changes.
+
+• Footnotes appear at the bottom of each page
+• Endnotes collect at the end of the document
+""", color: bodyColor))
+                content.append(makeNewline())
+
+                content.append(makeSubheading("Numbering Styles", color: headingColor))
+                content.append(makeBody("""
+Choose from multiple numbering styles:
+• Arabic numerals (1, 2, 3...)
+• Roman numerals, lowercase (i, ii, iii...)
+• Roman numerals, uppercase (I, II, III...)
+• Alphabetic, lowercase (a, b, c...)
+• Alphabetic, uppercase (A, B, C...)
+• Symbols (*, †, ‡, §, ‖, ¶...)
+
+You can set different styles for footnotes and endnotes.
+""", color: bodyColor))
+                content.append(makeNewline())
+
+                content.append(makeSubheading("Using Footnotes & Endnotes", color: headingColor))
+                content.append(makeBody("""
+Insert → Insert Footnote (or Insert Endnote)
+
+The dialog allows you to:
+• Enter note content
+• View all existing notes
+• Navigate to any note in the document
+• Delete notes (both reference and content)
+• Convert between footnote and endnote
+• Change numbering style
+
+Double-click any note in the list to jump to its location in the document.
+""", color: bodyColor))
+                content.append(makeNewline())
+
+                // MARK: Bookmarks
+                content.append(makeHeading("🔖 Bookmarks", color: headingColor))
+                content.append(makeBody("""
+Bookmarks are named anchors in your document that you can reference from elsewhere. Unlike simple text markers, Quill Pilot bookmarks have stable internal IDs that persist even when the document changes.
+""", color: bodyColor))
+                content.append(makeNewline())
+
+                content.append(makeSubheading("Creating Bookmarks", color: headingColor))
+                content.append(makeBody("""
+Insert → Bookmark…
+
+1. Position your cursor where you want the bookmark
+2. Enter a descriptive name (e.g., "Chapter 3 Introduction")
+3. Click Add
+
+The bookmark is inserted as an invisible anchor at the cursor position.
+""", color: bodyColor))
+                content.append(makeNewline())
+
+                content.append(makeSubheading("Managing Bookmarks", color: headingColor))
+                content.append(makeBody("""
+The Bookmark dialog shows all bookmarks in your document:
+• Add: Create a new bookmark at the cursor
+• Delete: Remove a bookmark and its anchor
+• Go To: Jump to the bookmark's location
+
+Bookmarks persist when you save and reload your document.
+""", color: bodyColor))
+                content.append(makeNewline())
+
+                // MARK: Cross-References
+                content.append(makeHeading("🔗 Cross-References", color: headingColor))
+                content.append(makeBody("""
+Cross-references are dynamic fields that point to bookmarks, headings, or other document elements. When the target moves or changes, you can update all cross-references to reflect the new state.
+""", color: bodyColor))
+                content.append(makeNewline())
+
+                content.append(makeSubheading("Creating Cross-References", color: headingColor))
+                content.append(makeBody("""
+Insert → Cross-reference…
+
+1. Choose the reference type (Bookmark, Heading, Caption, etc.)
+2. Select the target from the list
+3. Choose what to display:
+   • Text: The referenced text itself
+   • Page Number: The page where the target appears
+   • Paragraph Number: For numbered items
+   • Above/Below: Relative position ("see above" / "see below")
+   • Full Context: Text with page number
+4. Optionally make it a clickable hyperlink
+5. Click Insert
+""", color: bodyColor))
+                content.append(makeNewline())
+
+                content.append(makeSubheading("Updating Cross-References", color: headingColor))
+                content.append(makeBody("""
+Insert → Update Fields
+
+Cross-references show their last computed value. When document content changes (page numbers shift, text moves), use Update Fields to refresh all references to their current values.
+
+This manual update model prevents constant recalculation while editing and ensures you control when references are synchronized.
+""", color: bodyColor))
+                content.append(makeNewline())
+
+                content.append(makeSubheading("Display Modes Explained", color: headingColor))
+                content.append(makeBody("""
+• Text: Shows the actual text at the bookmark/heading location
+  Example: "Chapter 3: The Journey Begins"
+
+• Page Number: Shows just the page number
+  Example: "42"
+
+• Above/Below: Shows relative position from the reference
+  Example: "above" or "below"
+
+• Full Context: Shows text plus page number
+  Example: "Chapter 3: The Journey Begins on page 42"
+""", color: bodyColor))
+                content.append(makeNewline())
+
+                // MARK: Best Practices
+                content.append(makeHeading("💡 Best Practices", color: headingColor))
+
+                content.append(makeSubheading("Footnotes vs. Endnotes", color: headingColor))
+                content.append(makeBody("""
+• Use footnotes for brief clarifications readers might want immediately
+• Use endnotes for longer citations or supplementary material
+• Academic writing typically uses footnotes for citations
+• Fiction rarely uses either—consider whether you truly need them
+""", color: bodyColor))
+                content.append(makeNewline())
+
+                content.append(makeSubheading("Naming Bookmarks", color: headingColor))
+                content.append(makeBody("""
+• Use descriptive names: "protagonist_introduction" not "bm1"
+• Group related bookmarks with prefixes: "ch3_", "appendix_"
+• Avoid special characters that might cause export issues
+• Keep names concise but meaningful
+""", color: bodyColor))
+                content.append(makeNewline())
+
+                content.append(makeSubheading("Cross-Reference Strategy", color: headingColor))
+                content.append(makeBody("""
+• Create bookmarks at stable structural points (chapter starts, key sections)
+• Use "Above/Below" for nearby references that won't move far
+• Use "Page Number" for distant references in print-oriented documents
+• Update fields before final export or print
+• Test cross-references after major structural edits
+""", color: bodyColor))
+                content.append(makeNewline())
+
+                // MARK: FAQ
+                content.append(makeHeading("❓ Frequently Asked Questions", color: headingColor))
+                content.append(makeBody("""
+Q: Why can't I just type footnote numbers manually?
+A: Manual numbering breaks renumbering, navigation, export semantics, and accessibility. Quill Pilot's structured notes maintain all these features automatically.
+
+Q: What happens if I delete a bookmark that has cross-references?
+A: The cross-references will show "[Ref not found]" until you update them or delete them. The document remains intact.
+
+Q: Do footnotes export to Word correctly?
+A: Yes. Quill Pilot's structured footnotes export as proper Word footnotes, maintaining numbering and navigation.
+
+Q: Can I have footnotes restart numbering each page/chapter?
+A: The current version supports continuous numbering. Section-based restart is planned for a future update.
+
+Q: Why don't cross-references update automatically?
+A: Automatic updates during editing would cause constant recalculation and potential cursor jumping. Manual update gives you control and better performance.
+
+Q: Can I convert all footnotes to endnotes at once?
+A: Currently conversion is per-note. Bulk conversion is planned for a future update.
+
+Q: Do bookmarks affect my document's appearance?
+A: No. Bookmark anchors are invisible zero-width characters. They don't affect layout or printing.
+""", color: bodyColor))
+
+                normalizeAppNameInDocumentation(content)
+                textView.textStorage?.setAttributedString(content)
+        }
+
+        // MARK: - Tab: Keyboard Shortcuts
 
         private func loadShortcutsTab() {
-                                guard textViews.count > 9 else { return }
-                                let textView = textViews[9]
+                                guard textViews.count > 10 else { return }
+                                let textView = textViews[10]
         let theme = ThemeManager.shared.currentTheme
         let titleColor = theme.textColor
         let headingColor = theme.textColor

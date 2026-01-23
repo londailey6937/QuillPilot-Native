@@ -936,15 +936,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     @objc private func showAboutWindow(_ sender: Any?) {
-        if aboutWindow == nil {
-            aboutWindow = createAboutWindow()
+        if aboutWindow != nil {
+            aboutWindow?.close()
+            aboutWindow = nil
         }
+        aboutWindow = createAboutWindow()
         aboutWindow?.center()
         aboutWindow?.makeKeyAndOrderFront(nil)
     }
 
     private func createAboutWindow() -> NSWindow {
-        let windowSize = NSSize(width: 340, height: 380)
+        let windowSize = NSSize(width: 340, height: 500)
         let window = NSWindow(
             contentRect: NSRect(origin: .zero, size: windowSize),
             styleMask: [.titled, .closable],
@@ -960,12 +962,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let theme = ThemeManager.shared.currentTheme
         contentView.layer?.backgroundColor = theme.pageAround.cgColor
 
+        let logoSize: CGFloat = 120
+        let topPadding: CGFloat = 26
+        let nameSpacing: CGFloat = 14
+        let headingSpacing: CGFloat = 8
+        let descriptionSpacing: CGFloat = 12
+        let descriptionHeight: CGFloat = 120
+        let versionSpacing: CGFloat = 12
+
+        let logoTop = windowSize.height - topPadding
+        let logoY = logoTop - logoSize
+
         // Logo
-        let logoSize: CGFloat = 140
         let logoView = LogoView(size: logoSize)
         logoView.frame = NSRect(
             x: (windowSize.width - logoSize) / 2,
-            y: windowSize.height - logoSize - 30,
+            y: logoY,
             width: logoSize,
             height: logoSize
         )
@@ -976,8 +988,27 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         nameLabel.font = NSFont.systemFont(ofSize: 24, weight: .semibold)
         nameLabel.textColor = theme.textColor
         nameLabel.alignment = .center
-        nameLabel.frame = NSRect(x: 0, y: windowSize.height - logoSize - 70, width: windowSize.width, height: 30)
+        let nameY = logoY - nameSpacing - 30
+        nameLabel.frame = NSRect(x: 0, y: nameY, width: windowSize.width, height: 30)
         contentView.addSubview(nameLabel)
+
+        // About heading
+        let aboutHeadingLabel = NSTextField(labelWithString: "About Quill Pilot")
+        aboutHeadingLabel.font = NSFont.systemFont(ofSize: 14, weight: .semibold)
+        aboutHeadingLabel.textColor = theme.textColor
+        aboutHeadingLabel.alignment = .center
+        let headingY = nameY - headingSpacing - 20
+        aboutHeadingLabel.frame = NSRect(x: 0, y: headingY, width: windowSize.width, height: 20)
+        contentView.addSubview(aboutHeadingLabel)
+
+        // Description (placed directly under About heading)
+        let descriptionLabel = NSTextField(wrappingLabelWithString: "Designed for macOS with a fully adaptive interface—from 13-inch MacBooks to large desktop displays.\n\nProfessional writing software with publication-quality typography, intelligent manuscript analysis, and comprehensive tools for novelists, essayists, and screenwriters.")
+        descriptionLabel.font = NSFont.systemFont(ofSize: 11)
+        descriptionLabel.textColor = theme.textColor.withAlphaComponent(0.8)
+        descriptionLabel.alignment = .center
+        let descriptionY = headingY - descriptionSpacing - descriptionHeight
+        descriptionLabel.frame = NSRect(x: 30, y: descriptionY, width: windowSize.width - 60, height: descriptionHeight)
+        contentView.addSubview(descriptionLabel)
 
         // Version
         let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0"
@@ -986,16 +1017,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         versionLabel.font = NSFont.systemFont(ofSize: 12)
         versionLabel.textColor = NSColor.secondaryLabelColor
         versionLabel.alignment = .center
-        versionLabel.frame = NSRect(x: 0, y: windowSize.height - logoSize - 95, width: windowSize.width, height: 20)
+        let versionY = descriptionY - versionSpacing - 20
+        versionLabel.frame = NSRect(x: 0, y: versionY, width: windowSize.width, height: 20)
         contentView.addSubview(versionLabel)
-
-        // Description
-        let descriptionLabel = NSTextField(wrappingLabelWithString: "Professional writing software with publication-quality typography, intelligent manuscript analysis, and comprehensive tools for novelists, essayists, and screenwriters.\n\nDesigned for macOS with a fully adaptive interface—from 13-inch MacBooks to large desktop displays.")
-        descriptionLabel.font = NSFont.systemFont(ofSize: 11)
-        descriptionLabel.textColor = theme.textColor.withAlphaComponent(0.8)
-        descriptionLabel.alignment = .center
-        descriptionLabel.frame = NSRect(x: 30, y: windowSize.height - logoSize - 180, width: windowSize.width - 60, height: 70)
-        contentView.addSubview(descriptionLabel)
 
         // Copyright
         let year = Calendar.current.component(.year, from: Date())

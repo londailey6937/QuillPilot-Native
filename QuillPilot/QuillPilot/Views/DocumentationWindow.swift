@@ -496,6 +496,8 @@ class DocumentationWindowController: NSWindowController, NSWindowDelegate {
 
                 content.append(makeTitle("About Quill Pilot", color: titleColor))
                 content.append(makeBody("""
+        Designed for macOS with a fully adaptive interface—from 13-inch MacBooks to large desktop displays.
+
         Quill Pilot is a writing environment that prioritizes how words feel on the page, not just how they’re organized in a project.
 
         It’s primarily designed for experienced fiction writers who already understand story structure and want tools that enhance execution, not exploration. That said, it’s equally capable for non-fiction work, supporting lists, tables, columns, and other structures common in books and publications.

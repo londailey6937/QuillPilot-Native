@@ -3051,7 +3051,7 @@ class FormattingToolbar: NSView {
         let boldBtn = createToolbarButton("B", weight: .bold)
         let italicBtn = createToolbarButton("I", isItalic: true)
         let underlineBtn = createToolbarButton("U", isUnderlined: true)
-        let strikethroughBtn = createToolbarButton("S", isStrikethrough: true)
+        let strikethroughBtn = createSymbolToolbarButton(systemName: "strikethrough", accessibility: "Strikethrough")
         boldBtn.target = self
         boldBtn.action = #selector(boldTapped)
         boldBtn.toolTip = "Bold"

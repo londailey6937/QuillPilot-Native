@@ -43,6 +43,7 @@ class AnalysisViewController: NSViewController, NSWindowDelegate {
     private var currentTheme: AppTheme = ThemeManager.shared.currentTheme
     private var currentCategory: AnalysisCategory = .basic
     private var isOutlineVisible = false
+    private var lastSidebarHeight: CGFloat = 0
 
     var isMenuSidebarHidden: Bool {
         menuSidebar?.isHidden ?? true
@@ -324,6 +325,18 @@ class AnalysisViewController: NSViewController, NSWindowDelegate {
         }
     }
 
+    override func viewDidLayout() {
+        super.viewDidLayout()
+
+        let currentHeight = menuSidebar?.bounds.height ?? 0
+        guard currentHeight > 0 else { return }
+
+        if abs(currentHeight - lastSidebarHeight) > 1 {
+            lastSidebarHeight = currentHeight
+            rebuildSidebarButtons()
+        }
+    }
+
     private func setupSidebarMenu() {
         menuSidebar = NSView()
         menuSidebar.translatesAutoresizingMaskIntoConstraints = false
@@ -375,33 +388,66 @@ class AnalysisViewController: NSViewController, NSWindowDelegate {
         }
         menuButtons.removeAll()
 
-        var yPosition: CGFloat = 12
         let isPoetry = StyleCatalog.shared.isPoetryTemplate
+        let topPadding: CGFloat = 12
+        let bottomPadding: CGFloat = 12
+        let maxButtonSize: CGFloat = 44
+        let minButtonSize: CGFloat = 32
+        let maxSpacing: CGFloat = 8
+        let minSpacing: CGFloat = 4
+
+        let availableHeight = max(menuSidebar.bounds.height, view.bounds.height)
+
+        var buttonCount = 0
+        if isOutlinePanel {
+            let categories: [NavigatorCategory] = isPoetry ? [] : NavigatorCategory.allCases
+            buttonCount += categories.count
+            if !isPoetry { buttonCount += 1 }
+        } else {
+            let categories: [AnalysisCategory] = isPoetry ? [.basic] : [.basic, .plot]
+            buttonCount += categories.count
+            if !isPoetry {
+                let tools = CharacterTool.allCases.filter { $0.isAvailable(forScreenplay: StyleCatalog.shared.isScreenplayTemplate) }
+                buttonCount += tools.count
+            }
+            buttonCount += 1
+        }
+
+        let defaultTotal = CGFloat(buttonCount) * maxButtonSize + CGFloat(max(0, buttonCount - 1)) * maxSpacing
+        let availableForButtons = max(0, availableHeight - topPadding - bottomPadding)
+        let scale = defaultTotal > 0 ? min(1, availableForButtons / defaultTotal) : 1
+        let buttonSize = max(minButtonSize, floor(maxButtonSize * scale))
+        let spacing = max(minSpacing, floor(maxSpacing * scale))
+        let iconPointSize = max(13, min(18, buttonSize * 0.36))
+        let glyphPointSize = max(14, min(20, buttonSize * 0.42))
+        let labelPointSize = max(11, min(18, buttonSize * 0.4))
+
+        var yPosition: CGFloat = topPadding
 
         if isOutlinePanel {
             // Poetry: hide the navigator chrome entirely (more writing/outline space)
             let categories: [NavigatorCategory] = isPoetry ? [] : NavigatorCategory.allCases
             for category in categories {
-                let button = NSButton(frame: NSRect(x: 0, y: 0, width: 44, height: 44))
+                let button = NSButton(frame: NSRect(x: 0, y: 0, width: buttonSize, height: buttonSize))
 
                 // Prose templates: use the square-box outline toggle icon for the first (Outline) button.
                 // This replaces the previous 📝 icon so there is only one outline toggle.
                 if category == .basic {
                     if #available(macOS 11.0, *) {
                         let base = NSImage(systemSymbolName: "square", accessibilityDescription: "Toggle Outline") ?? NSImage()
-                        let config = NSImage.SymbolConfiguration(pointSize: 16, weight: .regular)
+                        let config = NSImage.SymbolConfiguration(pointSize: iconPointSize, weight: .regular)
                         button.image = base.withSymbolConfiguration(config) ?? base
                         button.imagePosition = .imageOnly
                         button.title = ""
                     } else {
                         button.title = "□"
-                        button.font = .systemFont(ofSize: 18)
+                        button.font = .systemFont(ofSize: glyphPointSize)
                     }
                     button.toolTip = isOutlineVisible ? "Hide Document Outline" : "Show Document Outline"
                 } else {
                     if #available(macOS 11.0, *) {
                         let base = NSImage(systemSymbolName: category.symbolName, accessibilityDescription: category.rawValue)
-                        let config = NSImage.SymbolConfiguration(pointSize: 16, weight: .regular)
+                        let config = NSImage.SymbolConfiguration(pointSize: iconPointSize, weight: .regular)
                         if let base, let image = base.withSymbolConfiguration(config) {
                             button.image = image
                             button.imagePosition = .imageOnly
@@ -409,11 +455,11 @@ class AnalysisViewController: NSViewController, NSWindowDelegate {
                             button.image?.isTemplate = true
                         } else {
                             button.title = category.icon
-                            button.font = .systemFont(ofSize: 20)
+                            button.font = .systemFont(ofSize: glyphPointSize)
                         }
                     } else {
                         button.title = category.icon
-                        button.font = .systemFont(ofSize: 20)
+                        button.font = .systemFont(ofSize: glyphPointSize)
                     }
                     button.toolTip = category.rawValue
                 }
@@ -431,19 +477,19 @@ class AnalysisViewController: NSViewController, NSWindowDelegate {
                 NSLayoutConstraint.activate([
                     button.topAnchor.constraint(equalTo: menuSidebar.topAnchor, constant: yPosition),
                     button.centerXAnchor.constraint(equalTo: menuSidebar.centerXAnchor),
-                    button.widthAnchor.constraint(equalToConstant: 44),
-                    button.heightAnchor.constraint(equalToConstant: 44)
+                    button.widthAnchor.constraint(equalToConstant: buttonSize),
+                    button.heightAnchor.constraint(equalToConstant: buttonSize)
                 ])
 
-                yPosition += 52
+                yPosition += buttonSize + spacing
             }
 
             // Notes button: sits under the Characters icon in the left sidebar.
             if !isPoetry {
-                let notesButton = NSButton(frame: NSRect(x: 0, y: 0, width: 44, height: 44))
+                let notesButton = NSButton(frame: NSRect(x: 0, y: 0, width: buttonSize, height: buttonSize))
                 if #available(macOS 11.0, *) {
                     let base = NSImage(systemSymbolName: "note.text", accessibilityDescription: "Notes")
-                    let config = NSImage.SymbolConfiguration(pointSize: 16, weight: .regular)
+                    let config = NSImage.SymbolConfiguration(pointSize: iconPointSize, weight: .regular)
                     if let base, let image = base.withSymbolConfiguration(config) {
                         notesButton.image = image
                         notesButton.imagePosition = .imageOnly
@@ -451,11 +497,11 @@ class AnalysisViewController: NSViewController, NSWindowDelegate {
                         notesButton.image?.isTemplate = true
                     } else {
                         notesButton.title = "Notes"
-                        notesButton.font = .systemFont(ofSize: 11)
+                        notesButton.font = .systemFont(ofSize: labelPointSize)
                     }
                 } else {
                     notesButton.title = "Notes"
-                    notesButton.font = .systemFont(ofSize: 11)
+                    notesButton.font = .systemFont(ofSize: labelPointSize)
                 }
                 notesButton.isBordered = false
                 notesButton.bezelStyle = .rounded
@@ -470,20 +516,20 @@ class AnalysisViewController: NSViewController, NSWindowDelegate {
                 NSLayoutConstraint.activate([
                     notesButton.topAnchor.constraint(equalTo: menuSidebar.topAnchor, constant: yPosition),
                     notesButton.centerXAnchor.constraint(equalTo: menuSidebar.centerXAnchor),
-                    notesButton.widthAnchor.constraint(equalToConstant: 44),
-                    notesButton.heightAnchor.constraint(equalToConstant: 44)
+                    notesButton.widthAnchor.constraint(equalToConstant: buttonSize),
+                    notesButton.heightAnchor.constraint(equalToConstant: buttonSize)
                 ])
 
-                yPosition += 52
+                yPosition += buttonSize + spacing
             }
         } else {
             // Poetry: only show the Poetry-focused Analysis popout (hide Plot/Characters)
             let categories: [AnalysisCategory] = isPoetry ? [.basic] : [.basic, .plot]
             for category in categories {
-                let button = NSButton(frame: NSRect(x: 0, y: 0, width: 44, height: 44))
+                let button = NSButton(frame: NSRect(x: 0, y: 0, width: buttonSize, height: buttonSize))
                 if #available(macOS 11.0, *) {
                     let base = NSImage(systemSymbolName: category.symbolName, accessibilityDescription: category.rawValue)
-                    let config = NSImage.SymbolConfiguration(pointSize: 16, weight: .regular)
+                    let config = NSImage.SymbolConfiguration(pointSize: iconPointSize, weight: .regular)
                     if let base, let image = base.withSymbolConfiguration(config) {
                         button.image = image
                         button.imagePosition = .imageOnly
@@ -491,11 +537,11 @@ class AnalysisViewController: NSViewController, NSWindowDelegate {
                         button.image?.isTemplate = true
                     } else {
                         button.title = category.icon
-                        button.font = .systemFont(ofSize: 20)
+                        button.font = .systemFont(ofSize: glyphPointSize)
                     }
                 } else {
                     button.title = category.icon
-                    button.font = .systemFont(ofSize: 20)
+                    button.font = .systemFont(ofSize: glyphPointSize)
                 }
                 button.isBordered = false
                 button.bezelStyle = .rounded
@@ -511,11 +557,11 @@ class AnalysisViewController: NSViewController, NSWindowDelegate {
                 NSLayoutConstraint.activate([
                     button.topAnchor.constraint(equalTo: menuSidebar.topAnchor, constant: yPosition),
                     button.centerXAnchor.constraint(equalTo: menuSidebar.centerXAnchor),
-                    button.widthAnchor.constraint(equalToConstant: 44),
-                    button.heightAnchor.constraint(equalToConstant: 44)
+                    button.widthAnchor.constraint(equalToConstant: buttonSize),
+                    button.heightAnchor.constraint(equalToConstant: buttonSize)
                 ])
 
-                yPosition += 52
+                yPosition += buttonSize + spacing
             }
 
             // Character analysis tools: break out the old Characters menu into individual buttons.
@@ -525,10 +571,10 @@ class AnalysisViewController: NSViewController, NSWindowDelegate {
                         continue
                     }
 
-                    let button = NSButton(frame: NSRect(x: 0, y: 0, width: 44, height: 44))
+                    let button = NSButton(frame: NSRect(x: 0, y: 0, width: buttonSize, height: buttonSize))
                     if #available(macOS 11.0, *) {
                         let base = NSImage(systemSymbolName: tool.symbolName, accessibilityDescription: tool.title)
-                        let config = NSImage.SymbolConfiguration(pointSize: 16, weight: .regular)
+                        let config = NSImage.SymbolConfiguration(pointSize: iconPointSize, weight: .regular)
                         if let base, let image = base.withSymbolConfiguration(config) {
                             button.image = image
                             button.imagePosition = .imageOnly
@@ -536,11 +582,11 @@ class AnalysisViewController: NSViewController, NSWindowDelegate {
                             button.image?.isTemplate = true
                         } else {
                             button.title = tool.fallbackGlyph
-                            button.font = .systemFont(ofSize: 18)
+                            button.font = .systemFont(ofSize: glyphPointSize)
                         }
                     } else {
                         button.title = tool.fallbackGlyph
-                        button.font = .systemFont(ofSize: 18)
+                        button.font = .systemFont(ofSize: glyphPointSize)
                     }
 
                     button.isBordered = false
@@ -557,19 +603,19 @@ class AnalysisViewController: NSViewController, NSWindowDelegate {
                     NSLayoutConstraint.activate([
                         button.topAnchor.constraint(equalTo: menuSidebar.topAnchor, constant: yPosition),
                         button.centerXAnchor.constraint(equalTo: menuSidebar.centerXAnchor),
-                        button.widthAnchor.constraint(equalToConstant: 44),
-                        button.heightAnchor.constraint(equalToConstant: 44)
+                        button.widthAnchor.constraint(equalToConstant: buttonSize),
+                        button.heightAnchor.constraint(equalToConstant: buttonSize)
                     ])
 
-                    yPosition += 52
+                    yPosition += buttonSize + spacing
                 }
             }
 
             // Help button: sits directly after the analysis buttons.
-            let helpButton = NSButton(frame: NSRect(x: 0, y: 0, width: 44, height: 44))
+            let helpButton = NSButton(frame: NSRect(x: 0, y: 0, width: buttonSize, height: buttonSize))
             if #available(macOS 11.0, *) {
                 let base = NSImage(systemSymbolName: "questionmark.circle", accessibilityDescription: "Help")
-                let config = NSImage.SymbolConfiguration(pointSize: 16, weight: .regular)
+                let config = NSImage.SymbolConfiguration(pointSize: iconPointSize, weight: .regular)
                 if let base, let image = base.withSymbolConfiguration(config) {
                     helpButton.image = image
                     helpButton.imagePosition = .imageOnly
@@ -577,11 +623,11 @@ class AnalysisViewController: NSViewController, NSWindowDelegate {
                     helpButton.image?.isTemplate = true
                 } else {
                     helpButton.title = "?"
-                    helpButton.font = .systemFont(ofSize: 18)
+                    helpButton.font = .systemFont(ofSize: glyphPointSize)
                 }
             } else {
                 helpButton.title = "?"
-                helpButton.font = .systemFont(ofSize: 18)
+                helpButton.font = .systemFont(ofSize: glyphPointSize)
             }
             helpButton.isBordered = false
             helpButton.bezelStyle = .rounded
@@ -596,10 +642,12 @@ class AnalysisViewController: NSViewController, NSWindowDelegate {
             NSLayoutConstraint.activate([
                 helpButton.topAnchor.constraint(equalTo: menuSidebar.topAnchor, constant: yPosition),
                 helpButton.centerXAnchor.constraint(equalTo: menuSidebar.centerXAnchor),
-                helpButton.widthAnchor.constraint(equalToConstant: 44),
-                helpButton.heightAnchor.constraint(equalToConstant: 44)
+                helpButton.widthAnchor.constraint(equalToConstant: buttonSize),
+                helpButton.heightAnchor.constraint(equalToConstant: buttonSize)
             ])
+
         }
+
 
         updateSelectedButton()
 

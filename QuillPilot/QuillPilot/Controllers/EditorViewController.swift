@@ -1840,6 +1840,43 @@ class EditorViewController: NSViewController {
         textView.undoManager?.setActionName("Underline")
     }
 
+    func toggleStrikethrough() {
+        guard let textStorage = textView.textStorage else { return }
+        guard let selectedRange = textView.selectedRanges.first?.rangeValue else { return }
+
+        if selectedRange.length == 0 {
+            let current = (textView.typingAttributes[.strikethroughStyle] as? Int) ?? 0
+            let next = current == 0 ? NSUnderlineStyle.single.rawValue : 0
+            textView.typingAttributes[.strikethroughStyle] = next == 0 ? nil : next
+            if next == 0 {
+                textView.typingAttributes[.strikethroughColor] = nil
+            }
+            return
+        }
+
+        guard textView.shouldChangeText(in: selectedRange, replacementString: nil) else { return }
+
+        var hasStrikethrough = false
+        textStorage.enumerateAttribute(.strikethroughStyle, in: selectedRange, options: []) { value, _, stop in
+            if let intValue = value as? Int, intValue != 0 {
+                hasStrikethrough = true
+                stop.pointee = true
+            }
+        }
+
+        textStorage.beginEditing()
+        if hasStrikethrough {
+            textStorage.removeAttribute(.strikethroughStyle, range: selectedRange)
+            textStorage.removeAttribute(.strikethroughColor, range: selectedRange)
+        } else {
+            textStorage.addAttribute(.strikethroughStyle, value: NSUnderlineStyle.single.rawValue, range: selectedRange)
+        }
+        textStorage.endEditing()
+
+        textView.didChangeText()
+        textView.undoManager?.setActionName("Strikethrough")
+    }
+
     @discardableResult
     func toggleParagraphMarks() -> Bool {
         paragraphMarksVisibleState.toggle()

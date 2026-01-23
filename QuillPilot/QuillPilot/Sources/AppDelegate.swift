@@ -314,6 +314,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         mainWindowController?.mainContentViewController?.editorViewController.insertColumnBreak()
     }
 
+    @objc private func insertHyperlink(_ sender: Any?) {
+        if mainWindowController == nil {
+            mainWindowController = MainWindowController()
+        }
+        presentMainWindow(orderingSource: sender)
+        mainWindowController?.insertHyperlinkFromMenu(sender)
+    }
+
+    @objc private func showStyleEditor(_ sender: Any?) {
+        if mainWindowController == nil {
+            mainWindowController = MainWindowController()
+        }
+        presentMainWindow(orderingSource: sender)
+        mainWindowController?.openStyleEditorFromMenu(sender)
+    }
+
     @objc private func toggleAutoNumberOnReturn(_ sender: Any?) {
         QuillPilotSettings.autoNumberOnReturn.toggle()
     }
@@ -590,6 +606,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         insertColumnBreakItem.target = self
         insertMenu.addItem(insertColumnBreakItem)
 
+        let insertHyperlinkItem = NSMenuItem(title: "Insert Hyperlink…", action: #selector(insertHyperlink(_:)), keyEquivalent: "k")
+        insertHyperlinkItem.keyEquivalentModifierMask = [.command]
+        insertHyperlinkItem.target = self
+        insertMenu.addItem(insertHyperlinkItem)
+
         insertMenu.addItem(.separator())
 
         let specialCharactersItem = NSMenuItem(title: "Special Characters…", action: #selector(showSpecialCharacters(_:)), keyEquivalent: "")
@@ -601,6 +622,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         mainMenu.addItem(formatMenuItem)
         let formatMenu = NSMenu(title: "Format")
         formatMenuItem.submenu = formatMenu
+
+        let styleEditorItem = NSMenuItem(title: "Style Editor…", action: #selector(showStyleEditor(_:)), keyEquivalent: "")
+        styleEditorItem.target = self
+        formatMenu.addItem(styleEditorItem)
+        formatMenu.addItem(.separator())
 
         // Lists submenu
         let listsItem = NSMenuItem(title: "Lists", action: nil, keyEquivalent: "")
@@ -964,11 +990,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         contentView.addSubview(versionLabel)
 
         // Description
-        let descriptionLabel = NSTextField(wrappingLabelWithString: "Professional writing software with publication-quality typography, intelligent manuscript analysis, and comprehensive tools for novelists, essayists, and screenwriters.")
+        let descriptionLabel = NSTextField(wrappingLabelWithString: "Professional writing software with publication-quality typography, intelligent manuscript analysis, and comprehensive tools for novelists, essayists, and screenwriters.\n\nDesigned for macOS with a fully adaptive interface—from 13-inch MacBooks to large desktop displays.")
         descriptionLabel.font = NSFont.systemFont(ofSize: 11)
         descriptionLabel.textColor = theme.textColor.withAlphaComponent(0.8)
         descriptionLabel.alignment = .center
-        descriptionLabel.frame = NSRect(x: 30, y: windowSize.height - logoSize - 160, width: windowSize.width - 60, height: 50)
+        descriptionLabel.frame = NSRect(x: 30, y: windowSize.height - logoSize - 180, width: windowSize.width - 60, height: 70)
         contentView.addSubview(descriptionLabel)
 
         // Copyright

@@ -32,6 +32,7 @@ protocol FormattingToolbarDelegate: AnyObject {
     func formattingToolbarDidToggleBold(_ toolbar: FormattingToolbar)
     func formattingToolbarDidToggleItalic(_ toolbar: FormattingToolbar)
     func formattingToolbarDidToggleUnderline(_ toolbar: FormattingToolbar)
+    func formattingToolbarDidToggleStrikethrough(_ toolbar: FormattingToolbar)
     func formattingToolbarDidToggleSuperscript(_ toolbar: FormattingToolbar)
     func formattingToolbarDidToggleSubscript(_ toolbar: FormattingToolbar)
 
@@ -94,20 +95,27 @@ class MainWindowController: NSWindowController {
     private var tableRowsSheetField: NSTextField?
     private var tableColsSheetField: NSTextField?
 
+
     convenience init() {
         let window = NSWindow(
-              contentRect: NSRect(x: 0, y: 0, width: 1200, height: 800),
+                      contentRect: NSRect(x: 0, y: 0, width: 1200, height: 800),
             styleMask: [.titled, .closable, .miniaturizable, .resizable],
             backing: .buffered,
             defer: false
         )
 
         window.title = "Quill Pilot"
-        window.minSize = NSSize(width: 900, height: 650)
+        window.minSize = NSSize(width: 800, height: 600)
         window.isReleasedWhenClosed = false
         window.isRestorable = false
         if let screenFrame = NSScreen.main?.visibleFrame {
-            window.setFrame(screenFrame, display: false)
+            let targetSize = NSSize(width: 1200, height: 800)
+            let origin = NSPoint(
+                x: screenFrame.midX - targetSize.width / 2,
+                y: screenFrame.midY - targetSize.height / 2
+            )
+            let targetFrame = NSRect(origin: origin, size: targetSize)
+            window.setFrame(targetFrame, display: false)
         } else {
             window.center()
         }
@@ -731,6 +739,10 @@ extension MainWindowController: FormattingToolbarDelegate {
         mainContentViewController.toggleUnderline()
     }
 
+    func formattingToolbarDidToggleStrikethrough(_ toolbar: FormattingToolbar) {
+        mainContentViewController.toggleStrikethrough()
+    }
+
     func formattingToolbarDidToggleSuperscript(_ toolbar: FormattingToolbar) {
         mainContentViewController.editorViewController.toggleSuperscript()
     }
@@ -807,6 +819,14 @@ extension MainWindowController: FormattingToolbarDelegate {
 
     func formattingToolbarDidInsertHyperlink(_ toolbar: FormattingToolbar) {
         NSApp.sendAction(#selector(NSTextView.orderFrontLinkPanel(_:)), to: nil, from: toolbar)
+    }
+
+    @objc func insertHyperlinkFromMenu(_ sender: Any?) {
+        formattingToolbarDidInsertHyperlink(toolbarView)
+    }
+
+    @objc func openStyleEditorFromMenu(_ sender: Any?) {
+        formattingToolbarDidOpenStyleEditor(toolbarView)
     }
 
     func formattingToolbarDidInsertImage(_ toolbar: FormattingToolbar) {
@@ -2968,7 +2988,7 @@ class FormattingToolbar: NSView {
 
     private var themedControls: [NSControl] = []
 
-    private var templatePopup: NSPopUpButton!
+    // Combined style/template popup (accordion-style menu)
     private var stylePopup: NSPopUpButton!
     private var sizePopup: NSPopUpButton!
     private var editStylesButton: NSButton!
@@ -2991,192 +3011,14 @@ class FormattingToolbar: NSView {
         wantsLayer = true
         layer?.backgroundColor = ThemeManager.shared.currentTheme.toolbarBackground.cgColor
 
-        // Styles popup
+        // Combined Style & Template popup (accordion-style menu)
         stylePopup = registerControl(NSPopUpButton(frame: .zero, pullsDown: false))
-        let stylesMenu = NSMenu()
-        let currentTheme = ThemeManager.shared.currentTheme
-
-        func addHeader(_ title: String) {
-            let item = NSMenuItem(title: title, action: nil, keyEquivalent: "")
-            item.isEnabled = false
-
-            // Create attributed title with a cleaner style using theme colors
-            let attributes: [NSAttributedString.Key: Any] = [
-                .font: NSFont.systemFont(ofSize: 11, weight: .semibold),
-                .foregroundColor: currentTheme.textColor.withAlphaComponent(0.6)
-            ]
-            item.attributedTitle = NSAttributedString(string: "  \(title.uppercased())", attributes: attributes)
-
-            stylesMenu.addItem(item)
-        }
-
-        func addStyle(_ title: String) {
-            let item = NSMenuItem(title: title, action: nil, keyEquivalent: "")
-
-            // Show style name in its actual font (no font name suffix)
-            if let styleDefinition = StyleCatalog.shared.style(named: title) {
-                let fontName = styleDefinition.fontName
-                let fontSize: CGFloat = min(styleDefinition.fontSize, 13) // Cap at 13pt for menu
-                let font = NSFont.quillPilotResolve(nameOrFamily: fontName, size: fontSize) ?? NSFont.systemFont(ofSize: fontSize)
-
-                let attributes: [NSAttributedString.Key: Any] = [
-                    .font: font,
-                    .foregroundColor: currentTheme.textColor
-                ]
-
-                // Display style name in its own font
-                item.attributedTitle = NSAttributedString(string: title, attributes: attributes)
-            }
-
-            stylesMenu.addItem(item)
-        }
-
-        // Add template selector at the top
-        let templateItem = NSMenuItem(title: "Template: \(StyleCatalog.shared.currentTemplateName)", action: nil, keyEquivalent: "")
-        templateItem.isEnabled = false
-        let templateAttrs: [NSAttributedString.Key: Any] = [
-            .font: NSFont.systemFont(ofSize: 11, weight: .bold),
-            .foregroundColor: currentTheme.textColor
-        ]
-        templateItem.attributedTitle = NSAttributedString(string: "  📚 \(StyleCatalog.shared.currentTemplateName.uppercased())", attributes: templateAttrs)
-        stylesMenu.addItem(templateItem)
-        stylesMenu.addItem(.separator())
-
-        // Dynamically load all styles from current template
-        let allStyles = StyleCatalog.shared.getAllStyles()
-        let sortedStyleNames = allStyles.keys.sorted()
-
-        if StyleCatalog.shared.isPoetryTemplate {
-            // Poetry: merged/superset picker (do not drop existing styles when adding new ones).
-            func addOrdered(_ names: [String]) {
-                for name in names {
-                    if name == "— divider —" {
-                        if stylesMenu.items.last?.isSeparatorItem != true {
-                            stylesMenu.addItem(.separator())
-                        }
-                        continue
-                    }
-                    guard allStyles[name] != nil else { continue }
-                    addStyle(name)
-                }
-            }
-
-            addOrdered([
-                "Poem Title",
-                "Title",
-                "Poet Name",
-                "Author",
-                "Dedication",
-                "Epigraph",
-                "Argument Title",
-                "Argument",
-                "— divider —",
-                "Poem",
-                "Stanza",
-                "Verse",
-                "Refrain",
-                "Chorus",
-                "Voice",
-                "Speaker",
-                "— divider —",
-                "Prose Poem",
-                "Verse Paragraph",
-                "— divider —",
-                "Section / Sequence Title",
-                "Part Number",
-                "Section Break",
-                "— divider —",
-                "Notes",
-                "Marginal Note",
-                "Footnote",
-                "Revision Variant"
-            ])
-
-            stylePopup.menu = stylesMenu
-
-            var lastStyle = UserDefaults.standard.string(forKey: "LastSelectedStyle") ?? "Poem"
-            // Keep old persisted internal names selecting a visible menu item.
-            if lastStyle == "Poetry — Stanza" { lastStyle = "Stanza" }
-            if lastStyle == "Poetry — Verse" { lastStyle = "Verse" }
-            if stylePopup.itemTitles.contains(lastStyle) {
-                stylePopup.selectItem(withTitle: lastStyle)
-            } else if stylePopup.itemTitles.contains("Poem") {
-                stylePopup.selectItem(withTitle: "Poem")
-            }
-        } else {
-
-            // Group styles by category based on naming patterns
-            var titleStyles: [String] = []
-            var headingStyles: [String] = []
-            var bodyStyles: [String] = []
-            var specialStyles: [String] = []
-            var screenplayStyles: [String] = []
-
-            for styleName in sortedStyleNames {
-                if styleName.contains("Screenplay") {
-                    screenplayStyles.append(styleName)
-                } else if styleName.contains("Title") || styleName.contains("Author") || styleName.contains("Subtitle") {
-                    titleStyles.append(styleName)
-                } else if styleName.contains("Heading") || styleName.contains("Chapter") || styleName.contains("Part") {
-                    headingStyles.append(styleName)
-                } else if styleName.contains("Body") || styleName == "Dialogue" {
-                    bodyStyles.append(styleName)
-                } else {
-                    specialStyles.append(styleName)
-                }
-            }
-
-            // Add grouped styles
-            if !titleStyles.isEmpty {
-                addHeader("Titles")
-                titleStyles.forEach(addStyle)
-                stylesMenu.addItem(.separator())
-            }
-
-            if !headingStyles.isEmpty {
-                addHeader("Headings")
-                headingStyles.forEach(addStyle)
-                stylesMenu.addItem(.separator())
-            }
-
-            if !bodyStyles.isEmpty {
-                addHeader("Body")
-                bodyStyles.forEach(addStyle)
-                stylesMenu.addItem(.separator())
-            }
-
-            if !specialStyles.isEmpty {
-                addHeader("Special")
-                specialStyles.forEach(addStyle)
-                stylesMenu.addItem(.separator())
-            }
-
-            if !screenplayStyles.isEmpty {
-                addHeader("Screenplay")
-                screenplayStyles.forEach(addStyle)
-                stylesMenu.addItem(.separator())
-            }
-
-            stylePopup.menu = stylesMenu
-            // Restore last selected style from UserDefaults, default to "Body Text"
-            let lastStyle = UserDefaults.standard.string(forKey: "LastSelectedStyle") ?? "Body Text"
-            if stylePopup.itemTitles.contains(lastStyle) {
-                stylePopup.selectItem(withTitle: lastStyle)
-            } else {
-                stylePopup.selectItem(withTitle: "Body Text")
-            }
-            stylePopup.translatesAutoresizingMaskIntoConstraints = false
-            stylePopup.target = self
-            stylePopup.action = #selector(styleChanged(_:))
-            stylePopup.toolTip = "Paragraph Style"
-        }
-
-        // Common popup configuration
+        buildCombinedStyleMenu()
         stylePopup.translatesAutoresizingMaskIntoConstraints = false
         stylePopup.target = self
         stylePopup.action = #selector(styleChanged(_:))
-        stylePopup.toolTip = "Paragraph Style"
-        stylePopup.setAccessibilityLabel("Paragraph Style")
+        stylePopup.toolTip = "Style & Template"
+        stylePopup.setAccessibilityLabel("Style & Template")
 
         editStylesButton = createToolbarButton("Style Editor")
         editStylesButton.target = self
@@ -3189,16 +3031,6 @@ class FormattingToolbar: NSView {
         formatPainterBtn.target = self
         formatPainterBtn.action = #selector(formatPainterTapped)
         formatPainterBtn.toolTip = "Format Painter (Copy Style)"
-
-        // Template popup
-        templatePopup = registerControl(NSPopUpButton(frame: .zero, pullsDown: false))
-        templatePopup.addItems(withTitles: StyleCatalog.shared.availableTemplates())
-        templatePopup.selectItem(withTitle: StyleCatalog.shared.currentTemplateName)
-        templatePopup.translatesAutoresizingMaskIntoConstraints = false
-        templatePopup.target = self
-        templatePopup.action = #selector(templateChanged(_:))
-        templatePopup.toolTip = "Template"
-        templatePopup.setAccessibilityLabel("Template")
 
         // Font size controls
         let decreaseSizeBtn = registerControl(NSButton(title: "−", target: self, action: #selector(decreaseFontSizeTapped)))
@@ -3219,6 +3051,7 @@ class FormattingToolbar: NSView {
         let boldBtn = createToolbarButton("B", weight: .bold)
         let italicBtn = createToolbarButton("I", isItalic: true)
         let underlineBtn = createToolbarButton("U", isUnderlined: true)
+        let strikethroughBtn = createToolbarButton("S", isStrikethrough: true)
         boldBtn.target = self
         boldBtn.action = #selector(boldTapped)
         boldBtn.toolTip = "Bold"
@@ -3231,6 +3064,10 @@ class FormattingToolbar: NSView {
         underlineBtn.action = #selector(underlineTapped)
         underlineBtn.toolTip = "Underline"
         underlineBtn.setAccessibilityLabel("Underline")
+        strikethroughBtn.target = self
+        strikethroughBtn.action = #selector(strikethroughTapped)
+        strikethroughBtn.toolTip = "Strikethrough"
+        strikethroughBtn.setAccessibilityLabel("Strikethrough")
 
         // Baseline
         let superscriptBtn = createToolbarButton("x²", fontSize: 13)
@@ -3416,9 +3253,9 @@ class FormattingToolbar: NSView {
 
         // Add all to stack view (all aligned left)
         let toolbarStack = NSStackView(views: [
-            undoBtn, redoBtn, newBtn, openBtn, saveAsBtn, printBtn, cutBtn, copyBtn, pasteBtn, hyperlinkBtn,
-            stylePopup, editStylesButton, formatPainterBtn, templatePopup, decreaseSizeBtn, sizePopup, increaseSizeBtn,
-            boldBtn, italicBtn, underlineBtn, superscriptBtn, subscriptBtn,
+            undoBtn, redoBtn, newBtn, openBtn, saveAsBtn, printBtn, cutBtn, copyBtn, pasteBtn,
+            stylePopup, formatPainterBtn, decreaseSizeBtn, sizePopup, increaseSizeBtn,
+            boldBtn, italicBtn, underlineBtn, strikethroughBtn, superscriptBtn, subscriptBtn,
             alignLeftBtn, alignCenterBtn, alignRightBtn, justifyBtn,
             bulletsBtn, numberingBtn,
             imageButton,
@@ -3427,20 +3264,33 @@ class FormattingToolbar: NSView {
             searchBtn, paragraphBtn, sidebarBtn
         ])
         toolbarStack.orientation = .horizontal
-        toolbarStack.spacing = 8
-        toolbarStack.edgeInsets = NSEdgeInsets(top: 8, left: 16, bottom: 8, right: 16)
+        toolbarStack.spacing = 6
+        toolbarStack.edgeInsets = NSEdgeInsets(top: 6, left: 12, bottom: 6, right: 12)
         toolbarStack.translatesAutoresizingMaskIntoConstraints = false
-        addSubview(toolbarStack)
+
+        // Wrap toolbar in a scroll view for narrow windows
+        let toolbarScrollView = NSScrollView()
+        toolbarScrollView.translatesAutoresizingMaskIntoConstraints = false
+        toolbarScrollView.hasHorizontalScroller = true
+        toolbarScrollView.hasVerticalScroller = false
+        toolbarScrollView.autohidesScrollers = true
+        toolbarScrollView.borderType = .noBorder
+        toolbarScrollView.drawsBackground = false
+        toolbarScrollView.horizontalScrollElasticity = .allowed
+        toolbarScrollView.documentView = toolbarStack
+        addSubview(toolbarScrollView)
 
         NSLayoutConstraint.activate([
-            toolbarStack.leadingAnchor.constraint(equalTo: leadingAnchor),
-            toolbarStack.trailingAnchor.constraint(equalTo: trailingAnchor),
-            toolbarStack.topAnchor.constraint(equalTo: topAnchor),
-            toolbarStack.bottomAnchor.constraint(equalTo: bottomAnchor)
+            toolbarScrollView.leadingAnchor.constraint(equalTo: leadingAnchor),
+            toolbarScrollView.trailingAnchor.constraint(equalTo: trailingAnchor),
+            toolbarScrollView.topAnchor.constraint(equalTo: topAnchor),
+            toolbarScrollView.bottomAnchor.constraint(equalTo: bottomAnchor),
+            toolbarStack.topAnchor.constraint(equalTo: toolbarScrollView.topAnchor),
+            toolbarStack.bottomAnchor.constraint(equalTo: toolbarScrollView.bottomAnchor)
         ])
     }
 
-    private func createToolbarButton(_ title: String, weight: NSFont.Weight = .regular, isItalic: Bool = false, isUnderlined: Bool = false, fontSize: CGFloat = 14) -> NSButton {
+    private func createToolbarButton(_ title: String, weight: NSFont.Weight = .regular, isItalic: Bool = false, isUnderlined: Bool = false, isStrikethrough: Bool = false, fontSize: CGFloat = 14) -> NSButton {
         let button = NSButton(title: title, target: nil, action: nil)
         button.bezelStyle = .texturedRounded
         button.setButtonType(.momentaryPushIn)
@@ -3450,6 +3300,16 @@ class FormattingToolbar: NSView {
             font = NSFont(descriptor: font.fontDescriptor.withSymbolicTraits(.italic), size: fontSize) ?? font
         }
         button.font = font
+
+        // Apply strikethrough to button title if requested
+        if isStrikethrough {
+            let attrs: [NSAttributedString.Key: Any] = [
+                .font: font,
+                .strikethroughStyle: NSUnderlineStyle.single.rawValue
+            ]
+            button.attributedTitle = NSAttributedString(string: title, attributes: attrs)
+        }
+
         return registerControl(button)
     }
 
@@ -3730,13 +3590,14 @@ class FormattingToolbar: NSView {
         paragraphMarksButton?.state = isShown ? .on : .off
     }
 
-    // switchTemplate method removed - templates now in dedicated dropdown in toolbar
-
-    private func rebuildStylesMenu() {
-        // Clear and rebuild only the styles popup menu
+    // Combined style and template menu builder
+    private func buildCombinedStyleMenu() {
         let stylesMenu = NSMenu()
         let currentTheme = ThemeManager.shared.currentTheme
+        let isDarkMode = ThemeManager.shared.isDarkMode
+        stylesMenu.appearance = NSAppearance(named: isDarkMode ? .darkAqua : .aqua)
 
+        // Helper to add section headers
         func addHeader(_ title: String) {
             let item = NSMenuItem(title: title, action: nil, keyEquivalent: "")
             item.isEnabled = false
@@ -3748,6 +3609,7 @@ class FormattingToolbar: NSView {
             stylesMenu.addItem(item)
         }
 
+        // Helper to add style items
         func addStyle(_ title: String) {
             let item = NSMenuItem(title: title, action: nil, keyEquivalent: "")
             if let styleDefinition = StyleCatalog.shared.style(named: title) {
@@ -3763,18 +3625,30 @@ class FormattingToolbar: NSView {
             stylesMenu.addItem(item)
         }
 
-        // Add template selector at the top
-        let templateItem = NSMenuItem(title: "Template: \(StyleCatalog.shared.currentTemplateName)", action: nil, keyEquivalent: "")
-        templateItem.isEnabled = false
+        // === TEMPLATE SECTION (accordion submenu) ===
+        let templateSubmenu = NSMenu()
+        templateSubmenu.appearance = NSAppearance(named: isDarkMode ? .darkAqua : .aqua)
+        for template in StyleCatalog.shared.availableTemplates() {
+            let templateItem = NSMenuItem(title: template, action: #selector(templateMenuItemSelected(_:)), keyEquivalent: "")
+            templateItem.target = self
+            // Mark current template with checkmark
+            if template == StyleCatalog.shared.currentTemplateName {
+                templateItem.state = .on
+            }
+            templateSubmenu.addItem(templateItem)
+        }
+
+        let templateMenuItem = NSMenuItem(title: "Template: \(StyleCatalog.shared.currentTemplateName)", action: nil, keyEquivalent: "")
         let templateAttrs: [NSAttributedString.Key: Any] = [
             .font: NSFont.systemFont(ofSize: 11, weight: .bold),
             .foregroundColor: currentTheme.textColor
         ]
-        templateItem.attributedTitle = NSAttributedString(string: "  📚 \(StyleCatalog.shared.currentTemplateName.uppercased())", attributes: templateAttrs)
-        stylesMenu.addItem(templateItem)
+        templateMenuItem.attributedTitle = NSAttributedString(string: "  📚 \(StyleCatalog.shared.currentTemplateName.uppercased()) ▸", attributes: templateAttrs)
+        templateMenuItem.submenu = templateSubmenu
+        stylesMenu.addItem(templateMenuItem)
         stylesMenu.addItem(.separator())
 
-        // Dynamically load all styles from current template
+        // === STYLES SECTION ===
         let allStyles = StyleCatalog.shared.getAllStyles()
         let sortedStyleNames = allStyles.keys.sorted()
 
@@ -3792,114 +3666,107 @@ class FormattingToolbar: NSView {
                 }
             }
 
-            // Poetry style picker with all available styles organized by category
             addOrdered([
-                "Poem Title",
-                "Title",
-                "Poet Name",
-                "Author",
-                "Dedication",
-                "Epigraph",
-                "Argument Title",
-                "Argument",
+                "Poem Title", "Title", "Poet Name", "Author", "Dedication", "Epigraph",
+                "Argument Title", "Argument",
                 "— divider —",
-                "Poem",
-                "Stanza",
-                "Verse",
-                "Refrain",
-                "Chorus",
-                "Voice",
-                "Speaker",
+                "Poem", "Stanza", "Verse", "Refrain", "Chorus", "Voice", "Speaker",
                 "— divider —",
-                "Prose Poem",
-                "Verse Paragraph",
+                "Prose Poem", "Verse Paragraph",
                 "— divider —",
-                "Section / Sequence Title",
-                "Part Number",
-                "Section Break",
+                "Section / Sequence Title", "Part Number", "Section Break",
                 "— divider —",
-                "Notes",
-                "Marginal Note",
-                "Footnote",
-                "Revision Variant"
+                "Notes", "Marginal Note", "Footnote", "Revision Variant"
             ])
+        } else {
+            // Group styles by category
+            var titleStyles: [String] = []
+            var headingStyles: [String] = []
+            var bodyStyles: [String] = []
+            var specialStyles: [String] = []
+            var screenplayStyles: [String] = []
 
-            stylePopup.menu = stylesMenu
-
-            var lastStyle = UserDefaults.standard.string(forKey: "LastSelectedStyle") ?? "Poem"
-            // Back-compat for earlier builds that persisted the internal name.
-            if lastStyle == "Stanza" { lastStyle = "Verse" }
-            if lastStyle == "Poetry — Stanza" { lastStyle = "Verse" }
-            if lastStyle == "Poetry — Verse" { lastStyle = "Verse" }
-            if stylePopup.itemTitles.contains(lastStyle) {
-                stylePopup.selectItem(withTitle: lastStyle)
-            } else if stylePopup.itemTitles.contains("Poem") {
-                stylePopup.selectItem(withTitle: "Poem")
+            for styleName in sortedStyleNames {
+                if styleName.contains("Screenplay") {
+                    screenplayStyles.append(styleName)
+                } else if styleName.contains("Title") || styleName.contains("Author") || styleName.contains("Subtitle") {
+                    titleStyles.append(styleName)
+                } else if styleName.contains("Heading") || styleName.contains("Chapter") || styleName.contains("Part") {
+                    headingStyles.append(styleName)
+                } else if styleName.contains("Body") || styleName == "Dialogue" {
+                    bodyStyles.append(styleName)
+                } else {
+                    specialStyles.append(styleName)
+                }
             }
-            return
-        }
 
-        // Group styles by category
-        var titleStyles: [String] = []
-        var headingStyles: [String] = []
-        var bodyStyles: [String] = []
-        var specialStyles: [String] = []
-        var screenplayStyles: [String] = []
+            if !titleStyles.isEmpty {
+                addHeader("Titles")
+                titleStyles.forEach(addStyle)
+                stylesMenu.addItem(.separator())
+            }
 
-        for styleName in sortedStyleNames {
-            if styleName.contains("Screenplay") {
-                screenplayStyles.append(styleName)
-            } else if styleName.contains("Title") || styleName.contains("Author") || styleName.contains("Subtitle") {
-                titleStyles.append(styleName)
-            } else if styleName.contains("Heading") || styleName.contains("Chapter") || styleName.contains("Part") {
-                headingStyles.append(styleName)
-            } else if styleName.contains("Body") || styleName == "Dialogue" {
-                bodyStyles.append(styleName)
-            } else {
-                specialStyles.append(styleName)
+            if !headingStyles.isEmpty {
+                addHeader("Headings")
+                headingStyles.forEach(addStyle)
+                stylesMenu.addItem(.separator())
+            }
+
+            if !bodyStyles.isEmpty {
+                addHeader("Body")
+                bodyStyles.forEach(addStyle)
+                stylesMenu.addItem(.separator())
+            }
+
+            if !specialStyles.isEmpty {
+                addHeader("Special")
+                specialStyles.forEach(addStyle)
+                stylesMenu.addItem(.separator())
+            }
+
+            if !screenplayStyles.isEmpty {
+                addHeader("Screenplay")
+                screenplayStyles.forEach(addStyle)
+                stylesMenu.addItem(.separator())
             }
         }
 
-        if !titleStyles.isEmpty {
-            addHeader("Titles")
-            titleStyles.forEach(addStyle)
-            stylesMenu.addItem(.separator())
-        }
-
-        if !headingStyles.isEmpty {
-            addHeader("Headings")
-            headingStyles.forEach(addStyle)
-            stylesMenu.addItem(.separator())
-        }
-
-        if !bodyStyles.isEmpty {
-            addHeader("Body")
-            bodyStyles.forEach(addStyle)
-            stylesMenu.addItem(.separator())
-        }
-
-        if !specialStyles.isEmpty {
-            addHeader("Special")
-            specialStyles.forEach(addStyle)
-            stylesMenu.addItem(.separator())
-        }
-
-        if !screenplayStyles.isEmpty {
-            addHeader("Screenplay")
-            screenplayStyles.forEach(addStyle)
-            stylesMenu.addItem(.separator())
-        }
-
-        // Update the popup's menu
         stylePopup.menu = stylesMenu
 
-        // Try to restore previous selection
-        let lastStyle = UserDefaults.standard.string(forKey: "LastSelectedStyle") ?? "Body Text"
+        // Restore last selected style
+        var lastStyle = UserDefaults.standard.string(forKey: "LastSelectedStyle") ?? (StyleCatalog.shared.isPoetryTemplate ? "Poem" : "Body Text")
+        if StyleCatalog.shared.isPoetryTemplate {
+            if lastStyle == "Stanza" || lastStyle == "Poetry — Stanza" || lastStyle == "Poetry — Verse" { lastStyle = "Verse" }
+        }
         if stylePopup.itemTitles.contains(lastStyle) {
             stylePopup.selectItem(withTitle: lastStyle)
+        } else if StyleCatalog.shared.isPoetryTemplate && stylePopup.itemTitles.contains("Poem") {
+            stylePopup.selectItem(withTitle: "Poem")
         } else if stylePopup.itemTitles.contains("Body Text") {
             stylePopup.selectItem(withTitle: "Body Text")
         }
+    }
+
+    @objc private func templateMenuItemSelected(_ sender: NSMenuItem) {
+        let templateName = sender.title
+        currentTemplate = templateName
+        StyleCatalog.shared.setCurrentTemplate(templateName)
+        buildCombinedStyleMenu()  // Rebuild menu with new template's styles
+
+        // Update displayed selection with theme color
+        let theme = ThemeManager.shared.currentTheme
+        if let selectedTitle = stylePopup.titleOfSelectedItem {
+            let attrs: [NSAttributedString.Key: Any] = [
+                .foregroundColor: theme.textColor,
+                .font: stylePopup.font ?? NSFont.systemFont(ofSize: 13)
+            ]
+            stylePopup.attributedTitle = NSAttributedString(string: selectedTitle, attributes: attrs)
+        }
+    }
+
+    private func rebuildStylesMenu() {
+        // Now just calls the combined builder
+        buildCombinedStyleMenu()
     }
 
     @objc private func boldTapped() {
@@ -3912,6 +3779,10 @@ class FormattingToolbar: NSView {
 
     @objc private func underlineTapped() {
         delegate?.formattingToolbarDidToggleUnderline(self)
+    }
+
+    @objc private func strikethroughTapped() {
+        delegate?.formattingToolbarDidToggleStrikethrough(self)
     }
 
     @objc private func openStyleEditorTapped() {
@@ -3987,27 +3858,23 @@ class FormattingToolbar: NSView {
         }
     }
 
-
-    @objc private func templateChanged(_ sender: NSPopUpButton) {
-        guard let templateName = sender.titleOfSelectedItem, !templateName.isEmpty else { return }
-        currentTemplate = templateName
-        StyleCatalog.shared.setCurrentTemplate(templateName)
-        rebuildStylesMenu()
-        let theme = ThemeManager.shared.currentTheme
-        let attrs: [NSAttributedString.Key: Any] = [
-            .foregroundColor: theme.textColor,
-            .font: sender.font ?? NSFont.systemFont(ofSize: 13)
-        ]
-        sender.attributedTitle = NSAttributedString(string: templateName, attributes: attrs)
-        sender.synchronizeTitleAndSelectedItem()
-    }
-
     /// Switch the active template and update toolbar UI.
     /// Useful for imports where the file format implies a specific template (e.g. `.fadein` → Screenplay).
     func selectTemplateProgrammatically(_ templateName: String) {
-        guard templatePopup.itemTitles.contains(templateName) else { return }
-        templatePopup.selectItem(withTitle: templateName)
-        templateChanged(templatePopup)
+        guard StyleCatalog.shared.availableTemplates().contains(templateName) else { return }
+        currentTemplate = templateName
+        StyleCatalog.shared.setCurrentTemplate(templateName)
+        buildCombinedStyleMenu()  // Rebuild menu with new template's styles
+
+        // Update displayed selection with theme color
+        let theme = ThemeManager.shared.currentTheme
+        if let selectedTitle = stylePopup.titleOfSelectedItem {
+            let attrs: [NSAttributedString.Key: Any] = [
+                .foregroundColor: theme.textColor,
+                .font: stylePopup.font ?? NSFont.systemFont(ofSize: 13)
+            ]
+            stylePopup.attributedTitle = NSAttributedString(string: selectedTitle, attributes: attrs)
+        }
     }
 
     @objc private func fontSizeChanged(_ sender: NSPopUpButton) {
@@ -4502,6 +4369,10 @@ class ContentViewController: NSViewController {
 
     func toggleUnderline() {
         editorViewController.toggleUnderline()
+    }
+
+    func toggleStrikethrough() {
+        editorViewController.toggleStrikethrough()
     }
 
     func setFontFamily(_ family: String) {

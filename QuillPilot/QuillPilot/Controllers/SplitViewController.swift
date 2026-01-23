@@ -30,7 +30,7 @@ class SplitViewController: NSSplitViewController {
         outlinePanelController.outlineViewController = outlineViewController
         let outlineItem = NSSplitViewItem(sidebarWithViewController: outlinePanelController)
         outlineItem.canCollapse = true
-        outlineItem.minimumThickness = 280
+        outlineItem.minimumThickness = 160
         outlineItem.maximumThickness = 360
         outlineItem.holdingPriority = .init(260)
         outlineItem.isCollapsed = false
@@ -41,7 +41,7 @@ class SplitViewController: NSSplitViewController {
         editorViewController.delegate = self
         let editorItem = NSSplitViewItem(viewController: editorViewController)
         editorItem.canCollapse = false
-        editorItem.minimumThickness = 480
+        editorItem.minimumThickness = 300
         addSplitViewItem(editorItem)
 
         // Analysis panel on the right (wider for visualizations)
@@ -49,7 +49,7 @@ class SplitViewController: NSSplitViewController {
         analysisViewController.isOutlinePanel = false
         let analysisItem = NSSplitViewItem(viewController: analysisViewController)
         analysisItem.canCollapse = true
-        analysisItem.minimumThickness = 520
+        analysisItem.minimumThickness = 260
         analysisItem.maximumThickness = 1100
         analysisItem.holdingPriority = .init(200)
         analysisItem.isCollapsed = false
@@ -88,12 +88,34 @@ class SplitViewController: NSSplitViewController {
         guard !didSetInitialSplitPositions else { return }
         didSetInitialSplitPositions = true
 
-        // Aim for a wider analysis panel (30–40% of total), while keeping editor comfortable
+        // Responsive split layout that adapts to narrower window widths.
         let totalWidth = view.bounds.width
-        let outlineWidth: CGFloat = 280
-        let targetAnalysis = max(520, min(640, totalWidth * 0.34))
-        let remainingForEditor = totalWidth - outlineWidth - targetAnalysis
-        let editorWidth = max(700, remainingForEditor)
+        let outlineMin: CGFloat = 160
+        let outlineMax: CGFloat = 320
+        let analysisMin: CGFloat = 260
+        let analysisMax: CGFloat = 640
+        let editorMin: CGFloat = 300
+
+        var outlineWidth = min(outlineMax, max(outlineMin, totalWidth * 0.20))
+        var analysisWidth = min(analysisMax, max(analysisMin, totalWidth * 0.28))
+        var remainingForEditor = totalWidth - outlineWidth - analysisWidth
+
+        if remainingForEditor < editorMin {
+            var deficit = editorMin - remainingForEditor
+            let analysisReducible = analysisWidth - analysisMin
+            let reduceAnalysis = min(deficit, analysisReducible)
+            analysisWidth -= reduceAnalysis
+            deficit -= reduceAnalysis
+
+            let outlineReducible = outlineWidth - outlineMin
+            let reduceOutline = min(deficit, outlineReducible)
+            outlineWidth -= reduceOutline
+            deficit -= reduceOutline
+
+            remainingForEditor = totalWidth - outlineWidth - analysisWidth
+        }
+
+        let editorWidth = max(editorMin, remainingForEditor)
 
         let firstDivider = outlineWidth
         let secondDivider = outlineWidth + editorWidth

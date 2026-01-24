@@ -11,6 +11,47 @@ import CoreText
 import ImageIO
 import UniformTypeIdentifiers
 
+extension NSAttributedString.Key {
+    /// Marks a section break. Value is SectionBreak encoded as Data.
+    static let qpSectionBreak = NSAttributedString.Key("QPSectionBreak")
+}
+
+private struct SectionBreak: Codable, Equatable {
+    let id: String
+    var name: String
+    var startPageNumber: Int
+    var numberFormat: SectionPageNumberFormat
+
+    static func newID() -> String {
+        "_Section" + UUID().uuidString.replacingOccurrences(of: "-", with: "").prefix(10)
+    }
+
+    init(id: String, name: String, startPageNumber: Int, numberFormat: SectionPageNumberFormat = .arabic) {
+        self.id = id
+        self.name = name
+        self.startPageNumber = startPageNumber
+        self.numberFormat = numberFormat
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case id, name, startPageNumber, numberFormat
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(String.self, forKey: .id)
+        name = try container.decode(String.self, forKey: .name)
+        startPageNumber = try container.decode(Int.self, forKey: .startPageNumber)
+        numberFormat = try container.decodeIfPresent(SectionPageNumberFormat.self, forKey: .numberFormat) ?? .arabic
+    }
+}
+
+private enum SectionPageNumberFormat: String, CaseIterable, Codable {
+    case arabic = "Arabic (1, 2, 3)"
+    case romanUpper = "Roman (I, II, III)"
+    case romanLower = "Roman (i, ii, iii)"
+}
+
 private final class AttachmentClickableTextView: NSTextView {
     var onMouseDownInTextView: ((NSPoint) -> Void)?
 
@@ -49,9 +90,12 @@ private final class AttachmentClickableTextView: NSTextView {
     var showsParagraphMarks: Bool = false
     var paragraphMarksColor: NSColor = .systemOrange
     var spaceDotsColor: NSColor = .darkGray
+    var showsSectionBreaks: Bool = false
+    var sectionBreaksColor: NSColor = .systemOrange
     private let paragraphGlyph = "¶"
     private let spaceGlyph = "•"
     private let tabGlyph = "→"
+    private let sectionBreakGlyph = "§"
 
     @objc func qpToggleBulletedList(_ sender: Any?) {
         onToggleBulletedList?()
@@ -166,7 +210,7 @@ private final class AttachmentClickableTextView: NSTextView {
     override func draw(_ dirtyRect: NSRect) {
         super.draw(dirtyRect)
 
-        guard showsParagraphMarks,
+          guard showsParagraphMarks || showsSectionBreaks,
               let layoutManager = layoutManager,
               let textContainer = textContainer,
               let textStorage = textStorage else { return }
@@ -231,12 +275,26 @@ private final class AttachmentClickableTextView: NSTextView {
             let firstGlyphLocation = layoutManager.location(forGlyphAt: lineGlyphRange.location)
             let baselineY = origin.y + lineFragmentRect.origin.y + firstGlyphLocation.y - lineFont.ascender
 
-            if isEmptyLine {
+            if isEmptyLine && self.showsParagraphMarks {
                 // Use firstLineHeadIndent so the pilcrow aligns with where the cursor actually sits.
                 let drawX = origin.x + lineFragmentRect.origin.x + paragraphStyle.firstLineHeadIndent
                 let drawPoint = NSPoint(x: drawX, y: baselineY)
                 (self.paragraphGlyph as NSString).draw(at: drawPoint, withAttributes: [.font: lineFont, .foregroundColor: self.paragraphMarksColor])
-                return
+            }
+
+            if self.showsSectionBreaks {
+                var hasSectionBreak = false
+                textStorage.enumerateAttribute(.qpSectionBreak, in: charRange, options: []) { value, _, stop in
+                    if value != nil {
+                        hasSectionBreak = true
+                        stop.pointee = true
+                    }
+                }
+                if hasSectionBreak {
+                    let drawX = origin.x + lineFragmentRect.origin.x + paragraphStyle.firstLineHeadIndent
+                    let drawPoint = NSPoint(x: drawX, y: baselineY)
+                    (self.sectionBreakGlyph as NSString).draw(at: drawPoint, withAttributes: [.font: lineFont, .foregroundColor: self.sectionBreaksColor])
+                }
             }
 
             // Check if line is centered (skip space dots for centered text)
@@ -265,13 +323,15 @@ private final class AttachmentClickableTextView: NSTextView {
                     let drawX = origin.x + lineFragmentRect.origin.x + glyphLoc.x
                     let drawY = origin.y + lineFragmentRect.origin.y + glyphLoc.y - lineFont.ascender
                     let drawPoint = NSPoint(x: drawX, y: drawY)
-                    (self.tabGlyph as NSString).draw(at: drawPoint, withAttributes: [.font: lineFont, .foregroundColor: self.paragraphMarksColor])
+                    if self.showsParagraphMarks {
+                        (self.tabGlyph as NSString).draw(at: drawPoint, withAttributes: [.font: lineFont, .foregroundColor: self.paragraphMarksColor])
+                    }
                     continue
                 }
 
                 // Space characters
                 if ch == 0x20 || ch == 0x00A0 || ch == 0x202F {
-                    if !drawSpaceDots { continue }
+                    if !drawSpaceDots || !self.showsParagraphMarks { continue }
                     // Skip space dots adjacent to periods (e.g., ellipsis)
                     let prevChar = i > charRange.location ? textNSString.character(at: i - 1) : 0
                     let nextChar = i + 1 < NSMaxRange(charRange) ? textNSString.character(at: i + 1) : 0
@@ -302,7 +362,7 @@ private final class AttachmentClickableTextView: NSTextView {
 
             // Draw pilcrow at end of paragraph
             let lastCharIndex = NSMaxRange(charRange) - 1
-            if lastCharIndex >= 0 {
+            if lastCharIndex >= 0, self.showsParagraphMarks {
                 let ch = textNSString.character(at: lastCharIndex)
                 let endsWithNewline = (ch == 0x0A || ch == 0x0D || ch == 0x2029 || ch == 0x2028)
                 let isDocumentEnd = NSMaxRange(charRange) == textStorage.length
@@ -1249,6 +1309,7 @@ class EditorViewController: NSViewController {
     var showPageNumbers: Bool = true
     var hidePageNumberOnFirstPage: Bool = true
     var centerPageNumbers: Bool = false
+    var facingPageNumbers: Bool = false
     var headerText: String = "" // Empty means use author/title
     var headerTextRight: String = "" // Optional right-side header text
     var footerText: String = "" // Optional footer text
@@ -1915,7 +1976,33 @@ class EditorViewController: NSViewController {
         paragraphTextView.showsParagraphMarks = paragraphMarksVisibleState
         paragraphTextView.paragraphMarksColor = paragraphMarksColor(for: currentTheme)
         paragraphTextView.spaceDotsColor = spaceDotsColor(for: currentTheme)
+        paragraphTextView.showsSectionBreaks = sectionBreaksVisibleState
+        paragraphTextView.sectionBreaksColor = sectionBreaksColor(for: currentTheme)
         paragraphTextView.needsDisplay = true
+    }
+
+    // MARK: - Section break visibility
+
+    private var sectionBreaksVisibleState: Bool = false
+
+    @discardableResult
+    func toggleSectionBreaksVisibility() -> Bool {
+        sectionBreaksVisibleState.toggle()
+        applyParagraphMarksVisibility()
+        return sectionBreaksVisibleState
+    }
+
+    func sectionBreaksVisible() -> Bool {
+        sectionBreaksVisibleState
+    }
+
+    private func sectionBreaksColor(for theme: AppTheme) -> NSColor {
+        switch theme {
+        case .night:
+            return theme.insertionPointColor.withAlphaComponent(0.7)
+        case .day, .cream:
+            return theme.pageBorder.withAlphaComponent(0.7)
+        }
     }
 
     private func paragraphMarksColor(for theme: AppTheme) -> NSColor {
@@ -4686,6 +4773,249 @@ class EditorViewController: NSViewController {
         textView.window?.makeFirstResponder(textView)
     }
 
+    // MARK: - Section Breaks
+
+    private let sectionBreakAnchor = "\u{200B}"
+
+    func insertSectionBreak() {
+        guard let storage = textView.textStorage else { return }
+        let insertLocation = textView.selectedRange().location
+
+        if let found = sectionBreak(inParagraphAt: insertLocation, in: storage) {
+            promptForSectionBreak(defaultName: found.section.name, defaultStart: found.section.startPageNumber, defaultFormat: found.section.numberFormat, existing: found.section) { [weak self] updated, didRemove in
+                guard let self else { return }
+                if didRemove {
+                    self.removeSectionBreak(in: storage, range: found.range)
+                    return
+                }
+                guard let updated else { return }
+                self.updateSectionBreak(in: storage, range: found.range, with: updated)
+            }
+            return
+        }
+
+        let nextIndex = sectionBreaks(in: storage).count + 1
+        let defaultName = "Section \(nextIndex)"
+
+        promptForSectionBreak(defaultName: defaultName, defaultStart: 1, defaultFormat: .arabic, existing: nil) { [weak self] section, _ in
+            guard let self, let section else { return }
+
+            self.insertSectionBreak(in: storage, at: insertLocation, section: section)
+
+            textView.setSelectedRange(NSRange(location: insertLocation + 1, length: 0))
+            delegate?.textDidChange()
+        }
+    }
+
+    func editSectionSettingsAtCursor() {
+        guard let storage = textView.textStorage else { return }
+        let cursor = textView.selectedRange().location
+        guard let found = sectionBreak(atOrBefore: cursor, in: storage) else {
+            NSSound.beep()
+            return
+        }
+
+        promptForSectionBreak(defaultName: found.section.name, defaultStart: found.section.startPageNumber, defaultFormat: found.section.numberFormat, existing: found.section) { [weak self] updated, didRemove in
+            guard let self else { return }
+            if didRemove {
+                self.removeSectionBreak(in: storage, range: found.range)
+                return
+            }
+            guard let updated else { return }
+            self.updateSectionBreak(in: storage, range: found.range, with: updated)
+        }
+    }
+
+    private func sectionBreaks(in storage: NSTextStorage) -> [(range: NSRange, section: SectionBreak)] {
+        var results: [(NSRange, SectionBreak)] = []
+        storage.enumerateAttribute(.qpSectionBreak, in: NSRange(location: 0, length: storage.length), options: []) { value, range, _ in
+            guard let data = value as? Data,
+                  let section = try? JSONDecoder().decode(SectionBreak.self, from: data) else { return }
+            results.append((range, section))
+        }
+        return results.sorted(by: { (lhs: (range: NSRange, section: SectionBreak), rhs: (range: NSRange, section: SectionBreak)) in
+            lhs.range.location < rhs.range.location
+        })
+    }
+
+    private func sectionBreak(at location: Int, in storage: NSTextStorage) -> (range: NSRange, section: SectionBreak)? {
+        guard storage.length > 0, location >= 0, location < storage.length else { return nil }
+        var range = NSRange(location: 0, length: 0)
+        guard let data = storage.attribute(.qpSectionBreak, at: location, effectiveRange: &range) as? Data,
+              let section = try? JSONDecoder().decode(SectionBreak.self, from: data) else { return nil }
+        return (range, section)
+    }
+
+    private func sectionBreak(inParagraphAt location: Int, in storage: NSTextStorage) -> (range: NSRange, section: SectionBreak)? {
+        let safeLocation = max(0, min(location, max(0, storage.length - 1)))
+        let paragraphRange = (storage.string as NSString).paragraphRange(for: NSRange(location: safeLocation, length: 0))
+        var found: (range: NSRange, section: SectionBreak)?
+        storage.enumerateAttribute(.qpSectionBreak, in: paragraphRange, options: []) { value, range, stop in
+            if let data = value as? Data, let section = try? JSONDecoder().decode(SectionBreak.self, from: data) {
+                found = (range, section)
+                stop.pointee = true
+            }
+        }
+        return found
+    }
+
+    private func insertSectionBreak(in storage: NSTextStorage, at location: Int, section: SectionBreak) {
+        var existingAttrs: [NSAttributedString.Key: Any] = [:]
+        if location > 0 && location <= storage.length {
+            existingAttrs = storage.attributes(at: max(0, location - 1), effectiveRange: nil)
+        } else if storage.length > 0 {
+            existingAttrs = storage.attributes(at: 0, effectiveRange: nil)
+        }
+
+        var attrs = existingAttrs
+        if let data = try? JSONEncoder().encode(section) {
+            attrs[.qpSectionBreak] = data
+        }
+        attrs[.foregroundColor] = NSColor.clear
+        if attrs[.font] == nil {
+            attrs[.font] = textView.font ?? NSFont.systemFont(ofSize: 12)
+        }
+
+        let marker = NSAttributedString(string: sectionBreakAnchor, attributes: attrs)
+        storage.beginEditing()
+        storage.insert(marker, at: location)
+        storage.endEditing()
+
+        textView.setSelectedRange(NSRange(location: location + 1, length: 0))
+        delegate?.textDidChange()
+    }
+
+    private func updateSectionBreak(in storage: NSTextStorage, range: NSRange, with section: SectionBreak) {
+        var attrs = storage.attributes(at: range.location, effectiveRange: nil)
+        if let data = try? JSONEncoder().encode(section) {
+            attrs[.qpSectionBreak] = data
+        }
+        attrs[.foregroundColor] = NSColor.clear
+        if attrs[.font] == nil {
+            attrs[.font] = textView.font ?? NSFont.systemFont(ofSize: 12)
+        }
+
+        let marker = NSAttributedString(string: sectionBreakAnchor, attributes: attrs)
+        storage.beginEditing()
+        storage.replaceCharacters(in: range, with: marker)
+        storage.endEditing()
+        delegate?.textDidChange()
+    }
+
+    private func removeSectionBreak(in storage: NSTextStorage, range: NSRange) {
+        storage.beginEditing()
+        storage.deleteCharacters(in: range)
+        storage.endEditing()
+        delegate?.textDidChange()
+    }
+
+    private func sectionBreak(atOrBefore location: Int, in storage: NSTextStorage) -> (range: NSRange, section: SectionBreak)? {
+        let all = sectionBreaks(in: storage)
+        let eligible = all.filter { $0.range.location <= location }
+        return eligible.last
+    }
+
+    private func promptForSectionBreak(defaultName: String, defaultStart: Int, defaultFormat: SectionPageNumberFormat, existing: SectionBreak?, completion: @escaping (SectionBreak?, Bool) -> Void) {
+        let alert = NSAlert()
+        alert.messageText = existing == nil ? "Insert Section Break" : "Edit Section Settings"
+        alert.informativeText = "Set the section name, page number start, and number format."
+        alert.addButton(withTitle: "OK")
+        alert.addButton(withTitle: "Cancel")
+        if existing != nil {
+            alert.addButton(withTitle: "Remove")
+        }
+
+        let nameField = NSTextField(string: defaultName)
+        let startField = NSTextField(string: "\(defaultStart)")
+        startField.formatter = NumberFormatter()
+
+        let formatPopup = NSPopUpButton()
+        SectionPageNumberFormat.allCases.forEach { formatPopup.addItem(withTitle: $0.rawValue) }
+        formatPopup.selectItem(withTitle: defaultFormat.rawValue)
+
+        let nameLabel = NSTextField(labelWithString: "Section name")
+        let startLabel = NSTextField(labelWithString: "Start page number")
+        let formatLabel = NSTextField(labelWithString: "Number format")
+
+        let stack = NSStackView(views: [nameLabel, nameField, startLabel, startField, formatLabel, formatPopup])
+        stack.orientation = .vertical
+        stack.alignment = .leading
+        stack.spacing = 12
+        stack.translatesAutoresizingMaskIntoConstraints = false
+
+        stack.setCustomSpacing(6, after: nameLabel)
+        stack.setCustomSpacing(6, after: startLabel)
+        stack.setCustomSpacing(6, after: formatLabel)
+
+        let container = NSView(frame: NSRect(x: 0, y: 0, width: 360, height: 185))
+        container.addSubview(stack)
+        NSLayoutConstraint.activate([
+            stack.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 12),
+            stack.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -12),
+            stack.topAnchor.constraint(equalTo: container.topAnchor, constant: 12),
+            stack.bottomAnchor.constraint(equalTo: container.bottomAnchor, constant: -12),
+            nameField.widthAnchor.constraint(equalToConstant: 320),
+            startField.widthAnchor.constraint(equalToConstant: 140),
+            formatPopup.widthAnchor.constraint(equalToConstant: 220)
+        ])
+
+        alert.accessoryView = container
+
+        // Apply theme to alert buttons and popup
+        let theme = currentTheme
+        [nameLabel, startLabel, formatLabel].forEach { label in
+            label.textColor = theme.textColor
+        }
+        [nameField, startField].forEach { field in
+            field.textColor = theme.textColor
+        }
+
+        for button in alert.buttons {
+            button.isBordered = false
+            button.wantsLayer = true
+            button.layer?.backgroundColor = theme.pageBackground.cgColor
+            button.layer?.borderColor = theme.pageBorder.cgColor
+            button.layer?.borderWidth = 1
+            button.layer?.cornerRadius = 6
+            button.contentTintColor = theme.textColor
+            let font = button.font ?? NSFont.systemFont(ofSize: 13)
+            button.attributedTitle = NSAttributedString(
+                string: button.title,
+                attributes: [.foregroundColor: theme.textColor, .font: font]
+            )
+        }
+        formatPopup.qpApplyDropdownBorder(theme: theme)
+
+        guard let window = textView.window else {
+            completion(nil, false)
+            return
+        }
+
+        alert.beginSheetModal(for: window) { response in
+            if existing != nil, response == .alertThirdButtonReturn {
+                completion(nil, true)
+                return
+            }
+            guard response == .alertFirstButtonReturn else {
+                completion(nil, false)
+                return
+            }
+
+            let name = nameField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
+            let startValue = Int(startField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)) ?? defaultStart
+            let safeStart = max(1, startValue)
+
+            let selectedFormat = SectionPageNumberFormat(rawValue: formatPopup.selectedItem?.title ?? "") ?? defaultFormat
+            let section = SectionBreak(
+                id: existing?.id ?? SectionBreak.newID(),
+                name: name.isEmpty ? defaultName : name,
+                startPageNumber: safeStart,
+                numberFormat: selectedFormat
+            )
+            completion(section, false)
+        }
+    }
+
     /// Show the Insert Footnote dialog (Word-style structured footnotes).
     func insertFootnote() {
         showInsertNoteDialog(type: .footnote)
@@ -4884,7 +5214,8 @@ class EditorViewController: NSViewController {
     /// Update all cross-reference fields in the document.
     func updateFields() {
         fieldsManager.updateAllFields { [weak self] charPos in
-            self?.getPageNumber(forCharacterPosition: charPos)
+            guard let self else { return nil }
+            return self.getPageNumber(forCharacterPosition: charPos)
         }
         // Also update note markers
         notesManager.updateAllNoteMarkers()
@@ -7383,6 +7714,74 @@ case "Book Subtitle":
         let marginXRight = rightPageMargin * editorZoom
         let contentWidth = max(36, scaledPageWidth - marginXLeft - marginXRight)
 
+        // Build section map for page numbering
+        let sectionMap: [(startPage: Int, startNumber: Int, format: SectionPageNumberFormat, explicit: Bool)] = {
+            guard let storage = textView.textStorage else { return [(1, 1, .arabic, false)] }
+            var items: [(Int, Int, SectionPageNumberFormat, Bool)] = []
+            for entry in sectionBreaks(in: storage) {
+                let pageIndex = getPageNumber(forCharacterPosition: entry.range.location)
+                if pageIndex >= 1 {
+                    items.append((pageIndex, max(1, entry.section.startPageNumber), entry.section.numberFormat, true))
+                }
+            }
+            if items.isEmpty {
+                return [(1, 1, .arabic, false)]
+            }
+            let sorted = items.sorted { $0.0 < $1.0 }
+            // Ensure first section always starts at page 1 if none before it.
+            if sorted.first?.0 != 1 {
+                return [(1, 1, .arabic, false)] + sorted
+            }
+            return sorted
+        }()
+
+        func sectionInfo(for pageNum: Int) -> (startPage: Int, startNumber: Int, format: SectionPageNumberFormat, explicit: Bool) {
+            var current = sectionMap.first ?? (1, 1, .arabic, false)
+            for entry in sectionMap {
+                if entry.startPage <= pageNum {
+                    current = entry
+                } else {
+                    break
+                }
+            }
+            return current
+        }
+
+        func displayedPageNumber(for pageNum: Int) -> String {
+            let current = sectionInfo(for: pageNum)
+            let number = current.startNumber + (pageNum - current.startPage)
+            return formatPageNumber(number, format: current.format)
+        }
+
+        func formatPageNumber(_ number: Int, format: SectionPageNumberFormat) -> String {
+            switch format {
+            case .arabic:
+                return "\(number)"
+            case .romanUpper:
+                return romanNumeral(number).uppercased()
+            case .romanLower:
+                return romanNumeral(number).lowercased()
+            }
+        }
+
+        func romanNumeral(_ number: Int) -> String {
+            guard number > 0 else { return "" }
+            let romanMap: [(Int, String)] = [
+                (1000, "M"), (900, "CM"), (500, "D"), (400, "CD"),
+                (100, "C"), (90, "XC"), (50, "L"), (40, "XL"),
+                (10, "X"), (9, "IX"), (5, "V"), (4, "IV"), (1, "I")
+            ]
+            var result = ""
+            var value = number
+            for (arabic, roman) in romanMap {
+                while value >= arabic {
+                    result += roman
+                    value -= arabic
+                }
+            }
+            return result
+        }
+
         for pageNum in 1...numPages {
             let pageY = CGFloat(pageNum - 1) * (scaledPageHeight + 20) // 20pt gap between pages
 
@@ -7455,8 +7854,14 @@ case "Book Subtitle":
                 let footerFont = NSFont(name: "Courier", size: 11) ?? NSFont.monospacedSystemFont(ofSize: 11, weight: .regular)
                 let footerColor = currentTheme.textColor.withAlphaComponent(0.5)
 
-                let shouldShowPageNumber = showPageNumbers && (!hidePageNumberOnFirstPage || pageNum > 1)
-                let reservedForPageNumber: CGFloat = shouldShowPageNumber && !centerPageNumbers ? 72 : 0
+                let section = sectionInfo(for: pageNum)
+                let isFirstPageOfSection = pageNum == section.startPage
+                let shouldHideFirst = hidePageNumberOnFirstPage && isFirstPageOfSection
+                let shouldShowPageNumber = showPageNumbers && !shouldHideFirst
+                let isEvenPage = pageNum % 2 == 0
+                let reserveLeft: CGFloat = (shouldShowPageNumber && !centerPageNumbers && facingPageNumbers && isEvenPage) ? 72 : 0
+                let reserveRight: CGFloat = (shouldShowPageNumber && !centerPageNumbers && (!facingPageNumbers || !isEvenPage)) ? 72 : 0
+                let reservedForPageNumber: CGFloat = reserveLeft + reserveRight
                 let halfWidth = max(36, (contentWidth - reservedForPageNumber) / 2)
 
                 // Footer text (left)
@@ -7470,7 +7875,7 @@ case "Book Subtitle":
                     footerField.textColor = footerColor
                     footerField.alignment = .left
                     footerField.frame = NSRect(
-                        x: marginXLeft,
+                        x: marginXLeft + reserveLeft,
                         y: footerY,
                         width: centerPageNumbers ? halfWidth : max(36, contentWidth - reservedForPageNumber - halfWidth),
                         height: scaledFooterHeight
@@ -7497,7 +7902,7 @@ case "Book Subtitle":
                         rightW = halfWidth
                     } else {
                         // Leave room for page number at far right (if any)
-                        rightX = marginXLeft + contentWidth - reservedForPageNumber - halfWidth
+                        rightX = marginXLeft + contentWidth - reserveRight - halfWidth
                         rightW = halfWidth
                     }
 
@@ -7513,14 +7918,21 @@ case "Book Subtitle":
 
                 // Page number (right or center), hidden on first page if configured
                 if shouldShowPageNumber {
-                    let pageField = NSTextField(labelWithString: "\(pageNum)")
+                    let displayNum = displayedPageNumber(for: pageNum)
+                    let pageField = NSTextField(labelWithString: displayNum)
                     pageField.isEditable = false
                     pageField.isSelectable = false
                     pageField.isBordered = false
                     pageField.backgroundColor = .clear
                     pageField.font = footerFont
                     pageField.textColor = footerColor
-                    pageField.alignment = centerPageNumbers ? .center : .right
+                    if centerPageNumbers {
+                        pageField.alignment = .center
+                    } else if facingPageNumbers {
+                        pageField.alignment = isEvenPage ? .left : .right
+                    } else {
+                        pageField.alignment = .right
+                    }
                     pageField.frame = NSRect(
                         x: marginXLeft,
                         y: footerY,

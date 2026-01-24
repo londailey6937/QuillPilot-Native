@@ -482,18 +482,20 @@ class MainWindowController: NSWindowController {
             showPageNumbers: editorVC.showPageNumbers,
             hideFirstPageNumber: editorVC.hidePageNumberOnFirstPage,
             centerPageNumbers: editorVC.centerPageNumbers,
+            facingPages: editorVC.facingPageNumbers,
             headerLeftText: editorVC.headerText,
             headerRightText: editorVC.headerTextRight,
             footerLeftText: editorVC.footerText,
             footerRightText: editorVC.footerTextRight
         )
 
-        settingsWindow.onApply = { [weak self, weak editorVC] showHeaders, showFooters, showPageNumbers, hideFirstPageNumber, centerPageNumbers, headerLeftText, headerRightText, footerLeftText, footerRightText in
+        settingsWindow.onApply = { [weak self, weak editorVC] showHeaders, showFooters, showPageNumbers, hideFirstPageNumber, centerPageNumbers, facingPages, headerLeftText, headerRightText, footerLeftText, footerRightText in
             editorVC?.showHeaders = showHeaders
             editorVC?.showFooters = showFooters
             editorVC?.showPageNumbers = showPageNumbers
             editorVC?.hidePageNumberOnFirstPage = hideFirstPageNumber
             editorVC?.centerPageNumbers = centerPageNumbers
+            editorVC?.facingPageNumbers = facingPages
             editorVC?.headerText = headerLeftText
             editorVC?.headerTextRight = headerRightText
             editorVC?.footerText = footerLeftText

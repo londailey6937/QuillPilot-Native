@@ -350,6 +350,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         mainWindowController?.mainContentViewController?.editorViewController.insertColumnBreak()
     }
 
+    @objc private func insertSectionBreak(_ sender: Any?) {
+        if mainWindowController == nil {
+            mainWindowController = MainWindowController()
+        }
+        presentMainWindow(orderingSource: sender)
+        mainWindowController?.mainContentViewController?.editorViewController.insertSectionBreak()
+    }
+
+    @objc private func toggleSectionBreaksVisibility(_ sender: Any?) {
+        guard let editor = mainWindowController?.mainContentViewController?.editorViewController else { return }
+        let visible = editor.toggleSectionBreaksVisibility()
+        if let menuItem = sender as? NSMenuItem {
+            menuItem.state = visible ? .on : .off
+        }
+    }
+
     @objc private func insertHyperlink(_ sender: Any?) {
         if mainWindowController == nil {
             mainWindowController = MainWindowController()
@@ -679,6 +695,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         insertMenu.addItem(.separator())
 
+        let insertSectionBreakItem = NSMenuItem(title: "Section Break…", action: #selector(insertSectionBreak(_:)), keyEquivalent: "")
+        insertSectionBreakItem.target = self
+        insertMenu.addItem(insertSectionBreakItem)
+
+        insertMenu.addItem(.separator())
+
         let insertFootnoteItem = NSMenuItem(title: "Insert Footnote", action: #selector(insertFootnote(_:)), keyEquivalent: "")
         insertFootnoteItem.target = self
         insertMenu.addItem(insertFootnoteItem)
@@ -809,6 +831,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         toggleRulerItem.target = self
         viewMenu.addItem(toggleRulerItem)
 
+        let toggleSectionBreaksItem = NSMenuItem(title: "Show Section Breaks", action: #selector(toggleSectionBreaksVisibility(_:)), keyEquivalent: "")
+        toggleSectionBreaksItem.target = self
+        viewMenu.addItem(toggleSectionBreaksItem)
+
         viewMenu.addItem(.separator())
 
         let zoomInItem = NSMenuItem(title: "Zoom In", action: #selector(zoomIn(_:)), keyEquivalent: "=")
@@ -873,6 +899,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let documentationItem = NSMenuItem(title: "Quill Pilot Help", action: #selector(showDocumentation(_:)), keyEquivalent: "?")
         documentationItem.target = self
         helpMenu.addItem(documentationItem)
+
+        let sectionHelpItem = NSMenuItem(title: "Sections & Page Numbering", action: #selector(showSectionsHelp(_:)), keyEquivalent: "")
+        sectionHelpItem.target = self
+        helpMenu.addItem(sectionHelpItem)
 
         let storyNotesHelpItem = NSMenuItem(title: "Story Data Storage…", action: #selector(showStoryNotesStorageHelp(_:)), keyEquivalent: "")
         storyNotesHelpItem.target = self
@@ -1051,6 +1081,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         openDocumentation(tabIdentifier: nil)
     }
 
+    @objc private func showSectionsHelp(_ sender: Any?) {
+        openDocumentation(tabIdentifier: "toolbar")
+        documentationWindow?.jumpToHeading("Sections & Page Numbering")
+    }
+
     @objc private func showStoryNotesStorageHelp(_ sender: Any?) {
         if storyDataStorageHelpWindow == nil {
             storyDataStorageHelpWindow = StoryDataStorageHelpWindowController(
@@ -1201,6 +1236,15 @@ extension AppDelegate: NSUserInterfaceValidations {
             return true
         }
 
+        if item.action == #selector(toggleSectionBreaksVisibility(_:)) {
+            let visible = mainWindowController?.mainContentViewController?.editorViewController.sectionBreaksVisible() ?? false
+            if let menuItem = item as? NSMenuItem {
+                menuItem.title = visible ? "Hide Section Breaks" : "Show Section Breaks"
+                menuItem.state = visible ? .on : .off
+            }
+            return true
+        }
+
         return true
     }
 }
@@ -1264,6 +1308,7 @@ extension AppDelegate: NSMenuItemValidation {
             #selector(applyOpticalKerning(_:)),
             #selector(analyzeDocumentNow(_:)),
             #selector(insertColumnBreak(_:)),
+            #selector(toggleSectionBreaksVisibility(_:)),
         ]
 
         if let action = menuItem.action, requiresWindow.contains(action) {

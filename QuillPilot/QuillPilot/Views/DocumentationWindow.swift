@@ -462,6 +462,26 @@ class DocumentationWindowController: NSWindowController, NSWindowDelegate {
                 }
         }
 
+        func jumpToHeading(_ heading: String) {
+                if headingIndex.isEmpty {
+                        rebuildHeadingIndex()
+                }
+                let normalized = normalizeHeadingForSearch(heading)
+                guard let match = headingIndex.first(where: { $0.normalizedTitle == normalized })
+                        ?? headingIndex.first(where: { $0.normalizedTitle.contains(normalized) }) else {
+                        selectTab(identifier: "toolbar")
+                        return
+                }
+
+                selectTab(identifier: match.tabIdentifier)
+                if let tabIndex = tabIdentifiers.firstIndex(of: match.tabIdentifier),
+                   tabIndex < textViews.count {
+                        let textView = textViews[tabIndex]
+                        textView.setSelectedRange(match.range)
+                        textView.scrollRangeToVisible(match.range)
+                }
+        }
+
     private func loadDocumentation() {
         loadWhyTab()
         loadAnalysisTab()
@@ -2319,6 +2339,22 @@ Balance columns
 
 Delete columns
 • Delete Column removes the column at the cursor.
+""", color: bodyColor))
+        content.append(makeNewline())
+
+        content.append(makeHeading("Sections & Page Numbering", color: headingColor))
+        content.append(makeBody("""
+Use section breaks to create independent page-numbering sequences for front matter (TOC, title page, index) and body text.
+
+How it works
+• Insert a Section Break at the top of each section (Insert → Section Break…)
+• Set the starting page number and number format for that section
+• Page numbers reset and format independently per section
+
+Tips
+• If "Hide Page Number on First Page" is enabled, the first page of each section hides its number
+• Use View → Show Section Breaks to see § markers in the document
+• To edit or remove a section break, place the cursor in the section and choose Insert → Section Break…
 """, color: bodyColor))
         content.append(makeNewline())
 

@@ -368,6 +368,7 @@ class TOCIndexWindowController: NSWindowController, NSWindowDelegate, NSOutlineV
 
     private var tabView: NSTabView!
     private var tabHeader: NSStackView!
+    private var tabHeaderContainer: NSView!
     private var tocTabButton: NSButton!
     private var indexTabButton: NSButton!
     private var tocOutlineView: NSOutlineView!
@@ -552,6 +553,10 @@ class TOCIndexWindowController: NSWindowController, NSWindowDelegate, NSOutlineV
         window.backgroundColor = theme.pageAround
         window.contentView?.layer?.backgroundColor = theme.pageAround.cgColor
 
+        if let header = tabHeaderContainer {
+            header.layer?.backgroundColor = theme.pageAround.cgColor
+        }
+
         pageNumberFormatPopup?.qpApplyDropdownBorder(theme: theme)
         addCategoryPopup?.qpApplyDropdownBorder(theme: theme)
 
@@ -606,22 +611,29 @@ class TOCIndexWindowController: NSWindowController, NSWindowDelegate, NSOutlineV
     }
 
     private func themeTabButton(_ button: NSButton, selected: Bool, theme: AppTheme) {
+        // Match the same styling as bottom action buttons for consistency.
         button.isBordered = false
         button.wantsLayer = true
         button.layer?.borderColor = theme.pageBorder.cgColor
         button.layer?.borderWidth = 1
-        button.layer?.cornerRadius = 8
-        button.layer?.backgroundColor = (selected ? theme.pageBorder : theme.pageBackground).cgColor
+        button.layer?.cornerRadius = 6
+        button.layer?.backgroundColor = theme.pageBackground.cgColor
 
-        let font = NSFont.systemFont(ofSize: 13, weight: .semibold)
+        // Use same font as bottom buttons (size 13, regular weight always)
+        let font = NSFont.systemFont(ofSize: 13, weight: .regular)
         button.attributedTitle = NSAttributedString(
             string: button.title,
             attributes: [
-                .foregroundColor: selected ? theme.pageBackground : theme.textColor,
+                .foregroundColor: theme.textColor,
                 .font: font
             ]
         )
-        button.contentTintColor = selected ? theme.pageBackground : theme.textColor
+        button.contentTintColor = theme.textColor
+
+        // Visual indicator for selected state: slightly darker background
+        if selected {
+            button.layer?.backgroundColor = theme.pageBackground.blended(withFraction: 0.1, of: theme.textColor)?.cgColor
+        }
     }
 
     private func setupUI() {
@@ -635,14 +647,23 @@ class TOCIndexWindowController: NSWindowController, NSWindowDelegate, NSOutlineV
 
         // Custom tabs (avoid system blue accent)
         tocTabButton = NSButton(title: "Table of Contents", target: self, action: #selector(selectTOCTab))
+        tocTabButton.translatesAutoresizingMaskIntoConstraints = false
         indexTabButton = NSButton(title: "Index", target: self, action: #selector(selectIndexTab))
+        indexTabButton.translatesAutoresizingMaskIntoConstraints = false
 
+        // Header container with background
         tabHeader = NSStackView(views: [tocTabButton, indexTabButton])
         tabHeader.orientation = .horizontal
-        tabHeader.spacing = 10
-        tabHeader.distribution = .fillEqually
+        tabHeader.spacing = 12
+        tabHeader.distribution = .fill  // We'll use explicit width constraints
         tabHeader.alignment = .centerY
         tabHeader.translatesAutoresizingMaskIntoConstraints = false
+
+        tabHeaderContainer = NSView()
+        tabHeaderContainer.translatesAutoresizingMaskIntoConstraints = false
+        tabHeaderContainer.wantsLayer = true
+        tabHeaderContainer.layer?.backgroundColor = theme.pageAround.cgColor
+        tabHeaderContainer.addSubview(tabHeader)
 
         // Create tab view
         tabView = NSTabView()
@@ -663,18 +684,28 @@ class TOCIndexWindowController: NSWindowController, NSWindowDelegate, NSOutlineV
 
         contentView.addSubview(tabView)
         // Ensure the header sits above the tab content in z-order.
-        contentView.addSubview(tabHeader, positioned: .above, relativeTo: tabView)
+        contentView.addSubview(tabHeaderContainer, positioned: .above, relativeTo: tabView)
         window.contentView = contentView
 
         NSLayoutConstraint.activate([
-            tabHeader.topAnchor.constraint(equalTo: contentView.topAnchor, constant: 12),
-            tabHeader.leadingAnchor.constraint(greaterThanOrEqualTo: contentView.leadingAnchor, constant: 24),
-            tabHeader.trailingAnchor.constraint(lessThanOrEqualTo: contentView.trailingAnchor, constant: -24),
-            tabHeader.centerXAnchor.constraint(equalTo: contentView.centerXAnchor),
-            tabHeader.widthAnchor.constraint(lessThanOrEqualTo: contentView.widthAnchor, constant: -48),
-            tabHeader.heightAnchor.constraint(equalToConstant: 34),
+            // Tab buttons have equal fixed widths matching bottom buttons
+            tocTabButton.widthAnchor.constraint(equalToConstant: 120),
+            tocTabButton.heightAnchor.constraint(equalToConstant: 30),
+            indexTabButton.widthAnchor.constraint(equalToConstant: 120),
+            indexTabButton.heightAnchor.constraint(equalToConstant: 30),
 
-            tabView.topAnchor.constraint(equalTo: tabHeader.bottomAnchor, constant: 10),
+            // Center the buttons inside the header container
+            tabHeader.centerXAnchor.constraint(equalTo: tabHeaderContainer.centerXAnchor),
+            tabHeader.centerYAnchor.constraint(equalTo: tabHeaderContainer.centerYAnchor),
+
+            // Header centered at top with padding
+            tabHeaderContainer.topAnchor.constraint(equalTo: contentView.topAnchor, constant: 0),
+            tabHeaderContainer.leadingAnchor.constraint(equalTo: contentView.leadingAnchor),
+            tabHeaderContainer.trailingAnchor.constraint(equalTo: contentView.trailingAnchor),
+            tabHeaderContainer.heightAnchor.constraint(equalToConstant: 56),
+
+            // Tab view starts below header with clear separation
+            tabView.topAnchor.constraint(equalTo: tabHeaderContainer.bottomAnchor, constant: 8),
             tabView.leadingAnchor.constraint(equalTo: contentView.leadingAnchor, constant: 10),
             tabView.trailingAnchor.constraint(equalTo: contentView.trailingAnchor, constant: -10),
             tabView.bottomAnchor.constraint(equalTo: contentView.bottomAnchor, constant: -10)
@@ -706,18 +737,21 @@ class TOCIndexWindowController: NSWindowController, NSWindowDelegate, NSOutlineV
 
     private func createTOCView() -> NSView {
         let theme = ThemeManager.shared.currentTheme
-        let container = NSView(frame: NSRect(x: 0, y: 0, width: 430, height: 540))
+        let container = NSView()
+        container.translatesAutoresizingMaskIntoConstraints = false
+        container.autoresizingMask = [.width, .height]
         container.wantsLayer = true
 
         // Instructions
         let instructions = NSTextField(labelWithString: "Click \"Generate\" to scan your document for headings and chapters.")
-        instructions.frame = NSRect(x: 10, y: 500, width: 410, height: 30)
+        instructions.translatesAutoresizingMaskIntoConstraints = false
         instructions.textColor = theme.textColor.withAlphaComponent(0.7)
         instructions.font = NSFont.systemFont(ofSize: 11)
         container.addSubview(instructions)
 
         // Scroll view for outline
-        let scrollView = NSScrollView(frame: NSRect(x: 10, y: 100, width: 410, height: 390))
+        let scrollView = NSScrollView()
+        scrollView.translatesAutoresizingMaskIntoConstraints = false
         scrollView.hasVerticalScroller = true
         scrollView.hasHorizontalScroller = false
         scrollView.autoresizingMask = [.width, .height]
@@ -741,12 +775,13 @@ class TOCIndexWindowController: NSWindowController, NSWindowDelegate, NSOutlineV
 
         // Options row
         let optionsLabel = NSTextField(labelWithString: "Page Numbers:")
-        optionsLabel.frame = NSRect(x: 10, y: 65, width: 95, height: 20)
+        optionsLabel.translatesAutoresizingMaskIntoConstraints = false
         optionsLabel.textColor = theme.textColor
         optionsLabel.font = NSFont.systemFont(ofSize: 11)
         container.addSubview(optionsLabel)
 
-        pageNumberFormatPopup = NSPopUpButton(frame: NSRect(x: 105, y: 62, width: 180, height: 24))
+        pageNumberFormatPopup = NSPopUpButton()
+        pageNumberFormatPopup.translatesAutoresizingMaskIntoConstraints = false
         for format in PageNumberFormat.allCases {
             pageNumberFormatPopup.addItem(withTitle: format.rawValue)
         }
@@ -756,30 +791,66 @@ class TOCIndexWindowController: NSWindowController, NSWindowDelegate, NSOutlineV
 
         // Page break checkbox - hidden for now as NSTextView doesn't support true page breaks
         pageBreakCheckbox = NSButton(checkboxWithTitle: "Insert page break", target: self, action: #selector(pageBreakToggled(_:)))
-        pageBreakCheckbox.frame = NSRect(x: 295, y: 62, width: 130, height: 24)
+        pageBreakCheckbox.translatesAutoresizingMaskIntoConstraints = false
         pageBreakCheckbox.state = .off
         pageBreakCheckbox.isHidden = true  // Feature doesn't work in NSTextView
         // container.addSubview(pageBreakCheckbox)  // Disabled
 
         // Buttons
         tocGenerateButton = NSButton(title: "Generate TOC", target: self, action: #selector(generateTOC))
-        tocGenerateButton.frame = NSRect(x: 10, y: 10, width: 120, height: 30)
+        tocGenerateButton.translatesAutoresizingMaskIntoConstraints = false
         tocGenerateButton.bezelStyle = .rounded
         container.addSubview(tocGenerateButton)
 
         tocInsertButton = NSButton(title: "Insert in Document", target: self, action: #selector(insertTOC))
-        tocInsertButton.frame = NSRect(x: 140, y: 10, width: 140, height: 30)
+        tocInsertButton.translatesAutoresizingMaskIntoConstraints = false
         tocInsertButton.bezelStyle = .rounded
         container.addSubview(tocInsertButton)
 
         tocGoToButton = NSButton(title: "Go to Selection", target: self, action: #selector(goToTOCEntry))
-        tocGoToButton.frame = NSRect(x: 290, y: 10, width: 130, height: 30)
+        tocGoToButton.translatesAutoresizingMaskIntoConstraints = false
         tocGoToButton.bezelStyle = .rounded
         container.addSubview(tocGoToButton)
 
         themeButton(tocGenerateButton, theme: theme)
         themeButton(tocInsertButton, theme: theme)
         themeButton(tocGoToButton, theme: theme)
+
+        NSLayoutConstraint.activate([
+            instructions.topAnchor.constraint(equalTo: container.topAnchor, constant: 8),
+            instructions.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 10),
+            instructions.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -10),
+
+            scrollView.topAnchor.constraint(equalTo: instructions.bottomAnchor, constant: 8),
+            scrollView.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 10),
+            scrollView.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -10),
+
+            optionsLabel.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 10),
+            optionsLabel.bottomAnchor.constraint(equalTo: tocGenerateButton.topAnchor, constant: -10),
+
+            pageNumberFormatPopup.leadingAnchor.constraint(equalTo: optionsLabel.trailingAnchor, constant: 8),
+            pageNumberFormatPopup.centerYAnchor.constraint(equalTo: optionsLabel.centerYAnchor),
+            pageNumberFormatPopup.widthAnchor.constraint(equalToConstant: 180),
+            pageNumberFormatPopup.heightAnchor.constraint(equalToConstant: 24),
+
+            scrollView.bottomAnchor.constraint(equalTo: optionsLabel.topAnchor, constant: -10),
+
+            tocGenerateButton.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 10),
+            tocGenerateButton.bottomAnchor.constraint(equalTo: container.bottomAnchor, constant: -10),
+            tocGenerateButton.widthAnchor.constraint(equalToConstant: 120),
+            tocGenerateButton.heightAnchor.constraint(equalToConstant: 30),
+
+            tocInsertButton.leadingAnchor.constraint(equalTo: tocGenerateButton.trailingAnchor, constant: 10),
+            tocInsertButton.centerYAnchor.constraint(equalTo: tocGenerateButton.centerYAnchor),
+            tocInsertButton.widthAnchor.constraint(equalToConstant: 140),
+            tocInsertButton.heightAnchor.constraint(equalToConstant: 30),
+
+            tocGoToButton.leadingAnchor.constraint(equalTo: tocInsertButton.trailingAnchor, constant: 10),
+            tocGoToButton.centerYAnchor.constraint(equalTo: tocGenerateButton.centerYAnchor),
+            tocGoToButton.widthAnchor.constraint(equalToConstant: 130),
+            tocGoToButton.heightAnchor.constraint(equalToConstant: 30),
+            tocGoToButton.trailingAnchor.constraint(lessThanOrEqualTo: container.trailingAnchor, constant: -10)
+        ])
 
         return container
     }

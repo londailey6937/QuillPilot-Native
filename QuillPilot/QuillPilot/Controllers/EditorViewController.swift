@@ -232,7 +232,8 @@ private final class AttachmentClickableTextView: NSTextView {
             let baselineY = origin.y + lineFragmentRect.origin.y + firstGlyphLocation.y - lineFont.ascender
 
             if isEmptyLine {
-                let drawX = origin.x + lineFragmentRect.origin.x + paragraphStyle.headIndent
+                // Use firstLineHeadIndent so the pilcrow aligns with where the cursor actually sits.
+                let drawX = origin.x + lineFragmentRect.origin.x + paragraphStyle.firstLineHeadIndent
                 let drawPoint = NSPoint(x: drawX, y: baselineY)
                 (self.paragraphGlyph as NSString).draw(at: drawPoint, withAttributes: [.font: lineFont, .foregroundColor: self.paragraphMarksColor])
                 return
@@ -7832,7 +7833,14 @@ case "Book Subtitle":
 
         let currentRange = textView.selectedRange()
         DebugLog.log("insertTable: inserting at location \(currentRange.location)")
-        let borderColor = (ThemeManager.shared.currentTheme.headerBackground).withAlphaComponent(0.5)
+
+        // Tables should not inherit theme accent/chrome colors.
+        // Use the document's current text color so tables read like text, not UI.
+        let currentTextColor: NSColor = {
+            if let c = textView.typingAttributes[.foregroundColor] as? NSColor { return c }
+            return ThemeManager.shared.currentTheme.textColor
+        }()
+        let borderColor = currentTextColor.withAlphaComponent(0.35)
 
         let result = NSMutableAttributedString()
 
@@ -7875,10 +7883,13 @@ case "Book Subtitle":
         }
 
         // Exit table with clean paragraph
-        let exitAttrs: [NSAttributedString.Key: Any] = [
+        var exitAttrs: [NSAttributedString.Key: Any] = [
             .font: textView.font ?? NSFont.systemFont(ofSize: 12),
-            .paragraphStyle: textView.defaultParagraphStyle ?? NSParagraphStyle.default
+            .paragraphStyle: textView.defaultParagraphStyle ?? NSParagraphStyle.default,
+            .foregroundColor: currentTextColor
         ]
+        // Avoid carrying any table/chrome styling onto the paragraph after the table.
+        exitAttrs[.backgroundColor] = nil
         result.append(NSAttributedString(string: "\n", attributes: exitAttrs))
 
         // Suppress text change notifications during table insertion

@@ -409,6 +409,25 @@ final class StyleCatalog {
                         tailIndent: 0
                     )
                 }
+
+                // Tables (prose templates only; exclude Poetry/Screenplay templates).
+                if merged["Table Title"] == nil {
+                    merged["Table Title"] = baseDefinition(
+                        font: font,
+                        size: baseSize,
+                        bold: true,
+                        italic: false,
+                        color: color,
+                        background: background,
+                        alignment: .center,
+                        lineHeight: 1.15,
+                        before: 12,
+                        after: 6,
+                        headIndent: 0,
+                        firstLine: 0,
+                        tailIndent: 0
+                    )
+                }
             }
 
             if merged["Heading 1"] == nil {

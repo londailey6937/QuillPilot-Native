@@ -229,14 +229,17 @@ class MarginHandle: NSView {
             path.close()
         }
 
+        // Ruler handles use the ruler's marking color for a cohesive look.
+        // In Cream mode, avoid any orange tints.
+        let theme = ThemeManager.shared.currentTheme
         let handleColor = isDragging
-            ? ThemeManager.shared.currentTheme.headerBackground
-            : ThemeManager.shared.currentTheme.pageBorder
+            ? theme.rulerMarkings.withAlphaComponent(0.85)
+            : theme.rulerMarkings
         handleColor.setFill()
         path.fill()
 
-        // Border
-        ThemeManager.shared.currentTheme.pageBackground.setStroke()
+        // Border uses the same marking color (no orange accent).
+        theme.rulerMarkings.withAlphaComponent(0.6).setStroke()
         path.lineWidth = 1
         path.stroke()
     }

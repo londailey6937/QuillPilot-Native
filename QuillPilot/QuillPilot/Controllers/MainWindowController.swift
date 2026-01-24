@@ -436,11 +436,35 @@ class MainWindowController: NSWindowController {
         let isDarkMode = ThemeManager.shared.isDarkMode
         NSApp.appearance = NSAppearance(named: isDarkMode ? .darkAqua : .aqua)
         defer { NSApp.appearance = previousAppearance }
+
+        // Day/Cream: tint the print panel sheet so it matches the app's warm chrome.
+        // (AppKit controls still use Aqua/DarkAqua; we only tint the window background layer.)
+        let theme = ThemeManager.shared.currentTheme
+        if theme == .day || theme == .cream {
+            DispatchQueue.main.async { [weak self] in
+                self?.applyThemeToAttachedSheetIfPresent(theme: theme)
+            }
+        }
+
         let printerName = printOperation.printInfo.printer.name
         debugLog("Starting print operation (printer: \(printerName), shows panel: \(printOperation.showsPrintPanel), shows progress: \(printOperation.showsProgressPanel))")
         let success = printOperation.run()
         debugLog("NSPrintOperation.run returned: \(success)")
         activePrintOperation = nil
+    }
+
+    @MainActor
+    private func applyThemeToAttachedSheetIfPresent(theme: AppTheme) {
+        guard let hostWindow = self.window else { return }
+        guard let sheet = hostWindow.attachedSheet else { return }
+
+        // Use the same warm surfaces as the main UI.
+        let background = theme == .day ? theme.headerBackground : theme.pageAround
+
+        sheet.isOpaque = false
+        sheet.backgroundColor = background
+        sheet.contentView?.wantsLayer = true
+        sheet.contentView?.layer?.backgroundColor = background.cgColor
     }
 
     // Note: Removed print(_:) wrapper to avoid conflict with Swift's print() function
@@ -2875,7 +2899,7 @@ class HeaderView: NSView {
         themeToggleButton.bezelStyle = .inline
         themeToggleButton.isBordered = false
         themeToggleButton.controlSize = .small
-        themeToggleButton.setButtonType(.momentaryPushIn)
+        themeToggleButton.setButtonType(.momentaryLight)
         themeToggleButton.toolTip = "Cycle theme (Night → Cream → Day)"
         themeToggleButton.setContentHuggingPriority(.required, for: .horizontal)
         addSubview(themeToggleButton)

@@ -131,19 +131,23 @@ class InsertBookmarkWindowController: NSWindowController {
 
             addButton.topAnchor.constraint(equalTo: scrollView.bottomAnchor, constant: 16),
             addButton.leadingAnchor.constraint(equalTo: contentView.leadingAnchor, constant: 20),
-            addButton.widthAnchor.constraint(equalToConstant: 80),
+            addButton.widthAnchor.constraint(equalToConstant: 70),
+            addButton.heightAnchor.constraint(equalToConstant: 30),
 
             deleteButton.topAnchor.constraint(equalTo: scrollView.bottomAnchor, constant: 16),
             deleteButton.leadingAnchor.constraint(equalTo: addButton.trailingAnchor, constant: 8),
-            deleteButton.widthAnchor.constraint(equalToConstant: 80),
+            deleteButton.widthAnchor.constraint(equalToConstant: 70),
+            deleteButton.heightAnchor.constraint(equalToConstant: 30),
 
             goToButton.topAnchor.constraint(equalTo: scrollView.bottomAnchor, constant: 16),
             goToButton.leadingAnchor.constraint(equalTo: deleteButton.trailingAnchor, constant: 8),
-            goToButton.widthAnchor.constraint(equalToConstant: 80),
+            goToButton.widthAnchor.constraint(equalToConstant: 70),
+            goToButton.heightAnchor.constraint(equalToConstant: 30),
 
             closeButton.topAnchor.constraint(equalTo: scrollView.bottomAnchor, constant: 16),
             closeButton.trailingAnchor.constraint(equalTo: contentView.trailingAnchor, constant: -20),
             closeButton.widthAnchor.constraint(equalToConstant: 80),
+            closeButton.heightAnchor.constraint(equalToConstant: 30),
 
             contentView.bottomAnchor.constraint(equalTo: addButton.bottomAnchor, constant: 20)
         ])

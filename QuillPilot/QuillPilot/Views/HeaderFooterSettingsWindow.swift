@@ -15,15 +15,22 @@ class HeaderFooterSettingsWindow: NSWindowController, NSWindowDelegate {
     private var showPageNumbersCheckbox: NSButton!
     private var hideFirstPageNumberCheckbox: NSButton!
     private var pageNumberPositionLabel: NSTextField!
-    private var pageNumberPositionControl: NSSegmentedControl!
+    private var pageNumberPositionStack: NSStackView!
+    private var pageNumberRightButton: NSButton!
+    private var pageNumberCenterButton: NSButton!
+    private var centerPageNumbersSelected = false
     private var headerLeftTextField: NSTextField!
     private var headerRightTextField: NSTextField!
     private var footerLeftTextField: NSTextField!
     private var footerRightTextField: NSTextField!
 
+    private var applyButton: NSButton!
+    private var cancelButton: NSButton!
+
     private var themedLabels: [NSTextField] = []
     private var infoLabel: NSTextField?
     private var didApplyOrCancel = false
+    private var clickOutsideMonitor: Any?
 
     /// onApply(showHeaders, showFooters, showPageNumbers, hideFirstPageNumber, centerPageNumbers, headerLeftText, headerRightText, footerLeftText, footerRightText)
     var onApply: ((Bool, Bool, Bool, Bool, Bool, String, String, String, String) -> Void)?
@@ -54,6 +61,15 @@ class HeaderFooterSettingsWindow: NSWindowController, NSWindowDelegate {
             name: .themeDidChange,
             object: nil
         )
+
+        // Close when user clicks back into main UI
+        clickOutsideMonitor = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown, .otherMouseDown]) { [weak self] event in
+            guard let self, let window = self.window, window.isVisible else { return event }
+            if event.window != window {
+                self.cancel()
+            }
+            return event
+        }
     }
 
     private func applyTheme() {
@@ -68,6 +84,85 @@ class HeaderFooterSettingsWindow: NSWindowController, NSWindowDelegate {
 
         themedLabels.forEach { $0.textColor = theme.textColor }
         infoLabel?.textColor = theme.textColor.withAlphaComponent(0.7)
+
+        // Theme buttons
+        if let applyButton = applyButton {
+            themeButton(applyButton, theme: theme)
+        }
+        if let cancelButton = cancelButton {
+            themeButton(cancelButton, theme: theme)
+        }
+
+        // Theme checkboxes
+        themeCheckbox(showHeadersCheckbox, theme: theme)
+        themeCheckbox(showFootersCheckbox, theme: theme)
+        themeCheckbox(showPageNumbersCheckbox, theme: theme)
+        themeCheckbox(hideFirstPageNumberCheckbox, theme: theme)
+
+        // Theme page-number position selector
+        updatePageNumberPositionAppearance(theme: theme)
+    }
+
+    private func themeSegmentButton(_ button: NSButton, selected: Bool, theme: AppTheme) {
+        button.isBordered = false
+        button.wantsLayer = true
+        button.layer?.borderColor = theme.pageBorder.cgColor
+        button.layer?.borderWidth = 1
+        button.layer?.cornerRadius = 6
+        button.layer?.backgroundColor = (selected ? theme.pageBorder : theme.pageBackground).cgColor
+
+        let font = button.font ?? NSFont.systemFont(ofSize: 13)
+        button.attributedTitle = NSAttributedString(
+            string: button.title,
+            attributes: [
+                .foregroundColor: selected ? theme.pageBackground : theme.textColor,
+                .font: font
+            ]
+        )
+        button.contentTintColor = selected ? theme.pageBackground : theme.textColor
+    }
+
+    private func updatePageNumberPositionAppearance(theme: AppTheme) {
+        guard pageNumberRightButton != nil, pageNumberCenterButton != nil else { return }
+        themeSegmentButton(pageNumberRightButton, selected: !centerPageNumbersSelected, theme: theme)
+        themeSegmentButton(pageNumberCenterButton, selected: centerPageNumbersSelected, theme: theme)
+    }
+
+    private func setCenterPageNumbersSelected(_ selected: Bool) {
+        centerPageNumbersSelected = selected
+        if let theme = Optional(ThemeManager.shared.currentTheme) {
+            updatePageNumberPositionAppearance(theme: theme)
+        }
+    }
+
+    private func themeButton(_ button: NSButton, theme: AppTheme) {
+        button.contentTintColor = theme.textColor
+        button.isBordered = false
+        button.wantsLayer = true
+        button.layer?.backgroundColor = theme.pageBackground.cgColor
+        button.layer?.borderColor = theme.pageBorder.cgColor
+        button.layer?.borderWidth = 1
+        button.layer?.cornerRadius = 6
+        let font = button.font ?? NSFont.systemFont(ofSize: 13)
+        button.attributedTitle = NSAttributedString(
+            string: button.title,
+            attributes: [
+                .foregroundColor: theme.textColor,
+                .font: font
+            ]
+        )
+    }
+
+    private func themeCheckbox(_ checkbox: NSButton, theme: AppTheme) {
+        checkbox.contentTintColor = theme.textColor
+        let font = checkbox.font ?? NSFont.systemFont(ofSize: 13)
+        checkbox.attributedTitle = NSAttributedString(
+            string: checkbox.title,
+            attributes: [
+                .foregroundColor: theme.textColor,
+                .font: font
+            ]
+        )
     }
 
     private func setupUI() {
@@ -147,10 +242,20 @@ class HeaderFooterSettingsWindow: NSWindowController, NSWindowDelegate {
         contentView.addSubview(pageNumberPositionLabel)
         themedLabels.append(pageNumberPositionLabel)
 
-        pageNumberPositionControl = NSSegmentedControl(labels: ["Right", "Center"], trackingMode: .selectOne, target: self, action: #selector(checkboxChanged))
-        pageNumberPositionControl.selectedSegment = 0
-        pageNumberPositionControl.translatesAutoresizingMaskIntoConstraints = false
-        contentView.addSubview(pageNumberPositionControl)
+        pageNumberRightButton = NSButton(title: "Right", target: self, action: #selector(pageNumberPositionTapped(_:)))
+        pageNumberRightButton.tag = 0
+        pageNumberRightButton.translatesAutoresizingMaskIntoConstraints = false
+
+        pageNumberCenterButton = NSButton(title: "Center", target: self, action: #selector(pageNumberPositionTapped(_:)))
+        pageNumberCenterButton.tag = 1
+        pageNumberCenterButton.translatesAutoresizingMaskIntoConstraints = false
+
+        pageNumberPositionStack = NSStackView(views: [pageNumberRightButton, pageNumberCenterButton])
+        pageNumberPositionStack.orientation = .horizontal
+        pageNumberPositionStack.spacing = 8
+        pageNumberPositionStack.alignment = .centerY
+        pageNumberPositionStack.translatesAutoresizingMaskIntoConstraints = false
+        contentView.addSubview(pageNumberPositionStack)
 
         // Info label
         let infoLabel = NSTextField(labelWithString: "Headers and footers are drawn inside the standard page margins.")
@@ -161,7 +266,7 @@ class HeaderFooterSettingsWindow: NSWindowController, NSWindowDelegate {
         self.infoLabel = infoLabel
 
         // Buttons
-        let applyButton = NSButton()
+        applyButton = NSButton()
         applyButton.title = "Apply"
         applyButton.target = self
         applyButton.action = #selector(applySettings)
@@ -170,7 +275,7 @@ class HeaderFooterSettingsWindow: NSWindowController, NSWindowDelegate {
         applyButton.translatesAutoresizingMaskIntoConstraints = false
         contentView.addSubview(applyButton)
 
-        let cancelButton = NSButton()
+        cancelButton = NSButton()
         cancelButton.title = "Cancel"
         cancelButton.target = self
         cancelButton.action = #selector(cancel)
@@ -228,10 +333,12 @@ class HeaderFooterSettingsWindow: NSWindowController, NSWindowDelegate {
             pageNumberPositionLabel.topAnchor.constraint(equalTo: hideFirstPageNumberCheckbox.bottomAnchor, constant: 12),
             pageNumberPositionLabel.leadingAnchor.constraint(equalTo: contentView.leadingAnchor, constant: 40),
 
-            pageNumberPositionControl.centerYAnchor.constraint(equalTo: pageNumberPositionLabel.centerYAnchor),
-            pageNumberPositionControl.leadingAnchor.constraint(equalTo: pageNumberPositionLabel.trailingAnchor, constant: 8),
+            pageNumberPositionStack.centerYAnchor.constraint(equalTo: pageNumberPositionLabel.centerYAnchor),
+            pageNumberPositionStack.leadingAnchor.constraint(equalTo: pageNumberPositionLabel.trailingAnchor, constant: 8),
+            pageNumberRightButton.heightAnchor.constraint(equalToConstant: 26),
+            pageNumberCenterButton.heightAnchor.constraint(equalToConstant: 26),
 
-            infoLabel.topAnchor.constraint(equalTo: pageNumberPositionControl.bottomAnchor, constant: 15),
+            infoLabel.topAnchor.constraint(equalTo: pageNumberPositionStack.bottomAnchor, constant: 15),
             infoLabel.leadingAnchor.constraint(equalTo: contentView.leadingAnchor, constant: 20),
             infoLabel.trailingAnchor.constraint(equalTo: contentView.trailingAnchor, constant: -20),
 
@@ -244,6 +351,7 @@ class HeaderFooterSettingsWindow: NSWindowController, NSWindowDelegate {
             applyButton.widthAnchor.constraint(equalToConstant: 80)
         ])
 
+        applyTheme()
         checkboxChanged()
     }
 
@@ -252,11 +360,16 @@ class HeaderFooterSettingsWindow: NSWindowController, NSWindowDelegate {
         showFootersCheckbox.state = showFooters ? .on : .off
         showPageNumbersCheckbox.state = showPageNumbers ? .on : .off
         hideFirstPageNumberCheckbox.state = hideFirstPageNumber ? .on : .off
-        pageNumberPositionControl.selectedSegment = centerPageNumbers ? 1 : 0
+        setCenterPageNumbersSelected(centerPageNumbers)
         headerLeftTextField.stringValue = headerLeftText
         headerRightTextField.stringValue = headerRightText
         footerLeftTextField.stringValue = footerLeftText
         footerRightTextField.stringValue = footerRightText
+        checkboxChanged()
+    }
+
+    @objc private func pageNumberPositionTapped(_ sender: NSButton) {
+        setCenterPageNumbersSelected(sender.tag == 1)
         checkboxChanged()
     }
 
@@ -271,7 +384,8 @@ class HeaderFooterSettingsWindow: NSWindowController, NSWindowDelegate {
         let pageNumbersEnabled = footerEnabled && (showPageNumbersCheckbox.state == .on)
         hideFirstPageNumberCheckbox.isEnabled = pageNumbersEnabled
         pageNumberPositionLabel.isEnabled = pageNumbersEnabled
-        pageNumberPositionControl.isEnabled = pageNumbersEnabled
+        pageNumberRightButton.isEnabled = pageNumbersEnabled
+        pageNumberCenterButton.isEnabled = pageNumbersEnabled
     }
 
     @objc private func applySettings() {
@@ -281,7 +395,7 @@ class HeaderFooterSettingsWindow: NSWindowController, NSWindowDelegate {
             showFootersCheckbox.state == .on,
             showPageNumbersCheckbox.state == .on,
             hideFirstPageNumberCheckbox.state == .on,
-            pageNumberPositionControl.selectedSegment == 1,
+            centerPageNumbersSelected,
             headerLeftTextField.stringValue,
             headerRightTextField.stringValue,
             footerLeftTextField.stringValue,
@@ -309,5 +423,8 @@ class HeaderFooterSettingsWindow: NSWindowController, NSWindowDelegate {
 
     deinit {
         NotificationCenter.default.removeObserver(self)
+        if let monitor = clickOutsideMonitor {
+            NSEvent.removeMonitor(monitor)
+        }
     }
 }

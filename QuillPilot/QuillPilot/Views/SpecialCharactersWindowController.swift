@@ -3,6 +3,10 @@
 @MainActor
 final class SpecialCharactersWindowController: NSWindowController {
 
+    private final class FlippedView: NSView {
+        override var isFlipped: Bool { true }
+    }
+
     private let onInsertText: (String) -> Void
     private let onToggleParagraphMarks: () -> Void
     private let onFindInvisibleCharacters: () -> Void
@@ -15,6 +19,7 @@ final class SpecialCharactersWindowController: NSWindowController {
     private var insertionByButton: [ObjectIdentifier: String] = [:]
     private var rootContentView: NSView?
     private var documentContainerView: NSView?
+    private var rootStackView: NSStackView?
     private var themeObserver: NSObjectProtocol?
     private var clickOutsideMonitor: Any?
 
@@ -83,6 +88,42 @@ final class SpecialCharactersWindowController: NSWindowController {
         fatalError("init(coder:) has not been implemented")
     }
 
+    override func showWindow(_ sender: Any?) {
+        super.showWindow(sender)
+        // Scroll to top after layout so the window opens at the beginning.
+        DispatchQueue.main.async { [weak self] in
+            self?.updateDocumentLayout()
+            self?.scrollToTop()
+        }
+    }
+
+    private func scrollToTop() {
+        guard let scrollView else { return }
+        scrollView.contentView.scroll(to: .zero)
+        scrollView.reflectScrolledClipView(scrollView.contentView)
+    }
+
+    private func updateDocumentLayout() {
+        guard let scrollView, let docView = scrollView.documentView, let stack = rootStackView else { return }
+
+        // Force layout so fittingSize is accurate.
+        stack.layoutSubtreeIfNeeded()
+        docView.layoutSubtreeIfNeeded()
+
+        // Update the documentView frame height so the scroll view has a stable content size.
+        let targetWidth = scrollView.contentView.bounds.width
+        if targetWidth > 0 {
+            docView.frame.size.width = targetWidth
+        }
+
+        let fitting = stack.fittingSize
+        let padding = stack.edgeInsets.top + stack.edgeInsets.bottom
+        let targetHeight = max(200, fitting.height + padding)
+        if abs(docView.frame.size.height - targetHeight) > 0.5 {
+            docView.frame.size.height = targetHeight
+        }
+    }
+
     deinit {
         if let themeObserver {
             NotificationCenter.default.removeObserver(themeObserver)
@@ -111,8 +152,9 @@ final class SpecialCharactersWindowController: NSWindowController {
         scrollView.drawsBackground = true
         scrollView.backgroundColor = ThemeManager.shared.currentTheme.pageAround
 
-        let docView = NSView(frame: NSRect(x: 0, y: 0, width: contentView.bounds.width, height: 1000))
-        docView.translatesAutoresizingMaskIntoConstraints = false
+        let docView = FlippedView(frame: NSRect(x: 0, y: 0, width: contentView.bounds.width, height: 1000))
+        docView.translatesAutoresizingMaskIntoConstraints = true
+        docView.autoresizingMask = [.width]
         docView.wantsLayer = true
         documentContainerView = docView
         docView.layer?.backgroundColor = ThemeManager.shared.currentTheme.pageAround.cgColor
@@ -124,6 +166,7 @@ final class SpecialCharactersWindowController: NSWindowController {
         stack.spacing = 14
         stack.edgeInsets = NSEdgeInsets(top: 16, left: 16, bottom: 16, right: 16)
         stack.translatesAutoresizingMaskIntoConstraints = false
+        rootStackView = stack
 
         let intro = NSTextField(labelWithString: "Curated punctuation, spacing, and editorial marks — no emoji picker.")
         intro.textColor = ThemeManager.shared.currentTheme.textColor.withAlphaComponent(0.75)
@@ -215,10 +258,12 @@ final class SpecialCharactersWindowController: NSWindowController {
             stack.leadingAnchor.constraint(equalTo: docView.leadingAnchor),
             stack.trailingAnchor.constraint(equalTo: docView.trailingAnchor),
             stack.topAnchor.constraint(equalTo: docView.topAnchor),
-            stack.bottomAnchor.constraint(equalTo: docView.bottomAnchor),
-
-            docView.widthAnchor.constraint(equalTo: scrollView.contentView.widthAnchor)
+            stack.bottomAnchor.constraint(equalTo: docView.bottomAnchor)
         ])
+
+        // Establish stable content size immediately.
+        updateDocumentLayout()
+        scrollToTop()
     }
 
     private func makeTypographySection(theme: AppTheme) -> NSView {

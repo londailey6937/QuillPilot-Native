@@ -728,6 +728,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let styleEditorItem = NSMenuItem(title: "Style Editor…", action: #selector(showStyleEditor(_:)), keyEquivalent: "")
         styleEditorItem.target = self
         formatMenu.addItem(styleEditorItem)
+
+        let pageNumbersItem = NSMenuItem(title: "Page Numbers…", action: #selector(showPageNumberSettings(_:)), keyEquivalent: "")
+        pageNumbersItem.target = self
+        formatMenu.addItem(pageNumbersItem)
+
         formatMenu.addItem(.separator())
 
         // Lists submenu
@@ -951,6 +956,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     @objc private func showHeaderFooterSettings(_ sender: Any?) {
+        mainWindowController?.showHeaderFooterSettings()
+    }
+
+    @objc private func showPageNumberSettings(_ sender: Any?) {
         mainWindowController?.showHeaderFooterSettings()
     }
 

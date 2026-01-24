@@ -367,11 +367,25 @@ private func removeAllSections(title: String, in storage: NSTextStorage) {
 class TOCIndexWindowController: NSWindowController, NSWindowDelegate, NSOutlineViewDataSource, NSOutlineViewDelegate, NSTableViewDataSource, NSTableViewDelegate {
 
     private var tabView: NSTabView!
+    private var tabHeader: NSStackView!
+    private var tocTabButton: NSButton!
+    private var indexTabButton: NSButton!
     private var tocOutlineView: NSOutlineView!
     private var indexTableView: NSTableView!
     private var addTermField: NSTextField!
     private var addCategoryPopup: NSPopUpButton!
     private var indexGoToButton: NSButton!
+
+    // TOC buttons
+    private var tocGenerateButton: NSButton!
+    private var tocInsertButton: NSButton!
+    private var tocGoToButton: NSButton!
+
+    // Index buttons
+    private var indexAddButton: NSButton!
+    private var indexScanButton: NSButton!
+    private var indexRemoveButton: NSButton!
+    private var indexInsertButton: NSButton!
 
     // Index navigation state (for Go to Next)
     private var activeIndexTermLowercased: String?
@@ -540,6 +554,74 @@ class TOCIndexWindowController: NSWindowController, NSWindowDelegate, NSOutlineV
 
         pageNumberFormatPopup?.qpApplyDropdownBorder(theme: theme)
         addCategoryPopup?.qpApplyDropdownBorder(theme: theme)
+
+        // Theme TOC buttons
+        if let btn = tocGenerateButton { themeButton(btn, theme: theme) }
+        if let btn = tocInsertButton { themeButton(btn, theme: theme) }
+        if let btn = tocGoToButton { themeButton(btn, theme: theme) }
+
+        // Theme custom tab buttons (replaces system blue tab accent)
+        if let tocTabButton, let indexTabButton {
+            themeTabButton(tocTabButton, selected: (tabView?.selectedTabViewItem?.identifier as? String) == "toc", theme: theme)
+            themeTabButton(indexTabButton, selected: (tabView?.selectedTabViewItem?.identifier as? String) == "index", theme: theme)
+        }
+
+        // Theme Index buttons
+        if let btn = indexAddButton { themeButton(btn, theme: theme) }
+        if let btn = indexScanButton { themeButton(btn, theme: theme) }
+        if let btn = indexRemoveButton { themeButton(btn, theme: theme) }
+        if let btn = indexInsertButton { themeButton(btn, theme: theme) }
+        if let btn = indexGoToButton { themeButton(btn, theme: theme) }
+
+        // Theme checkbox
+        if let checkbox = pageBreakCheckbox {
+            checkbox.contentTintColor = theme.textColor
+            let font = checkbox.font ?? NSFont.systemFont(ofSize: 13)
+            checkbox.attributedTitle = NSAttributedString(
+                string: checkbox.title,
+                attributes: [
+                    .foregroundColor: theme.textColor,
+                    .font: font
+                ]
+            )
+        }
+    }
+
+    private func themeButton(_ button: NSButton, theme: AppTheme) {
+        button.contentTintColor = theme.textColor
+        button.isBordered = false
+        button.wantsLayer = true
+        button.layer?.backgroundColor = theme.pageBackground.cgColor
+        button.layer?.borderColor = theme.pageBorder.cgColor
+        button.layer?.borderWidth = 1
+        button.layer?.cornerRadius = 6
+        let font = button.font ?? NSFont.systemFont(ofSize: 13)
+        button.attributedTitle = NSAttributedString(
+            string: button.title,
+            attributes: [
+                .foregroundColor: theme.textColor,
+                .font: font
+            ]
+        )
+    }
+
+    private func themeTabButton(_ button: NSButton, selected: Bool, theme: AppTheme) {
+        button.isBordered = false
+        button.wantsLayer = true
+        button.layer?.borderColor = theme.pageBorder.cgColor
+        button.layer?.borderWidth = 1
+        button.layer?.cornerRadius = 8
+        button.layer?.backgroundColor = (selected ? theme.pageBorder : theme.pageBackground).cgColor
+
+        let font = NSFont.systemFont(ofSize: 13, weight: .semibold)
+        button.attributedTitle = NSAttributedString(
+            string: button.title,
+            attributes: [
+                .foregroundColor: selected ? theme.pageBackground : theme.textColor,
+                .font: font
+            ]
+        )
+        button.contentTintColor = selected ? theme.pageBackground : theme.textColor
     }
 
     private func setupUI() {
@@ -551,9 +633,21 @@ class TOCIndexWindowController: NSWindowController, NSWindowDelegate, NSOutlineV
         contentView.wantsLayer = true
         contentView.layer?.backgroundColor = theme.pageAround.cgColor
 
+        // Custom tabs (avoid system blue accent)
+        tocTabButton = NSButton(title: "Table of Contents", target: self, action: #selector(selectTOCTab))
+        indexTabButton = NSButton(title: "Index", target: self, action: #selector(selectIndexTab))
+
+        tabHeader = NSStackView(views: [tocTabButton, indexTabButton])
+        tabHeader.orientation = .horizontal
+        tabHeader.spacing = 10
+        tabHeader.distribution = .fillEqually
+        tabHeader.alignment = .centerY
+        tabHeader.translatesAutoresizingMaskIntoConstraints = false
+
         // Create tab view
-        tabView = NSTabView(frame: contentView.bounds.insetBy(dx: 10, dy: 10))
-        tabView.autoresizingMask = [.width, .height]
+        tabView = NSTabView()
+        tabView.tabViewType = .noTabsNoBorder
+        tabView.translatesAutoresizingMaskIntoConstraints = false
 
         // TOC Tab
         let tocTab = NSTabViewItem(identifier: "toc")
@@ -568,7 +662,36 @@ class TOCIndexWindowController: NSWindowController, NSWindowDelegate, NSOutlineV
         tabView.addTabViewItem(indexTab)
 
         contentView.addSubview(tabView)
+        // Ensure the header sits above the tab content in z-order.
+        contentView.addSubview(tabHeader, positioned: .above, relativeTo: tabView)
         window.contentView = contentView
+
+        NSLayoutConstraint.activate([
+            tabHeader.topAnchor.constraint(equalTo: contentView.topAnchor, constant: 12),
+            tabHeader.leadingAnchor.constraint(greaterThanOrEqualTo: contentView.leadingAnchor, constant: 24),
+            tabHeader.trailingAnchor.constraint(lessThanOrEqualTo: contentView.trailingAnchor, constant: -24),
+            tabHeader.centerXAnchor.constraint(equalTo: contentView.centerXAnchor),
+            tabHeader.widthAnchor.constraint(lessThanOrEqualTo: contentView.widthAnchor, constant: -48),
+            tabHeader.heightAnchor.constraint(equalToConstant: 34),
+
+            tabView.topAnchor.constraint(equalTo: tabHeader.bottomAnchor, constant: 10),
+            tabView.leadingAnchor.constraint(equalTo: contentView.leadingAnchor, constant: 10),
+            tabView.trailingAnchor.constraint(equalTo: contentView.trailingAnchor, constant: -10),
+            tabView.bottomAnchor.constraint(equalTo: contentView.bottomAnchor, constant: -10)
+        ])
+
+        // Default selection
+        tabView.selectTabViewItem(withIdentifier: "toc")
+    }
+
+    @objc private func selectTOCTab() {
+        tabView?.selectTabViewItem(withIdentifier: "toc")
+        applyTheme()
+    }
+
+    @objc private func selectIndexTab() {
+        tabView?.selectTabViewItem(withIdentifier: "index")
+        applyTheme()
     }
 
     // Reload both table views to reflect current state
@@ -639,20 +762,24 @@ class TOCIndexWindowController: NSWindowController, NSWindowDelegate, NSOutlineV
         // container.addSubview(pageBreakCheckbox)  // Disabled
 
         // Buttons
-        let generateButton = NSButton(title: "Generate TOC", target: self, action: #selector(generateTOC))
-        generateButton.frame = NSRect(x: 10, y: 10, width: 120, height: 30)
-        generateButton.bezelStyle = .rounded
-        container.addSubview(generateButton)
+        tocGenerateButton = NSButton(title: "Generate TOC", target: self, action: #selector(generateTOC))
+        tocGenerateButton.frame = NSRect(x: 10, y: 10, width: 120, height: 30)
+        tocGenerateButton.bezelStyle = .rounded
+        container.addSubview(tocGenerateButton)
 
-        let insertButton = NSButton(title: "Insert in Document", target: self, action: #selector(insertTOC))
-        insertButton.frame = NSRect(x: 140, y: 10, width: 140, height: 30)
-        insertButton.bezelStyle = .rounded
-        container.addSubview(insertButton)
+        tocInsertButton = NSButton(title: "Insert in Document", target: self, action: #selector(insertTOC))
+        tocInsertButton.frame = NSRect(x: 140, y: 10, width: 140, height: 30)
+        tocInsertButton.bezelStyle = .rounded
+        container.addSubview(tocInsertButton)
 
-        let goToButton = NSButton(title: "Go to Selection", target: self, action: #selector(goToTOCEntry))
-        goToButton.frame = NSRect(x: 290, y: 10, width: 130, height: 30)
-        goToButton.bezelStyle = .rounded
-        container.addSubview(goToButton)
+        tocGoToButton = NSButton(title: "Go to Selection", target: self, action: #selector(goToTOCEntry))
+        tocGoToButton.frame = NSRect(x: 290, y: 10, width: 130, height: 30)
+        tocGoToButton.bezelStyle = .rounded
+        container.addSubview(tocGoToButton)
+
+        themeButton(tocGenerateButton, theme: theme)
+        themeButton(tocInsertButton, theme: theme)
+        themeButton(tocGoToButton, theme: theme)
 
         return container
     }
@@ -687,10 +814,10 @@ class TOCIndexWindowController: NSWindowController, NSWindowDelegate, NSOutlineV
         addCategoryPopup.addItems(withTitles: categories)
         container.addSubview(addCategoryPopup)
 
-        let addButton = NSButton(title: "Add", target: self, action: #selector(addIndexTerm))
-        addButton.frame = NSRect(x: 350, y: 475, width: 70, height: 24)
-        addButton.bezelStyle = .rounded
-        container.addSubview(addButton)
+        indexAddButton = NSButton(title: "Add", target: self, action: #selector(addIndexTerm))
+        indexAddButton.frame = NSRect(x: 350, y: 475, width: 70, height: 24)
+        indexAddButton.bezelStyle = .rounded
+        container.addSubview(indexAddButton)
 
         // Scroll view for index table
         let scrollView = NSScrollView(frame: NSRect(x: 10, y: 50, width: 410, height: 415))
@@ -724,26 +851,32 @@ class TOCIndexWindowController: NSWindowController, NSWindowDelegate, NSOutlineV
         container.addSubview(scrollView)
 
         // Buttons
-        let scanButton = NSButton(title: "Scan Markers", target: self, action: #selector(scanIndexMarkers))
-        scanButton.frame = NSRect(x: 10, y: 10, width: 100, height: 30)
-        scanButton.bezelStyle = .rounded
-        container.addSubview(scanButton)
+        indexScanButton = NSButton(title: "Scan Markers", target: self, action: #selector(scanIndexMarkers))
+        indexScanButton.frame = NSRect(x: 10, y: 10, width: 100, height: 30)
+        indexScanButton.bezelStyle = .rounded
+        container.addSubview(indexScanButton)
 
-        let removeButton = NSButton(title: "Remove", target: self, action: #selector(removeIndexEntry))
-        removeButton.frame = NSRect(x: 120, y: 10, width: 80, height: 30)
-        removeButton.bezelStyle = .rounded
-        container.addSubview(removeButton)
+        indexRemoveButton = NSButton(title: "Remove", target: self, action: #selector(removeIndexEntry))
+        indexRemoveButton.frame = NSRect(x: 120, y: 10, width: 80, height: 30)
+        indexRemoveButton.bezelStyle = .rounded
+        container.addSubview(indexRemoveButton)
 
-        let insertButton = NSButton(title: "Insert Index", target: self, action: #selector(insertIndex))
-        insertButton.frame = NSRect(x: 210, y: 10, width: 100, height: 30)
-        insertButton.bezelStyle = .rounded
-        container.addSubview(insertButton)
+        indexInsertButton = NSButton(title: "Insert Index", target: self, action: #selector(insertIndex))
+        indexInsertButton.frame = NSRect(x: 210, y: 10, width: 100, height: 30)
+        indexInsertButton.bezelStyle = .rounded
+        container.addSubview(indexInsertButton)
 
         let goToButton = NSButton(title: "Go to First", target: self, action: #selector(goToIndexEntry))
         goToButton.frame = NSRect(x: 320, y: 10, width: 100, height: 30)
         goToButton.bezelStyle = .rounded
         indexGoToButton = goToButton
         container.addSubview(goToButton)
+
+        themeButton(indexAddButton, theme: theme)
+        themeButton(indexScanButton, theme: theme)
+        themeButton(indexRemoveButton, theme: theme)
+        themeButton(indexInsertButton, theme: theme)
+        themeButton(goToButton, theme: theme)
 
         return container
     }

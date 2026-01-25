@@ -61,6 +61,7 @@
 				95F565012EED0D890079E9C2 /* Sources */,
 				95F565022EED0D890079E9C2 /* Frameworks */,
 				95F565032EED0D890079E9C2 /* Resources */,
+				95A1B2C32F0A1B2C0033A1B2 /* Copy App to build/ */,
 			);
 			buildRules = (
 			);
@@ -120,6 +121,32 @@
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXResourcesBuildPhase section */
+
+/* Begin PBXShellScriptBuildPhase section */
+		95A1B2C32F0A1B2C0033A1B2 /* Copy App to build/ */ = {
+			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
+			basedOnDependencyAnalysis = 0;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+				"$(TARGET_BUILD_DIR)/$(WRAPPER_NAME)/Contents/MacOS/$(EXECUTABLE_NAME)",
+				"$(TARGET_BUILD_DIR)/$(WRAPPER_NAME)/Contents/Info.plist",
+			);
+			name = "Copy App to build/";
+			outputFileListPaths = (
+			);
+			outputPaths = (
+				"$(SRCROOT)/build/$(CONFIGURATION)/$(WRAPPER_NAME)",
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "set -e\n\n# Copy the just-built app bundle into a stable location inside the repo.\n# Result: ${SRCROOT}/build/${CONFIGURATION}/${WRAPPER_NAME}\n\nDEST_DIR=\"${SRCROOT}/build/${CONFIGURATION}\"\nDEST_APP=\"${DEST_DIR}/${WRAPPER_NAME}\"\nSRC_APP=\"${TARGET_BUILD_DIR}/${WRAPPER_NAME}\"\n\nmkdir -p \"${DEST_DIR}\"\nrm -rf \"${DEST_APP}\"\n/usr/bin/ditto \"${SRC_APP}\" \"${DEST_APP}\"\n";
+		};
+/* End PBXShellScriptBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
 		95F565012EED0D890079E9C2 /* Sources */ = {
@@ -263,6 +290,7 @@
 				COMBINE_HIDPI_IMAGES = YES;
 				CURRENT_PROJECT_VERSION = 1;
 				DEAD_CODE_STRIPPING = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = NO;
 				ENABLE_APP_SANDBOX = NO;
 				ENABLE_USER_SELECTED_FILES = readwrite;
 				GENERATE_INFOPLIST_FILE = NO;
@@ -295,6 +323,7 @@
 				COMBINE_HIDPI_IMAGES = YES;
 				CURRENT_PROJECT_VERSION = 1;
 				DEAD_CODE_STRIPPING = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = NO;
 				ENABLE_APP_SANDBOX = NO;
 				ENABLE_USER_SELECTED_FILES = readwrite;
 				GENERATE_INFOPLIST_FILE = NO;

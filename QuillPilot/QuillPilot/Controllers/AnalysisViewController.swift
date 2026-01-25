@@ -848,7 +848,7 @@ class AnalysisViewController: NSViewController, NSWindowDelegate {
             case .decisionBeliefLoops: return "arrow.triangle.branch"
             case .beliefShiftMatrix: return "tablecells"
             case .decisionConsequenceChains: return "link"
-            case .relationshipEvolutionMaps: return "point.3.connected.trianglepath"
+            case .relationshipEvolutionMaps: return "heart.circle"
             case .internalExternalAlignment: return "circle.lefthalf.filled"
             case .languageDrift: return "text.line.first.and.arrowtriangle.forward"
             case .thematicResonance: return "target"
@@ -864,7 +864,7 @@ class AnalysisViewController: NSViewController, NSWindowDelegate {
             case .decisionBeliefLoops: return "📊"
             case .beliefShiftMatrix: return "📋"
             case .decisionConsequenceChains: return "⛓️"
-            case .relationshipEvolutionMaps: return "🔗"
+            case .relationshipEvolutionMaps: return "🫂"
             case .internalExternalAlignment: return "🎭"
             case .languageDrift: return "📝"
             case .thematicResonance: return "🎯"
@@ -2276,9 +2276,13 @@ extension AnalysisViewController {
         let keepCanon = Set(keep.map { canonicalCharacterKey($0) })
 
         let libraryOrder = CharacterLibrary.shared.analysisCharacterKeys
-        let canonicalOrderIndex: [String: Int] = Dictionary(
-            uniqueKeysWithValues: libraryOrder.enumerated().map { (canonicalCharacterKey($0.element), $0.offset) }
-        )
+        var canonicalOrderIndex: [String: Int] = [:]
+        for (idx, name) in libraryOrder.enumerated() {
+            let key = canonicalCharacterKey(name)
+            if canonicalOrderIndex[key] == nil {
+                canonicalOrderIndex[key] = idx
+            }
+        }
 
         let keptLoops = keepCanon.isEmpty ? loops : loops.filter { keepCanon.contains(canonicalCharacterKey($0.characterName)) }
         let filteredLoops = (!keepCanon.isEmpty && keptLoops.isEmpty) ? loops : keptLoops
@@ -3149,6 +3153,7 @@ extension AnalysisViewController {
         }
     }
 
+    @available(macOS 13.0, *)
     func openBeliefShiftMatrixPopout(matrices: [BeliefShiftMatrix]) {
         // Close existing window if open
         beliefShiftMatrixPopoutWindow?.close()
@@ -3173,9 +3178,13 @@ extension AnalysisViewController {
         let keepCanon = Set(keep.map { canonicalCharacterKey($0) })
 
         let libraryOrder = CharacterLibrary.shared.analysisCharacterKeys
-        let canonicalOrderIndex: [String: Int] = Dictionary(
-            uniqueKeysWithValues: libraryOrder.enumerated().map { (canonicalCharacterKey($0.element), $0.offset) }
-        )
+        var canonicalOrderIndex: [String: Int] = [:]
+        for (idx, name) in libraryOrder.enumerated() {
+            let key = canonicalCharacterKey(name)
+            if canonicalOrderIndex[key] == nil {
+                canonicalOrderIndex[key] = idx
+            }
+        }
 
         let filteredMatrices: [BeliefShiftMatrix]
         if keepCanon.isEmpty {
@@ -3251,9 +3260,13 @@ extension AnalysisViewController {
         let keepCanon: Set<String> = []
 
         let libraryOrder = CharacterLibrary.shared.analysisCharacterKeys
-        let canonicalOrderIndex: [String: Int] = Dictionary(
-            uniqueKeysWithValues: libraryOrder.enumerated().map { (canonicalCharacterKey($0.element), $0.offset) }
-        )
+        var canonicalOrderIndex: [String: Int] = [:]
+        for (idx, name) in libraryOrder.enumerated() {
+            let key = canonicalCharacterKey(name)
+            if canonicalOrderIndex[key] == nil {
+                canonicalOrderIndex[key] = idx
+            }
+        }
 
         let keptChains = keepCanon.isEmpty ? chains : chains.filter { keepCanon.contains(canonicalCharacterKey($0.characterName)) }
         let filteredChains = (!keepCanon.isEmpty && keptChains.isEmpty) ? chains : keptChains
@@ -4408,8 +4421,11 @@ extension AnalysisViewController {
             menu.addItem(chainItem)
         }
 
-        let relationshipMapItem = NSMenuItem(title: "🔗 Relationship Evolution Maps", action: #selector(showRelationshipEvolutionMaps), keyEquivalent: "")
+        let relationshipMapItem = NSMenuItem(title: "Relationship Evolution Maps", action: #selector(showRelationshipEvolutionMaps), keyEquivalent: "")
         relationshipMapItem.target = self
+        if #available(macOS 11.0, *) {
+            relationshipMapItem.image = NSImage(systemSymbolName: "heart.circle", accessibilityDescription: "Relationship Evolution Maps")
+        }
         menu.addItem(relationshipMapItem)
 
         // Lower/optional diagnostics: hide by default for Screenplay templates.
@@ -4451,6 +4467,15 @@ extension AnalysisViewController {
         alert.runThemedSheet(for: window)
     }
 
+    private func showUnsupportedOSAlert() {
+        guard let window = view.window else { return }
+        let alert = NSAlert.themedWarning(
+            title: "Feature Unavailable",
+            message: "This feature requires macOS 13 or later."
+        )
+        alert.runThemedSheet(for: window)
+    }
+
     @objc private func showDecisionBeliefLoops() {
         // Don't show if Character Library is empty
         guard !CharacterLibrary.shared.characters.isEmpty else {
@@ -4474,6 +4499,11 @@ extension AnalysisViewController {
         // Don't show if Character Library is empty
         guard !CharacterLibrary.shared.characters.isEmpty else {
             showMissingCharactersAlert()
+            return
+        }
+
+        guard #available(macOS 13.0, *) else {
+            showUnsupportedOSAlert()
             return
         }
 

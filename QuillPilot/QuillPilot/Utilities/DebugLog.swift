@@ -14,17 +14,13 @@ enum DebugLog {
 
     @inline(__always)
     static func log(_ message: @autoclosure () -> String) {
-        #if DEBUG
         guard enabled else { return }
         NSLog("%@", message())
-        #endif
     }
 }
 
 @inline(__always)
 func debugLog(_ message: @autoclosure () -> String) {
-    #if DEBUG
     guard DebugLog.enabled else { return }
     NSLog("%@", message())
-    #endif
 }

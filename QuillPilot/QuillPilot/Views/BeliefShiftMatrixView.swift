@@ -36,7 +36,7 @@ struct BeliefShiftMatrixView: View {
                 if matrices.isEmpty {
                     emptyState
                 } else {
-                    ForEach(matrices, id: \.characterName) { matrix in
+                    ForEach(Array(matrices.enumerated()), id: \.offset) { _, matrix in
                         characterMatrixView(matrix)
                     }
                 }

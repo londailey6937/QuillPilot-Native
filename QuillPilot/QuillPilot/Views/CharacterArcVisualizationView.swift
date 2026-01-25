@@ -300,7 +300,12 @@ struct CharacterPresenceBarChart: View {
 
     private var dataPoints: [CharacterPresenceDataPoint] {
         let libraryOrder = CharacterLibrary.shared.analysisCharacterKeys
-        let orderIndex: [String: Int] = Dictionary(uniqueKeysWithValues: libraryOrder.enumerated().map { ($0.element, $0.offset) })
+        var orderIndex: [String: Int] = [:]
+        for (idx, name) in libraryOrder.enumerated() {
+            if orderIndex[name] == nil {
+                orderIndex[name] = idx
+            }
+        }
 
         let points = presence.flatMap { entry in
             entry.chapterPresence.map { chapter, mentions in

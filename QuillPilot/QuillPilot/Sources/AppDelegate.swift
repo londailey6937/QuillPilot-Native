@@ -900,10 +900,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         documentationItem.target = self
         helpMenu.addItem(documentationItem)
 
-        let sectionHelpItem = NSMenuItem(title: "Sections & Page Numbering", action: #selector(showSectionsHelp(_:)), keyEquivalent: "")
-        sectionHelpItem.target = self
-        helpMenu.addItem(sectionHelpItem)
-
         let storyNotesHelpItem = NSMenuItem(title: "Story Data Storage…", action: #selector(showStoryNotesStorageHelp(_:)), keyEquivalent: "")
         storyNotesHelpItem.target = self
         helpMenu.addItem(storyNotesHelpItem)
@@ -1079,11 +1075,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc private func showDocumentation(_ sender: Any?) {
         openDocumentation(tabIdentifier: nil)
-    }
-
-    @objc private func showSectionsHelp(_ sender: Any?) {
-        openDocumentation(tabIdentifier: "toolbar")
-        documentationWindow?.jumpToHeading("Sections & Page Numbering")
     }
 
     @objc private func showStoryNotesStorageHelp(_ sender: Any?) {

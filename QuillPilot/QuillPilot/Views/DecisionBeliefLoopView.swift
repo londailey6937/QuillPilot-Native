@@ -43,9 +43,13 @@ class DecisionBeliefLoopView: NSView {
     func setLoops(_ loops: [DecisionBeliefLoop]) {
         let libraryOrder = CharacterLibrary.shared.analysisCharacterKeys
         if !libraryOrder.isEmpty {
-            let canonicalOrderIndex: [String: Int] = Dictionary(
-                uniqueKeysWithValues: libraryOrder.enumerated().map { ($0.element.trimmingCharacters(in: .whitespacesAndNewlines).lowercased(), $0.offset) }
-            )
+            var canonicalOrderIndex: [String: Int] = [:]
+            for (idx, name) in libraryOrder.enumerated() {
+                let key = name.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+                if canonicalOrderIndex[key] == nil {
+                    canonicalOrderIndex[key] = idx
+                }
+            }
             self.loops = loops.sorted {
                 (canonicalOrderIndex[$0.characterName.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()] ?? Int.max) <
                 (canonicalOrderIndex[$1.characterName.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()] ?? Int.max)

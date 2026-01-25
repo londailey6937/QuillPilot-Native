@@ -79,7 +79,12 @@ class EmotionalTrajectoryView: NSView {
         let libraryOrder = CharacterLibrary.shared.analysisCharacterKeys
         if !libraryOrder.isEmpty {
             // Maintain stable ordering by character, while keeping dashed/solid variants adjacent.
-            let orderIndex: [String: Int] = Dictionary(uniqueKeysWithValues: libraryOrder.enumerated().map { ($0.element, $0.offset) })
+            var orderIndex: [String: Int] = [:]
+            for (idx, name) in libraryOrder.enumerated() {
+                if orderIndex[name] == nil {
+                    orderIndex[name] = idx
+                }
+            }
             self.trajectories = trajectories.sorted { a, b in
                 let ia = orderIndex[a.characterName] ?? Int.max
                 let ib = orderIndex[b.characterName] ?? Int.max
@@ -101,7 +106,7 @@ class EmotionalTrajectoryView: NSView {
     }
 
     func setXAxisMode(_ mode: XAxisMode) {
-        
+
         self.xAxisMode = mode
         self.needsDisplay = true
     }

@@ -21,6 +21,9 @@ struct ScreenplayImporter {
         case dialogue
         case transition
         case shot
+        case act
+        case insert
+        case sfx
     }
 
     static func attributedString(fromPlainText input: String) -> NSAttributedString {
@@ -86,8 +89,17 @@ struct ScreenplayImporter {
             if isSlugline(trimmedUpper) {
                 element = .slugline
                 expectingDialogue = false
+            } else if isActHeading(trimmedUpper) {
+                element = .act
+                expectingDialogue = false
             } else if isTransition(trimmedUpper) {
                 element = .transition
+                expectingDialogue = false
+            } else if isInsertLine(trimmedUpper) {
+                element = .insert
+                expectingDialogue = false
+            } else if isSfxOrVO(trimmedUpper) {
+                element = .sfx
                 expectingDialogue = false
             } else if isShot(trimmedUpper) {
                 element = .shot
@@ -119,6 +131,12 @@ struct ScreenplayImporter {
                 appendLine(trimmed, styleName: "Screenplay — Dialogue")
             case .transition:
                 appendLine(trimmed, styleName: "Screenplay — Transition")
+            case .act:
+                appendLine(trimmed, styleName: "Screenplay — Act")
+            case .insert:
+                appendLine(trimmed, styleName: "Screenplay — Insert")
+            case .sfx:
+                appendLine(trimmed, styleName: "Screenplay — SFX / VO")
             case .shot:
                 appendLine(trimmed, styleName: "Screenplay — Shot")
             case .title, .author, .contact, .draft:
@@ -171,6 +189,26 @@ struct ScreenplayImporter {
         return prefixes.first(where: { upper.hasPrefix($0) }) != nil
     }
 
+    private static func isActHeading(_ upper: String) -> Bool {
+        let t = upper.trimmingCharacters(in: .whitespacesAndNewlines)
+        if t == "ACT" { return true }
+        if t.hasPrefix("ACT ") { return true }
+        return false
+    }
+
+    private static func isInsertLine(_ upper: String) -> Bool {
+        let t = upper.trimmingCharacters(in: .whitespacesAndNewlines)
+        return t.hasPrefix("INSERT")
+    }
+
+    private static func isSfxOrVO(_ upper: String) -> Bool {
+        let t = upper.trimmingCharacters(in: .whitespacesAndNewlines)
+        if t.hasPrefix("SFX") { return true }
+        if t.hasPrefix("SFX/") || t.hasPrefix("SFX -") || t.hasPrefix("SFX:") { return true }
+        if t.hasPrefix("VO") || t.hasPrefix("V.O.") || t.hasPrefix("V.O") { return true }
+        return false
+    }
+
     private static func isTransition(_ upper: String) -> Bool {
         if upper.hasSuffix("TO:") { return true }
         let known = [
@@ -194,7 +232,7 @@ struct ScreenplayImporter {
 
     private static func isShot(_ upper: String) -> Bool {
         let prefixes = [
-            "ANGLE ON", "CLOSE ON", "CLOSE-UP", "CU ", "WIDE SHOT", "ESTABLISHING", "INSERT", "CUTAWAY",
+            "ANGLE ON", "CLOSE ON", "CLOSE-UP", "CU ", "WIDE SHOT", "ESTABLISHING", "CUTAWAY",
             "POV", "TRACKING", "DOLLY", "PAN", "TILT", "OVER", "ON "
         ]
         return prefixes.first(where: { upper.hasPrefix($0) }) != nil
@@ -202,7 +240,7 @@ struct ScreenplayImporter {
 
     private static func isCharacter(_ trimmed: String, uppercased upper: String) -> Bool {
         // Avoid classifying sluglines/transitions as characters.
-        if isSlugline(upper) || isTransition(upper) || isShot(upper) { return false }
+        if isSlugline(upper) || isActHeading(upper) || isTransition(upper) || isInsertLine(upper) || isSfxOrVO(upper) || isShot(upper) { return false }
 
         // Character cues are typically short and mostly uppercase.
         let plain = trimmed.trimmingCharacters(in: .whitespaces)

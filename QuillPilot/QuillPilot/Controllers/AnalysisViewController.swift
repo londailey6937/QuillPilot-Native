@@ -443,7 +443,8 @@ class AnalysisViewController: NSViewController, NSWindowDelegate {
                         button.title = "□"
                         button.font = .systemFont(ofSize: glyphPointSize)
                     }
-                    button.toolTip = isOutlineVisible ? "Hide Document Outline" : "Show Document Outline"
+                    let name = StyleCatalog.shared.isPoetryTemplate ? "Stanza Outline" : (StyleCatalog.shared.isScreenplayTemplate ? "Scene Outline" : "Document Outline")
+                    button.toolTip = isOutlineVisible ? "Hide \(name)" : "Show \(name)"
                 } else {
                     if #available(macOS 11.0, *) {
                         let base = NSImage(systemSymbolName: category.symbolName, accessibilityDescription: category.rawValue)
@@ -1050,7 +1051,8 @@ class AnalysisViewController: NSViewController, NSWindowDelegate {
             scrollContainer.isHidden = false
             isOutlineVisible = false
             if category == .basic {
-                sender.toolTip = "Show Document Outline"
+                let name = StyleCatalog.shared.isPoetryTemplate ? "Stanza Outline" : (StyleCatalog.shared.isScreenplayTemplate ? "Scene Outline" : "Document Outline")
+                sender.toolTip = "Show \(name)"
             }
             updateSelectedButton()
         } else {
@@ -1072,7 +1074,8 @@ class AnalysisViewController: NSViewController, NSWindowDelegate {
             isOutlineVisible = true
             currentCategory = .basic
             if category == .basic {
-                sender.toolTip = "Hide Document Outline"
+                let name = StyleCatalog.shared.isPoetryTemplate ? "Stanza Outline" : (StyleCatalog.shared.isScreenplayTemplate ? "Scene Outline" : "Document Outline")
+                sender.toolTip = "Hide \(name)"
             }
             updateSelectedButton()
             // Trigger refresh asynchronously to avoid blocking UI
@@ -4157,7 +4160,8 @@ extension AnalysisViewController {
             backing: .buffered,
             defer: false
         )
-        window.title = StyleCatalog.shared.isPoetryTemplate ? "📝 Stanza Outline" : "📝 Document Outline"
+        let outlineTitle = StyleCatalog.shared.isPoetryTemplate ? "📝 Stanza Outline" : (StyleCatalog.shared.isScreenplayTemplate ? "📝 Scene Outline" : "📝 Document Outline")
+        window.title = outlineTitle
         window.isReleasedWhenClosed = false
         window.hidesOnDeactivate = true
 
@@ -4179,7 +4183,7 @@ extension AnalysisViewController {
         stack.edgeInsets = NSEdgeInsets(top: 24, left: 24, bottom: 24, right: 24)
         stack.translatesAutoresizingMaskIntoConstraints = false
 
-        let header = NSTextField(labelWithString: StyleCatalog.shared.isPoetryTemplate ? "Stanza Outline" : "Document Outline")
+        let header = NSTextField(labelWithString: StyleCatalog.shared.isPoetryTemplate ? "Stanza Outline" : (StyleCatalog.shared.isScreenplayTemplate ? "Scene Outline" : "Document Outline"))
         header.font = NSFont.boldSystemFont(ofSize: 18)
         stack.addArrangedSubview(header)
 
@@ -4753,104 +4757,25 @@ extension AnalysisViewController {
         for metric in EmotionalTrajectoryView.EmotionalMetric.allCases {
             metricPopup.addItem(withTitle: metric.rawValue)
         }
-        let metrics = EmotionalTrajectoryView.EmotionalMetric.allCases
-        if selectedEmotionalTrajectoryMetricIndex >= 0 && selectedEmotionalTrajectoryMetricIndex < metrics.count {
-            metricPopup.selectItem(at: selectedEmotionalTrajectoryMetricIndex)
-        }
         metricPopup.target = self
         metricPopup.action = #selector(metricChanged(_:))
-        metricPopup.qpApplyDropdownBorder(theme: currentTheme)
         toolbar.addSubview(metricPopup)
-
-        // X-axis mode selector (Scenes / Acts)
-        let xAxisLabel = NSTextField(labelWithString: "X-axis:")
-        xAxisLabel.font = NSFont.systemFont(ofSize: 12)
-        xAxisLabel.textColor = currentTheme.textColor
-        xAxisLabel.frame = NSRect(x: 630, y: 18, width: 50, height: 20)
-        toolbar.addSubview(xAxisLabel)
-
-        let xAxisControl = NSSegmentedControl(labels: ["Scenes", "Acts"], trackingMode: .selectOne, target: self, action: #selector(trajectoryXAxisModeChanged(_:)))
-        xAxisControl.frame = NSRect(x: 690, y: 13, width: 160, height: 26)
-        xAxisControl.selectedSegment = (selectedEmotionalTrajectoryXAxisModeIndex == 1) ? 1 : 0
-        toolbar.addSubview(xAxisControl)
 
         containerView.addSubview(toolbar)
 
-        // Interpretation guide (shown inside the dialog)
-        let xAxisGuide = (selectedEmotionalTrajectoryXAxisModeIndex == 1) ? "acts" : "scenes"
-        let guideLabel = NSTextField(wrappingLabelWithString: "How to read: X-axis is \(xAxisGuide); Y-axis is the selected metric (top = higher, bottom = lower). Solid lines show surface behavior; dashed lines show subtext/internal state. Focus on rises/drops and crossovers more than exact values.")
-        guideLabel.font = NSFont.systemFont(ofSize: 11)
-        guideLabel.textColor = currentTheme.textColor.withAlphaComponent(0.75)
-        guideLabel.maximumNumberOfLines = 3
-        guideLabel.frame = NSRect(x: 20, y: window.contentView!.bounds.height - 85, width: window.contentView!.bounds.width - 40, height: 32)
-        guideLabel.autoresizingMask = [.width, .minYMargin]
-        guideLabel.identifier = NSUserInterfaceItemIdentifier("trajectoryGuideLabel")
-        containerView.addSubview(guideLabel)
-
         // Create trajectory view
-        let trajectoryView = EmotionalTrajectoryView(frame: NSRect(x: 20, y: 20, width: window.contentView!.bounds.width - 40, height: window.contentView!.bounds.height - 125))
+        let trajectoryView = EmotionalTrajectoryView(frame: NSRect(x: 20, y: 20, width: window.contentView!.bounds.width - 40, height: window.contentView!.bounds.height - 90))
         trajectoryView.autoresizingMask = [.width, .height]
 
-        let chapterCount = determineChapterCount(for: results)
-        trajectoryView.setChapterCount(chapterCount)
-
-        if selectedEmotionalTrajectoryXAxisModeIndex == 1 {
-            trajectoryView.setXAxisMode(.acts)
-            trajectoryView.setActMarkers(actMarkers(for: results, sceneCount: chapterCount))
-        } else {
-            trajectoryView.setXAxisMode(.scenes)
-            trajectoryView.setActMarkers([])
-        }
-
-        // Generate trajectory data from analysis results
-        var trajectories = generateEmotionalTrajectories(from: results, chapterCount: chapterCount)
-
-        if StyleCatalog.shared.isScreenplayTemplate {
-            let keep = currentSignificantCharacterNameSet(fallbackPresence: results.characterPresence, fallbackInteractions: results.characterInteractions)
-            if !keep.isEmpty {
-                trajectories = trajectories.filter { keep.contains($0.characterName) }
-            }
-        }
+        // Generate sample trajectory data from analysis results
+        let trajectories = generateEmotionalTrajectories(from: results)
         trajectoryView.setTrajectories(trajectories)
-
-        // Apply the selected metric after data is set
-        if selectedEmotionalTrajectoryMetricIndex >= 0 && selectedEmotionalTrajectoryMetricIndex < metrics.count {
-            trajectoryView.setMetric(metrics[selectedEmotionalTrajectoryMetricIndex])
-        }
 
         containerView.addSubview(trajectoryView)
 
         window.contentView = containerView
         window.center()
         window.makeKeyAndOrderFront(nil)
-    }
-
-    private func actMarkers(for results: AnalysisResults, sceneCount: Int) -> [EmotionalTrajectoryView.ActMarker] {
-        guard sceneCount > 1 else { return [] }
-
-        if let mapping = results.characterPresence.first?.chapterToAct, !mapping.isEmpty {
-            var actToScenes: [Int: [Int]] = [:]
-            for (scene, act) in mapping {
-                guard scene > 0 else { continue }
-                actToScenes[act, default: []].append(scene)
-            }
-            let denom = Double(max(1, sceneCount - 1))
-            let markers = actToScenes.keys.sorted().compactMap { act -> EmotionalTrajectoryView.ActMarker? in
-                guard let scenes = actToScenes[act], !scenes.isEmpty else { return nil }
-                let sorted = scenes.sorted()
-                let midScene = sorted[sorted.count / 2]
-                let position = Double(max(1, min(sceneCount, midScene)) - 1) / denom
-                return EmotionalTrajectoryView.ActMarker(act: act, position: position)
-            }
-            if !markers.isEmpty { return markers }
-        }
-
-        // Fallback: equal thirds
-        return [
-            EmotionalTrajectoryView.ActMarker(act: 1, position: 1.0 / 6.0),
-            EmotionalTrajectoryView.ActMarker(act: 2, position: 0.5),
-            EmotionalTrajectoryView.ActMarker(act: 3, position: 5.0 / 6.0)
-        ]
     }
 
     @objc private func metricChanged(_ sender: NSPopUpButton) {
@@ -4865,177 +4790,154 @@ extension AnalysisViewController {
             return
         }
 
-        selectedEmotionalTrajectoryMetricIndex = sender.indexOfSelectedItem
-        let selectedMetric = metrics[selectedEmotionalTrajectoryMetricIndex]
+        let selectedMetric = metrics[sender.indexOfSelectedItem]
         trajectoryView.setMetric(selectedMetric)
     }
 
-    @objc private func trajectoryXAxisModeChanged(_ sender: NSSegmentedControl) {
-        selectedEmotionalTrajectoryXAxisModeIndex = sender.selectedSegment
-        guard let window = emotionalTrajectoryPopoutWindow,
-              let containerView = window.contentView,
-              let trajectoryView = containerView.subviews.first(where: { $0 is EmotionalTrajectoryView }) as? EmotionalTrajectoryView else {
-            return
-        }
-
-        if selectedEmotionalTrajectoryXAxisModeIndex == 1 {
-            trajectoryView.setXAxisMode(.acts)
-            if let results = lastEmotionalTrajectoryResults {
-                let chapterCount = determineChapterCount(for: results)
-                trajectoryView.setActMarkers(actMarkers(for: results, sceneCount: chapterCount))
-            }
-        } else {
-            trajectoryView.setXAxisMode(.scenes)
-            trajectoryView.setActMarkers([])
-        }
-
-        if let guideLabel = containerView.subviews.first(where: { $0.identifier?.rawValue == "trajectoryGuideLabel" }) as? NSTextField {
-            let xAxisGuide = (selectedEmotionalTrajectoryXAxisModeIndex == 1) ? "acts" : "scenes"
-            guideLabel.stringValue = "How to read: X-axis is \(xAxisGuide); Y-axis is the selected metric (top = higher, bottom = lower). Solid lines show surface behavior; dashed lines show subtext/internal state. Focus on rises/drops and crossovers more than exact values."
-        }
-    }
-
     private func generateEmotionalTrajectories(from results: AnalysisResults) -> [EmotionalTrajectoryView.CharacterTrajectory] {
-        generateEmotionalTrajectories(from: results, chapterCount: determineChapterCount(for: results))
-    }
-
-    private func determineChapterCount(for results: AnalysisResults) -> Int {
-        // Prefer chapter keys from presence results
-        let chapterKeys = results.characterPresence.flatMap { Array($0.chapterPresence.keys) }
-        if let maxChapter = chapterKeys.max(), maxChapter > 0 {
-            return maxChapter
-        }
-
-        // Fallback: use outline headings as a proxy
-        if let outlineEntries = getOutlineEntriesCallback?() {
-            let bannedStyles: Set<String> = [
-                "TOC Title",
-                "Index Title",
-                "Glossary Title",
-                "Appendix Title"
-            ]
-            let preferredChapterStyles: Set<String> = [
-                "Chapter Number",
-                "Chapter Title"
-            ]
-
-            func isNonChapterTitle(_ title: String) -> Bool {
-                let t = title.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-                return t == "table of contents" || t == "contents" || t == "toc" || t == "index" || t == "glossary" || t == "appendix"
-            }
-
-            func looksLikeChapterHeading(_ title: String) -> Bool {
-                let t = title.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-                if t.hasPrefix("chapter ") { return true }
-                if t.hasPrefix("ch ") || t.hasPrefix("ch.") { return true }
-                if t.hasPrefix("prologue") || t.hasPrefix("epilogue") { return true }
-                return false
-            }
-
-            let sorted = outlineEntries.sorted { $0.range.location < $1.range.location }
-            let candidatesLevel1 = sorted.filter {
-                $0.level == 1 && !(($0.styleName).map { bannedStyles.contains($0) } ?? false) && !isNonChapterTitle($0.title)
-            }
-
-            let preferred = candidatesLevel1.filter { ($0.styleName).map { preferredChapterStyles.contains($0) } ?? false }
-            if preferred.count >= 2 { return preferred.count }
-
-            let chapterish = candidatesLevel1.filter { looksLikeChapterHeading($0.title) }
-            if chapterish.count >= 2 { return chapterish.count }
-
-            if candidatesLevel1.count >= 2 { return candidatesLevel1.count }
-            if candidatesLevel1.count == 1 { return 1 }
-        }
-
-        return 1
-    }
-
-    private func generateEmotionalTrajectories(from results: AnalysisResults, chapterCount: Int) -> [EmotionalTrajectoryView.CharacterTrajectory] {
         var trajectories: [EmotionalTrajectoryView.CharacterTrajectory] = []
 
-        // Get character names from Character Library (analysis-eligible only)
+        // Get character names from Character Library + presence + interactions (keep order, no truncation)
         let library = CharacterLibrary.shared
-        let characterNames: [String]
-        if !library.characters.isEmpty {
-            characterNames = library.analysisCharacterKeys
-        } else if !results.characterPresence.isEmpty {
-            characterNames = results.characterPresence.map { $0.characterName }
-        } else {
-            characterNames = ["Protagonist", "Ally", "Antagonist"]
+
+        func keyForName(_ name: String) -> String {
+            let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+            if trimmed.isEmpty { return "" }
+            let firstToken = trimmed.split(whereSeparator: { $0.isWhitespace }).first.map(String.init) ?? trimmed
+            return firstToken.trimmingCharacters(in: .punctuationCharacters).lowercased()
         }
 
-        let colors = qualitativePalette
+        var displayNameByKey: [String: String] = [:]
+        if !library.analysisEligibleCharacters.isEmpty {
+            for profile in library.analysisEligibleCharacters {
+                if let key = profile.analysisKey?.lowercased(), !key.isEmpty {
+                    displayNameByKey[key] = profile.displayName
+                }
+            }
+        }
 
-        for (index, characterName) in characterNames.enumerated() {
-            // Generate emotional states based on character presence and arc
+        var characterKeys: [String] = []
+        if !displayNameByKey.isEmpty {
+            characterKeys = library.analysisCharacterKeys.map { $0.lowercased() }
+        } else {
+            characterKeys = results.characterPresence.map { keyForName($0.characterName) }
+        }
+
+        for presence in results.characterPresence {
+            let key = keyForName(presence.characterName)
+            if !key.isEmpty && !characterKeys.contains(key) { characterKeys.append(key) }
+            if displayNameByKey[key] == nil {
+                let trimmed = presence.characterName.trimmingCharacters(in: .whitespacesAndNewlines)
+                if !trimmed.isEmpty { displayNameByKey[key] = trimmed }
+            }
+        }
+        for interaction in results.characterInteractions {
+            for raw in [interaction.character1, interaction.character2] {
+                let key = keyForName(raw)
+                if !key.isEmpty && !characterKeys.contains(key) { characterKeys.append(key) }
+                if displayNameByKey[key] == nil {
+                    let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+                    if !trimmed.isEmpty { displayNameByKey[key] = trimmed }
+                }
+            }
+        }
+
+        let colors: [NSColor] = [.systemBlue, .systemRed, .systemGreen, .systemOrange, .systemPurple, .systemTeal, .systemIndigo, .systemPink]
+
+        // Find max chapter/scene across all presence data
+        let allChapters = results.characterPresence.flatMap { Array($0.chapterPresence.keys) }
+        let interactionChapters = results.characterInteractions.flatMap { $0.sections }
+        let maxChapter = (allChapters + interactionChapters).max() ?? 10
+        let chapterCount = max(1, maxChapter)
+
+        // Pre-calculate interaction data per chapter for attachment metric
+        var interactionsByChapter: [String: [Int: Int]] = [:] // key -> chapter -> interaction count
+        for interaction in results.characterInteractions {
+            for name in [interaction.character1, interaction.character2] {
+                let key = keyForName(name)
+                if key.isEmpty { continue }
+                if interactionsByChapter[key] == nil {
+                    interactionsByChapter[key] = [:]
+                }
+                for section in interaction.sections {
+                    interactionsByChapter[key]![section, default: 0] += 1
+                }
+            }
+        }
+
+        // Pre-calculate presence lookup and global max for normalization
+        var presenceByName: [String: [Int: Int]] = [:]
+        for presence in results.characterPresence {
+            let key = keyForName(presence.characterName)
+            guard !key.isEmpty else { continue }
+            presenceByName[key] = presence.chapterPresence
+        }
+        let maxPresenceGlobal = max(1, results.characterPresence.flatMap { $0.chapterPresence.values }.max() ?? 1)
+        let maxInteractionsGlobal = max(1, interactionsByChapter.values.flatMap { $0.values }.max() ?? 1)
+
+        for (index, characterKey) in characterKeys.enumerated() {
             var states: [EmotionalTrajectoryView.EmotionalState] = []
 
-            // Create one state per chapter (fallback to 10 steps if chapter count is unknown)
-            let steps = max(1, chapterCount)
-            for chapterIndex in 0..<steps {
-                let position: Double
-                if steps == 1 {
-                    position = 0.0
-                } else {
-                    position = Double(chapterIndex) / Double(steps - 1)
+            // Get this character's presence data
+            let presence = presenceByName[characterKey] ?? [:]
+            let charInteractions = interactionsByChapter[characterKey] ?? [:]
+
+            // Track running values for trend calculation
+            var previousPresence: Double = 0
+            var runningTrend: Double = 0
+
+            // Generate states for each chapter position
+            let steps = min(chapterCount, 24) // Cap at 24 data points for readability
+
+            for stepIndex in 0...steps {
+                let position = Double(stepIndex) / Double(steps)
+                let chapter = min(chapterCount, max(1, Int(round(position * Double(chapterCount - 1))) + 1))
+
+                // CONFIDENCE: Based on presence dominance (high presence = character is driving action)
+                let presenceCount = Double(presence[chapter] ?? 0)
+                let normalizedPresence = presenceCount / Double(maxPresenceGlobal)
+                let confidence = normalizedPresence * 2.0 - 1.0 // Map 0-1 to -1 to 1
+
+                // HOPE: Based on presence trajectory (rising = hope, falling = despair)
+                let presenceDelta = normalizedPresence - previousPresence
+                runningTrend = runningTrend * 0.7 + presenceDelta * 0.3 // Smoothed trend
+                let hope = max(-1, min(1, runningTrend * 5.0)) // Amplify for visibility
+                previousPresence = normalizedPresence
+
+                // CONTROL: Based on presence consistency (stable presence = in control)
+                // Look at variance in nearby chapters
+                var nearbyPresences: [Double] = []
+                for nearChapter in max(1, chapter - 2)...min(chapterCount, chapter + 2) {
+                    let p = Double(presence[nearChapter] ?? 0)
+                    nearbyPresences.append(p / Double(maxPresenceGlobal))
                 }
+                let avgNearby = nearbyPresences.isEmpty ? 0 : nearbyPresences.reduce(0, +) / Double(nearbyPresences.count)
+                let variance = nearbyPresences.isEmpty ? 0 : nearbyPresences.map { pow($0 - avgNearby, 2) }.reduce(0, +) / Double(nearbyPresences.count)
+                let control = (1.0 - min(1.0, variance * 10)) * 2.0 - 1.0 // Low variance = high control
 
-                // Generate emotional values with some variation
-                // This is simplified - in a real implementation, you'd analyze actual text
-                let baseConfidence = sin(position * .pi * 2) * 0.6
-                let baseHope = cos(position * .pi * 1.5) * 0.7 - 0.2
-                let baseControl = sin(position * .pi * 3) * 0.5 + 0.2
-                let baseAttachment = cos(position * .pi * 2.5) * 0.6
-
-                // Add character-specific variation
-                let charVariation = Double(index) * 0.3
+                // ATTACHMENT: Based on interactions with other characters
+                let interactionCount = Double(charInteractions[chapter] ?? 0)
+                let normalizedInteractions = interactionCount / Double(maxInteractionsGlobal)
+                let attachmentSource = maxInteractionsGlobal > 0 ? normalizedInteractions : normalizedPresence
+                let attachment = attachmentSource * 2.0 - 1.0 // Map 0-1 to -1 to 1
 
                 let state = EmotionalTrajectoryView.EmotionalState(
                     position: position,
-                    confidence: baseConfidence + charVariation * 0.1,
-                    hope: baseHope - charVariation * 0.2,
-                    control: baseControl + charVariation * 0.15,
-                    attachment: baseAttachment - charVariation * 0.1
+                    confidence: max(-1, min(1, confidence)),
+                    hope: max(-1, min(1, hope)),
+                    control: max(-1, min(1, control)),
+                    attachment: max(-1, min(1, attachment))
                 )
                 states.append(state)
             }
 
             let trajectory = EmotionalTrajectoryView.CharacterTrajectory(
-                characterName: characterName,
+                characterName: displayNameByKey[characterKey] ?? characterKey,
                 color: colors[index % colors.count],
                 states: states,
                 isDashed: false
             )
             trajectories.append(trajectory)
-
-            // Add a "subtext" version (dashed) for every character with slight phase/offset tweaks per index
-            var subtextStates: [EmotionalTrajectoryView.EmotionalState] = []
-            for i in 0...10 {
-                let position = Double(i) / 10.0
-                let phaseOffset = 0.3 + (Double(index) * 0.15)
-
-                let baseConfidence = sin(position * .pi * 2 + phaseOffset) * 0.6 - 0.25
-                let baseHope = cos(position * .pi * 1.5 + phaseOffset) * 0.7 - 0.4
-                let baseControl = sin(position * .pi * 3 + phaseOffset) * 0.5 - 0.05
-                let baseAttachment = cos(position * .pi * 2.5 + phaseOffset) * 0.6 - 0.15
-
-                let state = EmotionalTrajectoryView.EmotionalState(
-                    position: position,
-                    confidence: baseConfidence,
-                    hope: baseHope,
-                    control: baseControl,
-                    attachment: baseAttachment
-                )
-                subtextStates.append(state)
-            }
-
-            let subtextTrajectory = EmotionalTrajectoryView.CharacterTrajectory(
-                characterName: characterName,
-                color: colors[index % colors.count],
-                states: subtextStates,
-                isDashed: true
-            )
-            trajectories.append(subtextTrajectory)
         }
 
         return trajectories

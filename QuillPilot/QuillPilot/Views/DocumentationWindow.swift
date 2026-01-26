@@ -1623,13 +1623,18 @@ Features:
 • Multi-character overlay with color coding
 • Four emotional metrics: Confidence, Hope vs Despair, Control vs Chaos, Attachment vs Isolation
 • Continuous line plots showing progression
-• Solid lines = surface behavior (what the character shows)
-• Dashed lines = subtext/internal state (what they feel underneath)
+• Character list uses the union of Character Library, presence data, and interaction data (no truncation)
 
 How to interpret the curves:
 • Look for changes (rises/drops), not exact numbers
 • Sudden shifts often indicate turning points
 • Crossovers between characters indicate conflict or reversal
+
+Metric definitions (current implementation):
+• Confidence = presence dominance per chapter (mentions normalized to the global max)
+• Hope vs Despair = presence trend (rising presence = hope, falling = despair)
+• Control vs Chaos = presence stability (low variance = control, high variance = chaos)
+• Attachment vs Isolation = interaction intensity (fallback to presence if no interaction data)
 """, color: bodyColor))
         content.append(makeNewline())
 

@@ -299,7 +299,10 @@ class DecisionBeliefLoopView: NSView {
         badgeLabel.layer?.backgroundColor = arcQualityColor(loop.arcQuality).cgColor
         badgeLabel.layer?.cornerRadius = 6
         badgeLabel.alignment = .center
-        badgeLabel.frame = NSRect(x: width - 130, y: yPos - 23, width: 115, height: 22)
+        badgeLabel.sizeToFit()
+        let badgePaddingX: CGFloat = 10
+        let badgeWidth = max(80, badgeLabel.frame.width + badgePaddingX * 2)
+        badgeLabel.frame = NSRect(x: width - badgeWidth - 15, y: yPos - 23, width: badgeWidth, height: 22)
         container.addSubview(badgeLabel)
 
         yPos -= 50

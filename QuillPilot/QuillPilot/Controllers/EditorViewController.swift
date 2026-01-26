@@ -4462,6 +4462,26 @@ class EditorViewController: NSViewController {
                         return prefixes.first(where: { upper.hasPrefix($0) }) != nil
                     }
 
+                    func isActHeading(_ upper: String) -> Bool {
+                        let t = upper.trimmingCharacters(in: .whitespacesAndNewlines)
+                        if t == "ACT" { return true }
+                        if t.hasPrefix("ACT ") { return true }
+                        return false
+                    }
+
+                    func isInsertLine(_ upper: String) -> Bool {
+                        let t = upper.trimmingCharacters(in: .whitespacesAndNewlines)
+                        return t.hasPrefix("INSERT")
+                    }
+
+                    func isSfxOrVO(_ upper: String) -> Bool {
+                        let t = upper.trimmingCharacters(in: .whitespacesAndNewlines)
+                        if t.hasPrefix("SFX") { return true }
+                        if t.hasPrefix("SFX/") || t.hasPrefix("SFX -") || t.hasPrefix("SFX:") { return true }
+                        if t.hasPrefix("VO") || t.hasPrefix("V.O.") || t.hasPrefix("V.O") { return true }
+                        return false
+                    }
+
                     func isParenthetical(_ trimmed: String) -> Bool {
                         trimmed.hasPrefix("(") && trimmed.contains(")")
                     }
@@ -4480,14 +4500,14 @@ class EditorViewController: NSViewController {
 
                     func isShot(_ upper: String) -> Bool {
                         let prefixes = [
-                            "ANGLE ON", "CLOSE ON", "CLOSE-UP", "CU ", "WIDE SHOT", "ESTABLISHING", "INSERT", "CUTAWAY",
+                            "ANGLE ON", "CLOSE ON", "CLOSE-UP", "CU ", "WIDE SHOT", "ESTABLISHING", "CUTAWAY",
                             "POV", "TRACKING", "DOLLY", "PAN", "TILT", "OVER", "ON "
                         ]
                         return prefixes.first(where: { upper.hasPrefix($0) }) != nil
                     }
 
                     func isCharacter(_ trimmed: String, upper: String) -> Bool {
-                        if isSlugline(upper) || isTransition(upper) || isShot(upper) { return false }
+                        if isSlugline(upper) || isTransition(upper) || isInsertLine(upper) || isSfxOrVO(upper) || isShot(upper) { return false }
                         let plain = trimmed.trimmingCharacters(in: .whitespaces)
                         guard !plain.isEmpty, plain.count <= 35 else { return false }
                         let allowed = CharacterSet(charactersIn: "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789 .'-()")
@@ -4495,6 +4515,14 @@ class EditorViewController: NSViewController {
                         guard scalars.allSatisfy({ allowed.contains($0) }) else { return false }
                         guard scalars.contains(where: { CharacterSet.uppercaseLetters.contains($0) }) else { return false }
                         return plain == upper
+                    }
+
+                    if screenplayInTitlePage {
+                        let bodyStart = isSlugline(upper) || isActHeading(upper) || isTransition(upper) || isInsertLine(upper) || isSfxOrVO(upper) || isShot(upper) || isCharacter(trimmed, upper: upper)
+                        if bodyStart {
+                            screenplayInTitlePage = false
+                            screenplayExpectingDialogue = false
+                        }
                     }
 
                     if trimmed.isEmpty {
@@ -4524,9 +4552,18 @@ class EditorViewController: NSViewController {
                     } else if isSlugline(upper) {
                         screenplayExpectingDialogue = false
                         styleName = "Screenplay — Slugline"
+                    } else if isActHeading(upper) {
+                        screenplayExpectingDialogue = false
+                        styleName = "Screenplay — Act"
                     } else if isTransition(upper) {
                         screenplayExpectingDialogue = false
                         styleName = "Screenplay — Transition"
+                    } else if isInsertLine(upper) {
+                        screenplayExpectingDialogue = false
+                        styleName = "Screenplay — Insert"
+                    } else if isSfxOrVO(upper) {
+                        screenplayExpectingDialogue = false
+                        styleName = "Screenplay — SFX / VO"
                     } else if isShot(upper) {
                         screenplayExpectingDialogue = false
                         styleName = "Screenplay — Shot"

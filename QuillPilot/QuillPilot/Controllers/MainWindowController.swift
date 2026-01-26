@@ -3534,10 +3534,11 @@ class FormattingToolbar: NSView {
     }
 
     @objc private func styleChanged(_ sender: NSPopUpButton) {
-        let selectedTitle = sender.titleOfSelectedItem ?? ""
+        let selectedItem = sender.selectedItem
+        let selectedTitle = selectedItem?.title ?? ""
+        let representedStyle = selectedItem?.representedObject as? String
 
-        var appliedStyle = selectedTitle
-        let persistedUIStyle = selectedTitle
+        var appliedStyle = representedStyle ?? selectedTitle
         let displayStyle = selectedTitle
 
         if StyleCatalog.shared.isPoetryTemplate {
@@ -3548,7 +3549,7 @@ class FormattingToolbar: NSView {
         }
 
         delegate?.formattingToolbar(self, didSelectStyle: appliedStyle)
-        UserDefaults.standard.set(persistedUIStyle, forKey: "LastSelectedStyle")
+        UserDefaults.standard.set(appliedStyle, forKey: "LastSelectedStyle")
 
         // Update the displayed title with theme color
         let theme = ThemeManager.shared.currentTheme
@@ -3635,19 +3636,36 @@ class FormattingToolbar: NSView {
             stylesMenu.addItem(item)
         }
 
+        func displayStyleTitle(_ styleName: String) -> String {
+            if styleName.hasPrefix("Screenplay — ") {
+                return String(styleName.dropFirst("Screenplay — ".count))
+            }
+            if styleName.hasPrefix("Screenplay - ") {
+                return String(styleName.dropFirst("Screenplay - ".count))
+            }
+            return styleName
+        }
+
         // Helper to add style items
+        var styleRowIndex = 0
         func addStyle(_ title: String) {
-            let item = NSMenuItem(title: title, action: nil, keyEquivalent: "")
+            let displayTitle = displayStyleTitle(title)
+            let item = NSMenuItem(title: displayTitle, action: nil, keyEquivalent: "")
+            item.representedObject = title
             if let styleDefinition = StyleCatalog.shared.style(named: title) {
                 let fontName = styleDefinition.fontName
                 let fontSize: CGFloat = min(styleDefinition.fontSize, 13)
                 let font = NSFont.quillPilotResolve(nameOrFamily: fontName, size: fontSize) ?? NSFont.systemFont(ofSize: fontSize)
-                let attributes: [NSAttributedString.Key: Any] = [
+                var attributes: [NSAttributedString.Key: Any] = [
                     .font: font,
                     .foregroundColor: currentTheme.textColor
                 ]
-                item.attributedTitle = NSAttributedString(string: title, attributes: attributes)
+                if styleRowIndex % 2 == 1 {
+                    attributes[.backgroundColor] = currentTheme.pageAround.withAlphaComponent(0.45)
+                }
+                item.attributedTitle = NSAttributedString(string: displayTitle, attributes: attributes)
             }
+            styleRowIndex += 1
             stylesMenu.addItem(item)
         }
 
@@ -3760,14 +3778,16 @@ class FormattingToolbar: NSView {
         stylePopup.menu = stylesMenu
 
         // Restore last selected style
-        var lastStyle = UserDefaults.standard.string(forKey: "LastSelectedStyle") ?? (StyleCatalog.shared.isPoetryTemplate ? "Poem" : "Body Text")
+        var lastStyle = UserDefaults.standard.string(forKey: "LastSelectedStyle") ?? (StyleCatalog.shared.isPoetryTemplate ? "Poem" : (StyleCatalog.shared.isScreenplayTemplate ? "Screenplay — Action" : "Body Text"))
         if StyleCatalog.shared.isPoetryTemplate {
             if lastStyle == "Stanza" || lastStyle == "Poetry — Stanza" || lastStyle == "Poetry — Verse" { lastStyle = "Verse" }
         }
-        if stylePopup.itemTitles.contains(lastStyle) {
-            stylePopup.selectItem(withTitle: lastStyle)
+        if let index = (0..<stylePopup.numberOfItems).first(where: { stylePopup.item(at: $0)?.representedObject as? String == lastStyle || stylePopup.item(at: $0)?.title == lastStyle }) {
+            stylePopup.selectItem(at: index)
         } else if StyleCatalog.shared.isPoetryTemplate && stylePopup.itemTitles.contains("Poem") {
             stylePopup.selectItem(withTitle: "Poem")
+        } else if StyleCatalog.shared.isScreenplayTemplate, let index = (0..<stylePopup.numberOfItems).first(where: { stylePopup.item(at: $0)?.representedObject as? String == "Screenplay — Action" }) {
+            stylePopup.selectItem(at: index)
         } else if stylePopup.itemTitles.contains("Body Text") {
             stylePopup.selectItem(withTitle: "Body Text")
         }
@@ -3956,12 +3976,20 @@ class FormattingToolbar: NSView {
             } else {
                 displayStyle = styleName
             }
+        } else if StyleCatalog.shared.isScreenplayTemplate {
+            if styleName.hasPrefix("Screenplay — ") {
+                displayStyle = String(styleName.dropFirst("Screenplay — ".count))
+            } else if styleName.hasPrefix("Screenplay - ") {
+                displayStyle = String(styleName.dropFirst("Screenplay - ".count))
+            } else {
+                displayStyle = styleName
+            }
         } else {
             displayStyle = styleName
         }
 
         // Try to find and select the matching style in the popup
-        if let index = (0..<stylePopup.numberOfItems).first(where: { stylePopup.item(at: $0)?.title == displayStyle }) {
+        if let index = (0..<stylePopup.numberOfItems).first(where: { stylePopup.item(at: $0)?.representedObject as? String == styleName || stylePopup.item(at: $0)?.title == displayStyle }) {
             stylePopup.selectItem(at: index)
             reapplyPopupTheme(stylePopup)
         }
@@ -4696,7 +4724,7 @@ class OutlineViewController: NSViewController {
 
         view.wantsLayer = true
 
-        headerLabel = NSTextField(labelWithString: "Document Outline")
+        headerLabel = NSTextField(labelWithString: outlineTitleName())
         headerLabel.font = NSFont.boldSystemFont(ofSize: 14)
         headerLabel.translatesAutoresizingMaskIntoConstraints = false
         headerLabel.isSelectable = false
@@ -4796,6 +4824,9 @@ class OutlineViewController: NSViewController {
         if StyleCatalog.shared.isPoetryTemplate {
             headerLabel?.stringValue = "Stanza Outline"
             helpButton?.isHidden = false
+        } else if StyleCatalog.shared.isScreenplayTemplate {
+            headerLabel?.stringValue = "Scene Outline"
+            helpButton?.isHidden = true
         } else {
             headerLabel?.stringValue = "Document Outline"
             // Prose templates use the outline panel's vertical toggle button; hide this redundant header toggle.
@@ -4819,10 +4850,16 @@ class OutlineViewController: NSViewController {
     }
 
     private func updateHeaderToggleTooltip() {
-        let name = StyleCatalog.shared.isPoetryTemplate ? "Stanza Outline" : "Document Outline"
+        let name = outlineTitleName()
         let tip = isOutlineContentsHidden ? "Show \(name)" : "Hide \(name)"
         helpButton?.toolTip = tip
         headerLabel?.toolTip = tip
+    }
+
+    private func outlineTitleName() -> String {
+        if StyleCatalog.shared.isPoetryTemplate { return "Stanza Outline" }
+        if StyleCatalog.shared.isScreenplayTemplate { return "Scene Outline" }
+        return "Document Outline"
     }
 
     func update(with entries: [EditorViewController.OutlineEntry]) {
@@ -6411,6 +6448,23 @@ private enum DocxTextExtractor {
                     case "IndexTitle": mappedName = "Index Title"
                     case "IndexEntry": mappedName = "Index Entry"
                     case "IndexLetter": mappedName = "Index Letter"
+                    // Screenplay styles
+                    case "ScreenplayTitle": mappedName = "Screenplay — Title"
+                    case "ScreenplayAuthor": mappedName = "Screenplay — Author"
+                    case "ScreenplayContact": mappedName = "Screenplay — Contact"
+                    case "ScreenplayDraft": mappedName = "Screenplay — Draft"
+                    case "ScreenplayAct": mappedName = "Screenplay — Act"
+                    case "ScreenplaySlugline": mappedName = "Screenplay — Slugline"
+                    case "ScreenplayAction": mappedName = "Screenplay — Action"
+                    case "ScreenplayCharacter": mappedName = "Screenplay — Character"
+                    case "ScreenplayParenthetical": mappedName = "Screenplay — Parenthetical"
+                    case "ScreenplayDialogue": mappedName = "Screenplay — Dialogue"
+                    case "ScreenplayTransition": mappedName = "Screenplay — Transition"
+                    case "ScreenplayShot": mappedName = "Screenplay — Shot"
+                    case "ScreenplayShotDirection": mappedName = "Screenplay — Shot Direction"
+                    case "ScreenplayInsert": mappedName = "Screenplay — Insert"
+                    case "ScreenplaySFX": mappedName = "Screenplay — SFX"
+                    case "ScreenplaySFXVO": mappedName = "Screenplay — SFX / VO"
                     default: mappedName = val
                     }
                     // Only set styleName and log if it's not empty (filters out Scene Break)

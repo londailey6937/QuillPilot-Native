@@ -1025,6 +1025,10 @@ final class StyleCatalog {
         styles["Screenplay — Dialogue"] = baseDefinition(font: font, size: 14, alignment: .left, lineHeight: 1.0, before: 0, after: 0, headIndent: 72, firstLine: 72, tailIndent: -72)
         styles["Screenplay — Transition"] = baseDefinition(font: font, size: 14, alignment: .right, lineHeight: 1.0, before: 12, after: 0, headIndent: 0, firstLine: 0, tailIndent: 0)
         styles["Screenplay — Shot"] = baseDefinition(font: font, size: 14, alignment: .left, lineHeight: 1.0, before: 12, after: 0, headIndent: 0, firstLine: 0, tailIndent: 0)
+        styles["Screenplay — Shot Direction"] = baseDefinition(font: font, size: 14, italic: true, alignment: .left, lineHeight: 1.0, before: 12, after: 0, headIndent: 0, firstLine: 0, tailIndent: 0)
+        styles["Screenplay — Insert"] = baseDefinition(font: font, size: 14, bold: true, alignment: .center, lineHeight: 1.0, before: 12, after: 12, headIndent: 0, firstLine: 0, tailIndent: 0)
+        styles["Screenplay — SFX"] = baseDefinition(font: font, size: 14, bold: true, alignment: .left, lineHeight: 1.0, before: 12, after: 0, headIndent: 0, firstLine: 0, tailIndent: 0)
+        styles["Screenplay — SFX / VO"] = baseDefinition(font: font, size: 14, bold: true, alignment: .left, lineHeight: 1.0, before: 12, after: 0, headIndent: 0, firstLine: 0, tailIndent: 0)
         return styles
     }
 

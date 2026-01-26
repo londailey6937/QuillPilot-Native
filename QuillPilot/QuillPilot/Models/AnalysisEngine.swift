@@ -1942,8 +1942,10 @@ class AnalysisEngine {
             validCharacterNames = libraryValidatedCharacterNames(from: characterNames)
             DebugLog.log("📊 analyzeCharacterArcs: Valid character names after filtering = \(validCharacterNames)")
         } else {
-            validCharacterNames = []
-            DebugLog.log("📊 analyzeCharacterArcs: No library characters, returning empty")
+            // Allow screenplay/extracted character names to proceed without a library.
+            validCharacterNames = characterNames.map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+                .filter { !$0.isEmpty }
+            DebugLog.log("📊 analyzeCharacterArcs: No library characters, using provided names = \(validCharacterNames)")
         }
 
         // If no valid characters after filtering, return empty results

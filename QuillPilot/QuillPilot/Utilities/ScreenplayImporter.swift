@@ -66,18 +66,18 @@ struct ScreenplayImporter {
                     let element = classifyTitlePageLine(trimmed)
                     switch element {
                     case .contact:
-                        appendLine(trimmed, styleName: "Screenplay — Contact")
+                        appendLine(trimmed, styleName: "Action")
                     case .draft:
-                        appendLine(trimmed, styleName: "Screenplay — Draft")
+                        appendLine(trimmed, styleName: "Action")
                     default:
                         if !sawTitleLine {
                             sawTitleLine = true
-                            appendLine(trimmed, styleName: "Screenplay — Title")
+                            appendLine(trimmed, styleName: "Scene Heading")
                         } else if !sawAuthorLine {
                             sawAuthorLine = true
-                            appendLine(trimmed, styleName: "Screenplay — Author")
+                            appendLine(trimmed, styleName: "Action")
                         } else {
-                            appendLine(trimmed, styleName: "Screenplay — Author")
+                            appendLine(trimmed, styleName: "Action")
                         }
                     }
                     continue
@@ -120,28 +120,28 @@ struct ScreenplayImporter {
 
             switch element {
             case .slugline:
-                appendLine(trimmed, styleName: "Screenplay — Slugline")
+                appendLine(trimmed, styleName: "Scene Heading")
             case .action:
-                appendLine(trimmed, styleName: "Screenplay — Action")
+                appendLine(trimmed, styleName: "Action")
             case .character:
-                appendLine(trimmed, styleName: "Screenplay — Character")
+                appendLine(trimmed, styleName: "Character")
             case .parenthetical:
-                appendLine(trimmed, styleName: "Screenplay — Parenthetical")
+                appendLine(trimmed, styleName: "Parenthetical")
             case .dialogue:
-                appendLine(trimmed, styleName: "Screenplay — Dialogue")
+                appendLine(trimmed, styleName: "Dialogue")
             case .transition:
-                appendLine(trimmed, styleName: "Screenplay — Transition")
+                appendLine(trimmed, styleName: "Transition")
             case .act:
-                appendLine(trimmed, styleName: "Screenplay — Act")
+                appendLine(trimmed, styleName: "Scene Heading")
             case .insert:
-                appendLine(trimmed, styleName: "Screenplay — Insert")
+                appendLine(trimmed, styleName: "Action")
             case .sfx:
-                appendLine(trimmed, styleName: "Screenplay — SFX / VO")
+                appendLine(trimmed, styleName: "Action")
             case .shot:
-                appendLine(trimmed, styleName: "Screenplay — Shot")
+                appendLine(trimmed, styleName: "Action")
             case .title, .author, .contact, .draft:
                 // Title page already handled.
-                appendLine(trimmed, styleName: "Screenplay — Action")
+                appendLine(trimmed, styleName: "Action")
             }
         }
 
@@ -291,7 +291,7 @@ struct ScreenplayImporter {
         style.paragraphSpacingBefore = definition.spacingBefore
         style.paragraphSpacing = definition.spacingAfter
         style.headIndent = definition.headIndent
-        style.firstLineHeadIndent = definition.firstLineIndent
+        style.firstLineHeadIndent = definition.headIndent + definition.firstLineIndent
         style.tailIndent = definition.tailIndent
         style.lineBreakMode = .byWordWrapping
         return style.copy() as! NSParagraphStyle

@@ -144,7 +144,7 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
-			shellScript = "set -e\n\n# Copy the just-built app bundle into a stable location inside the repo.\n# Result: ${SRCROOT}/build/${CONFIGURATION}/${WRAPPER_NAME}\n\nDEST_DIR=\"${SRCROOT}/build/${CONFIGURATION}\"\nDEST_APP=\"${DEST_DIR}/${WRAPPER_NAME}\"\nSRC_APP=\"${TARGET_BUILD_DIR}/${WRAPPER_NAME}\"\n\nmkdir -p \"${DEST_DIR}\"\nrm -rf \"${DEST_APP}\"\n/usr/bin/ditto \"${SRC_APP}\" \"${DEST_APP}\"\n";
+			shellScript = "set -e\n\n# Copy the just-built app bundle into a stable location inside the repo.\n# Result: ${SRCROOT}/build/${CONFIGURATION}/${WRAPPER_NAME}\n#\n# NOTE: This script runs before Xcode's final CodeSign step. The copied bundle\n# would otherwise be unsigned (and can fail to launch), so we ad-hoc sign it.\n# Also, /usr/bin/ditto preserves source mtimes by default, which can make the\n# copied bundle *look* stale in Finder. We touch the bundle after signing.\n\nDEST_DIR=\"${SRCROOT}/build/${CONFIGURATION}\"\nDEST_APP=\"${DEST_DIR}/${WRAPPER_NAME}\"\nSRC_APP=\"${TARGET_BUILD_DIR}/${WRAPPER_NAME}\"\n\nmkdir -p \"${DEST_DIR}\"\nrm -rf \"${DEST_APP}\"\n/usr/bin/ditto \"${SRC_APP}\" \"${DEST_APP}\"\n\nSIGN_ID=\"${EXPANDED_CODE_SIGN_IDENTITY:-${CODE_SIGN_IDENTITY:-}}\"\nif [ -n \"${SIGN_ID}\" ]; then\n  /usr/bin/codesign --force --deep --sign \"${SIGN_ID}\" --timestamp=none \"${DEST_APP}\" || true\nfi\n\n# Ensure the bundle's modified date reflects this build.\n/usr/bin/touch \"${DEST_APP}\" || true\n/usr/bin/touch \"${DEST_APP}/Contents/Info.plist\" 2>/dev/null || true\n/usr/bin/touch \"${DEST_APP}/Contents/MacOS/${EXECUTABLE_NAME}\" 2>/dev/null || true\n";
 		};
 /* End PBXShellScriptBuildPhase section */
 

@@ -31,17 +31,17 @@ struct FadeInImporter {
             // Fade In stores style intent separately from text casing. For common screenplay elements,
             // normalize to all-caps so QuillPilot's screenplay styles match expectations.
             var runs = paragraph.runs
-            if styleName == "Screenplay — Slugline" ||
-                styleName == "Screenplay — Character" ||
-                styleName == "Screenplay — Transition" ||
-                styleName == "Screenplay — Shot" {
+            if styleName == "Scene Heading" ||
+                styleName == "Character" ||
+                styleName == "Transition" ||
+                styleName == "Action" {
                 runs = runs.map {
                     var r = $0
                     r.text = r.text.uppercased()
                     return r
                 }
             }
-            if styleName == "Screenplay — Slugline" {
+            if styleName == "Scene Heading" {
                 runs = runs.map {
                     var r = $0
                     r.text = r.text.replacingOccurrences(of: " - ", with: " – ")
@@ -67,7 +67,7 @@ struct FadeInImporter {
                 if run.underline { attrs[.underlineStyle] = NSUnderlineStyle.single.rawValue }
 
                 // Fade In title pages sometimes include explicit sizes; apply only for Title lines.
-                if styleName == "Screenplay — Title", let size = run.size, size > 0 {
+                if styleName == "Scene Heading", let size = run.size, size > 0 {
                     let sized = NSFontManager.shared.convert(runFont, toSize: size)
                     attrs[.font] = sized
                 }
@@ -423,32 +423,32 @@ struct FadeInImporter {
 
         // Title page in Fade In often uses "Normal Text" with center alignment and larger sizes.
         if alignLower == "center" {
-            return "Screenplay — Title"
+            return "Scene Heading"
         }
 
         switch lower {
         case "scene heading":
-            return "Screenplay — Slugline"
+            return "Scene Heading"
         case "action":
-            return "Screenplay — Action"
+            return "Action"
         case "character":
-            return "Screenplay — Character"
+            return "Character"
         case "parenthetical":
-            return "Screenplay — Parenthetical"
+            return "Parenthetical"
         case "dialogue":
-            return "Screenplay — Dialogue"
+            return "Dialogue"
         case "transition":
-            return "Screenplay — Transition"
+            return "Transition"
         case "shot":
-            return "Screenplay — Shot"
+            return "Action"
         case "normal text":
-            return "Screenplay — Action"
+            return "Action"
         default:
             // Right-aligned lines are typically transitions.
             if alignLower == "right" {
-                return "Screenplay — Transition"
+                return "Transition"
             }
-            return "Screenplay — Action"
+            return "Action"
         }
     }
 
@@ -481,7 +481,7 @@ struct FadeInImporter {
         style.paragraphSpacingBefore = definition.spacingBefore
         style.paragraphSpacing = definition.spacingAfter
         style.headIndent = definition.headIndent
-        style.firstLineHeadIndent = definition.firstLineIndent
+        style.firstLineHeadIndent = definition.headIndent + definition.firstLineIndent
         style.tailIndent = definition.tailIndent
         style.lineBreakMode = .byWordWrapping
         return style.copy() as! NSParagraphStyle

@@ -178,7 +178,7 @@ struct PoetryImporter {
         style.paragraphSpacingBefore = definition.spacingBefore
         style.paragraphSpacing = definition.spacingAfter
         style.headIndent = definition.headIndent
-        style.firstLineHeadIndent = definition.firstLineIndent
+        style.firstLineHeadIndent = definition.headIndent + definition.firstLineIndent
         style.tailIndent = definition.tailIndent
         style.lineBreakMode = .byWordWrapping
         return style.copy() as! NSParagraphStyle

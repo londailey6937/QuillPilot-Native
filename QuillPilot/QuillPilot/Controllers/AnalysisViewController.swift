@@ -4873,7 +4873,10 @@ extension AnalysisViewController {
             presenceByName[key] = presence.chapterPresence
         }
         let maxPresenceGlobal = max(1, results.characterPresence.flatMap { $0.chapterPresence.values }.max() ?? 1)
-        let maxInteractionsGlobal = max(1, interactionsByChapter.values.flatMap { $0.values }.max() ?? 1)
+
+        // Keep both the raw max (to detect “no interaction data”) and a non-zero max for normalization.
+        let maxInteractionsGlobalRaw = interactionsByChapter.values.flatMap { $0.values }.max() ?? 0
+        let maxInteractionsGlobal = max(1, maxInteractionsGlobalRaw)
 
         for (index, characterKey) in characterKeys.enumerated() {
             var states: [EmotionalTrajectoryView.EmotionalState] = []
@@ -4881,6 +4884,7 @@ extension AnalysisViewController {
             // Get this character's presence data
             let presence = presenceByName[characterKey] ?? [:]
             let charInteractions = interactionsByChapter[characterKey] ?? [:]
+            let hasAnyInteractionDataForCharacter = (charInteractions.values.reduce(0, +) > 0)
 
             // Track running values for trend calculation
             var previousPresence: Double = 0
@@ -4915,10 +4919,13 @@ extension AnalysisViewController {
                 let variance = nearbyPresences.isEmpty ? 0 : nearbyPresences.map { pow($0 - avgNearby, 2) }.reduce(0, +) / Double(nearbyPresences.count)
                 let control = (1.0 - min(1.0, variance * 10)) * 2.0 - 1.0 // Low variance = high control
 
-                // ATTACHMENT: Based on interactions with other characters
+                // ATTACHMENT: Prefer interactions with other characters; if no interaction data exists
+                // (common when only one character is present), fall back to normalized presence.
                 let interactionCount = Double(charInteractions[chapter] ?? 0)
                 let normalizedInteractions = interactionCount / Double(maxInteractionsGlobal)
-                let attachmentSource = maxInteractionsGlobal > 0 ? normalizedInteractions : normalizedPresence
+                let attachmentSource = (maxInteractionsGlobalRaw > 0 && hasAnyInteractionDataForCharacter)
+                    ? normalizedInteractions
+                    : normalizedPresence
                 let attachment = attachmentSource * 2.0 - 1.0 // Map 0-1 to -1 to 1
 
                 let state = EmotionalTrajectoryView.EmotionalState(

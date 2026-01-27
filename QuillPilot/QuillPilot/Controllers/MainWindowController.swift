@@ -1222,7 +1222,17 @@ extension MainWindowController {
         ExportFormat.allCases.forEach { popup.addItem(withTitle: $0.displayName) }
 
         // Default new documents to the Preferences format. Existing documents keep their current format.
-        let defaultFormat: ExportFormat = (currentDocumentURL == nil) ? QuillPilotSettings.defaultExportFormat : currentDocumentFormat
+        // Screenplay template defaults to PDF for industry-standard output.
+        let defaultFormat: ExportFormat
+        if currentDocumentURL == nil {
+            if StyleCatalog.shared.isScreenplayTemplate {
+                defaultFormat = .pdf
+            } else {
+                defaultFormat = QuillPilotSettings.defaultExportFormat
+            }
+        } else {
+            defaultFormat = currentDocumentFormat
+        }
         let defaultIndex = ExportFormat.allCases.firstIndex(of: defaultFormat) ?? 0
         popup.selectItem(at: defaultIndex)
 
@@ -1285,7 +1295,13 @@ extension MainWindowController {
         let popup = NSPopUpButton(frame: .zero, pullsDown: false)
         ExportFormat.allCases.forEach { popup.addItem(withTitle: $0.displayName) }
 
-        let defaultFormat = QuillPilotSettings.defaultExportFormat
+        // Screenplay template defaults to PDF for industry-standard output
+        let defaultFormat: ExportFormat
+        if StyleCatalog.shared.isScreenplayTemplate {
+            defaultFormat = .pdf
+        } else {
+            defaultFormat = QuillPilotSettings.defaultExportFormat
+        }
         let defaultIndex = ExportFormat.allCases.firstIndex(of: defaultFormat) ?? 0
         popup.selectItem(at: defaultIndex)
 
@@ -2676,9 +2692,25 @@ extension MainWindowController {
         let styleKey = NSAttributedString.Key("QuillStyleName")
         let fullRange = NSRange(location: 0, length: attributed.length)
 
+        // Industry-standard screenplay style names
+        let screenplayStyles: Set<String> = [
+            "Scene Heading", "Action", "Character", "Parenthetical", "Dialogue", "Transition",
+            "Shot", "Montage", "Flashback", "Intercut", "Act Break", "Chyron", "Lyrics",
+            "Note", "More", "Continued", "Title", "Author", "Contact", "Draft"
+        ]
+
         var inferred: String? = nil
         attributed.enumerateAttribute(styleKey, in: fullRange, options: []) { value, _, stop in
             guard let styleName = value as? String else { return }
+
+            // Check for industry-standard screenplay styles
+            if screenplayStyles.contains(styleName) {
+                inferred = "Screenplay"
+                stop.pointee = true
+                return
+            }
+
+            // Legacy: check for old "Screenplay —" prefix
             if styleName.hasPrefix("Screenplay —") {
                 inferred = "Screenplay"
                 stop.pointee = true
@@ -3637,12 +3669,7 @@ class FormattingToolbar: NSView {
         }
 
         func displayStyleTitle(_ styleName: String) -> String {
-            if styleName.hasPrefix("Screenplay — ") {
-                return String(styleName.dropFirst("Screenplay — ".count))
-            }
-            if styleName.hasPrefix("Screenplay - ") {
-                return String(styleName.dropFirst("Screenplay - ".count))
-            }
+            // Industry-standard screenplay styles don't have prefixes
             return styleName
         }
 
@@ -3722,6 +3749,50 @@ class FormattingToolbar: NSView {
                 "— divider —",
                 "Notes", "Marginal Note", "Footnote", "Revision Variant"
             ])
+        } else if StyleCatalog.shared.isScreenplayTemplate {
+            // Industry-standard screenplay styles in logical order
+            func addOrdered(_ names: [String]) {
+                for name in names {
+                    if name == "— divider —" {
+                        if stylesMenu.items.last?.isSeparatorItem != true {
+                            stylesMenu.addItem(.separator())
+                        }
+                        continue
+                    }
+                    guard allStyles[name] != nil else { continue }
+                    addStyle(name)
+                }
+            }
+
+            addOrdered([
+                // Title page
+                "Title",
+                "Author",
+                "Contact",
+                "Draft",
+                "— divider —",
+                // Core elements
+                "Scene Heading",
+                "Action",
+                "Character",
+                "Parenthetical",
+                "Dialogue",
+                "Transition",
+                "— divider —",
+                // Camera & special
+                "Shot",
+                "Montage",
+                "Flashback",
+                "Intercut",
+                "— divider —",
+                // Other
+                "Act Break",
+                "Chyron",
+                "Lyrics",
+                "Note",
+                "More",
+                "Continued"
+            ])
         } else {
             // Group styles by category
             var titleStyles: [String] = []
@@ -3778,7 +3849,7 @@ class FormattingToolbar: NSView {
         stylePopup.menu = stylesMenu
 
         // Restore last selected style
-        var lastStyle = UserDefaults.standard.string(forKey: "LastSelectedStyle") ?? (StyleCatalog.shared.isPoetryTemplate ? "Poem" : (StyleCatalog.shared.isScreenplayTemplate ? "Screenplay — Action" : "Body Text"))
+        var lastStyle = UserDefaults.standard.string(forKey: "LastSelectedStyle") ?? (StyleCatalog.shared.isPoetryTemplate ? "Poem" : (StyleCatalog.shared.isScreenplayTemplate ? "Action" : "Body Text"))
         if StyleCatalog.shared.isPoetryTemplate {
             if lastStyle == "Stanza" || lastStyle == "Poetry — Stanza" || lastStyle == "Poetry — Verse" { lastStyle = "Verse" }
         }
@@ -3786,7 +3857,7 @@ class FormattingToolbar: NSView {
             stylePopup.selectItem(at: index)
         } else if StyleCatalog.shared.isPoetryTemplate && stylePopup.itemTitles.contains("Poem") {
             stylePopup.selectItem(withTitle: "Poem")
-        } else if StyleCatalog.shared.isScreenplayTemplate, let index = (0..<stylePopup.numberOfItems).first(where: { stylePopup.item(at: $0)?.representedObject as? String == "Screenplay — Action" }) {
+        } else if StyleCatalog.shared.isScreenplayTemplate, let index = (0..<stylePopup.numberOfItems).first(where: { stylePopup.item(at: $0)?.representedObject as? String == "Action" }) {
             stylePopup.selectItem(at: index)
         } else if stylePopup.itemTitles.contains("Body Text") {
             stylePopup.selectItem(withTitle: "Body Text")
@@ -3976,15 +4047,8 @@ class FormattingToolbar: NSView {
             } else {
                 displayStyle = styleName
             }
-        } else if StyleCatalog.shared.isScreenplayTemplate {
-            if styleName.hasPrefix("Screenplay — ") {
-                displayStyle = String(styleName.dropFirst("Screenplay — ".count))
-            } else if styleName.hasPrefix("Screenplay - ") {
-                displayStyle = String(styleName.dropFirst("Screenplay - ".count))
-            } else {
-                displayStyle = styleName
-            }
         } else {
+            // Screenplay and other templates use style names directly
             displayStyle = styleName
         }
 
@@ -6448,23 +6512,30 @@ private enum DocxTextExtractor {
                     case "IndexTitle": mappedName = "Index Title"
                     case "IndexEntry": mappedName = "Index Entry"
                     case "IndexLetter": mappedName = "Index Letter"
-                    // Screenplay styles
-                    case "ScreenplayTitle": mappedName = "Screenplay — Title"
-                    case "ScreenplayAuthor": mappedName = "Screenplay — Author"
-                    case "ScreenplayContact": mappedName = "Screenplay — Contact"
-                    case "ScreenplayDraft": mappedName = "Screenplay — Draft"
-                    case "ScreenplayAct": mappedName = "Screenplay — Act"
-                    case "ScreenplaySlugline": mappedName = "Screenplay — Slugline"
-                    case "ScreenplayAction": mappedName = "Screenplay — Action"
-                    case "ScreenplayCharacter": mappedName = "Screenplay — Character"
-                    case "ScreenplayParenthetical": mappedName = "Screenplay — Parenthetical"
-                    case "ScreenplayDialogue": mappedName = "Screenplay — Dialogue"
-                    case "ScreenplayTransition": mappedName = "Screenplay — Transition"
-                    case "ScreenplayShot": mappedName = "Screenplay — Shot"
-                    case "ScreenplayShotDirection": mappedName = "Screenplay — Shot Direction"
-                    case "ScreenplayInsert": mappedName = "Screenplay — Insert"
-                    case "ScreenplaySFX": mappedName = "Screenplay — SFX"
-                    case "ScreenplaySFXVO": mappedName = "Screenplay — SFX / VO"
+                    // Screenplay styles (map old IDs and new IDs to current style names)
+                    case "ScreenplayTitle", "Title": mappedName = "Title"
+                    case "ScreenplayAuthor", "Author": mappedName = "Author"
+                    case "ScreenplayContact", "Contact": mappedName = "Contact"
+                    case "ScreenplayDraft", "Draft": mappedName = "Draft"
+                    case "ScreenplayAct", "ActBreak": mappedName = "Act Break"
+                    case "ScreenplaySlugline", "SceneHeading": mappedName = "Scene Heading"
+                    case "ScreenplayAction", "Action": mappedName = "Action"
+                    case "ScreenplayCharacter", "Character": mappedName = "Character"
+                    case "ScreenplayParenthetical", "Parenthetical": mappedName = "Parenthetical"
+                    case "ScreenplayDialogue": mappedName = "Dialogue"
+                    case "ScreenplayTransition", "Transition": mappedName = "Transition"
+                    case "ScreenplayShot", "Shot": mappedName = "Shot"
+                    case "ScreenplayShotDirection": mappedName = "Shot"
+                    case "ScreenplayInsert": mappedName = "Shot"
+                    case "ScreenplaySFX", "ScreenplaySFXVO": mappedName = "Action"
+                    case "Montage": mappedName = "Montage"
+                    case "Flashback": mappedName = "Flashback"
+                    case "Intercut": mappedName = "Intercut"
+                    case "Chyron": mappedName = "Chyron"
+                    case "Lyrics": mappedName = "Lyrics"
+                    case "Note": mappedName = "Note"
+                    case "More": mappedName = "More"
+                    case "Continued": mappedName = "Continued"
                     default: mappedName = val
                     }
                     // Only set styleName and log if it's not empty (filters out Scene Break)

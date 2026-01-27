@@ -217,7 +217,7 @@ class SplitViewController: NSSplitViewController {
 
                     let sorted = outlineEntries.sorted { $0.range.location < $1.range.location }
 
-                    let sceneEntries = sorted.filter { ($0.styleName ?? "") == "Screenplay — Slugline" }
+                    let sceneEntries = sorted.filter { ($0.styleName ?? "") == "Scene Heading" }
                     let actEntries = sorted.filter { isActHeading($0.title) }
 
                     let combined = (sceneEntries + actEntries)
@@ -226,7 +226,7 @@ class SplitViewController: NSSplitViewController {
                     guard !combined.isEmpty else { return nil }
                     return combined.map { entry in
                         let level: Int
-                        if entry.styleName == "Screenplay — Slugline" {
+                        if entry.styleName == "Scene Heading" {
                             level = 1
                         } else if isActHeading(entry.title) {
                             level = 0

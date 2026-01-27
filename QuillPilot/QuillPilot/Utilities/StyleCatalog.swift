@@ -298,6 +298,18 @@ final class StyleCatalog {
         NotificationCenter.default.post(name: .styleTemplateDidChange, object: template)
     }
 
+    // MARK: - Override Introspection (Diagnostics)
+
+    func overrideStyleNames(for templateName: String? = nil) -> [String] {
+        let template = templateName ?? currentTemplateName
+        return loadOverrides(for: template).keys.sorted()
+    }
+
+    func isStyleOverridden(_ styleName: String, inTemplate templateName: String? = nil) -> Bool {
+        let template = templateName ?? currentTemplateName
+        return loadOverrides(for: template)[styleName] != nil
+    }
+
     private func overridesKey(for template: String) -> String {
         overridesPrefix + template
     }
@@ -335,7 +347,7 @@ final class StyleCatalog {
 
             let baseStyle: StyleDefinition? =
                 merged["Body Text"] ??
-                merged["Screenplay — Action"] ??
+                merged["Action"] ??
                 merged.values.first
 
             guard let base = baseStyle else { return merged }
@@ -1006,29 +1018,217 @@ final class StyleCatalog {
     }
 
     private static func screenplayStyles() -> [String: StyleDefinition] {
-        let font = "Courier New"
+        // Industry standard screenplay format (WGA / Final Draft spec)
+        // Font: Courier 12pt throughout
+        // Page: 8.5" x 11" with 1.5" left margin, 1" right margin
+        let font = "Courier"
+        let fontSize: CGFloat = 12
         var styles: [String: StyleDefinition] = [:]
-        // Title page styles
-        styles["Screenplay — Title"] = baseDefinition(font: font, size: 18, bold: true, alignment: .center, lineHeight: 1.0, before: 144, after: 12, headIndent: 0, firstLine: 0, tailIndent: 0)
-        styles["Screenplay — Author"] = baseDefinition(font: font, size: 12, alignment: .center, lineHeight: 1.0, before: 72, after: 0, headIndent: 0, firstLine: 0, tailIndent: 0)
-        styles["Screenplay — Contact"] = baseDefinition(font: font, size: 12, alignment: .left, lineHeight: 1.0, before: 0, after: 0, headIndent: 0, firstLine: 0, tailIndent: -288)
-        styles["Screenplay — Draft"] = baseDefinition(font: font, size: 12, alignment: .right, lineHeight: 1.0, before: 0, after: 0, headIndent: 0, firstLine: 0, tailIndent: 0)
-        // Script body styles
-        // Act headings (e.g. ACT I / ACT II / ACT III)
-        styles["Screenplay — Act"] = baseDefinition(font: font, size: 14, bold: true, alignment: .center, lineHeight: 1.0, before: 24, after: 12, headIndent: 0, firstLine: 0, tailIndent: 0)
-        styles["Screenplay — Slugline"] = baseDefinition(font: font, size: 14, alignment: .left, lineHeight: 1.0, before: 12, after: 0, headIndent: 0, firstLine: 0, tailIndent: 0)
-        // No-indent body style (useful for blank spacer lines between screenplay styles)
-        styles["Body Text – No Indent"] = baseDefinition(font: font, size: 14, alignment: .left, lineHeight: 1.0, before: 0, after: 0, headIndent: 0, firstLine: 0, tailIndent: 0)
-        styles["Screenplay — Action"] = baseDefinition(font: font, size: 14, alignment: .left, lineHeight: 1.0, before: 0, after: 0, headIndent: 0, firstLine: 0, tailIndent: 0)
-        styles["Screenplay — Character"] = baseDefinition(font: font, size: 14, alignment: .left, lineHeight: 1.0, before: 12, after: 0, headIndent: 158, firstLine: 158, tailIndent: -72)
-        styles["Screenplay — Parenthetical"] = baseDefinition(font: font, size: 14, alignment: .left, lineHeight: 1.0, before: 0, after: 0, headIndent: 115, firstLine: 115, tailIndent: -72)
-        styles["Screenplay — Dialogue"] = baseDefinition(font: font, size: 14, alignment: .left, lineHeight: 1.0, before: 0, after: 0, headIndent: 72, firstLine: 72, tailIndent: -72)
-        styles["Screenplay — Transition"] = baseDefinition(font: font, size: 14, alignment: .right, lineHeight: 1.0, before: 12, after: 0, headIndent: 0, firstLine: 0, tailIndent: 0)
-        styles["Screenplay — Shot"] = baseDefinition(font: font, size: 14, alignment: .left, lineHeight: 1.0, before: 12, after: 0, headIndent: 0, firstLine: 0, tailIndent: 0)
-        styles["Screenplay — Shot Direction"] = baseDefinition(font: font, size: 14, italic: true, alignment: .left, lineHeight: 1.0, before: 12, after: 0, headIndent: 0, firstLine: 0, tailIndent: 0)
-        styles["Screenplay — Insert"] = baseDefinition(font: font, size: 14, bold: true, alignment: .center, lineHeight: 1.0, before: 12, after: 12, headIndent: 0, firstLine: 0, tailIndent: 0)
-        styles["Screenplay — SFX"] = baseDefinition(font: font, size: 14, bold: true, alignment: .left, lineHeight: 1.0, before: 12, after: 0, headIndent: 0, firstLine: 0, tailIndent: 0)
-        styles["Screenplay — SFX / VO"] = baseDefinition(font: font, size: 14, bold: true, alignment: .left, lineHeight: 1.0, before: 12, after: 0, headIndent: 0, firstLine: 0, tailIndent: 0)
+
+        // =====================================================================
+        // TITLE PAGE STYLES
+        // =====================================================================
+
+        // Title - centered, larger for title page
+        styles["Title"] = baseDefinition(
+            font: font, size: fontSize, bold: true, alignment: .center, lineHeight: 1.0,
+            before: 144, after: 24, headIndent: 0, firstLine: 0, tailIndent: 0
+        )
+
+        // Written By / Author credit
+        styles["Author"] = baseDefinition(
+            font: font, size: fontSize, alignment: .center, lineHeight: 1.0,
+            before: 24, after: 0, headIndent: 0, firstLine: 0, tailIndent: 0
+        )
+
+        // Contact info - bottom of title page
+        styles["Contact"] = baseDefinition(
+            font: font, size: fontSize, alignment: .left, lineHeight: 1.0,
+            before: 0, after: 0, headIndent: 0, firstLine: 0, tailIndent: 0
+        )
+
+        // Draft info
+        styles["Draft"] = baseDefinition(
+            font: font, size: fontSize, alignment: .right, lineHeight: 1.0,
+            before: 0, after: 0, headIndent: 0, firstLine: 0, tailIndent: 0
+        )
+
+        // =====================================================================
+        // SCENE HEADING (Slugline)
+        // Left margin, ALL CAPS, e.g. INT. LOCATION - DAY
+        // =====================================================================
+        styles["Scene Heading"] = baseDefinition(
+            font: font, size: fontSize, alignment: .left, lineHeight: 1.0,
+            before: 24, after: 12, headIndent: 0, firstLine: 0, tailIndent: 0
+        )
+
+        // =====================================================================
+        // ACTION
+        // Left margin, full width, describes what we see
+        // =====================================================================
+        styles["Action"] = baseDefinition(
+            font: font, size: fontSize, alignment: .left, lineHeight: 1.0,
+            before: 0, after: 12, headIndent: 0, firstLine: 0, tailIndent: 0
+        )
+
+        // =====================================================================
+        // CHARACTER
+        // 2.2" from left text margin; right limit 4.2" from left text margin
+        // =====================================================================
+        styles["Character"] = baseDefinition(
+            font: font, size: fontSize, alignment: .left, lineHeight: 1.0,
+            before: 12, after: 0, headIndent: 158.4, firstLine: 0, tailIndent: -129.6
+        )
+
+        // =====================================================================
+        // PARENTHETICAL
+        // 1.6" from left text margin; right limit 4.2" from left text margin
+        // =====================================================================
+        styles["Parenthetical"] = baseDefinition(
+            font: font, size: fontSize, alignment: .left, lineHeight: 1.0,
+            before: 0, after: 0, headIndent: 115.2, firstLine: 0, tailIndent: -129.6
+        )
+
+        // =====================================================================
+        // DIALOGUE
+        // ~2.5" from left page edge, ~3.5" wide
+        // =====================================================================
+        styles["Dialogue"] = baseDefinition(
+            font: font, size: fontSize, alignment: .left, lineHeight: 1.0,
+            before: 0, after: 12, headIndent: 72, firstLine: 0, tailIndent: -108
+        )
+
+        // =====================================================================
+        // TRANSITION
+        // Right-aligned, e.g. CUT TO:, FADE OUT., DISSOLVE TO:
+        // =====================================================================
+        styles["Transition"] = baseDefinition(
+            font: font, size: fontSize, alignment: .right, lineHeight: 1.0,
+            before: 24, after: 24, headIndent: 288, firstLine: 0, tailIndent: 0
+        )
+
+        // =====================================================================
+        // SHOT
+        // Camera direction, left margin like scene heading
+        // e.g. ANGLE ON, CLOSE ON, POV, INSERT
+        // =====================================================================
+        styles["Shot"] = baseDefinition(
+            font: font, size: fontSize, alignment: .left, lineHeight: 1.0,
+            before: 24, after: 12, headIndent: 0, firstLine: 0, tailIndent: 0
+        )
+
+        // =====================================================================
+        // MONTAGE
+        // Series of shots, formatted like scene heading
+        // =====================================================================
+        styles["Montage"] = baseDefinition(
+            font: font, size: fontSize, alignment: .left, lineHeight: 1.0,
+            before: 24, after: 12, headIndent: 0, firstLine: 0, tailIndent: 0
+        )
+
+        // Montage / Series of Shots helpers
+        // Header: like a scene heading; Items: flush-left list lines; End marker: like a scene heading.
+        styles["Montage Header"] = styles["Montage"]
+        styles["Montage Item"] = baseDefinition(
+            font: font, size: fontSize, alignment: .left, lineHeight: 1.0,
+            before: 0, after: 0, headIndent: 0, firstLine: 0, tailIndent: 0
+        )
+        styles["Montage End"] = baseDefinition(
+            font: font, size: fontSize, alignment: .left, lineHeight: 1.0,
+            before: 12, after: 12, headIndent: 0, firstLine: 0, tailIndent: 0
+        )
+
+        styles["Series of Shots Header"] = styles["Montage"]
+        styles["Series of Shots Item"] = styles["Montage Item"]
+        styles["Series of Shots End"] = styles["Montage End"]
+
+        // =====================================================================
+        // FLASHBACK
+        // Time shift indicator, formatted like scene heading
+        // e.g. FLASHBACK:, END FLASHBACK
+        // =====================================================================
+        styles["Flashback"] = baseDefinition(
+            font: font, size: fontSize, alignment: .left, lineHeight: 1.0,
+            before: 24, after: 12, headIndent: 0, firstLine: 0, tailIndent: 0
+        )
+
+        // Optional marker to exit a flashback/dream/fantasy.
+        styles["Back To Present"] = styles["Flashback"]
+
+        // =====================================================================
+        // INTERCUT
+        // For parallel action between locations
+        // e.g. INTERCUT - PHONE CONVERSATION
+        // =====================================================================
+        styles["Intercut"] = baseDefinition(
+            font: font, size: fontSize, alignment: .left, lineHeight: 1.0,
+            before: 24, after: 12, headIndent: 0, firstLine: 0, tailIndent: 0
+        )
+
+        // Optional marker for ending an intercut section.
+        styles["End Intercut"] = styles["Intercut"]
+
+        // =====================================================================
+        // ACT BREAK
+        // Television format act divisions
+        // e.g. ACT ONE, END OF ACT ONE
+        // =====================================================================
+        styles["Act Break"] = baseDefinition(
+            font: font, size: fontSize, bold: true, alignment: .center, lineHeight: 1.0,
+            before: 48, after: 48, headIndent: 0, firstLine: 0, tailIndent: 0
+        )
+
+        // =====================================================================
+        // CHYRON / SUPER
+        // On-screen text, location/time cards
+        // e.g. SUPER: "Three months later"
+        // =====================================================================
+        styles["Chyron"] = baseDefinition(
+            font: font, size: fontSize, alignment: .left, lineHeight: 1.0,
+            before: 12, after: 12, headIndent: 0, firstLine: 0, tailIndent: 0
+        )
+
+        // INSERT / ON-SCREEN blocks (text messages, emails, screens).
+        styles["Insert"] = baseDefinition(
+            font: font, size: fontSize, alignment: .left, lineHeight: 1.0,
+            before: 24, after: 12, headIndent: 0, firstLine: 0, tailIndent: 0
+        )
+        styles["On Screen"] = styles["Chyron"]
+        styles["Text Message"] = styles["Dialogue"]
+        styles["Email"] = styles["Insert"]
+
+        // =====================================================================
+        // LYRICS
+        // Song lyrics within dialogue, often italicized
+        // =====================================================================
+        styles["Lyrics"] = baseDefinition(
+            font: font, size: fontSize, italic: true, alignment: .left, lineHeight: 1.0,
+            before: 0, after: 0, headIndent: 72, firstLine: 0, tailIndent: -108
+        )
+
+        // =====================================================================
+        // NOTE
+        // Writer's notes, not part of final script
+        // =====================================================================
+        styles["Note"] = baseDefinition(
+            font: font, size: fontSize, italic: true, alignment: .left, lineHeight: 1.0,
+            before: 12, after: 12, headIndent: 0, firstLine: 0, tailIndent: 0
+        )
+
+        // =====================================================================
+        // MORE / CONTINUED
+        // Page break continuations
+        // =====================================================================
+        styles["More"] = baseDefinition(
+            font: font, size: fontSize, alignment: .left, lineHeight: 1.0,
+            before: 0, after: 0, headIndent: 158, firstLine: 0, tailIndent: 0
+        )
+
+        styles["Continued"] = baseDefinition(
+            font: font, size: fontSize, alignment: .left, lineHeight: 1.0,
+            before: 0, after: 0, headIndent: 158, firstLine: 0, tailIndent: 0
+        )
+
         return styles
     }
 

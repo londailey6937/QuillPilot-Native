@@ -723,6 +723,193 @@ class EditorViewController: NSViewController {
     private var formatPainterActive: Bool = false
     private var copiedAttributes: [NSAttributedString.Key: Any]?
 
+    @MainActor
+    func showStyleDiagnostics(_ sender: Any? = nil) {
+        guard let storage = textView.textStorage else {
+            showDiagnosticsAlert(title: "Style Diagnostics", message: "No text storage available.")
+            return
+        }
+
+        let templateName = StyleCatalog.shared.currentTemplateName
+        let isScreenplay = StyleCatalog.shared.isScreenplayTemplate
+
+        let selection = textView.selectedRange()
+
+        let paragraphRange: NSRange? = {
+            guard storage.length > 0 else { return nil }
+            let safeLocation = min(selection.location, max(0, storage.length - 1))
+            let full = storage.string as NSString
+            return full.paragraphRange(for: NSRange(location: safeLocation, length: 0))
+        }()
+
+        let attributeIndex: Int? = {
+            guard let range = paragraphRange else { return nil }
+            return min(range.location, max(0, storage.length - 1))
+        }()
+
+        let styleName: String = {
+            if let idx = attributeIndex,
+               let name = storage.attribute(styleAttributeKey, at: idx, effectiveRange: nil) as? String {
+                return name
+            }
+            if let typing = textView.typingAttributes[styleAttributeKey] as? String {
+                return typing
+            }
+            return "(none)"
+        }()
+
+        let paragraphStyle: NSParagraphStyle = {
+            if let idx = attributeIndex,
+               let para = storage.attribute(.paragraphStyle, at: idx, effectiveRange: nil) as? NSParagraphStyle {
+                return para
+            }
+            if let para = textView.typingAttributes[.paragraphStyle] as? NSParagraphStyle {
+                return para
+            }
+            return textView.defaultParagraphStyle ?? NSParagraphStyle.default
+        }()
+
+        let font: NSFont? = {
+            if let idx = attributeIndex {
+                return (storage.attribute(.font, at: idx, effectiveRange: nil) as? NSFont) ?? textView.font
+            }
+            return (textView.typingAttributes[.font] as? NSFont) ?? textView.font
+        }()
+
+        let catalogDefinition: StyleDefinition? = {
+            guard styleName != "(none)" else { return nil }
+            return StyleCatalog.shared.style(named: styleName)
+        }()
+
+        let overrideStyleNames = StyleCatalog.shared.overrideStyleNames(for: templateName)
+        let isOverridden = (styleName != "(none)") ? StyleCatalog.shared.isStyleOverridden(styleName, inTemplate: templateName) : false
+
+        let containerWidthPoints: CGFloat = {
+            guard editorZoom > 0 else { return textView.frame.width }
+            return textView.frame.width / editorZoom
+        }()
+
+        func inches(_ points: CGFloat) -> String {
+            let value = points / 72.0
+            return String(format: "%.3f\"", value)
+        }
+
+        func points(_ value: CGFloat) -> String {
+            String(format: "%.2fpt", value)
+        }
+
+        func pageX(_ x: CGFloat) -> String {
+            "\(points(x)) (\(inches(x)))"
+        }
+
+        let firstLineLeftEdge = leftPageMargin + paragraphStyle.firstLineHeadIndent
+        let bodyLeftEdge = leftPageMargin + paragraphStyle.headIndent
+        let rightEdgeFromTextViewLeft: CGFloat = {
+            if paragraphStyle.tailIndent >= 0 {
+                return paragraphStyle.tailIndent
+            }
+            return containerWidthPoints + paragraphStyle.tailIndent
+        }()
+        let rightEdge = leftPageMargin + rightEdgeFromTextViewLeft
+
+        var lines: [String] = []
+        lines.append("Template: \(templateName)\(isScreenplay ? " (Screenplay)" : "")")
+        lines.append("Selection: location=\(selection.location) length=\(selection.length)")
+        if let pr = paragraphRange {
+            lines.append("Paragraph range: \(pr.location)..<\(pr.location + pr.length)")
+        } else {
+            lines.append("Paragraph range: (document empty)")
+        }
+        lines.append("Style tag: \(styleName)\(isOverridden ? " (OVERRIDDEN)" : "")")
+
+        if let font {
+            lines.append("Font: \(font.fontName) \(Int(font.pointSize))")
+        } else {
+            lines.append("Font: (none)")
+        }
+
+        lines.append("Zoom: \(String(format: "%.2fx", editorZoom))")
+        lines.append("Page width: \(points(pageWidth))  | left margin: \(points(leftPageMargin))  | right margin: \(points(rightPageMargin))")
+        lines.append("Text container width: \(points(containerWidthPoints))")
+
+        lines.append("")
+        lines.append("ParagraphStyle")
+        lines.append("  alignment: \(paragraphStyle.alignment.rawValue)")
+        lines.append("  headIndent: \(points(paragraphStyle.headIndent))")
+        lines.append("  firstLineHeadIndent: \(points(paragraphStyle.firstLineHeadIndent))")
+        lines.append("  tailIndent: \(points(paragraphStyle.tailIndent))")
+        lines.append("  lineSpacing: \(points(paragraphStyle.lineSpacing))")
+        lines.append("  paragraphSpacingBefore: \(points(paragraphStyle.paragraphSpacingBefore))")
+        lines.append("  paragraphSpacing: \(points(paragraphStyle.paragraphSpacing))")
+        lines.append("  lineHeightMultiple: \(String(format: "%.2f", paragraphStyle.lineHeightMultiple))")
+
+        lines.append("")
+        lines.append("Computed edges (from page left)")
+        lines.append("  first line left edge: \(pageX(firstLineLeftEdge))")
+        lines.append("  body left edge: \(pageX(bodyLeftEdge))")
+        lines.append("  right edge: \(pageX(rightEdge))")
+        lines.append("  content width (body): \(pageX(max(0, rightEdge - bodyLeftEdge)))")
+
+        if let def = catalogDefinition {
+            lines.append("")
+            lines.append("Catalog definition")
+            lines.append("  fontName: \(def.fontName)")
+            lines.append("  fontSize: \(Int(def.fontSize))")
+            lines.append("  isBold: \(def.isBold)")
+            lines.append("  isItalic: \(def.isItalic)")
+            lines.append("  useSmallCaps: \(def.useSmallCaps)")
+            lines.append("  alignment: \(def.alignmentRawValue)")
+            lines.append("  headIndent: \(points(def.headIndent))")
+            lines.append("  firstLineIndent: \(points(def.firstLineIndent))")
+            lines.append("  tailIndent: \(points(def.tailIndent))")
+            lines.append("  spacingBefore: \(points(def.spacingBefore))")
+            lines.append("  spacingAfter: \(points(def.spacingAfter))")
+            lines.append("  lineHeightMultiple: \(String(format: "%.2f", def.lineHeightMultiple))")
+        }
+
+        if !overrideStyleNames.isEmpty {
+            lines.append("")
+            lines.append("Overrides in this template: \(overrideStyleNames.count)")
+            lines.append("  \(overrideStyleNames.joined(separator: ", "))")
+        }
+
+        showDiagnosticsAlert(
+            title: "Style Diagnostics",
+            message: lines.joined(separator: "\n"),
+            allowCopy: true
+        )
+    }
+
+    @MainActor
+    private func showDiagnosticsAlert(title: String, message: String, allowCopy: Bool = false) {
+        let alert = NSAlert()
+        alert.alertStyle = .informational
+        alert.messageText = title
+        alert.informativeText = message
+        if allowCopy {
+            alert.addButton(withTitle: "Copy")
+            alert.addButton(withTitle: "OK")
+        } else {
+            alert.addButton(withTitle: "OK")
+        }
+
+        if let window = view.window {
+            alert.beginSheetModal(for: window) { response in
+                guard allowCopy else { return }
+                if response == .alertFirstButtonReturn {
+                    NSPasteboard.general.clearContents()
+                    NSPasteboard.general.setString(message, forType: .string)
+                }
+            }
+        } else {
+            let response = alert.runModal()
+            if allowCopy, response == .alertFirstButtonReturn {
+                NSPasteboard.general.clearContents()
+                NSPasteboard.general.setString(message, forType: .string)
+            }
+        }
+    }
+
     // When applying composite formatting operations (e.g. a catalog style), suppress sub-step
     // undo labels so the menu shows a single meaningful action name.
     private var suppressUndoActionNames: Bool = false
@@ -4043,14 +4230,42 @@ class EditorViewController: NSViewController {
             // Ensure the tag covers the full paragraph range.
             storage.addAttribute(styleAttributeKey, value: styleName, range: safeParagraphRange)
 
-            let catalogParagraph = self.paragraphStyle(from: definition)
+            var catalogParagraph = self.paragraphStyle(from: definition)
             let catalogFont = self.font(from: definition)
 
             let existingPara = (attrs[.paragraphStyle] as? NSParagraphStyle) ?? (textView.defaultParagraphStyle ?? NSParagraphStyle.default)
 
+            // Industry-standard screenplay style names that need exact layout
+            let screenplayStyles: Set<String> = [
+                "Scene Heading", "Action", "Character", "Parenthetical", "Dialogue", "Transition",
+                "Shot", "Montage", "Montage Header", "Montage Item", "Montage End",
+                "Series of Shots Header", "Series of Shots Item", "Series of Shots End",
+                "Flashback", "Back To Present",
+                "Intercut", "End Intercut",
+                "Act Break", "Chyron", "Lyrics",
+                "Insert", "On Screen", "Text Message", "Email",
+                "Note", "More", "Continued", "Title", "Author", "Contact", "Draft"
+            ]
+
+            // For Screenplay Action, spacingBefore is contextual (after Scene Heading/Dialogue).
+            if currentTemplate == "Screenplay", styleName == "Action" {
+                let prevLoc = max(0, safeParagraphRange.location - 1)
+                if prevLoc < fullString.length {
+                    let prevPara = fullString.paragraphRange(for: NSRange(location: prevLoc, length: 0))
+                    let prevStyle = (prevPara.location < storage.length)
+                        ? (storage.attribute(styleAttributeKey, at: prevPara.location, effectiveRange: nil) as? String)
+                        : nil
+                    let desiredBefore: CGFloat = (prevStyle == "Scene Heading" || prevStyle == "Dialogue") ? 12 : 0
+                    if let mutable = catalogParagraph.mutableCopy() as? NSMutableParagraphStyle {
+                        mutable.paragraphSpacingBefore = desiredBefore
+                        catalogParagraph = mutable.copy() as! NSParagraphStyle
+                    }
+                }
+            }
+
             // Screenplay styles are layout-sensitive; force exact catalog paragraph style.
             let finalParagraph: NSParagraphStyle
-            if currentTemplate == "Screenplay", styleName.hasPrefix("Screenplay —") {
+            if currentTemplate == "Screenplay", screenplayStyles.contains(styleName) {
                 finalParagraph = catalogParagraph
             } else {
                 finalParagraph = mergedParagraphStyle(existing: existingPara, style: catalogParagraph)
@@ -4061,7 +4276,7 @@ class EditorViewController: NSViewController {
             storage.enumerateAttributes(in: safeParagraphRange, options: []) { runAttrs, runRange, _ in
                 let existingFont = runAttrs[.font] as? NSFont
                 let finalFont: NSFont
-                if currentTemplate == "Screenplay", styleName.hasPrefix("Screenplay —") {
+                if currentTemplate == "Screenplay", screenplayStyles.contains(styleName) {
                     finalFont = mergedScreenplayFont(existing: existingFont, style: catalogFont)
                 } else {
                     finalFont = mergedFont(existing: existingFont, style: catalogFont)
@@ -4338,7 +4553,10 @@ class EditorViewController: NSViewController {
     private func applyDefaultTypingAttributes() {
         let defaultStyleName: String
         if StyleCatalog.shared.isScreenplayTemplate {
-            defaultStyleName = "Screenplay — Action"
+            // Screenplay defaults rely on non-1" margins (1.5" left, 1" right).
+            // Apply these immediately so catalog-driven styles render with the correct baseline.
+            applyScreenplayPageDefaultsIfNeeded()
+            defaultStyleName = "Action"
         } else if StyleCatalog.shared.isPoetryTemplate {
             defaultStyleName = "Verse"
         } else {
@@ -4409,7 +4627,7 @@ class EditorViewController: NSViewController {
             // Seed *only missing attributes* so rendering is stable, but do not force a style tag here.
             let defaultSeedStyleName: String
             if currentTemplate == "Screenplay" {
-                defaultSeedStyleName = "Screenplay — Action"
+                defaultSeedStyleName = "Action"
             } else if currentTemplate == "Poetry" {
                 // Poetry: Verse is the writer-facing style.
                 defaultSeedStyleName = "Verse"
@@ -4526,57 +4744,57 @@ class EditorViewController: NSViewController {
                     }
 
                     if trimmed.isEmpty {
-                        styleName = "Screenplay — Action"
+                        styleName = "Action"
                         screenplayExpectingDialogue = false
                     } else if screenplayInTitlePage {
                         if isSlugline(upper) {
                             screenplayInTitlePage = false
                             screenplayExpectingDialogue = false
-                            styleName = "Screenplay — Slugline"
+                            styleName = "Scene Heading"
                         } else {
                             let lower = trimmed.lowercased()
                             if lower.contains("contact") || lower.contains("@") || lower.contains("tel") || lower.contains("phone") {
-                                styleName = "Screenplay — Contact"
+                                styleName = "Action"
                             } else if lower.contains("draft") || lower.contains("copyright") || lower.contains("(c)") {
-                                styleName = "Screenplay — Draft"
+                                styleName = "Action"
                             } else if !screenplaySawTitleLine {
                                 screenplaySawTitleLine = true
-                                styleName = "Screenplay — Title"
+                                styleName = "Scene Heading"
                             } else if !screenplaySawAuthorLine {
                                 screenplaySawAuthorLine = true
-                                styleName = "Screenplay — Author"
+                                styleName = "Action"
                             } else {
-                                styleName = "Screenplay — Author"
+                                styleName = "Action"
                             }
                         }
                     } else if isSlugline(upper) {
                         screenplayExpectingDialogue = false
-                        styleName = "Screenplay — Slugline"
+                        styleName = "Scene Heading"
                     } else if isActHeading(upper) {
                         screenplayExpectingDialogue = false
-                        styleName = "Screenplay — Act"
+                        styleName = "Scene Heading"
                     } else if isTransition(upper) {
                         screenplayExpectingDialogue = false
-                        styleName = "Screenplay — Transition"
+                        styleName = "Transition"
                     } else if isInsertLine(upper) {
                         screenplayExpectingDialogue = false
-                        styleName = "Screenplay — Insert"
+                        styleName = "Action"
                     } else if isSfxOrVO(upper) {
                         screenplayExpectingDialogue = false
-                        styleName = "Screenplay — SFX / VO"
+                        styleName = "Action"
                     } else if isShot(upper) {
                         screenplayExpectingDialogue = false
-                        styleName = "Screenplay — Shot"
+                        styleName = "Action"
                     } else if isCharacter(trimmed, upper: upper) {
                         screenplayExpectingDialogue = true
-                        styleName = "Screenplay — Character"
+                        styleName = "Character"
                     } else if screenplayExpectingDialogue && isParenthetical(trimmed) {
                         screenplayExpectingDialogue = true
-                        styleName = "Screenplay — Parenthetical"
+                        styleName = "Parenthetical"
                     } else if screenplayExpectingDialogue {
-                        styleName = "Screenplay — Dialogue"
+                        styleName = "Dialogue"
                     } else {
-                        styleName = "Screenplay — Action"
+                        styleName = "Action"
                     }
                 } else {
                     // Infer style based on font, paragraph attributes, and text content
@@ -4599,15 +4817,41 @@ class EditorViewController: NSViewController {
 
             if let definition = StyleCatalog.shared.style(named: styleName) {
                 // Apply catalog style colors and formatting to make them visible immediately
-                let catalogParagraph = self.paragraphStyle(from: definition)
+                var catalogParagraph = self.paragraphStyle(from: definition)
                 let catalogFont = self.font(from: definition)
                 let textColor = self.color(fromHex: definition.textColorHex, fallback: currentTheme.textColor)
                 let backgroundColor = definition.backgroundColorHex.flatMap { self.color(fromHex: $0, fallback: .clear) }
 
+                // Industry-standard screenplay style names that need exact layout
+                let screenplayStyles: Set<String> = [
+                    "Scene Heading", "Action", "Character", "Parenthetical", "Dialogue", "Transition",
+                    "Shot", "Montage", "Montage Header", "Montage Item", "Montage End",
+                    "Series of Shots Header", "Series of Shots Item", "Series of Shots End",
+                    "Flashback", "Back To Present",
+                    "Intercut", "End Intercut",
+                    "Act Break", "Chyron", "Lyrics",
+                    "Insert", "On Screen", "Text Message", "Email",
+                    "Note", "More", "Continued", "Title", "Author", "Contact", "Draft"
+                ]
+
+                // For Screenplay Action, spacingBefore is contextual (after Scene Heading/Dialogue).
+                if currentTemplate == "Screenplay", styleName == "Action" {
+                    let prevLoc = max(0, paragraphRange.location - 1)
+                    let prevPara = prevLoc < fullString.length ? fullString.paragraphRange(for: NSRange(location: prevLoc, length: 0)) : NSRange(location: NSNotFound, length: 0)
+                    let prevStyle = (prevPara.location != NSNotFound && prevPara.location < mutable.length)
+                        ? (mutable.attribute(styleAttributeKey, at: prevPara.location, effectiveRange: nil) as? String)
+                        : nil
+                    let desiredBefore: CGFloat = (prevStyle == "Scene Heading" || prevStyle == "Dialogue") ? 12 : 0
+                    if let mutableStyle = catalogParagraph.mutableCopy() as? NSMutableParagraphStyle {
+                        mutableStyle.paragraphSpacingBefore = desiredBefore
+                        catalogParagraph = mutableStyle.copy() as! NSParagraphStyle
+                    }
+                }
+
                 // Screenplay styles are layout-sensitive; don't preserve imported/manual alignment overrides
                 // that can accidentally center an entire document.
                 let finalParagraph: NSParagraphStyle
-                if currentTemplate == "Screenplay", styleName.hasPrefix("Screenplay —") {
+                if currentTemplate == "Screenplay", screenplayStyles.contains(styleName) {
                     finalParagraph = catalogParagraph
                 } else {
                     finalParagraph = mergedParagraphStyle(existing: paragraphStyle, style: catalogParagraph)
@@ -4619,7 +4863,7 @@ class EditorViewController: NSViewController {
                     // Merge style font with existing font to preserve inline changes
                     let existingFont = attrs[.font] as? NSFont
                     let finalFont: NSFont
-                    if currentTemplate == "Screenplay", styleName.hasPrefix("Screenplay —") {
+                    if currentTemplate == "Screenplay", screenplayStyles.contains(styleName) {
                         finalFont = mergedScreenplayFont(existing: existingFont, style: catalogFont)
                     } else {
                         finalFont = mergedFont(existing: existingFont, style: catalogFont)
@@ -5534,6 +5778,135 @@ class EditorViewController: NSViewController {
         }
     }
 
+    @objc func qpRemoveHiddenText(_ sender: Any?) {
+        removeHiddenText()
+    }
+
+    /// Remove hidden/invisible text runs.
+    ///
+    /// This is broader than `removeInvisibleCharacters()`:
+    /// - Deletes common zero-width/invisible Unicode characters.
+    /// - Deletes any ranges explicitly hidden by `.foregroundColor = .clear` (used by some importers and anchors).
+    func removeHiddenText() {
+        guard let textStorage = textView.textStorage else { return }
+
+        let fullRange = NSRange(location: 0, length: textStorage.length)
+        guard fullRange.length > 0 else {
+            NSSound.beep()
+            return
+        }
+
+        let text = textStorage.string
+
+        // 1) Find invisible/problematic unicode characters.
+        let invisibleChars: [(char: String, name: String)] = [
+            ("\u{200B}", "Zero Width Space"),
+            ("\u{200C}", "Zero Width Non-Joiner"),
+            ("\u{200D}", "Zero Width Joiner"),
+            ("\u{FEFF}", "Zero Width No-Break Space (BOM)"),
+            ("\u{2060}", "Word Joiner"),
+            ("\u{180E}", "Mongolian Vowel Separator"),
+            ("\u{034F}", "Combining Grapheme Joiner"),
+            ("\u{00A0}", "Non-Breaking Space"),
+            ("\u{202F}", "Narrow No-Break Space"),
+        ]
+
+        var rangesToDelete: [(range: NSRange, name: String)] = []
+
+        for (char, name) in invisibleChars {
+            var searchRange = NSRange(location: 0, length: (text as NSString).length)
+            while searchRange.location < (text as NSString).length {
+                let foundRange = (text as NSString).range(of: char, options: [], range: searchRange)
+                if foundRange.location != NSNotFound {
+                    rangesToDelete.append((foundRange, name))
+                    let nextLocation = foundRange.location + foundRange.length
+                    searchRange = NSRange(location: nextLocation, length: (text as NSString).length - nextLocation)
+                } else {
+                    break
+                }
+            }
+        }
+
+        // 2) Find explicitly hidden runs (foreground is clear / fully transparent).
+        textStorage.enumerateAttribute(.foregroundColor, in: fullRange, options: []) { value, range, _ in
+            guard let color = value as? NSColor else { return }
+            if color.alphaComponent <= 0.01 {
+                rangesToDelete.append((range, "Hidden Text"))
+            }
+        }
+
+        if rangesToDelete.isEmpty {
+            DispatchQueue.main.async { [weak self] in
+                guard let self else { return }
+                self.showThemedAlert(title: "No Hidden Text Found", message: "No hidden/invisible text was detected in this document.")
+            }
+            return
+        }
+
+        // Merge overlaps/adjacent ranges to avoid double deletes.
+        let sorted = rangesToDelete
+            .map { ($0.range, $0.name) }
+            .sorted(by: { $0.0.location < $1.0.location })
+
+        var merged: [(range: NSRange, names: [String])] = []
+        for (range, name) in sorted {
+            if let last = merged.last {
+                let lastEnd = last.range.location + last.range.length
+                if range.location <= lastEnd {
+                    let newEnd = max(lastEnd, range.location + range.length)
+                    let newRange = NSRange(location: last.range.location, length: newEnd - last.range.location)
+                    var newNames = last.names
+                    newNames.append(name)
+                    merged[merged.count - 1] = (newRange, newNames)
+                } else {
+                    merged.append((range, [name]))
+                }
+            } else {
+                merged.append((range, [name]))
+            }
+        }
+
+        // Delete back-to-front.
+        let savedSelection = textView.selectedRange()
+        suppressTextChangeNotifications = true
+
+        textStorage.beginEditing()
+        for (range, _) in merged.sorted(by: { $0.range.location > $1.range.location }) {
+            textStorage.deleteCharacters(in: range)
+        }
+        textStorage.endEditing()
+
+        let newLocation = min(savedSelection.location, textStorage.length)
+        textView.setSelectedRange(NSRange(location: newLocation, length: 0))
+
+        suppressTextChangeNotifications = false
+        delegate?.textDidChange()
+        updatePageCentering()
+
+        // Report
+        let totalRemoved = merged.reduce(0) { $0 + $1.range.length }
+        var counts: [String: Int] = [:]
+        for (_, names) in merged {
+            for n in Set(names) {
+                counts[n, default: 0] += 1
+            }
+        }
+        var report = "Removed \(totalRemoved) hidden character(s).\n\n"
+        for (name, count) in counts.sorted(by: { $0.value > $1.value }) {
+            report += "• \(count) block(s) matched: \(name)\n"
+        }
+
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            let alert = NSAlert.themedInformational(title: "Hidden Text Removed", message: report)
+            if let window = self.view.window {
+                alert.runThemedSheet(for: window)
+            } else {
+                _ = alert.runThemedModal()
+            }
+        }
+    }
+
     /// Remove extra blank lines between paragraphs
     func removeExtraBlankLines() {
         guard let textStorage = textView.textStorage else { return }
@@ -5639,6 +6012,10 @@ class EditorViewController: NSViewController {
                 _ = alert.runThemedModal()
             }
         }
+    }
+
+    @objc func qpRemoveExtraBlankLines(_ sender: Any?) {
+        removeExtraBlankLines()
     }
 
     /// Highlight invisible characters in the document to identify problematic areas
@@ -5871,6 +6248,25 @@ class EditorViewController: NSViewController {
             return
         }
 
+        // Screenplay styles are layout-sensitive and depend on screenplay page margins.
+        // `applyCatalogStyle` may return early (bypassing the Screenplay switch cases), so make
+        // sure the page defaults are applied up-front.
+        let screenplayStyles: Set<String> = [
+            "Scene Heading", "Action", "Character", "Parenthetical", "Dialogue", "Transition",
+            "Shot", "Montage", "Montage Header", "Montage Item", "Montage End",
+            "Series of Shots Header", "Series of Shots Item", "Series of Shots End",
+            "Flashback", "Back To Present",
+            "Intercut", "End Intercut",
+            "Act Break", "Chyron", "Lyrics",
+            "Insert", "On Screen", "Text Message", "Email",
+            "Note", "More", "Continued", "Title", "Author", "Contact", "Draft"
+        ]
+        if StyleCatalog.shared.isScreenplayTemplate, screenplayStyles.contains(styleName) {
+            debugLog("🎬 applyStyle(\(styleName)) template=Screenplay margins(before)=L=\(leftPageMargin) R=\(rightPageMargin)")
+            applyScreenplayPageDefaultsIfNeeded()
+            debugLog("🎬 applyStyle(\(styleName)) template=Screenplay margins(after)=L=\(leftPageMargin) R=\(rightPageMargin)")
+        }
+
         let styledByCatalog = applyCatalogStyle(named: styleName)
         if styledByCatalog {
             if styleName == "Book Title" || styleName == "Poem Title" || styleName == "Poetry — Title" {
@@ -5890,6 +6286,13 @@ class EditorViewController: NSViewController {
                     if !authorText.isEmpty {
                         delegate?.authorDidChange(authorText)
                     }
+                }
+            }
+
+            if StyleCatalog.shared.isScreenplayTemplate {
+                normalizeScreenplayTextIfNeeded(for: styleName)
+                if styleName == "Action" {
+                    adjustScreenplayActionSpacingBeforeIfNeeded()
                 }
             }
             applyStyleAttribute(styleName)
@@ -6173,8 +6576,8 @@ case "Book Subtitle":
                 style.paragraphSpacingBefore = 18
                 style.paragraphSpacing = 18
             }
-        case "Dialogue":
-            applyStyle(named: "Body Text")
+        // "Dialogue" for prose templates uses StyleCatalog (which aliases to Body Text)
+        // Screenplay "Dialogue" has specific formatting handled in the Screenplay section below
         case "Internal Thought":
             applyStyle(named: "Body Text")
             applyFontChange { current in
@@ -6303,41 +6706,45 @@ case "Book Subtitle":
                 NSFont(name: "Times New Roman", size: 11) ?? current
             }
 
-        // MARK: Screenplay
-        case "Screenplay — Title":
-            applyScreenplayPageDefaultsIfNeeded()
-            applyScreenplayParagraphStyle { style in
-                style.alignment = .center
-                style.firstLineHeadIndent = 0
-                style.headIndent = 0
-                style.tailIndent = 0
-                style.paragraphSpacingBefore = 144  // Extra space above title
-                style.paragraphSpacing = 12
+        // MARK: Screenplay (Industry Standard)
+
+        // Title page styles
+        case "Title":
+            if StyleCatalog.shared.isScreenplayTemplate {
+                applyScreenplayPageDefaultsIfNeeded()
+                applyScreenplayParagraphStyle { style in
+                    style.alignment = .center
+                    style.firstLineHeadIndent = 0
+                    style.headIndent = 0
+                    style.tailIndent = 0
+                    style.paragraphSpacingBefore = 144
+                    style.paragraphSpacing = 24
+                }
+                applyScreenplayFont(bold: true)
             }
-            applyScreenplayTitleFont()
-        case "Screenplay — Author":
+        case "Author":
             applyScreenplayPageDefaultsIfNeeded()
             applyScreenplayParagraphStyle { style in
                 style.alignment = .center
                 style.firstLineHeadIndent = 0
                 style.headIndent = 0
                 style.tailIndent = 0
-                style.paragraphSpacingBefore = 72
+                style.paragraphSpacingBefore = 24
                 style.paragraphSpacing = 0
             }
             applyScreenplayFont()
-        case "Screenplay — Contact":
+        case "Contact":
             applyScreenplayPageDefaultsIfNeeded()
             applyScreenplayParagraphStyle { style in
                 style.alignment = .left
                 style.firstLineHeadIndent = 0
                 style.headIndent = 0
-                style.tailIndent = -288  // Left aligned, narrow column
+                style.tailIndent = 0
                 style.paragraphSpacingBefore = 0
                 style.paragraphSpacing = 0
             }
             applyScreenplayFont()
-        case "Screenplay — Draft":
+        case "Draft":
             applyScreenplayPageDefaultsIfNeeded()
             applyScreenplayParagraphStyle { style in
                 style.alignment = .right
@@ -6348,18 +6755,20 @@ case "Book Subtitle":
                 style.paragraphSpacing = 0
             }
             applyScreenplayFont()
-        case "Screenplay — Slugline":
+
+        // Core screenplay elements
+        case "Scene Heading":
             applyScreenplayPageDefaultsIfNeeded()
             applyScreenplayParagraphStyle { style in
                 style.alignment = .left
                 style.firstLineHeadIndent = 0
                 style.headIndent = 0
                 style.tailIndent = 0
-                style.paragraphSpacingBefore = 12
-                style.paragraphSpacing = 0
+                style.paragraphSpacingBefore = 24
+                style.paragraphSpacing = 12
             }
             applyScreenplayFont()
-        case "Screenplay — Action":
+        case "Action":
             applyScreenplayPageDefaultsIfNeeded()
             applyScreenplayParagraphStyle { style in
                 style.alignment = .left
@@ -6367,54 +6776,100 @@ case "Book Subtitle":
                 style.headIndent = 0
                 style.tailIndent = 0
                 style.paragraphSpacingBefore = 0
-                style.paragraphSpacing = 0
+                style.paragraphSpacing = 12
             }
             applyScreenplayFont()
-        case "Screenplay — Character":
+        case "Character":
             applyScreenplayPageDefaultsIfNeeded()
             applyScreenplayParagraphStyle { style in
                 style.alignment = .left
-                style.firstLineHeadIndent = 158
-                style.headIndent = 158
-                style.tailIndent = -72
+                style.firstLineHeadIndent = 158.4
+                style.headIndent = 158.4
+                style.tailIndent = -129.6
                 style.paragraphSpacingBefore = 12
                 style.paragraphSpacing = 0
             }
             applyScreenplayFont()
-        case "Screenplay — Parenthetical":
+        case "Parenthetical":
             applyScreenplayPageDefaultsIfNeeded()
             applyScreenplayParagraphStyle { style in
                 style.alignment = .left
-                style.firstLineHeadIndent = 115
-                style.headIndent = 115
-                style.tailIndent = -72
+                style.firstLineHeadIndent = 115.2
+                style.headIndent = 115.2
+                style.tailIndent = -129.6
                 style.paragraphSpacingBefore = 0
                 style.paragraphSpacing = 0
             }
             applyScreenplayFont()
-        case "Screenplay — Dialogue":
+        case "Dialogue":
             applyScreenplayPageDefaultsIfNeeded()
             applyScreenplayParagraphStyle { style in
                 style.alignment = .left
                 style.firstLineHeadIndent = 72
                 style.headIndent = 72
-                style.tailIndent = -72
+                style.tailIndent = -108
+                style.paragraphSpacingBefore = 0
+                style.paragraphSpacing = 12
+            }
+            applyScreenplayFont()
+        case "Transition":
+            applyScreenplayPageDefaultsIfNeeded()
+            applyScreenplayParagraphStyle { style in
+                style.alignment = .right
+                style.firstLineHeadIndent = 288
+                style.headIndent = 288
+                style.tailIndent = 0
+                style.paragraphSpacingBefore = 24
+                style.paragraphSpacing = 24
+            }
+            applyScreenplayFont()
+
+        // Camera & special screenplay elements
+        case "Shot":
+            applyScreenplayPageDefaultsIfNeeded()
+            applyScreenplayParagraphStyle { style in
+                style.alignment = .left
+                style.firstLineHeadIndent = 0
+                style.headIndent = 0
+                style.tailIndent = 0
+                style.paragraphSpacingBefore = 24
+                style.paragraphSpacing = 12
+            }
+            applyScreenplayFont()
+        case "Montage":
+            applyScreenplayPageDefaultsIfNeeded()
+            applyScreenplayParagraphStyle { style in
+                style.alignment = .left
+                style.firstLineHeadIndent = 0
+                style.headIndent = 0
+                style.tailIndent = 0
+                style.paragraphSpacingBefore = 24
+                style.paragraphSpacing = 12
+            }
+            applyScreenplayFont()
+        case "Montage Header":
+            applyScreenplayPageDefaultsIfNeeded()
+            applyScreenplayParagraphStyle { style in
+                style.alignment = .left
+                style.firstLineHeadIndent = 0
+                style.headIndent = 0
+                style.tailIndent = 0
+                style.paragraphSpacingBefore = 24
+                style.paragraphSpacing = 12
+            }
+            applyScreenplayFont()
+        case "Montage Item":
+            applyScreenplayPageDefaultsIfNeeded()
+            applyScreenplayParagraphStyle { style in
+                style.alignment = .left
+                style.firstLineHeadIndent = 0
+                style.headIndent = 0
+                style.tailIndent = 0
                 style.paragraphSpacingBefore = 0
                 style.paragraphSpacing = 0
             }
             applyScreenplayFont()
-        case "Screenplay — Transition":
-            applyScreenplayPageDefaultsIfNeeded()
-            applyScreenplayParagraphStyle { style in
-                style.alignment = .right
-                style.firstLineHeadIndent = 0
-                style.headIndent = 0
-                style.tailIndent = 0
-                style.paragraphSpacingBefore = 12
-                style.paragraphSpacing = 0
-            }
-            applyScreenplayFont()
-        case "Screenplay — Shot":
+        case "Montage End":
             applyScreenplayPageDefaultsIfNeeded()
             applyScreenplayParagraphStyle { style in
                 style.alignment = .left
@@ -6422,6 +6877,195 @@ case "Book Subtitle":
                 style.headIndent = 0
                 style.tailIndent = 0
                 style.paragraphSpacingBefore = 12
+                style.paragraphSpacing = 12
+            }
+            applyScreenplayFont()
+        case "Series of Shots Header":
+            applyScreenplayPageDefaultsIfNeeded()
+            applyScreenplayParagraphStyle { style in
+                style.alignment = .left
+                style.firstLineHeadIndent = 0
+                style.headIndent = 0
+                style.tailIndent = 0
+                style.paragraphSpacingBefore = 24
+                style.paragraphSpacing = 12
+            }
+            applyScreenplayFont()
+        case "Series of Shots Item":
+            applyScreenplayPageDefaultsIfNeeded()
+            applyScreenplayParagraphStyle { style in
+                style.alignment = .left
+                style.firstLineHeadIndent = 0
+                style.headIndent = 0
+                style.tailIndent = 0
+                style.paragraphSpacingBefore = 0
+                style.paragraphSpacing = 0
+            }
+            applyScreenplayFont()
+        case "Series of Shots End":
+            applyScreenplayPageDefaultsIfNeeded()
+            applyScreenplayParagraphStyle { style in
+                style.alignment = .left
+                style.firstLineHeadIndent = 0
+                style.headIndent = 0
+                style.tailIndent = 0
+                style.paragraphSpacingBefore = 12
+                style.paragraphSpacing = 12
+            }
+            applyScreenplayFont()
+        case "Flashback":
+            applyScreenplayPageDefaultsIfNeeded()
+            applyScreenplayParagraphStyle { style in
+                style.alignment = .left
+                style.firstLineHeadIndent = 0
+                style.headIndent = 0
+                style.tailIndent = 0
+                style.paragraphSpacingBefore = 24
+                style.paragraphSpacing = 12
+            }
+            applyScreenplayFont()
+        case "Back To Present":
+            applyScreenplayPageDefaultsIfNeeded()
+            applyScreenplayParagraphStyle { style in
+                style.alignment = .left
+                style.firstLineHeadIndent = 0
+                style.headIndent = 0
+                style.tailIndent = 0
+                style.paragraphSpacingBefore = 24
+                style.paragraphSpacing = 12
+            }
+            applyScreenplayFont()
+        case "Intercut":
+            applyScreenplayPageDefaultsIfNeeded()
+            applyScreenplayParagraphStyle { style in
+                style.alignment = .left
+                style.firstLineHeadIndent = 0
+                style.headIndent = 0
+                style.tailIndent = 0
+                style.paragraphSpacingBefore = 24
+                style.paragraphSpacing = 12
+            }
+            applyScreenplayFont()
+        case "End Intercut":
+            applyScreenplayPageDefaultsIfNeeded()
+            applyScreenplayParagraphStyle { style in
+                style.alignment = .left
+                style.firstLineHeadIndent = 0
+                style.headIndent = 0
+                style.tailIndent = 0
+                style.paragraphSpacingBefore = 24
+                style.paragraphSpacing = 12
+            }
+            applyScreenplayFont()
+
+        // Other screenplay elements
+        case "Act Break":
+            applyScreenplayPageDefaultsIfNeeded()
+            applyScreenplayParagraphStyle { style in
+                style.alignment = .center
+                style.firstLineHeadIndent = 0
+                style.headIndent = 0
+                style.tailIndent = 0
+                style.paragraphSpacingBefore = 36
+                style.paragraphSpacing = 36
+            }
+            applyScreenplayFont(bold: true)
+        case "Chyron":
+            applyScreenplayPageDefaultsIfNeeded()
+            applyScreenplayParagraphStyle { style in
+                style.alignment = .left
+                style.firstLineHeadIndent = 0
+                style.headIndent = 0
+                style.tailIndent = 0
+                style.paragraphSpacingBefore = 12
+                style.paragraphSpacing = 12
+            }
+            applyScreenplayFont()
+        case "Insert":
+            applyScreenplayPageDefaultsIfNeeded()
+            applyScreenplayParagraphStyle { style in
+                style.alignment = .left
+                style.firstLineHeadIndent = 0
+                style.headIndent = 0
+                style.tailIndent = 0
+                style.paragraphSpacingBefore = 24
+                style.paragraphSpacing = 12
+            }
+            applyScreenplayFont()
+        case "On Screen":
+            applyScreenplayPageDefaultsIfNeeded()
+            applyScreenplayParagraphStyle { style in
+                style.alignment = .left
+                style.firstLineHeadIndent = 0
+                style.headIndent = 0
+                style.tailIndent = 0
+                style.paragraphSpacingBefore = 12
+                style.paragraphSpacing = 12
+            }
+            applyScreenplayFont()
+        case "Text Message":
+            applyScreenplayPageDefaultsIfNeeded()
+            applyScreenplayParagraphStyle { style in
+                style.alignment = .left
+                style.firstLineHeadIndent = 72
+                style.headIndent = 72
+                style.tailIndent = -108
+                style.paragraphSpacingBefore = 0
+                style.paragraphSpacing = 12
+            }
+            applyScreenplayFont()
+        case "Email":
+            applyScreenplayPageDefaultsIfNeeded()
+            applyScreenplayParagraphStyle { style in
+                style.alignment = .left
+                style.firstLineHeadIndent = 0
+                style.headIndent = 0
+                style.tailIndent = 0
+                style.paragraphSpacingBefore = 24
+                style.paragraphSpacing = 12
+            }
+            applyScreenplayFont()
+        case "Lyrics":
+            applyScreenplayPageDefaultsIfNeeded()
+            applyScreenplayParagraphStyle { style in
+                style.alignment = .left
+                style.firstLineHeadIndent = 72
+                style.headIndent = 72
+                style.tailIndent = -108
+                style.paragraphSpacingBefore = 0
+                style.paragraphSpacing = 0
+            }
+            applyScreenplayFont(italic: true)
+        case "Note":
+            applyScreenplayPageDefaultsIfNeeded()
+            applyScreenplayParagraphStyle { style in
+                style.alignment = .left
+                style.firstLineHeadIndent = 0
+                style.headIndent = 0
+                style.tailIndent = 0
+                style.paragraphSpacingBefore = 12
+                style.paragraphSpacing = 12
+            }
+            applyScreenplayFont(italic: true)
+        case "More":
+            applyScreenplayPageDefaultsIfNeeded()
+            applyScreenplayParagraphStyle { style in
+                style.alignment = .left
+                style.firstLineHeadIndent = 158
+                style.headIndent = 158
+                style.tailIndent = 0
+                style.paragraphSpacingBefore = 0
+                style.paragraphSpacing = 0
+            }
+            applyScreenplayFont()
+        case "Continued":
+            applyScreenplayPageDefaultsIfNeeded()
+            applyScreenplayParagraphStyle { style in
+                style.alignment = .left
+                style.firstLineHeadIndent = 158
+                style.headIndent = 158
+                style.tailIndent = 0
+                style.paragraphSpacingBefore = 0
                 style.paragraphSpacing = 0
             }
             applyScreenplayFont()
@@ -6534,7 +7178,7 @@ case "Book Subtitle":
         style.paragraphSpacingBefore = definition.spacingBefore
         style.paragraphSpacing = definition.spacingAfter
         style.headIndent = definition.headIndent
-        style.firstLineHeadIndent = definition.firstLineIndent
+        style.firstLineHeadIndent = definition.headIndent + definition.firstLineIndent
         style.tailIndent = definition.tailIndent
         style.lineBreakMode = .byWordWrapping
         return style.copy() as! NSParagraphStyle
@@ -6932,7 +7576,7 @@ case "Book Subtitle":
                 }
 
                 let nextStyle = styleName(atParagraphStart: nextRange) ?? ""
-                if nextStyle == "Screenplay — Parenthetical" || nextStyle == "Screenplay — Dialogue" {
+                if nextStyle == "Parenthetical" || nextStyle == "Dialogue" {
                     return true
                 }
 
@@ -6980,7 +7624,7 @@ case "Book Subtitle":
             scanned += 1
 
             let styleName = storage.attribute(styleAttributeKey, at: paragraphRange.location, effectiveRange: nil) as? String
-            if styleName == "Screenplay — Character" {
+            if styleName == "Character" {
                 // Only treat this as a character cue if it actually introduces dialogue.
                 guard isDialogueFollowingCharacterCue(startingAfter: paragraphRange) else {
                     location = NSMaxRange(paragraphRange)
@@ -7106,7 +7750,7 @@ case "Book Subtitle":
 
         if isScreenplayTemplate {
             // Screenplay outline should be driven by scene sluglines.
-            levels["Screenplay — Slugline"] = 1
+            levels["Scene Heading"] = 1
         }
 
         var results: [OutlineEntry] = []
@@ -7157,10 +7801,10 @@ case "Book Subtitle":
                 let rawTitle = fullString.substring(with: paragraphRange).trimmingCharacters(in: .whitespacesAndNewlines)
                 if looksLikeScreenplaySlugline(rawTitle) {
                     let pageIndex = getPageNumber(forCharacterPosition: paragraphRange.location)
-                    results.append(OutlineEntry(title: rawTitle, level: 1, range: paragraphRange, page: pageIndex, styleName: "Screenplay — Slugline"))
+                    results.append(OutlineEntry(title: rawTitle, level: 1, range: paragraphRange, page: pageIndex, styleName: "Scene Heading"))
                 } else if looksLikeScreenplayActHeading(rawTitle) {
                     let pageIndex = getPageNumber(forCharacterPosition: paragraphRange.location)
-                    results.append(OutlineEntry(title: rawTitle, level: 0, range: paragraphRange, page: pageIndex, styleName: "Screenplay — Act"))
+                    results.append(OutlineEntry(title: rawTitle, level: 0, range: paragraphRange, page: pageIndex, styleName: "Scene Heading"))
                 }
             }
 
@@ -7456,9 +8100,167 @@ case "Book Subtitle":
         }
     }
 
-    private func applyScreenplayFont() {
+    // MARK: - Screenplay Text Normalization
+
+    private func normalizeScreenplayTextIfNeeded(for styleName: String) {
+        switch styleName {
+        case "Scene Heading":
+            normalizeSelectedParagraphText(transform: { raw in
+                var trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !trimmed.isEmpty else { return trimmed }
+
+                // Uppercase, then normalize common slugline prefixes.
+                trimmed = trimmed.uppercased()
+
+                func normalizePrefix(_ prefix: String, replacement: String) -> String? {
+                    if trimmed.hasPrefix(prefix) {
+                        let rest = trimmed.dropFirst(prefix.count)
+                        if rest.hasPrefix(" ") {
+                            return replacement + rest
+                        }
+                    }
+                    return nil
+                }
+
+                if let fixed = normalizePrefix("INT/EXT", replacement: "INT./EXT.") { return fixed }
+                if let fixed = normalizePrefix("INT.", replacement: "INT.") { return fixed }
+                if let fixed = normalizePrefix("EXT.", replacement: "EXT.") { return fixed }
+                if let fixed = normalizePrefix("INT", replacement: "INT.") { return fixed }
+                if let fixed = normalizePrefix("EXT", replacement: "EXT.") { return fixed }
+                return trimmed
+            })
+        case "Character":
+            normalizeSelectedParagraphText(transform: { $0.trimmingCharacters(in: .whitespacesAndNewlines).uppercased() })
+        case "Parenthetical":
+            normalizeSelectedParagraphText(transform: { raw in
+                let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !trimmed.isEmpty else { return trimmed }
+
+                var core = trimmed
+                if !core.hasPrefix("(") { core = "(" + core }
+                if !core.hasSuffix(")") { core = core + ")" }
+
+                // Lowercase the inner content but preserve the parentheses.
+                if core.count >= 2, core.hasPrefix("("), core.hasSuffix(")") {
+                    let start = core.index(after: core.startIndex)
+                    let end = core.index(before: core.endIndex)
+                    let inner = String(core[start..<end]).trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+                    return "(" + inner + ")"
+                }
+                return core.lowercased()
+            })
+        case "Transition":
+            normalizeSelectedParagraphText(transform: { raw in
+                var trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !trimmed.isEmpty else { return trimmed }
+                trimmed = trimmed.uppercased()
+                if trimmed.hasSuffix(":") { return trimmed }
+                if trimmed.hasSuffix(".") { trimmed.removeLast() }
+                return trimmed + ":"
+            })
+        case "Shot", "Montage", "Montage Header", "Montage End",
+             "Series of Shots Header", "Series of Shots End",
+             "Flashback", "Back To Present",
+             "Intercut", "End Intercut",
+             "Act Break",
+             "Insert", "On Screen",
+             "More", "Continued":
+            normalizeSelectedParagraphText(transform: { $0.trimmingCharacters(in: .whitespacesAndNewlines).uppercased() })
+        default:
+            break
+        }
+    }
+
+    private func adjustScreenplayActionSpacingBeforeIfNeeded() {
+        guard StyleCatalog.shared.isScreenplayTemplate else { return }
+        guard let storage = textView.textStorage, storage.length > 0 else { return }
+        guard let selected = textView.selectedRanges.first?.rangeValue else { return }
+
+        let full = storage.string as NSString
+        let safeLocation = min(selected.location, max(0, storage.length - 1))
+        let safeRange = NSRange(location: safeLocation, length: selected.length)
+        let paragraphsRange = full.paragraphRange(for: safeRange)
+        guard paragraphsRange.length > 0 else { return }
+
+        performUndoableTextStorageEdit(in: paragraphsRange, actionName: "Screenplay Action Spacing") { storage in
+            var location = paragraphsRange.location
+            let end = NSMaxRange(paragraphsRange)
+            while location < end {
+                let paraRange = full.paragraphRange(for: NSRange(location: location, length: 0))
+                let safePara = NSIntersectionRange(paraRange, paragraphsRange)
+                guard safePara.length > 0 else {
+                    location = NSMaxRange(paraRange)
+                    continue
+                }
+
+                let styleName = storage.attribute(styleAttributeKey, at: safePara.location, effectiveRange: nil) as? String
+                if styleName == "Action" {
+                    let prevLoc = max(0, safePara.location - 1)
+                    let prevPara = prevLoc < full.length ? full.paragraphRange(for: NSRange(location: prevLoc, length: 0)) : NSRange(location: NSNotFound, length: 0)
+                    let prevStyle = (prevPara.location != NSNotFound && prevPara.location < storage.length)
+                        ? (storage.attribute(styleAttributeKey, at: prevPara.location, effectiveRange: nil) as? String)
+                        : nil
+
+                    let needsBlankBefore = (prevStyle == "Scene Heading" || prevStyle == "Dialogue")
+                    let desiredBefore: CGFloat = needsBlankBefore ? 12 : 0
+
+                    let existing = (storage.attribute(.paragraphStyle, at: safePara.location, effectiveRange: nil) as? NSParagraphStyle)
+                        ?? (textView.defaultParagraphStyle ?? NSParagraphStyle.default)
+                    if let mutable = existing.mutableCopy() as? NSMutableParagraphStyle {
+                        if mutable.paragraphSpacingBefore != desiredBefore {
+                            mutable.paragraphSpacingBefore = desiredBefore
+                            storage.addAttribute(.paragraphStyle, value: mutable.copy() as! NSParagraphStyle, range: safePara)
+                        }
+                    }
+                }
+
+                location = NSMaxRange(paraRange)
+            }
+        }
+    }
+
+    private func normalizeSelectedParagraphText(transform: (String) -> String) {
+        guard let storage = textView.textStorage else { return }
+        let selection = textView.selectedRange()
+        let full = storage.string as NSString
+        guard full.length > 0 else { return }
+
+        let paragraphRange = full.paragraphRange(for: selection)
+        guard paragraphRange.length > 0 else { return }
+
+        // Exclude trailing newline(s) so we only rewrite the content.
+        var end = paragraphRange.location + paragraphRange.length
+        while end > paragraphRange.location {
+            let ch = full.character(at: end - 1)
+            if ch == 10 || ch == 13 { // \n or \r
+                end -= 1
+            } else {
+                break
+            }
+        }
+        let contentRange = NSRange(location: paragraphRange.location, length: max(0, end - paragraphRange.location))
+        guard contentRange.length > 0 else { return }
+
+        let original = full.substring(with: contentRange)
+        let updated = transform(original)
+        guard updated != original else { return }
+
+        performUndoableTextStorageEdit(in: contentRange, actionName: "Normalize Screenplay Text") { storage in
+            storage.replaceCharacters(in: contentRange, with: updated)
+        }
+    }
+
+    private func applyScreenplayFont(bold: Bool = false, italic: Bool = false) {
         applyFontChange { current in
-            NSFont(name: "Courier New", size: 12) ?? current
+            var font = NSFont(name: "Courier New", size: 12) ?? current
+            let fontManager = NSFontManager.shared
+            if bold {
+                font = fontManager.convert(font, toHaveTrait: .boldFontMask)
+            }
+            if italic {
+                font = fontManager.convert(font, toHaveTrait: .italicFontMask)
+            }
+            return font
         }
     }
 
@@ -7475,6 +8277,7 @@ case "Book Subtitle":
 
     private func applyScreenplayPageDefaultsIfNeeded() {
         // Screenplay industry defaults: 1.5" left, 1" right (US Letter).
+        debugLog("🎬 applyScreenplayPageDefaultsIfNeeded: setPageMargins(left=108,right=72) current=L=\(leftPageMargin) R=\(rightPageMargin)")
         setPageMargins(left: 108, right: 72)
     }
 

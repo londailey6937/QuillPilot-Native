@@ -349,7 +349,7 @@ final class SceneInspectorWindowController: NSWindowController {
             paragraphStyle.paragraphSpacingBefore = bodyStyle.spacingBefore
             paragraphStyle.paragraphSpacing = bodyStyle.spacingAfter
             paragraphStyle.headIndent = bodyStyle.headIndent
-            paragraphStyle.firstLineHeadIndent = bodyStyle.firstLineIndent
+            paragraphStyle.firstLineHeadIndent = bodyStyle.headIndent + bodyStyle.firstLineIndent
             paragraphStyle.tailIndent = bodyStyle.tailIndent
             paragraphStyle.lineBreakMode = .byWordWrapping
 

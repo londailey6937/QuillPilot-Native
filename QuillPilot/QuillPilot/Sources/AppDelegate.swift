@@ -415,6 +415,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
+    @MainActor
+    @objc private func showStyleDiagnostics(_ sender: Any?) {
+        if mainWindowController == nil {
+            mainWindowController = MainWindowController()
+        }
+        presentMainWindow(orderingSource: sender)
+        mainWindowController?.mainContentViewController?.editorViewController.showStyleDiagnostics(sender)
+    }
+
     @objc private func zoomIn(_ sender: Any?) {
         if mainWindowController == nil {
             mainWindowController = MainWindowController()
@@ -678,6 +687,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         editMenu.addItem(.separator())
 
+        // Cleanup actions (routed via responder chain to the active editor)
+        editMenu.addItem(NSMenuItem(title: "Remove Empty Lines", action: Selector(("qpRemoveExtraBlankLines:")), keyEquivalent: ""))
+        editMenu.addItem(NSMenuItem(title: "Remove Hidden Text", action: Selector(("qpRemoveHiddenText:")), keyEquivalent: ""))
+
         // Insert Menu
         let insertMenuItem = NSMenuItem()
         mainMenu.addItem(insertMenuItem)
@@ -817,6 +830,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let resetTemplateOverridesItem = NSMenuItem(title: "Reset Template Overrides…", action: #selector(resetTemplateOverridesPrompt(_:)), keyEquivalent: "")
         resetTemplateOverridesItem.target = self
         toolsMenu.addItem(resetTemplateOverridesItem)
+
+        let styleDiagnosticsItem = NSMenuItem(title: "Style Diagnostics…", action: #selector(showStyleDiagnostics(_:)), keyEquivalent: "")
+        styleDiagnosticsItem.target = self
+        toolsMenu.addItem(styleDiagnosticsItem)
 
         // View Menu
         let viewMenuItem = NSMenuItem()

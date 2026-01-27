@@ -151,7 +151,7 @@ class EmotionalTrajectoryView: NSView {
         }
 
         // X-axis label
-        let xLabel = NSAttributedString(string: "Document Progress →", attributes: labelAttributes)
+        let xLabel = NSAttributedString(string: "Story Progress →", attributes: labelAttributes)
         xLabel.draw(at: NSPoint(x: chartRect.midX - 60, y: chartRect.minY - 40))
 
         // X-axis percentage markers

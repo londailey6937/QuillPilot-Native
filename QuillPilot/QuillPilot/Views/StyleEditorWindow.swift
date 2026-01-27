@@ -401,7 +401,7 @@ final class StyleEditorViewController: NSViewController {
         paragraph.paragraphSpacingBefore = def.spacingBefore
         paragraph.paragraphSpacing = def.spacingAfter
         paragraph.headIndent = def.headIndent
-        paragraph.firstLineHeadIndent = def.firstLineIndent
+        paragraph.firstLineHeadIndent = def.headIndent + def.firstLineIndent
         paragraph.tailIndent = def.tailIndent
 
         var font = NSFont.quillPilotResolve(nameOrFamily: def.fontName, size: def.fontSize) ?? NSFont.systemFont(ofSize: def.fontSize)

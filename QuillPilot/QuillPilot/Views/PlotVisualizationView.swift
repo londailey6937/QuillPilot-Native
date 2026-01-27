@@ -86,8 +86,24 @@ struct PlotTensionChart: View {
         Color(nsColor: ThemeManager.shared.currentTheme.popoutSecondaryColor)
     }
 
+    private var cardBackgroundColor: Color {
+        // Slightly different from popoutBackground so cards read as distinct surfaces.
+        Color(nsColor: ThemeManager.shared.currentTheme.pageBackground)
+    }
+
+    private var cardBorderColor: Color {
+        Color(nsColor: ThemeManager.shared.currentTheme.pageBorder).opacity(0.25)
+    }
+
     private var formatColor: Color {
-        plotAnalysis.documentFormat == .screenplay ? .purple : .blue
+        // Avoid non-theme blues/purples; keep chart styling aligned with current app theme.
+        plotAnalysis.documentFormat == .screenplay
+            ? Color(nsColor: ThemeManager.shared.currentTheme.pageBorder)
+            : Color(nsColor: ThemeManager.shared.currentTheme.popoutSecondaryColor)
+    }
+
+    private var accentTextColor: Color {
+        Color(nsColor: ThemeManager.shared.currentTheme.pageBorder)
     }
 
     private var formatIcon: String {
@@ -107,7 +123,9 @@ struct PlotTensionChart: View {
     }
 
     private var content: some View {
-        VStack(alignment: .leading, spacing: 16) {
+        // Center the analysis content in popouts/dialogs while keeping the inner layout leading-aligned.
+        VStack(alignment: .center, spacing: 0) {
+            VStack(alignment: .leading, spacing: 16) {
                 // Header with format indicator
                 HStack(alignment: .center, spacing: 12) {
                     VStack(alignment: .leading, spacing: 4) {
@@ -128,7 +146,7 @@ struct PlotTensionChart: View {
                         if plotAnalysis.formatConfidence < 0.7 {
                             Text("⚠️ Format detection confidence: \(Int(plotAnalysis.formatConfidence * 100))%")
                                 .font(.caption2)
-                                .foregroundColor(.orange)
+                                .foregroundColor(Color(nsColor: .systemOrange))
                         }
                     }
                 }
@@ -176,8 +194,11 @@ struct PlotTensionChart: View {
                 if !plotAnalysis.plotPoints.isEmpty {
                     plotPointsListView
                 }
+            }
+            .frame(maxWidth: 900)
+            .padding(.vertical)
         }
-        .padding(.vertical)
+        .frame(maxWidth: .infinity, alignment: .center)
     }
 
     // MARK: - Format-Specific Metrics
@@ -193,7 +214,11 @@ struct PlotTensionChart: View {
             }
         }
         .padding()
-        .background(formatColor.opacity(0.1))
+        .background(cardBackgroundColor)
+        .overlay(
+            RoundedRectangle(cornerRadius: 8)
+                .stroke(cardBorderColor, lineWidth: 1)
+        )
         .cornerRadius(8)
     }
 
@@ -307,7 +332,7 @@ struct PlotTensionChart: View {
             Text("⚠️ Structural Issues")
                 .font(.subheadline)
                 .fontWeight(.semibold)
-                .foregroundColor(.orange)
+                .foregroundColor(primaryTextColor)
 
             ForEach(Array(plotAnalysis.structuralIssues.enumerated()), id: \.offset) { _, issue in
                 VStack(alignment: .leading, spacing: 4) {
@@ -316,7 +341,7 @@ struct PlotTensionChart: View {
                         Text(issue.category.rawValue)
                             .font(.caption)
                             .fontWeight(.medium)
-                            .foregroundColor(severityColor(issue.severity))
+                            .foregroundColor(primaryTextColor)
                     }
 
                     Text(issue.description)
@@ -325,16 +350,24 @@ struct PlotTensionChart: View {
 
                     Text("💡 \(issue.suggestion)")
                         .font(.caption2)
-                        .foregroundColor(.blue)
+                        .foregroundColor(accentTextColor)
                         .italic()
                 }
                 .padding(8)
-                .background(severityColor(issue.severity).opacity(0.1))
+                .background(cardBackgroundColor)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 6)
+                        .stroke(severityColor(issue.severity).opacity(0.35), lineWidth: 1)
+                )
                 .cornerRadius(6)
             }
         }
         .padding()
-        .background(Color.orange.opacity(0.05))
+        .background(cardBackgroundColor)
+        .overlay(
+            RoundedRectangle(cornerRadius: 8)
+                .stroke(cardBorderColor, lineWidth: 1)
+        )
         .cornerRadius(8)
     }
 
@@ -346,7 +379,7 @@ struct PlotTensionChart: View {
             Text("📋 Potentially Missing Story Beats:")
                 .font(.subheadline)
                 .fontWeight(.semibold)
-                .foregroundColor(.orange)
+                .foregroundColor(primaryTextColor)
 
             ForEach(plotAnalysis.missingPoints, id: \.self) { pointType in
                 Text("• \(pointType)")
@@ -355,7 +388,11 @@ struct PlotTensionChart: View {
             }
         }
         .padding()
-        .background(Color.orange.opacity(0.1))
+        .background(cardBackgroundColor)
+        .overlay(
+            RoundedRectangle(cornerRadius: 8)
+                .stroke(cardBorderColor, lineWidth: 1)
+        )
         .cornerRadius(8)
     }
 
@@ -547,7 +584,7 @@ struct MetricBadge: View {
                 .foregroundColor(valueColor)
             Text(title)
                 .font(.system(size: 9))
-                .foregroundColor(.secondary)
+                .foregroundColor(Color(nsColor: ThemeManager.shared.currentTheme.popoutSecondaryColor))
                 .lineLimit(1)
         }
         .frame(minWidth: 70)
@@ -561,15 +598,17 @@ struct PlotPointRow: View {
     let format: DocumentFormat
     let onTap: () -> Void
 
-    // Explicitly white/light text since rows have dark background
     private var primaryTextColor: Color {
-        .white
+        Color(nsColor: ThemeManager.shared.currentTheme.popoutTextColor)
     }
     private var secondaryTextColor: Color {
-        Color.white.opacity(0.85)
+        Color(nsColor: ThemeManager.shared.currentTheme.popoutSecondaryColor)
     }
     private var rowBackgroundColor: Color {
-        Color(nsColor: NSColor(calibratedWhite: 0.25, alpha: 1.0))
+        Color(nsColor: ThemeManager.shared.currentTheme.pageBackground)
+    }
+    private var rowBorderColor: Color {
+        Color(nsColor: ThemeManager.shared.currentTheme.pageBorder).opacity(0.25)
     }
 
     var body: some View {
@@ -612,11 +651,15 @@ struct PlotPointRow: View {
                 Spacer()
 
                 Image(systemName: "arrow.right.circle")
-                    .foregroundColor(.accentColor)
+                    .foregroundColor(Color(nsColor: ThemeManager.shared.currentTheme.pageBorder))
             }
             .padding(.vertical, 8)
             .padding(.horizontal, 12)
             .background(rowBackgroundColor)
+            .overlay(
+                RoundedRectangle(cornerRadius: 8)
+                    .stroke(rowBorderColor, lineWidth: 1)
+            )
             .cornerRadius(8)
         }
         .buttonStyle(.plain)

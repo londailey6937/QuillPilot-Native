@@ -1521,6 +1521,21 @@ class EditorViewController: NSViewController {
         notesManager.textStorage = textView.textStorage
     }
 
+    override func viewDidAppear() {
+        super.viewDidAppear()
+        // When reopening/importing, the scroll view’s final width can settle after content is set.
+        // Re-center after the view is in a window so the page doesn’t appear left-justified.
+        DispatchQueue.main.async { [weak self] in
+            self?.updatePageCentering(ensureSelectionVisible: false)
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { [weak self] in
+            self?.updatePageCentering(ensureSelectionVisible: false)
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) { [weak self] in
+            self?.updatePageCentering(ensureSelectionVisible: false)
+        }
+    }
+
     private func setupTextView() {
         // Outer scroll view for scrolling the entire page view
         scrollView = NSScrollView()
@@ -3547,8 +3562,10 @@ class EditorViewController: NSViewController {
     }
 
     func scrollToTop() {
-        // Force scroll to absolute top by setting clip view origin to zero
-        scrollView.contentView.scroll(to: NSPoint.zero)
+        // Scroll to the absolute top while preserving horizontal position.
+        // Resetting x to 0 makes the page appear left-justified until a later layout pass.
+        let currentX = scrollView.contentView.bounds.origin.x
+        scrollView.contentView.scroll(to: NSPoint(x: currentX, y: 0))
         scrollView.reflectScrolledClipView(scrollView.contentView)
         // Also try the text view method as backup
         textView.scrollToBeginningOfDocument(nil)
@@ -4107,6 +4124,16 @@ class EditorViewController: NSViewController {
 
         applyDefaultTypingAttributes()
         updatePageLayout()
+        // On reopen/import, the scroll view may not have its final width during the first layout pass.
+        // Center immediately, then once more on the next runloop so the page doesn't appear left-justified
+        // until the user triggers another layout change (e.g., by clicking a style).
+        updatePageCentering(ensureSelectionVisible: false)
+        DispatchQueue.main.async { [weak self] in
+            self?.updatePageCentering(ensureSelectionVisible: false)
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.12) { [weak self] in
+            self?.updatePageCentering(ensureSelectionVisible: false)
+        }
         scrollToTop()
 
         // Ensure TOC/Index leader alignment survives reopen.
@@ -4165,8 +4192,12 @@ class EditorViewController: NSViewController {
             DispatchQueue.main.async { [weak self] in
                 debugLog("📥 Import: running deferred updatePageLayout (large doc)")
                 self?.updatePageLayout()
+                self?.updatePageCentering(ensureSelectionVisible: false)
                 self?.scrollToTop()
                 self?.repairTOCAndIndexFormattingAfterImport()
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.12) { [weak self] in
+                    self?.updatePageCentering(ensureSelectionVisible: false)
+                }
                 // Wait for layout to settle before triggering analysis
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
                     self?.delegate?.resumeAnalysisAfterLayout()
@@ -4175,6 +4206,7 @@ class EditorViewController: NSViewController {
         } else {
             debugLog("📥 Import: running immediate updatePageLayout")
             updatePageLayout()
+            updatePageCentering(ensureSelectionVisible: false)
             scrollToTop()
             repairTOCAndIndexFormattingAfterImport()
             // For rich imports (RTF/RTFD/HTML/ODT), AppKit may continue layout asynchronously.
@@ -4182,10 +4214,15 @@ class EditorViewController: NSViewController {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) { [weak self] in
                 debugLog("📥 Import: delayed updatePageLayout (+0.25s)")
                 self?.updatePageLayout()
+                self?.updatePageCentering(ensureSelectionVisible: false)
+            }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.12) { [weak self] in
+                self?.updatePageCentering(ensureSelectionVisible: false)
             }
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.75) { [weak self] in
                 debugLog("📥 Import: delayed updatePageLayout (+0.75s)")
                 self?.updatePageLayout()
+                self?.updatePageCentering(ensureSelectionVisible: false)
             }
             delegate?.resumeAnalysisAfterLayout()
         }
@@ -8403,6 +8440,18 @@ case "Book Subtitle":
     func updatePageCentering(ensureSelectionVisible: Bool = true) {
         guard let scrollView else { return }
 
+        // Ensure screenplay templates always use industry-standard page margins
+        // even if the document loads before any style application occurs.
+        if StyleCatalog.shared.isScreenplayTemplate {
+            let desiredLeft: CGFloat = 108
+            let desiredRight: CGFloat = 72
+            if abs(leftPageMargin - desiredLeft) > 0.5 || abs(rightPageMargin - desiredRight) > 0.5 {
+                let maxMargin = max(0, pageWidth - 36)
+                leftPageMargin = min(max(0, desiredLeft), maxMargin)
+                rightPageMargin = min(max(0, desiredRight), maxMargin)
+            }
+        }
+
         let now = CFAbsoluteTimeGetCurrent()
         let suppressRestore = pendingNavigationScroll || now < navigationScrollSuppressionUntil
         if suppressRestore {
@@ -8414,6 +8463,14 @@ case "Book Subtitle":
         let savedScrollPosition = scrollView.contentView.bounds.origin
 
         let visibleWidth = scrollView.contentView.bounds.width
+        // If the scroll view hasn't been laid out yet, we can't compute a correct pageX.
+        // Retry shortly (common right after opening a document).
+        if visibleWidth < 50 {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { [weak self] in
+                self?.updatePageCentering(ensureSelectionVisible: ensureSelectionVisible)
+            }
+            return
+        }
         let scaledPageWidth = pageWidth * editorZoom
         let scaledPageHeight = pageHeight * editorZoom
         let pageX = max((visibleWidth - scaledPageWidth) / 2, 0)

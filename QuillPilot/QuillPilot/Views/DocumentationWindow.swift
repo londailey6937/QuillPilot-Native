@@ -887,9 +887,6 @@ class DocumentationWindowController: NSWindowController, NSWindowDelegate, NSOut
         let content = NSMutableAttributedString()
 
         content.append(makeTitle("🚀 Quick Start", color: titleColor))
-        content.append(makeBody("""
-Welcome to Quill Pilot — a writing environment designed for fiction writers who care about how words look and feel on the page.
-""", color: bodyColor))
         content.append(makeNewline())
 
         content.append(makeHeading("Getting Started in 5 Minutes", color: headingColor))

@@ -1180,7 +1180,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         contentView.addSubview(aboutHeadingLabel)
 
         // Description (placed directly under About heading)
-        let descriptionLabel = NSTextField(wrappingLabelWithString: "Designed for macOS with a fully adaptive interface—from 13-inch MacBooks to large desktop displays.\n\nProfessional writing software with publication-quality typography, intelligent manuscript analysis, and comprehensive tools for novelists, essayists, and screenwriters.")
+        let descriptionLabel = NSTextField(wrappingLabelWithString: "Designed for macOS with a fully adaptive interface—from 13-inch MacBooks to expansive desktop displays.\n\nProfessional writing software with publication-quality typography, powerful manuscript analysis across all writing forms, and comprehensive tools for novelists, non-fiction authors, poets, essayists, and screenwriters.")
         descriptionLabel.font = NSFont.systemFont(ofSize: 11)
         descriptionLabel.textColor = theme.textColor.withAlphaComponent(0.8)
         descriptionLabel.alignment = .center
@@ -1193,7 +1193,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let build = Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "1"
         let versionLabel = NSTextField(labelWithString: "Version \(version) (\(build))")
         versionLabel.font = NSFont.systemFont(ofSize: 12)
-        versionLabel.textColor = NSColor.secondaryLabelColor
+        versionLabel.textColor = theme.textColor.withAlphaComponent(0.7)
         versionLabel.alignment = .center
         let versionY = descriptionY - versionSpacing - 20
         versionLabel.frame = NSRect(x: 0, y: versionY, width: windowSize.width, height: 20)
@@ -1203,7 +1203,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let year = Calendar.current.component(.year, from: Date())
         let copyrightLabel = NSTextField(labelWithString: "© \(year) Quill Pilot. All rights reserved.")
         copyrightLabel.font = NSFont.systemFont(ofSize: 10)
-        copyrightLabel.textColor = NSColor.tertiaryLabelColor
+        copyrightLabel.textColor = theme.textColor.withAlphaComponent(0.55)
         copyrightLabel.alignment = .center
         copyrightLabel.frame = NSRect(x: 0, y: 20, width: windowSize.width, height: 16)
         contentView.addSubview(copyrightLabel)

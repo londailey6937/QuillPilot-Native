@@ -1497,7 +1497,7 @@ class AnalysisViewController: NSViewController, NSWindowDelegate {
 
             // Tip #5: Predictability
             if !results.dialoguePredictablePhrases.isEmpty {
-                addWarning("⚠️ Found \(results.dialoguePredictablePhrases.count) clichéd phrase(s)")
+                addWarning("⚠️ Found \(results.dialoguePredictablePhrases.count) predictable dialogue phrase(s)")
                 for phrase in results.dialoguePredictablePhrases.prefix(3) {
                     addDetail("• \"\(phrase)\"")
                 }
@@ -1682,15 +1682,16 @@ class AnalysisViewController: NSViewController, NSWindowDelegate {
             text.isEditable = false
             text.isBezeled = false
             text.drawsBackground = false
-            text.font = .systemFont(ofSize: 10)
+            text.font = .systemFont(ofSize: 9)
             text.textColor = .secondaryLabelColor
-            text.frame = NSRect(x: legendX + xOffset + 10, y: legendY - 2, width: 50, height: 14)
+            text.lineBreakMode = .byTruncatingTail
+            text.frame = NSRect(x: legendX + xOffset + 10, y: legendY - 2, width: 70, height: 14)
             container.addSubview(text)
         }
 
         addLegendItem(NSColor.systemGreen.withAlphaComponent(0.85), "Short (<12)", xOffset: 0)
-        addLegendItem(NSColor.systemYellow.withAlphaComponent(0.85), "Medium (12-20)", xOffset: 80)
-        addLegendItem(NSColor.systemRed.withAlphaComponent(0.85), "Long (20+)", xOffset: 180)
+        addLegendItem(NSColor.systemYellow.withAlphaComponent(0.85), "Medium (12-20)", xOffset: 95)
+        addLegendItem(NSColor.systemRed.withAlphaComponent(0.85), "Long (20+)", xOffset: 205)
 
         NSLayoutConstraint.activate([
             container.heightAnchor.constraint(equalToConstant: graphHeight),
@@ -1780,15 +1781,16 @@ class AnalysisViewController: NSViewController, NSWindowDelegate {
             text.isEditable = false
             text.isBezeled = false
             text.drawsBackground = false
-            text.font = .systemFont(ofSize: 10)
+            text.font = .systemFont(ofSize: 9)
             text.textColor = NSColor(red: 0.3, green: 0.3, blue: 0.3, alpha: 1.0)
-            text.frame = NSRect(x: legendX + xOffset + 10, y: legendY - 2, width: 50, height: 14)
+            text.lineBreakMode = .byTruncatingTail
+            text.frame = NSRect(x: legendX + xOffset + 10, y: legendY - 2, width: 80, height: 14)
             container.addSubview(text)
         }
 
         addLegendItem(NSColor.systemGreen.withAlphaComponent(0.85), "Short (<12)", xOffset: 0)
-        addLegendItem(NSColor.systemYellow.withAlphaComponent(0.85), "Medium (12-20)", xOffset: 80)
-        addLegendItem(NSColor.systemRed.withAlphaComponent(0.85), "Long (20+)", xOffset: 180)
+        addLegendItem(NSColor.systemYellow.withAlphaComponent(0.85), "Medium (12-20)", xOffset: 120)
+        addLegendItem(NSColor.systemRed.withAlphaComponent(0.85), "Long (20+)", xOffset: 265)
 
         NSLayoutConstraint.activate([
             container.heightAnchor.constraint(equalToConstant: graphHeight),
@@ -3731,7 +3733,7 @@ extension AnalysisViewController {
 
             // Tip #5: Predictability
             if !results.dialoguePredictablePhrases.isEmpty {
-                addWarning("⚠️ Found \(results.dialoguePredictablePhrases.count) clichéd phrase(s)")
+                addWarning("⚠️ Found \(results.dialoguePredictablePhrases.count) predictable dialogue phrase(s)")
                 for phrase in results.dialoguePredictablePhrases.prefix(3) {
                     addDetail("• \"\(phrase)\"")
                 }

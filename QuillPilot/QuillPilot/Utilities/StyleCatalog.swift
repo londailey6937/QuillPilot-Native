@@ -1194,6 +1194,7 @@ final class StyleCatalog {
             before: 24, after: 12, headIndent: 0, firstLine: 0, tailIndent: 0
         )
         styles["On Screen"] = styles["Chyron"]
+        styles["On-Screen Text"] = styles["Chyron"]
         styles["Text Message"] = styles["Dialogue"]
         styles["Email"] = styles["Insert"]
 
@@ -1203,7 +1204,7 @@ final class StyleCatalog {
         // =====================================================================
         styles["Lyrics"] = baseDefinition(
             font: font, size: fontSize, italic: true, alignment: .left, lineHeight: 1.0,
-            before: 0, after: 0, headIndent: 72, firstLine: 0, tailIndent: -108
+            before: 0, after: 0, headIndent: 36, firstLine: 36, tailIndent: -36
         )
 
         // =====================================================================

@@ -2696,6 +2696,7 @@ extension MainWindowController {
         let screenplayStyles: Set<String> = [
             "Scene Heading", "Action", "Character", "Parenthetical", "Dialogue", "Transition",
             "Shot", "Montage", "Flashback", "Intercut", "Act Break", "Chyron", "Lyrics",
+            "Insert", "On Screen", "On-Screen Text", "Text Message", "Email",
             "Note", "More", "Continued", "Title", "Author", "Contact", "Draft"
         ]
 
@@ -3788,6 +3789,11 @@ class FormattingToolbar: NSView {
                 // Other
                 "Act Break",
                 "Chyron",
+                "Insert",
+                "On Screen",
+                "On-Screen Text",
+                "Text Message",
+                "Email",
                 "Lyrics",
                 "Note",
                 "More",
@@ -4644,6 +4650,8 @@ class ContentViewController: NSViewController {
             characterNamesForAnalysis = []
         }
 
+        let layoutPageCount = editorViewController.totalPageCount()
+
         // Page mapping no longer needed - page numbers removed from Decision-Belief Loop display
         let pageMapping: [(location: Int, page: Int)] = []
 
@@ -4659,7 +4667,12 @@ class ContentViewController: NSViewController {
 
             DebugLog.log("📋 MainWindowController: Passing \(analysisOutlineEntries.count) outline entries to analyzeText")
 
-            var results = analysisEngine.analyzeText(text, outlineEntries: analysisOutlineEntries, pageMapping: pageMapping)
+            var results = analysisEngine.analyzeText(
+                text,
+                outlineEntries: analysisOutlineEntries,
+                pageMapping: pageMapping,
+                pageCountOverride: layoutPageCount
+            )
 
             if !characterNamesForAnalysis.isEmpty {
                 DebugLog.log("📋 MainWindowController: Analyzing characters: \(characterNamesForAnalysis.count)")
@@ -6526,12 +6539,16 @@ private enum DocxTextExtractor {
                     case "ScreenplayTransition", "Transition": mappedName = "Transition"
                     case "ScreenplayShot", "Shot": mappedName = "Shot"
                     case "ScreenplayShotDirection": mappedName = "Shot"
-                    case "ScreenplayInsert": mappedName = "Shot"
+                    case "ScreenplayInsert", "Insert": mappedName = "Insert"
                     case "ScreenplaySFX", "ScreenplaySFXVO": mappedName = "Action"
                     case "Montage": mappedName = "Montage"
                     case "Flashback": mappedName = "Flashback"
                     case "Intercut": mappedName = "Intercut"
                     case "Chyron": mappedName = "Chyron"
+                    case "OnScreen", "On Screen": mappedName = "On Screen"
+                    case "OnScreenText", "On-Screen Text": mappedName = "On-Screen Text"
+                    case "TextMessage", "Text Message": mappedName = "Text Message"
+                    case "Email": mappedName = "Email"
                     case "Lyrics": mappedName = "Lyrics"
                     case "Note": mappedName = "Note"
                     case "More": mappedName = "More"

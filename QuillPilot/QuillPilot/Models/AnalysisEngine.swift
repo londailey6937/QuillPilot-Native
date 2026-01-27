@@ -203,12 +203,20 @@ class AnalysisEngine {
         return out
     }
 
-    // Passive voice patterns
+    // Passive voice patterns (expanded to catch common irregular participles)
+    private static let passiveIrregularParticiples: [String] = [
+        "known", "seen", "given", "taken", "done", "gone", "made", "found", "kept", "left", "lost",
+        "built", "bought", "caught", "felt", "held", "heard", "lent", "paid", "read", "said",
+        "sold", "sent", "set", "told", "thought", "understood", "written", "driven", "eaten",
+        "thrown", "grown", "broken", "chosen", "spoken", "forgotten", "forgiven", "hidden",
+        "shown", "sung", "worn", "born", "put", "cut", "hit", "hurt", "won", "beaten",
+        "bound", "fed", "laid", "led", "met"
+    ]
+
     private static let passiveVoicePatterns = [
-        "was \\w+ed", "were \\w+ed", "is \\w+ed", "are \\w+ed",
-        "been \\w+ed", "being \\w+ed", "be \\w+ed",
-        "was written", "were written", "was made", "were made",
-        "was given", "were given", "was taken", "were taken"
+        "\\b(?:am|is|are|was|were|be|been|being)\\b\\s+\\w+ed\\b",
+        "\\b(?:am|is|are|was|were|be|been|being)\\b\\s+being\\s+\\w+ed\\b",
+        "\\b(?:am|is|are|was|were|be|been|being)\\b\\s+(?:" + passiveIrregularParticiples.joined(separator: "|") + ")\\b"
     ]
 
     private static let passiveVoiceRegexes: [NSRegularExpression] = {
@@ -335,7 +343,12 @@ class AnalysisEngine {
     // Maximum text length to analyze (500KB) - prevents system overload
     private let maxAnalysisLength = 500_000
 
-    func analyzeText(_ text: String, outlineEntries: [DecisionBeliefLoopAnalyzer.OutlineEntry]? = nil, pageMapping: [(location: Int, page: Int)]? = nil) -> AnalysisResults {
+    func analyzeText(
+        _ text: String,
+        outlineEntries: [DecisionBeliefLoopAnalyzer.OutlineEntry]? = nil,
+        pageMapping: [(location: Int, page: Int)]? = nil,
+        pageCountOverride: Int? = nil
+    ) -> AnalysisResults {
         var results = AnalysisResults()
 
         // Truncate extremely long text to prevent system overload
@@ -421,8 +434,14 @@ class AnalysisEngine {
         results.dialoguePacingScore = dialogueAnalysis.pacingScore
         results.hasDialogueConflict = dialogueAnalysis.hasConflict
 
-        // Page count (industry standard: ~250 words per manuscript page)
-        results.pageCount = max(1, (results.wordCount + 249) / 250)
+        // Page count (manuscript: ~250 words/page; screenplay: ~55 lines/page)
+        if let override = pageCountOverride, override > 0 {
+            results.pageCount = override
+        } else if StyleCatalog.shared.isScreenplayTemplate {
+            results.pageCount = estimateScreenplayPageCount(text: text)
+        } else {
+            results.pageCount = max(1, (results.wordCount + 249) / 250)
+        }
 
         // Plot point analysis
         let plotDetector = PlotPointDetector()
@@ -1543,19 +1562,14 @@ class AnalysisEngine {
     private func calculateDialoguePercentage(text: String) -> Int {
         guard !text.isEmpty else { return 0 }
 
-        let totalLength = text.count
-        var dialogueLength = 0
-        var inDialogue = false
+        let totalWords = countWords(text)
+        guard totalWords > 0 else { return 0 }
 
-        for char in text {
-            if char == "\"" || char == "“" || char == "”" {
-                inDialogue.toggle()
-            } else if inDialogue {
-                dialogueLength += 1
-            }
-        }
+        let dialogueSegments = extractDialogue(from: text)
+        guard !dialogueSegments.isEmpty else { return 0 }
 
-        return Int((Double(dialogueLength) / Double(totalLength)) * 100)
+        let dialogueWords = dialogueSegments.reduce(0) { $0 + countWords($1) }
+        return Int((Double(dialogueWords) / Double(totalWords)) * 100)
     }
     private func detectWeakVerbs(_ words: [String]) -> (Int, [String]) {
         var count = 0
@@ -1712,15 +1726,27 @@ class AnalysisEngine {
     }
 
     private func extractDialogue(from text: String) -> [String] {
+        if StyleCatalog.shared.isScreenplayTemplate {
+            let segments = extractScreenplayDialogueSegments(from: text)
+            if !segments.isEmpty {
+                return segments
+            }
+        }
+
+        guard text.contains("\"") || text.contains("“") || text.contains("”") else { return [] }
+
         var dialogueSegments: [String] = []
         var currentDialogue = ""
         var inDialogue = false
 
         for char in text {
-            if char == "\"" || char == "\"" || char == "\"" {
+            if char == "\"" || char == "“" || char == "”" {
                 if inDialogue {
                     // End of dialogue
-                    dialogueSegments.append(currentDialogue.trimmingCharacters(in: .whitespaces))
+                    let trimmed = currentDialogue.trimmingCharacters(in: .whitespacesAndNewlines)
+                    if !trimmed.isEmpty {
+                        dialogueSegments.append(trimmed)
+                    }
                     currentDialogue = ""
                 }
                 inDialogue.toggle()
@@ -1729,7 +1755,96 @@ class AnalysisEngine {
             }
         }
 
-        return dialogueSegments.filter { !$0.isEmpty }
+        return dialogueSegments
+    }
+
+    private func extractScreenplayDialogueSegments(from text: String) -> [String] {
+        let rawLines = text.split(omittingEmptySubsequences: false, whereSeparator: \.isNewline).map { String($0) }
+        var lines = rawLines
+        while let last = lines.last, last.trimmingCharacters(in: CharacterSet.whitespacesAndNewlines).isEmpty {
+            lines.removeLast()
+        }
+
+        var segments: [String] = []
+        var index = 0
+
+        while index < lines.count {
+            let line = lines[index].trimmingCharacters(in: CharacterSet.whitespacesAndNewlines)
+            if isScreenplayCharacterCue(line) {
+                index += 1
+                var buffer: [String] = []
+
+                while index < lines.count {
+                    let nextLine = lines[index]
+                    let trimmed = nextLine.trimmingCharacters(in: CharacterSet.whitespacesAndNewlines)
+
+                    if trimmed.isEmpty {
+                        index += 1
+                        break
+                    }
+
+                    if isScreenplayCharacterCue(trimmed) || isScreenplaySceneHeading(trimmed) || isScreenplayTransition(trimmed) {
+                        break
+                    }
+
+                    buffer.append(trimmed)
+                    index += 1
+                }
+
+                let combined = buffer.joined(separator: " ").trimmingCharacters(in: CharacterSet.whitespacesAndNewlines)
+                if !combined.isEmpty {
+                    segments.append(combined)
+                }
+                continue
+            }
+
+            index += 1
+        }
+
+        return segments
+    }
+
+    private func isScreenplaySceneHeading(_ line: String) -> Bool {
+        let trimmed = line.trimmingCharacters(in: CharacterSet.whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return false }
+        let upper = trimmed.uppercased()
+        return upper.range(of: "^(INT\\.|EXT\\.|INT/EXT|EXT/INT|INT\\s|EXT\\s)", options: .regularExpression) != nil
+    }
+
+    private func isScreenplayTransition(_ line: String) -> Bool {
+        let trimmed = line.trimmingCharacters(in: CharacterSet.whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return false }
+        let upper = trimmed.uppercased()
+        if upper.hasSuffix(":") { return true }
+        let prefixes = [
+            "CUT TO", "FADE IN", "FADE OUT", "SMASH CUT", "DISSOLVE TO",
+            "MATCH CUT", "JUMP CUT", "WIPE TO", "FADE TO", "BACK TO"
+        ]
+        return prefixes.contains(where: { upper.hasPrefix($0) })
+    }
+
+    private func isScreenplayCharacterCue(_ line: String) -> Bool {
+        let trimmed = line.trimmingCharacters(in: CharacterSet.whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return false }
+        let upper = trimmed.uppercased()
+        guard upper == trimmed else { return false }
+        if isScreenplaySceneHeading(upper) || isScreenplayTransition(upper) { return false }
+        if upper.count > 40 { return false }
+        if upper.contains(":") { return false }
+        if upper.range(of: "[A-Z]", options: .regularExpression) == nil { return false }
+        return upper.range(of: "^[A-Z0-9 .()'\"-]+$", options: .regularExpression) != nil
+    }
+
+    private func estimateScreenplayPageCount(text: String) -> Int {
+        let rawLines = text.split(omittingEmptySubsequences: false, whereSeparator: \.isNewline)
+        var lines = rawLines.map { String($0) }
+
+        while let last = lines.last, last.trimmingCharacters(in: CharacterSet.whitespacesAndNewlines).isEmpty {
+            lines.removeLast()
+        }
+
+        let lineCount = max(1, lines.count)
+        return max(1, Int(ceil(Double(lineCount) / 55.0)))
     }
 
     private func detectDialogueRepetition(_ segments: [String]) -> (Bool, Int) {

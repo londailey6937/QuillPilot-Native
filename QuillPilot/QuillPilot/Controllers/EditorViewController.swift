@@ -3777,6 +3777,16 @@ class EditorViewController: NSViewController {
         return pageIndex + 1
     }
 
+    func totalPageCount() -> Int {
+        if let pageContainerView = pageContainer as? PageContainerView {
+            return max(1, pageContainerView.numPages)
+        }
+        if let storage = textView.textStorage, storage.length > 0 {
+            return max(1, getPageNumber(forCharacterPosition: storage.length - 1))
+        }
+        return 1
+    }
+
     func indent() {
         if isSelectionInNumberedList() {
             _ = adjustNumberingLevelInSelection(by: 1)
@@ -7040,6 +7050,17 @@ case "Book Subtitle":
                 style.paragraphSpacing = 12
             }
             applyScreenplayFont()
+        case "On-Screen Text":
+            applyScreenplayPageDefaultsIfNeeded()
+            applyScreenplayParagraphStyle { style in
+                style.alignment = .left
+                style.firstLineHeadIndent = 0
+                style.headIndent = 0
+                style.tailIndent = 0
+                style.paragraphSpacingBefore = 12
+                style.paragraphSpacing = 12
+            }
+            applyScreenplayFont()
         case "Text Message":
             applyScreenplayPageDefaultsIfNeeded()
             applyScreenplayParagraphStyle { style in
@@ -7066,9 +7087,9 @@ case "Book Subtitle":
             applyScreenplayPageDefaultsIfNeeded()
             applyScreenplayParagraphStyle { style in
                 style.alignment = .left
-                style.firstLineHeadIndent = 72
-                style.headIndent = 72
-                style.tailIndent = -108
+                style.firstLineHeadIndent = 36
+                style.headIndent = 36
+                style.tailIndent = -36
                 style.paragraphSpacingBefore = 0
                 style.paragraphSpacing = 0
             }
@@ -8195,12 +8216,47 @@ case "Book Subtitle":
                 if trimmed.hasSuffix(".") { trimmed.removeLast() }
                 return trimmed + ":"
             })
+        case "Chyron", "On Screen", "On-Screen Text":
+            normalizeSelectedParagraphText(transform: { raw in
+                let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !trimmed.isEmpty else { return trimmed }
+
+                let allowedPrefixes: Set<String> = [
+                    "CHYRON", "SUPER", "TITLE CARD", "TITLE OVER", "TITLE", "ON SCREEN", "ON-SCREEN", "SUBTITLE"
+                ]
+
+                let colonIndex = trimmed.firstIndex(of: ":")
+                let prefix: String
+                let body: String
+                if let colonIndex {
+                    prefix = String(trimmed[..<colonIndex]).trimmingCharacters(in: .whitespacesAndNewlines)
+                    let start = trimmed.index(after: colonIndex)
+                    body = String(trimmed[start...]).trimmingCharacters(in: .whitespacesAndNewlines)
+                } else {
+                    prefix = "CHYRON"
+                    body = trimmed
+                }
+
+                let upperPrefix = prefix.isEmpty ? "CHYRON" : prefix.uppercased()
+                let normalizedPrefix = allowedPrefixes.contains(upperPrefix) ? upperPrefix : upperPrefix
+
+                var normalizedBody = body
+                if !normalizedBody.isEmpty {
+                    let hasQuotes = normalizedBody.hasPrefix("\"") && normalizedBody.hasSuffix("\"")
+                    if !hasQuotes {
+                        normalizedBody = "\"" + normalizedBody + "\""
+                    }
+                    return "\(normalizedPrefix): \(normalizedBody)"
+                }
+
+                return "\(normalizedPrefix):"
+            })
         case "Shot", "Montage", "Montage Header", "Montage End",
              "Series of Shots Header", "Series of Shots End",
              "Flashback", "Back To Present",
              "Intercut", "End Intercut",
              "Act Break",
-             "Insert", "On Screen",
+             "Insert",
              "More", "Continued":
             normalizeSelectedParagraphText(transform: { $0.trimmingCharacters(in: .whitespacesAndNewlines).uppercased() })
         default:

@@ -307,9 +307,13 @@ class DecisionBeliefLoopView: NSView {
 
         yPos -= 50
 
+        let isScreenplay = StyleCatalog.shared.isScreenplayTemplate
+        let unitHeader = isScreenplay ? "Scene" : "Ch"
+        let unitWidth: CGFloat = isScreenplay ? 60 : 40
+
         // Table header
-        let columns = ["Ch", "Pressure", "Belief in Play", "Decision", "Outcome", "Belief Shift"]
-        let columnWidths: [CGFloat] = [40, (width - 60) / 5, (width - 60) / 5, (width - 60) / 5, (width - 60) / 5, (width - 60) / 5]
+        let columns = [unitHeader, "Pressure", "Belief in Play", "Decision", "Outcome", "Belief Shift"]
+        let columnWidths: [CGFloat] = [unitWidth, (width - unitWidth - 20) / 5, (width - unitWidth - 20) / 5, (width - unitWidth - 20) / 5, (width - unitWidth - 20) / 5, (width - unitWidth - 20) / 5]
 
         var xPos: CGFloat = 10
         for (index, column) in columns.enumerated() {
@@ -384,14 +388,14 @@ class DecisionBeliefLoopView: NSView {
         container.addSubview(legendView)
 
         // Simple timeline visualization
-        let timelineView = createTimelineView(entries: loop.entries, width: width - 40, textColor: textColor)
+        let timelineView = createTimelineView(entries: loop.entries, width: width - 40, textColor: textColor, isScreenplay: isScreenplay)
         timelineView.frame.origin = NSPoint(x: 20, y: yPos - 161)
         container.addSubview(timelineView)
 
         return container
     }
 
-    private func createTimelineView(entries: [DecisionBeliefLoop.LoopEntry], width: CGFloat, textColor: NSColor) -> NSView {
+    private func createTimelineView(entries: [DecisionBeliefLoop.LoopEntry], width: CGFloat, textColor: NSColor, isScreenplay: Bool) -> NSView {
         let view = TimelineDrawingView(frame: NSRect(x: 0, y: 0, width: width, height: 80))
         view.entries = entries
         view.textColor = textColor
@@ -409,13 +413,14 @@ class DecisionBeliefLoopView: NSView {
             let x = spacing * CGFloat(index + 1)
 
             // Scene label
+            let unitPrefix = isScreenplay ? "Scene" : "Ch"
             let chapterLabel = createLabel(
-                text: "Sc \(entry.chapter)",
+                text: "\(unitPrefix) \(entry.chapter)",
                 font: NSFont.systemFont(ofSize: 9),
                 textColor: textColor.withAlphaComponent(0.7)
             )
-            chapterLabel.frame = NSRect(x: x - 15, y: lineY + 15, width: 30, height: 14)
-            chapterLabel.alignment = .center
+            chapterLabel.frame = NSRect(x: x - 28, y: lineY + 15, width: 56, height: 14)
+            chapterLabel.alignment = NSTextAlignment.center
             view.addSubview(chapterLabel)
         }
 

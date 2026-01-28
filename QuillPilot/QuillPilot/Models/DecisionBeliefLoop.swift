@@ -540,10 +540,13 @@ class DecisionBeliefLoopAnalyzer {
 
         for characterName in characterNames {
             var loop = DecisionBeliefLoop(characterName: characterName)
+            let aliases = characterAliases(for: characterName)
 
             for chapter in chapters {
                 // Only analyze chapters where the character appears
-                guard chapter.text.lowercased().contains(characterName.lowercased()) else {
+                guard aliases.contains(where: { alias in
+                    !alias.isEmpty && chapter.text.range(of: alias, options: .caseInsensitive) != nil
+                }) else {
                     continue
                 }
 
@@ -588,8 +591,13 @@ class DecisionBeliefLoopAnalyzer {
     private func extractPressureWithPosition(from text: String, character: String, allCharacters: [String], startPos: Int, fullText: String) -> (String, Int, Int) {
         let (sentences, positions) = getSentencesAbout(character: character, in: text, allCharacters: allCharacters, proximity: 2)
 
+        var fallbackIndex: Int?
+
         for (index, sentence) in sentences.enumerated() {
             let lower = sentence.lowercased()
+            if fallbackIndex == nil {
+                fallbackIndex = index
+            }
             // Look for pressure indicators
             for word in pressureWords {
                 if lower.contains(word) {
@@ -607,16 +615,27 @@ class DecisionBeliefLoopAnalyzer {
             }
         }
 
+        if let index = fallbackIndex {
+            let absolutePos = startPos + positions[index]
+            let pageNum = calculatePageNumber(position: absolutePos, in: fullText)
+            return (cleanExtract(sentences[index]), pageNum, positions[index])
+        }
         return ("", 0, -1)
     }
 
     private func extractBeliefWithPosition(from text: String, character: String, allCharacters: [String], startPos: Int, fullText: String, afterPosition: Int) -> (String, Int, Int) {
         let (sentences, positions) = getSentencesAbout(character: character, in: text, allCharacters: allCharacters, proximity: 2)
 
+        var fallbackIndex: Int?
+
         for (index, sentence) in sentences.enumerated() {
             // Skip if this sentence appears before the previous element
             if afterPosition >= 0 && positions[index] <= afterPosition {
                 continue
+            }
+
+            if fallbackIndex == nil {
+                fallbackIndex = index
             }
 
             let lower = sentence.lowercased()
@@ -630,16 +649,27 @@ class DecisionBeliefLoopAnalyzer {
             }
         }
 
+        if let index = fallbackIndex {
+            let absolutePos = startPos + positions[index]
+            let pageNum = calculatePageNumber(position: absolutePos, in: fullText)
+            return (cleanExtract(sentences[index]), pageNum, positions[index])
+        }
         return ("", 0, -1)
     }
 
     private func extractDecisionWithPosition(from text: String, character: String, allCharacters: [String], startPos: Int, fullText: String, afterPosition: Int) -> (String, Int, Int) {
         let (sentences, positions) = getSentencesAbout(character: character, in: text, allCharacters: allCharacters, proximity: 2)
 
+        var fallbackIndex: Int?
+
         for (index, sentence) in sentences.enumerated() {
             // Skip if this sentence appears before the previous element
             if afterPosition >= 0 && positions[index] <= afterPosition {
                 continue
+            }
+
+            if fallbackIndex == nil {
+                fallbackIndex = index
             }
 
             let lower = sentence.lowercased()
@@ -653,16 +683,27 @@ class DecisionBeliefLoopAnalyzer {
             }
         }
 
+        if let index = fallbackIndex {
+            let absolutePos = startPos + positions[index]
+            let pageNum = calculatePageNumber(position: absolutePos, in: fullText)
+            return (cleanExtract(sentences[index]), pageNum, positions[index])
+        }
         return ("", 0, -1)
     }
 
     private func extractOutcomeWithPosition(from text: String, character: String, allCharacters: [String], startPos: Int, fullText: String, afterPosition: Int) -> (String, Int, Int) {
         let (sentences, positions) = getSentencesAbout(character: character, in: text, allCharacters: allCharacters, proximity: 2)
 
+        var fallbackIndex: Int?
+
         for (index, sentence) in sentences.enumerated() {
             // Skip if this sentence appears before the previous element
             if afterPosition >= 0 && positions[index] <= afterPosition {
                 continue
+            }
+
+            if fallbackIndex == nil {
+                fallbackIndex = index
             }
 
             let lower = sentence.lowercased()
@@ -676,6 +717,11 @@ class DecisionBeliefLoopAnalyzer {
             }
         }
 
+        if let index = fallbackIndex {
+            let absolutePos = startPos + positions[index]
+            let pageNum = calculatePageNumber(position: absolutePos, in: fullText)
+            return (cleanExtract(sentences[index]), pageNum, positions[index])
+        }
         return ("", 0, -1)
     }
 
@@ -686,10 +732,16 @@ class DecisionBeliefLoopAnalyzer {
         let changeWords = ["realized", "learned", "understood", "saw", "discovered",
                           "changed", "shifted", "no longer", "now", "finally"]
 
+        var fallbackIndex: Int?
+
         for (index, sentence) in sentences.enumerated() {
             // Skip if this sentence appears before the previous element
             if afterPosition >= 0 && positions[index] <= afterPosition {
                 continue
+            }
+
+            if fallbackIndex == nil {
+                fallbackIndex = index
             }
 
             let lower = sentence.lowercased()
@@ -702,6 +754,11 @@ class DecisionBeliefLoopAnalyzer {
             }
         }
 
+        if let index = fallbackIndex {
+            let absolutePos = startPos + positions[index]
+            let pageNum = calculatePageNumber(position: absolutePos, in: fullText)
+            return (cleanExtract(sentences[index]), pageNum, positions[index])
+        }
         return ("", 0, -1)
     }
 
@@ -805,14 +862,19 @@ class DecisionBeliefLoopAnalyzer {
             .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
             .filter { !$0.isEmpty }
 
+        let aliases = characterAliases(for: character)
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() }
+            .filter { !$0.isEmpty }
+
         var relevantSentences: [String] = []
         var positions: [Int] = []
         var currentPos = 0
 
         for (index, sentence) in allSentences.enumerated() {
+            let lowerSentence = sentence.lowercased()
             // Only include sentences that specifically mention this character
             // AND don't strongly focus on another character
-            if sentence.lowercased().contains(character.lowercased()) {
+            if aliases.contains(where: { lowerSentence.contains($0) }) {
                 // Skip if sentence strongly focuses on another character
                 // (another character appears before this character in the sentence)
                 if !isAboutOtherCharacter(sentence, targetCharacter: character, allCharacters: allCharacters) {

@@ -39,6 +39,7 @@ class CharacterArcVisualizationView: NSView {
             loops: decisionBeliefLoops,
             interactions: characterInteractions,
             presence: characterPresence,
+            isScreenplay: StyleCatalog.shared.isScreenplayTemplate,
             onDecisionBeliefPopout: { [weak self] in
                 guard let self else { return }
                 self.delegate?.openDecisionBeliefPopout(loops: self.decisionBeliefLoops)
@@ -81,9 +82,14 @@ struct CharacterArcCharts: View {
     let loops: [DecisionBeliefLoop]
     let interactions: [CharacterInteraction]
     let presence: [CharacterPresence]
+    let isScreenplay: Bool
     let onDecisionBeliefPopout: () -> Void
     let onInteractionsPopout: () -> Void
     let onPresencePopout: () -> Void
+
+    private var unitLabel: String { isScreenplay ? "Scene" : "Chapter" }
+    private var unitLower: String { isScreenplay ? "scene" : "chapter" }
+    private var unitLowerPlural: String { isScreenplay ? "scenes" : "chapters" }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 20) {
@@ -107,7 +113,7 @@ struct CharacterArcCharts: View {
                     .padding(.horizontal)
                     .fixedSize(horizontal: false, vertical: true)
 
-                DecisionBeliefLoopPreview(loops: loops)
+                DecisionBeliefLoopPreview(loops: loops, isScreenplay: isScreenplay)
                     .frame(height: 300)
             }
 
@@ -128,13 +134,13 @@ struct CharacterArcCharts: View {
                 }
                 .padding(.horizontal)
 
-                Text("Shows which characters appear together in scenes. Strong connections suggest key relationships and dialogue opportunities.")
+                Text("Shows which characters appear together in \(unitLowerPlural). Strong connections suggest key relationships and dialogue opportunities.")
                     .font(.caption)
                     .foregroundColor(.secondary)
                     .padding(.horizontal)
                     .fixedSize(horizontal: false, vertical: true)
 
-                CharacterNetworkChart(interactions: interactions)
+                CharacterNetworkChart(interactions: interactions, unitLowerPlural: unitLowerPlural)
                     .frame(height: 250)
             }
 
@@ -155,13 +161,13 @@ struct CharacterArcCharts: View {
                 }
                 .padding(.horizontal)
 
-                Text("Shows per-scene mentions for each character. Use this to ensure pacing is balanced and to spot scenes where key characters drop out.")
+                Text("Shows per-\(unitLower) mentions for each character. Use this to ensure pacing is balanced and to spot \(unitLowerPlural) where key characters drop out.")
                     .font(.caption)
                     .foregroundColor(.secondary)
                     .padding(.horizontal)
                     .fixedSize(horizontal: false, vertical: true)
 
-                CharacterPresenceBarChart(presence: presence)
+                CharacterPresenceBarChart(presence: presence, isScreenplay: isScreenplay)
                     .frame(height: 320)
             }
         }
@@ -172,6 +178,10 @@ struct CharacterArcCharts: View {
 @available(macOS 13.0, *)
 struct DecisionBeliefLoopPreview: View {
     let loops: [DecisionBeliefLoop]
+    let isScreenplay: Bool
+
+    private var unitLower: String { isScreenplay ? "scene" : "chapter" }
+    private var unitLowerPlural: String { isScreenplay ? "scenes" : "chapters" }
 
     var body: some View {
         if loops.isEmpty {
@@ -198,7 +208,7 @@ struct DecisionBeliefLoopPreview: View {
                                     .cornerRadius(4)
                             }
 
-                            Text("The Decision–Belief Loop Framework tracks five elements per chapter:")
+                            Text("The Decision–Belief Loop Framework tracks five elements per \(unitLower):")
                                 .font(.caption)
                                 .foregroundColor(.secondary)
 
@@ -216,7 +226,7 @@ struct DecisionBeliefLoopPreview: View {
                             .padding(.leading, 8)
 
                             if loop.entries.count > 0 {
-                                Text("\(loop.entries.count) chapter\(loop.entries.count == 1 ? "" : "s") tracked")
+                                Text("\(loop.entries.count) \(unitLower)\(loop.entries.count == 1 ? "" : "s") tracked")
                                     .font(.caption)
                                     .foregroundColor(.secondary)
                             }
@@ -249,6 +259,7 @@ struct DecisionBeliefLoopPreview: View {
 @available(macOS 13.0, *)
 struct CharacterNetworkChart: View {
     let interactions: [CharacterInteraction]
+    let unitLowerPlural: String
 
     var body: some View {
         if interactions.isEmpty {
@@ -265,7 +276,7 @@ struct CharacterNetworkChart: View {
                             Image(systemName: "arrow.left.and.right")
                             Text(interaction.character2)
                             Spacer()
-                            Text("\(interaction.coAppearances) scenes")
+                            Text("\(interaction.coAppearances) \(unitLowerPlural)")
                                 .font(.caption)
                                 .foregroundColor(.secondary)
                         }
@@ -291,8 +302,12 @@ struct CharacterPresenceDataPoint: Identifiable {
 @available(macOS 13.0, *)
 struct CharacterPresenceBarChart: View {
     let presence: [CharacterPresence]
+    let isScreenplay: Bool
     var textColor: Color = Color(ThemeManager.shared.currentTheme.textColor)
     var backgroundColor: Color = Color(ThemeManager.shared.currentTheme.pageBackground)
+
+    private var unitLabel: String { isScreenplay ? "Scene" : "Chapter" }
+    private var unitAxisPrefix: String { isScreenplay ? "Scene" : "Ch" }
 
     private var characters: [String] {
         Array(Set(dataPoints.map { $0.character })).sorted()
@@ -346,7 +361,7 @@ struct CharacterPresenceBarChart: View {
                     ScrollView(.horizontal, showsIndicators: true) {
                         Chart(dataPoints) { point in
                             BarMark(
-                                x: .value("Scene", "Sc \(point.chapter)"),
+                                x: .value(unitLabel, "\(unitAxisPrefix) \(point.chapter)"),
                                 y: .value("Mentions", point.mentions)
                             )
                             .foregroundStyle(by: .value("Character", point.character))
@@ -358,10 +373,10 @@ struct CharacterPresenceBarChart: View {
                                 }
                             }
                         }
-                        .chartXAxisLabel("Scene", alignment: .center)
+                        .chartXAxisLabel(unitLabel, alignment: .center)
                         .chartYAxisLabel("Mentions")
                         .chartXAxis {
-                            AxisMarks(values: chapters.map { "Sc \($0)" }) { _ in
+                            AxisMarks(values: chapters.map { "\(unitAxisPrefix) \($0)" }) { _ in
                                 AxisValueLabel()
                                     .foregroundStyle(textColor)
                             }
@@ -421,8 +436,13 @@ struct CharacterPresenceBarChart: View {
 @available(macOS 13.0, *)
 struct DecisionBeliefLoopFullView: View {
     let loops: [DecisionBeliefLoop]
+    let isScreenplay: Bool
     var textColor: Color = Color(ThemeManager.shared.currentTheme.textColor)
     var backgroundColor: Color = Color(ThemeManager.shared.currentTheme.pageBackground)
+
+    private var unitLabel: String { isScreenplay ? "Scene" : "Chapter" }
+    private var unitLower: String { isScreenplay ? "scene" : "chapter" }
+    private var unitLowerPlural: String { isScreenplay ? "scenes" : "chapters" }
 
     var body: some View {
         ScrollView {
@@ -441,7 +461,7 @@ struct DecisionBeliefLoopFullView: View {
                     Divider()
                         .background(textColor.opacity(0.3))
 
-                    Text("The Loop (per chapter or major scene)")
+                    Text(isScreenplay ? "The Loop (per scene)" : "The Loop (per chapter or major scene)")
                         .font(.headline)
                         .fontWeight(.semibold)
                         .foregroundColor(textColor)
@@ -506,8 +526,8 @@ struct DecisionBeliefLoopFullView: View {
 
                         // Table header
                         HStack(spacing: 8) {
-                            Text("Ch")
-                                .frame(width: 40, alignment: .center)
+                            Text(isScreenplay ? "Scene" : "Ch")
+                                .frame(width: isScreenplay ? 60 : 40, alignment: .center)
                                 .fontWeight(.semibold)
                             Text("Pressure")
                                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -535,7 +555,7 @@ struct DecisionBeliefLoopFullView: View {
                         ForEach(loop.entries) { entry in
                             HStack(alignment: .top, spacing: 8) {
                                 Text("\(entry.chapter)")
-                                    .frame(width: 40, alignment: .center)
+                                    .frame(width: isScreenplay ? 60 : 40, alignment: .center)
                                     .font(.body)
                                     .foregroundColor(textColor)
                                     .textSelection(.enabled)
@@ -577,11 +597,11 @@ struct DecisionBeliefLoopFullView: View {
                                 .fontWeight(.semibold)
                                 .foregroundColor(textColor)
 
-                            Text("Key inflection points across scenes")
+                            Text("Key inflection points across \(unitLowerPlural)")
                                 .font(.caption)
                                 .foregroundColor(textColor.opacity(0.7))
 
-                            Text("Rows = scenes; columns = loop elements. Dots appear when an element is detected. Dot color reflects the dominant theme keywords (not the scene): Fear (red), Agency (purple), Trust (blue), Identity (green), Moral/Ethical (yellow). Dashed vertical connectors indicate likely regression between scenes.")
+                            Text("Rows = \(unitLowerPlural); columns = loop elements. Dots appear when an element is detected. Dot color reflects the dominant theme keywords (not the scene): Fear (red), Agency (purple), Trust (blue), Identity (green), Moral/Ethical (yellow). Dashed vertical connectors indicate likely regression between \(unitLowerPlural).")
                                 .font(.caption)
                                 .foregroundColor(textColor.opacity(0.7))
 
@@ -608,7 +628,7 @@ struct DecisionBeliefLoopFullView: View {
                                 }
                             }
 
-                            CharacterArcTimelineView(entries: loop.entries, textColor: textColor)
+                            CharacterArcTimelineView(entries: loop.entries, textColor: textColor, isScreenplay: isScreenplay)
                         }
                         .padding()
                         .background(textColor.opacity(0.05))
@@ -732,6 +752,7 @@ struct DecisionBeliefLoopFullView: View {
 struct CharacterArcTimelineView: View {
     let entries: [DecisionBeliefLoop.LoopEntry]
     let textColor: Color
+    let isScreenplay: Bool
 
     private let loopElements = ["Pressure", "Belief in Play", "Decision", "Outcome", "Belief Shift"]
 
@@ -740,6 +761,7 @@ struct CharacterArcTimelineView: View {
             let width = geometry.size.width - 60 // Reserve space for y-axis labels
             let elementSpacing = width / CGFloat(loopElements.count)
             let chapterSpacing: CGFloat = 50 // Fixed spacing between scenes
+            let unitPrefix = isScreenplay ? "Scene" : "Ch"
 
             ZStack(alignment: .topLeading) {
                 // Y-axis (scenes)
@@ -751,10 +773,10 @@ struct CharacterArcTimelineView: View {
                     ForEach(entries) { entry in
                         HStack(spacing: 0) {
                             // Scene label on y-axis
-                            Text("Sc \(entry.chapter)")
+                            Text("\(unitPrefix) \(entry.chapter)")
                                 .font(.caption)
                                 .foregroundColor(textColor.opacity(0.7))
-                                .frame(width: 50, alignment: .trailing)
+                                .frame(width: isScreenplay ? 70 : 50, alignment: .trailing)
                                 .padding(.trailing, 10)
                         }
                         .frame(height: chapterSpacing)

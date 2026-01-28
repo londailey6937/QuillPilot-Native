@@ -1472,6 +1472,7 @@ class AnalysisEngine {
 
     private func countSentences(_ text: String) -> Int {
         let sentences = text.components(separatedBy: CharacterSet(charactersIn: ".!?")).filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+
         return sentences.count
     }
 
@@ -2319,15 +2320,36 @@ class AnalysisEngine {
             return false
         }
 
-        for sentence in sentences {
-            let lower = sentence.lowercased()
-            guard sentenceMatchesAnyAlias(sentence) else { continue }
+        var firstAliasSentence: String?
+        var firstIndicatorSentence: String?
 
-            for indicator in indicators {
-                if lower.contains(indicator) {
-                    return sentence.trimmingCharacters(in: .whitespacesAndNewlines).prefix(120).description
+        for sentence in sentences {
+            let trimmed = sentence.trimmingCharacters(in: .whitespacesAndNewlines)
+            let lower = trimmed.lowercased()
+
+            if firstIndicatorSentence == nil {
+                for indicator in indicators {
+                    if lower.contains(indicator) {
+                        firstIndicatorSentence = trimmed
+                        break
+                    }
                 }
             }
+
+            let matchesAlias = sentenceMatchesAnyAlias(sentence)
+            if matchesAlias, firstAliasSentence == nil {
+                firstAliasSentence = trimmed
+            }
+
+            guard matchesAlias else { continue }
+            for indicator in indicators {
+                if lower.contains(indicator) {
+                    return trimmed.prefix(120).description
+                }
+            }
+        }
+        if let fallback = firstIndicatorSentence ?? firstAliasSentence {
+            return fallback.prefix(120).description
         }
         return ""
     }
@@ -2350,15 +2372,36 @@ class AnalysisEngine {
             return false
         }
 
-        for sentence in sentences {
-            let lower = sentence.lowercased()
-            guard sentenceMatchesAnyAlias(sentence) else { continue }
+        var firstAliasSentence: String?
+        var firstIndicatorSentence: String?
 
-            for indicator in indicators {
-                if lower.contains(indicator) {
-                    return sentence.trimmingCharacters(in: .whitespacesAndNewlines).prefix(120).description
+        for sentence in sentences {
+            let trimmed = sentence.trimmingCharacters(in: .whitespacesAndNewlines)
+            let lower = trimmed.lowercased()
+
+            if firstIndicatorSentence == nil {
+                for indicator in indicators {
+                    if lower.contains(indicator) {
+                        firstIndicatorSentence = trimmed
+                        break
+                    }
                 }
             }
+
+            let matchesAlias = sentenceMatchesAnyAlias(sentence)
+            if matchesAlias, firstAliasSentence == nil {
+                firstAliasSentence = trimmed
+            }
+
+            guard matchesAlias else { continue }
+            for indicator in indicators {
+                if lower.contains(indicator) {
+                    return trimmed.prefix(120).description
+                }
+            }
+        }
+        if let fallback = firstIndicatorSentence ?? firstAliasSentence {
+            return fallback.prefix(120).description
         }
         return ""
     }

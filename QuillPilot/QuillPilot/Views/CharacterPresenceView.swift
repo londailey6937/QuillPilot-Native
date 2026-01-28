@@ -275,12 +275,9 @@ class CharacterPresenceView: NSView {
     private let titleLabel = NSTextField(labelWithString: "")
     private let subtitleLabel = NSTextField(labelWithString: "")
 
-    private let modeControl: NSSegmentedControl = {
-        let control = NSSegmentedControl(labels: ["Scenes", "Acts"], trackingMode: .selectOne, target: nil, action: nil)
-        control.selectedSegment = 0
-        control.controlSize = .small
-        return control
-    }()
+    private let modeControlContainer = NSView()
+    private let scenesButton = NSButton(title: "Scenes", target: nil, action: nil)
+    private let actsButton = NSButton(title: "Acts", target: nil, action: nil)
 
     private let legendWidth: CGFloat = 180
     private let legendScrollView = NSScrollView()
@@ -295,6 +292,7 @@ class CharacterPresenceView: NSView {
         setupLegendViews()
         setupModeControl()
         setupHeaderLabels()
+        applyThemeToModeControl()
         startObservingTheme()
     }
 
@@ -304,6 +302,7 @@ class CharacterPresenceView: NSView {
         setupLegendViews()
         setupModeControl()
         setupHeaderLabels()
+        applyThemeToModeControl()
         startObservingTheme()
     }
 
@@ -312,11 +311,10 @@ class CharacterPresenceView: NSView {
 
         switch displayMode {
         case .chapters:
-            modeControl.isHidden = true
+            modeControlContainer.isHidden = true
             xAxisMode = .scenes
-            modeControl.selectedSegment = XAxisMode.scenes.rawValue
         case .scenes:
-            modeControl.isHidden = false
+            modeControlContainer.isHidden = false
         }
 
         applyXAxisMode()
@@ -361,9 +359,19 @@ class CharacterPresenceView: NSView {
     }
 
     private func setupModeControl() {
-        modeControl.target = self
-        modeControl.action = #selector(xAxisModeChanged)
-        addSubview(modeControl)
+        scenesButton.target = self
+        scenesButton.action = #selector(scenesModeTapped)
+        scenesButton.isBordered = false
+        scenesButton.wantsLayer = true
+
+        actsButton.target = self
+        actsButton.action = #selector(actsModeTapped)
+        actsButton.isBordered = false
+        actsButton.wantsLayer = true
+
+        modeControlContainer.addSubview(scenesButton)
+        modeControlContainer.addSubview(actsButton)
+        addSubview(modeControlContainer)
     }
 
     private func setupLegendViews() {
@@ -388,6 +396,7 @@ class CharacterPresenceView: NSView {
             queue: .main
         ) { [weak self] _ in
             self?.applyThemeToLegend()
+            self?.applyThemeToModeControl()
             let theme = ThemeManager.shared.currentTheme
             self?.chartScrollView.backgroundColor = theme.pageAround
             self?.needsDisplay = true
@@ -427,17 +436,23 @@ class CharacterPresenceView: NSView {
         chartView.frame = NSRect(x: 0, y: 0, width: chartContentWidth, height: chartHeight)
         chartView.visibleWidth = chartScrollView.contentView.bounds.width
 
-        modeControl.sizeToFit()
-        modeControl.frame = NSRect(
+        let buttonHeight: CGFloat = 24
+        scenesButton.sizeToFit()
+        actsButton.sizeToFit()
+        let buttonWidth = max(scenesButton.frame.width, actsButton.frame.width) + 18
+        scenesButton.frame = NSRect(x: 0, y: 0, width: buttonWidth, height: buttonHeight)
+        actsButton.frame = NSRect(x: buttonWidth + 6, y: 0, width: buttonWidth, height: buttonHeight)
+
+        modeControlContainer.frame = NSRect(
             x: 20,
-            y: bounds.height - 44,
-            width: modeControl.frame.width,
-            height: modeControl.frame.height
+            y: bounds.height - buttonHeight - 10,
+            width: actsButton.frame.maxX,
+            height: buttonHeight
         )
 
         // Header labels
-        titleLabel.frame = NSRect(x: 0, y: bounds.height - 40, width: bounds.width, height: 22)
-        subtitleLabel.frame = NSRect(x: 0, y: bounds.height - 58, width: bounds.width, height: 16)
+        titleLabel.frame = NSRect(x: 0, y: bounds.height - 46, width: bounds.width, height: 22)
+        subtitleLabel.frame = NSRect(x: 0, y: bounds.height - 64, width: bounds.width, height: 16)
 
         // Size stack for scroll.
         let legendViewportH = max(1, legendScrollView.contentSize.height)
@@ -450,9 +465,15 @@ class CharacterPresenceView: NSView {
         applyXAxisMode()
     }
 
-    @objc private func xAxisModeChanged() {
+    @objc private func scenesModeTapped() {
         guard displayMode == .scenes else { return }
-        xAxisMode = XAxisMode(rawValue: modeControl.selectedSegment) ?? .scenes
+        xAxisMode = .scenes
+        applyXAxisMode()
+    }
+
+    @objc private func actsModeTapped() {
+        guard displayMode == .scenes else { return }
+        xAxisMode = .acts
         applyXAxisMode()
     }
 
@@ -529,6 +550,8 @@ class CharacterPresenceView: NSView {
                 subtitleLabel.stringValue = "Number of mentions per character per scene"
             }
         }
+
+        updateModeButtonAppearance()
 
         needsLayout = true
         needsDisplay = true
@@ -642,6 +665,41 @@ class CharacterPresenceView: NSView {
                 }
             }
         }
+    }
+
+    private func applyThemeToModeControl() {
+        let theme = ThemeManager.shared.currentTheme
+
+        modeControlContainer.wantsLayer = true
+        modeControlContainer.layer?.cornerRadius = 6
+        modeControlContainer.layer?.borderWidth = 1
+        modeControlContainer.layer?.borderColor = theme.pageBorder.cgColor
+        modeControlContainer.layer?.backgroundColor = theme.pageBackground.cgColor
+
+        updateModeButtonAppearance()
+    }
+
+    private func updateModeButtonAppearance() {
+        let theme = ThemeManager.shared.currentTheme
+
+        func styleButton(_ button: NSButton, selected: Bool) {
+            button.wantsLayer = true
+            button.layer?.cornerRadius = 5
+            button.layer?.borderWidth = 0
+            button.layer?.backgroundColor = selected ? theme.pageBorder.cgColor : theme.pageBackground.cgColor
+            let textColor = selected ? theme.pageBackground : theme.textColor
+            let font = button.font ?? NSFont.systemFont(ofSize: 12)
+            button.attributedTitle = NSAttributedString(
+                string: button.title,
+                attributes: [
+                    .foregroundColor: textColor,
+                    .font: font
+                ]
+            )
+        }
+
+        styleButton(scenesButton, selected: xAxisMode == .scenes)
+        styleButton(actsButton, selected: xAxisMode == .acts)
     }
 
     private func generateColors(count: Int) -> [NSColor] {

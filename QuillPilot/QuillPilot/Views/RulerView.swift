@@ -140,14 +140,22 @@ class EnhancedRulerView: NSView {
                     .font: NSFont.systemFont(ofSize: fontSize),
                     .foregroundColor: ThemeManager.shared.currentTheme.rulerMarkings
                 ]
-                label.draw(at: NSPoint(x: x + centerOffset - 5, y: rulerHeight/2 - 5), withAttributes: attrs)
+                let size = (label as NSString).size(withAttributes: attrs)
+                label.draw(
+                    at: NSPoint(x: x + centerOffset - (size.width / 2), y: rulerHeight/2 - (size.height / 2)),
+                    withAttributes: attrs
+                )
             } else if i == 17 {  // Special case for 8.5"
                 let label = "8.5"
                 let attrs: [NSAttributedString.Key: Any] = [
                     .font: NSFont.systemFont(ofSize: fontSize - 1),
                     .foregroundColor: ThemeManager.shared.currentTheme.rulerMarkings
                 ]
-                label.draw(at: NSPoint(x: x + centerOffset - 8, y: rulerHeight/2 - 5), withAttributes: attrs)
+                let size = (label as NSString).size(withAttributes: attrs)
+                label.draw(
+                    at: NSPoint(x: x + centerOffset - (size.width / 2), y: rulerHeight/2 - (size.height / 2)),
+                    withAttributes: attrs
+                )
             }
         }
     }

@@ -2541,7 +2541,7 @@ extension MainWindowController {
                         let text = try self?.readTextFromFile(at: url) ?? ""
                         // Plain-text imports: infer screenplay/poetry by structure.
                         // Screenplay wins first so .txt screenplays don't get pulled into prose.
-                        if ScreenplayImporter.looksLikeScreenplay(text) {
+                        if ScreenplayImporter.looksLikeScreenplayStrong(text) {
                             self?.toolbarView.selectTemplateProgrammatically("Screenplay")
                             attributed = ScreenplayImporter.attributedString(fromPlainText: text)
                         } else if PoetryImporter.looksLikePoetry(text) {
@@ -2692,23 +2692,29 @@ extension MainWindowController {
         let styleKey = NSAttributedString.Key("QuillStyleName")
         let fullRange = NSRange(location: 0, length: attributed.length)
 
-        // Industry-standard screenplay style names
-        let screenplayStyles: Set<String> = [
+        // Screenplay body styles (avoid treating title-page styles as definitive).
+        let screenplayBodyStyles: Set<String> = [
             "Scene Heading", "Action", "Character", "Parenthetical", "Dialogue", "Transition",
             "Shot", "Montage", "Flashback", "Intercut", "Act Break", "Chyron", "Lyrics",
             "Insert", "On Screen", "On-Screen Text", "Text Message", "Email",
-            "Note", "More", "Continued", "Title", "Author", "Contact", "Draft"
+            "Note", "More", "Continued"
         ]
+        let screenplayTitlePageStyles: Set<String> = ["Title", "Author", "Contact", "Draft"]
 
         var inferred: String? = nil
+        var sawTitlePageStyle = false
         attributed.enumerateAttribute(styleKey, in: fullRange, options: []) { value, _, stop in
             guard let styleName = value as? String else { return }
 
-            // Check for industry-standard screenplay styles
-            if screenplayStyles.contains(styleName) {
+            // Check for screenplay body styles first (strong signal)
+            if screenplayBodyStyles.contains(styleName) {
                 inferred = "Screenplay"
                 stop.pointee = true
                 return
+            }
+
+            if screenplayTitlePageStyles.contains(styleName) {
+                sawTitlePageStyle = true
             }
 
             // Legacy: check for old "Screenplay —" prefix
@@ -2731,14 +2737,19 @@ extension MainWindowController {
             }
         }
 
+        if inferred == nil, sawTitlePageStyle {
+            // Title/author alone isn't enough to assume Screenplay; defer to structure/poetry heuristics.
+            return nil
+        }
+
         return inferred
     }
 
     private func inferTemplateFromImportedFontsAndStructure(in attributed: NSAttributedString) -> String? {
         let preferredProseTemplate = "Palatino"
 
-        // 1) Screenplay: strong structural signal (sluglines/transitions), even if the import lacks font attributes.
-        if ScreenplayImporter.looksLikeScreenplay(attributed.string) {
+        // 1) Screenplay: strong structural signal (sluglines + other screenplay markers), even if the import lacks font attributes.
+        if ScreenplayImporter.looksLikeScreenplayStrong(attributed.string) {
             return "Screenplay"
         }
 
@@ -2748,9 +2759,27 @@ extension MainWindowController {
             return "Screenplay"
         }
 
-        // 3) Poetry: strong structural signal (many short, hard-wrapped lines).
-        if looksLikePoetryByLineStructure(attributed.string) {
-            return "Poetry"
+        // 3) Poetry: strong structural signal (many short, hard-wrapped lines), plus the richer importer heuristic.
+        // DOCX importers sometimes put long front-matter before the actual poem, so sample multiple windows.
+        let fullText = attributed.string as NSString
+        let fullLen = fullText.length
+        let window = min(12000, fullLen)
+        func sampleText(start: Int) -> String {
+            guard window > 0 else { return "" }
+            let s = max(0, min(start, max(0, fullLen - window)))
+            return fullText.substring(with: NSRange(location: s, length: window))
+        }
+        var samples: [String] = []
+        samples.append(sampleText(start: 0))
+        if fullLen > window * 2 {
+            samples.append(sampleText(start: max(0, (fullLen / 2) - (window / 2))))
+            samples.append(sampleText(start: max(0, fullLen - window)))
+        }
+
+        for sample in samples {
+            if PoetryImporter.looksLikePoetry(sample) || looksLikePoetryByLineStructure(sample) {
+                return "Poetry"
+            }
         }
 
         // 4) Prose: choose the closest matching font-family template, if any.
@@ -4157,6 +4186,9 @@ class ContentViewController: NSViewController {
     private var analysisSuspended = false
     private var analysisPending = false
 
+    private weak var rulerView: EnhancedRulerView?
+    private var templateObserver: NSObjectProtocol?
+
     var editorLeadingAnchor: NSLayoutXAxisAnchor? {
         editorViewController?.view.leadingAnchor
     }
@@ -4180,6 +4212,16 @@ class ContentViewController: NSViewController {
     override func viewDidLoad() {
         super.viewDidLoad()
         setupLayout()
+
+        // Keep editor/ruler page margins consistent with the active template.
+        // Screenplay uses 1.5" left, 1" right; Prose + Poetry use 1" margins.
+        templateObserver = NotificationCenter.default.addObserver(
+            forName: .styleTemplateDidChange,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            self?.applyTemplatePageDefaults()
+        }
         NotificationCenter.default.addObserver(forName: Notification.Name("QuillPilotOutlineRefresh"), object: nil, queue: .main) { [weak self] _ in
             self?.refreshOutline()
         }
@@ -4192,6 +4234,33 @@ class ContentViewController: NSViewController {
         }
 
         refreshOutline()
+
+        // Ensure initial margins are correct for the saved template.
+        applyTemplatePageDefaults()
+    }
+
+    deinit {
+        if let templateObserver {
+            NotificationCenter.default.removeObserver(templateObserver)
+        }
+    }
+
+    private func applyTemplatePageDefaults() {
+        if StyleCatalog.shared.isScreenplayTemplate {
+            // Screenplay industry defaults: 1.5" left, 1" right (US Letter).
+            rulerView?.leftMargin = 108
+            rulerView?.rightMargin = 72
+            rulerView?.firstLineIndent = 0
+            editorViewController.setPageMargins(left: 108, right: 72)
+            editorViewController.setFirstLineIndent(0)
+        } else {
+            // Prose + Poetry manuscript defaults: 1" margins and 0.5" first-line indent.
+            rulerView?.leftMargin = 72
+            rulerView?.rightMargin = 72
+            rulerView?.firstLineIndent = 36
+            editorViewController.setPageMargins(left: 72, right: 72)
+            editorViewController.setFirstLineIndent(36)
+        }
     }
 
     private func setupLayout() {
@@ -4468,11 +4537,9 @@ class ContentViewController: NSViewController {
     }
 
     func setRuler(_ ruler: EnhancedRulerView) {
-        // Industry-standard manuscript defaults: 1" margins and 0.5" first-line indent.
-        ruler.leftMargin = 72
-        ruler.rightMargin = 72
-        ruler.firstLineIndent = 36
-        applyRulerToEditor(ruler)
+        rulerView = ruler
+        // Apply the correct defaults for the active template and keep ruler+editor in sync.
+        applyTemplatePageDefaults()
     }
 
     func indent() {

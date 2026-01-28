@@ -15,6 +15,11 @@ struct PoetryImporter {
         let normalized = input
             .replacingOccurrences(of: "\r\n", with: "\n")
             .replacingOccurrences(of: "\r", with: "\n")
+            // DOCX/RTF importers sometimes use Unicode line/paragraph separators.
+            .replacingOccurrences(of: "\u{2028}", with: "\n") // LINE SEPARATOR
+            .replacingOccurrences(of: "\u{2029}", with: "\n") // PARAGRAPH SEPARATOR
+            .replacingOccurrences(of: "\u{000B}", with: "\n") // VERTICAL TAB
+            .replacingOccurrences(of: "\u{0085}", with: "\n") // NEXT LINE (NEL)
 
         let rawLines = normalized.split(separator: "\n", omittingEmptySubsequences: false).prefix(250)
         let lines = rawLines.map(String.init)
@@ -25,6 +30,8 @@ struct PoetryImporter {
         var shortCount = 0
         var punctuationEndCount = 0
         var totalLen = 0
+        var bulletLikeCount = 0
+        var tocLikeCount = 0
 
         let punctuationEnd = CharacterSet(charactersIn: ".,;:!?\"'”)”»")
 
@@ -41,6 +48,24 @@ struct PoetryImporter {
             }
 
             let visible = line.trimmingCharacters(in: .whitespacesAndNewlines)
+
+            // Heuristics to avoid false positives (lists/TOCs often look like short-line poetry).
+            if visible.hasPrefix("•") || visible.hasPrefix("-") || visible.hasPrefix("*") {
+                bulletLikeCount += 1
+            } else {
+                // Simple numbered list detection: "1. " / "12) " etc.
+                let prefix = String(visible.prefix(6))
+                if prefix.range(of: "^[0-9]{1,3}[.)]\\s", options: NSString.CompareOptions.regularExpression) != nil {
+                    bulletLikeCount += 1
+                }
+            }
+            // TOC-like lines often contain long dot leaders and end with a page number.
+            if visible.contains("....") || visible.contains(". . .") {
+                if visible.range(of: "\\d+$", options: NSString.CompareOptions.regularExpression) != nil {
+                    tocLikeCount += 1
+                }
+            }
+
             let len = (visible as NSString).length
             totalLen += len
             if len <= 45 { shortCount += 1 }
@@ -56,6 +81,13 @@ struct PoetryImporter {
         let shortFrac = Double(shortCount) / Double(nonEmptyCount)
         let indentedFrac = Double(indentedCount) / Double(nonEmptyCount)
         let punctFrac = Double(punctuationEndCount) / Double(nonEmptyCount)
+        let bulletFrac = Double(bulletLikeCount) / Double(nonEmptyCount)
+        let tocFrac = Double(tocLikeCount) / Double(nonEmptyCount)
+
+        // If most lines look like a list or TOC, don't classify as poetry.
+        if bulletFrac >= 0.45 || tocFrac >= 0.30 {
+            return false
+        }
 
         // Conservative: prefer many short lines, some stanza breaks, and avoid fully punctuated prose.
         if blankCount >= 2 && shortFrac >= 0.55 && avgLen <= 60 && punctFrac <= 0.75 {
@@ -70,6 +102,12 @@ struct PoetryImporter {
             return true
         }
 
+        // DOCX often represents poems as one paragraph per line with no blank stanza breaks.
+        // Allow detection based on many short, hard-wrapped lines even without blank lines.
+        if nonEmptyCount >= 10 && shortFrac >= 0.70 && avgLen <= 70 && punctFrac <= 0.90 {
+            return true
+        }
+
         return false
     }
 
@@ -77,6 +115,10 @@ struct PoetryImporter {
         let normalized = input
             .replacingOccurrences(of: "\r\n", with: "\n")
             .replacingOccurrences(of: "\r", with: "\n")
+            .replacingOccurrences(of: "\u{2028}", with: "\n")
+            .replacingOccurrences(of: "\u{2029}", with: "\n")
+            .replacingOccurrences(of: "\u{000B}", with: "\n")
+            .replacingOccurrences(of: "\u{0085}", with: "\n")
 
         let lines = normalized.split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
         let result = NSMutableAttributedString()
@@ -143,7 +185,6 @@ struct PoetryImporter {
             }
             appendLine(line, styleName: "Stanza")
         }
-
         return result
     }
 

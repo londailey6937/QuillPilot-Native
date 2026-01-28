@@ -28,7 +28,13 @@ struct ScreenplayImporter {
 
     static func attributedString(fromPlainText input: String) -> NSAttributedString {
         // Normalize newlines.
-        let normalized = input.replacingOccurrences(of: "\r\n", with: "\n").replacingOccurrences(of: "\r", with: "\n")
+        let normalized = input
+            .replacingOccurrences(of: "\r\n", with: "\n")
+            .replacingOccurrences(of: "\r", with: "\n")
+            .replacingOccurrences(of: "\u{2028}", with: "\n")
+            .replacingOccurrences(of: "\u{2029}", with: "\n")
+            .replacingOccurrences(of: "\u{000B}", with: "\n")
+            .replacingOccurrences(of: "\u{0085}", with: "\n")
         let lines = normalized.split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
 
         let result = NSMutableAttributedString()
@@ -155,13 +161,57 @@ struct ScreenplayImporter {
 
     static func looksLikeScreenplay(_ input: String) -> Bool {
         // Conservative heuristic: screenplay sluglines are very distinctive.
-        let normalized = input.replacingOccurrences(of: "\r\n", with: "\n").replacingOccurrences(of: "\r", with: "\n")
+        let normalized = input
+            .replacingOccurrences(of: "\r\n", with: "\n")
+            .replacingOccurrences(of: "\r", with: "\n")
+            .replacingOccurrences(of: "\u{2028}", with: "\n")
+            .replacingOccurrences(of: "\u{2029}", with: "\n")
+            .replacingOccurrences(of: "\u{000B}", with: "\n")
+            .replacingOccurrences(of: "\u{0085}", with: "\n")
         let lines = normalized.split(separator: "\n", omittingEmptySubsequences: true).prefix(200)
         for lineSub in lines {
             let line = String(lineSub).trimmingCharacters(in: .whitespaces)
             if line.isEmpty { continue }
             if isSlugline(line.uppercased()) { return true }
         }
+        return false
+    }
+
+    /// Stronger screenplay heuristic for template inference.
+    ///
+    /// Avoids false positives where a poem contains a single line starting with "INT." etc.
+    /// Requires either:
+    /// - 2+ sluglines, OR
+    /// - 1 slugline + (a transition OR multiple character cues)
+    static func looksLikeScreenplayStrong(_ input: String) -> Bool {
+        let normalized = input
+            .replacingOccurrences(of: "\r\n", with: "\n")
+            .replacingOccurrences(of: "\r", with: "\n")
+            .replacingOccurrences(of: "\u{2028}", with: "\n")
+            .replacingOccurrences(of: "\u{2029}", with: "\n")
+            .replacingOccurrences(of: "\u{000B}", with: "\n")
+            .replacingOccurrences(of: "\u{0085}", with: "\n")
+
+        let rawLines = normalized.split(separator: "\n", omittingEmptySubsequences: true).prefix(240)
+
+        var sluglines = 0
+        var transitions = 0
+        var characters = 0
+
+        for lineSub in rawLines {
+            let trimmed = String(lineSub).trimmingCharacters(in: .whitespaces)
+            if trimmed.isEmpty { continue }
+            let upper = trimmed.uppercased()
+
+            if isSlugline(upper) { sluglines += 1 }
+            if isTransition(upper) { transitions += 1 }
+            if isCharacter(trimmed, uppercased: upper) { characters += 1 }
+
+            // Early exit once we're confident.
+            if sluglines >= 2 { return true }
+            if sluglines >= 1 && (transitions >= 1 || characters >= 2) { return true }
+        }
+
         return false
     }
 

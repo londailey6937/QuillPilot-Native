@@ -107,6 +107,7 @@ class EmotionalTrajectoryView: NSView {
             width: textSize.width,
             height: textSize.height
         )
+        
 
         attrString.draw(in: textRect)
     }

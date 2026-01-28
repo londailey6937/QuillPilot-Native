@@ -773,21 +773,16 @@ class AnalysisViewController: NSViewController, NSWindowDelegate {
 
         // For plot and characters, open popout windows
         if category == .plot {
-            // Trigger analysis if no data exists
+            // Open immediately; if analysis is still running, show placeholder and refresh when results arrive.
+            if plotPopoutWindow == nil {
+                plotPopoutWindow = createPlotPopoutWindow()
+            }
+            refreshPlotPopoutContent()
+            plotPopoutWindow?.makeKeyAndOrderFront(nil)
+
+            // Trigger analysis if no data exists.
             if latestAnalysisResults == nil {
                 analyzeCallback?()
-                // Give a moment for analysis to complete
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
-                    if self?.plotPopoutWindow == nil {
-                        self?.plotPopoutWindow = self?.createPlotPopoutWindow()
-                    }
-                    self?.plotPopoutWindow?.makeKeyAndOrderFront(nil)
-                }
-            } else {
-                if plotPopoutWindow == nil {
-                    plotPopoutWindow = createPlotPopoutWindow()
-                }
-                plotPopoutWindow?.makeKeyAndOrderFront(nil)
             }
             return
         }
@@ -1335,6 +1330,8 @@ class AnalysisViewController: NSViewController, NSWindowDelegate {
         // For analysis panel we show results only in the popout
         if !isOutlinePanel {
             refreshAnalysisPopoutContent()
+            // Keep the Plot popout in sync if it is currently open.
+            refreshPlotPopoutContent()
             return
         }
 
@@ -1542,6 +1539,73 @@ class AnalysisViewController: NSViewController, NSWindowDelegate {
 
         // Refresh popout if open
         refreshAnalysisPopoutContent()
+    }
+
+    private func refreshPlotPopoutContent() {
+        guard let window = plotPopoutWindow,
+              let scrollView = plotPopoutScrollView,
+              let contentView = plotPopoutContentView,
+              let stack = plotPopoutStack else { return }
+
+        let theme = ThemeManager.shared.currentTheme
+
+        // Clear previous content
+        for view in stack.arrangedSubviews {
+            stack.removeArrangedSubview(view)
+            view.removeFromSuperview()
+        }
+
+        let jumpButton = NSButton(title: "Scroll to chart", target: self, action: #selector(scrollPlotPopoutToChart))
+        jumpButton.bezelStyle = .rounded
+        jumpButton.controlSize = .small
+        let jumpColor = theme.popoutTextColor
+        let jumpFont = jumpButton.font ?? NSFont.systemFont(ofSize: NSFont.smallSystemFontSize)
+        jumpButton.attributedTitle = NSAttributedString(
+            string: "Scroll to chart",
+            attributes: [
+                .foregroundColor: jumpColor,
+                .font: jumpFont
+            ]
+        )
+        if #available(macOS 10.14, *) {
+            jumpButton.contentTintColor = jumpColor
+        }
+        stack.addArrangedSubview(jumpButton)
+
+        let header = NSTextField(labelWithString: "Plot Structure Analysis")
+        header.font = NSFont.boldSystemFont(ofSize: 18)
+        header.textColor = theme.popoutTextColor
+        stack.addArrangedSubview(header)
+
+        if let results = latestAnalysisResults, let plotAnalysis = results.plotAnalysis {
+            let plotView = PlotVisualizationView()
+            plotView.translatesAutoresizingMaskIntoConstraints = false
+            plotView.configure(with: plotAnalysis, wrapInScrollView: false)
+            stack.addArrangedSubview(plotView)
+
+            NSLayoutConstraint.activate([
+                plotView.widthAnchor.constraint(equalTo: stack.widthAnchor),
+                plotView.heightAnchor.constraint(greaterThanOrEqualToConstant: 1400)
+            ])
+        } else {
+            let info = NSTextField(labelWithString: "Plot structure visualization will appear here\n\nRun an analysis to see plot tension and pacing")
+            info.textColor = theme.popoutSecondaryColor
+            info.maximumNumberOfLines = 0
+            stack.addArrangedSubview(info)
+        }
+
+        applyThemeToPopout(window: window, container: window.contentView, stack: stack)
+
+        DispatchQueue.main.async { [weak self, weak scrollView, weak contentView, weak stack] in
+            guard let self,
+                  let scrollView,
+                  let contentView,
+                  let stack else { return }
+            scrollView.layoutSubtreeIfNeeded()
+            contentView.layoutSubtreeIfNeeded()
+            stack.layoutSubtreeIfNeeded()
+            self.resizePopoutContent(scrollView: scrollView, contentView: contentView, stack: stack)
+        }
     }
 
     private func makeLabel(_ text: String, size: CGFloat, bold: Bool) -> NSTextField {

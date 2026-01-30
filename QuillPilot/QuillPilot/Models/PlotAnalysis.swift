@@ -289,6 +289,7 @@ struct PlotAnalysis {
     var missingPoints: [String] = []  // Raw type names
     var structuralIssues: [StructuralIssue] = []
     var formatConfidence: Double = 0.5  // 0-1, how confident we are about the format
+    var pageCount: Int = 1  // Total page count for page range calculations
 
     // Novel-specific metrics
     var internalChangeScore: Int = 0     // How well internal change is tracked
@@ -543,6 +544,14 @@ class PlotPointDetector {
         analysis.documentFormat = format
         analysis.formatConfidence = confidence
 
+        // Calculate page count for page range display.
+        // Novel: ~250 words/page; Screenplay: ~55 lines per page.
+        if format == .screenplay {
+            analysis.pageCount = estimateScreenplayPageCount(text: text)
+        } else {
+            analysis.pageCount = max(1, (wordCount + 249) / 250)
+        }
+
         // Analyze tension throughout the story
         analysis.overallTensionCurve = analyzeTensionCurve(text: text, wordCount: wordCount, format: format)
 
@@ -626,6 +635,18 @@ class PlotPointDetector {
         }
 
         return tensionPoints
+    }
+
+    private func estimateScreenplayPageCount(text: String) -> Int {
+        let rawLines = text.split(omittingEmptySubsequences: false, whereSeparator: \.isNewline)
+        var lines = rawLines.map { String($0) }
+
+        while let last = lines.last, last.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            lines.removeLast()
+        }
+
+        let lineCount = max(1, lines.count)
+        return max(1, Int(ceil(Double(lineCount) / 55.0)))
     }
 
     private func calculateWindowTension(words: [String], format: DocumentFormat) -> Double {

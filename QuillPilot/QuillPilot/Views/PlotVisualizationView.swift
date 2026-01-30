@@ -326,6 +326,24 @@ struct PlotTensionChart: View {
 
     // MARK: - Structural Issues View
 
+    /// Calculate page range string from story position (0.0-1.0) range.
+    private func pageRangeString(start: Double, end: Double) -> String {
+        let totalPages = max(1, plotAnalysis.pageCount)
+        let startPage = max(1, Int(ceil(start * Double(totalPages))))
+        let endPage = max(startPage, Int(ceil(end * Double(totalPages))))
+
+        // For whole-story issues, show "Entire document".
+        if start <= 0.01 && end >= 0.99 {
+            return "Entire document"
+        }
+
+        if startPage == endPage {
+            return "Page \(startPage)"
+        } else {
+            return "Pages \(startPage)–\(endPage)"
+        }
+    }
+
     @ViewBuilder
     private var structuralIssuesView: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -342,6 +360,10 @@ struct PlotTensionChart: View {
                             .font(.caption)
                             .fontWeight(.medium)
                             .foregroundColor(primaryTextColor)
+                        Spacer()
+                        Text(pageRangeString(start: issue.affectedRange.start, end: issue.affectedRange.end))
+                            .font(.caption2)
+                            .foregroundColor(secondaryTextColor.opacity(0.8))
                     }
 
                     Text(issue.description)

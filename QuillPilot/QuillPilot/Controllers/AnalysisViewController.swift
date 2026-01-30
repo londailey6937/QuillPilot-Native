@@ -5065,7 +5065,8 @@ extension AnalysisViewController {
     private func generateEmotionalTrajectories(from results: AnalysisResults) -> [EmotionalTrajectoryView.CharacterTrajectory] {
         var trajectories: [EmotionalTrajectoryView.CharacterTrajectory] = []
 
-        // Get character names from Character Library + presence + interactions (keep order, no truncation)
+        // CHARACTER LIBRARY IS THE ONLY SOURCE OF TRUTH.
+        // Do NOT fall back to document styles or presence data for character names.
         let library = CharacterLibrary.shared
 
         func keyForName(_ name: String) -> String {
@@ -5076,35 +5077,34 @@ extension AnalysisViewController {
         }
 
         var displayNameByKey: [String: String] = [:]
-        if !library.analysisEligibleCharacters.isEmpty {
-            for profile in library.analysisEligibleCharacters {
-                if let key = profile.analysisKey?.lowercased(), !key.isEmpty {
-                    displayNameByKey[key] = profile.displayName
-                }
+        for profile in library.analysisEligibleCharacters {
+            if let key = profile.analysisKey?.lowercased(), !key.isEmpty {
+                displayNameByKey[key] = profile.displayName
             }
         }
 
-        var characterKeys: [String] = []
+        // ONLY use Character Library keys - no fallback to presence/interactions data.
         let libraryKeys = library.analysisCharacterKeys.map { $0.lowercased() }
-        if !libraryKeys.isEmpty {
-            characterKeys = libraryKeys
-        } else {
-            characterKeys = results.characterPresence.map { keyForName($0.characterName) }
+        guard !libraryKeys.isEmpty else {
+            // No characters in library = no trajectories.
+            return []
         }
+        let characterKeys = libraryKeys
 
+        // Build presence lookup from results but only for library characters.
         for presence in results.characterPresence {
             let key = keyForName(presence.characterName)
-            if !key.isEmpty && !characterKeys.contains(key) { characterKeys.append(key) }
-            if displayNameByKey[key] == nil {
+            if displayNameByKey[key] == nil && characterKeys.contains(key) {
                 let trimmed = presence.characterName.trimmingCharacters(in: .whitespacesAndNewlines)
                 if !trimmed.isEmpty { displayNameByKey[key] = trimmed }
             }
         }
+        // Only use interaction data for library characters (don't add new characters from interactions).
         for interaction in results.characterInteractions {
             for raw in [interaction.character1, interaction.character2] {
                 let key = keyForName(raw)
-                if !key.isEmpty && !characterKeys.contains(key) { characterKeys.append(key) }
-                if displayNameByKey[key] == nil {
+                // Only add display name if this character is in the library.
+                if characterKeys.contains(key) && displayNameByKey[key] == nil {
                     let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
                     if !trimmed.isEmpty { displayNameByKey[key] = trimmed }
                 }

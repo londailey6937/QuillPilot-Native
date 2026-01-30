@@ -196,7 +196,9 @@ class AnalysisEngine {
             let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
             if trimmed.isEmpty { continue }
             let normalized = normalizedCharacterKey(trimmed)
-            let canonical = normalizedToLibraryKey[normalized] ?? trimmed
+            // ONLY include names that are actually in the Character Library.
+            // Do NOT fall back to the original input name (prevents TOC, headings, etc.).
+            guard let canonical = normalizedToLibraryKey[normalized] else { continue }
             if seen.insert(canonical).inserted {
                 out.append(canonical)
             }
@@ -2291,21 +2293,25 @@ class AnalysisEngine {
         var firstAliasSentence: String?
 
         for sentence in sentences {
-            let lower = sentence.lowercased()
+            let trimmed = sentence.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !trimmed.isEmpty else { continue }
+            if isTOCSentence(trimmed) { continue }
+
+            let lower = trimmed.lowercased()
             guard sentenceMatchesAnyAlias(sentence) else { continue }
 
             if firstAliasSentence == nil {
-                firstAliasSentence = sentence
+                firstAliasSentence = trimmed
             }
 
             for indicator in indicators {
                 if lower.contains(indicator) {
-                    return sentence.trimmingCharacters(in: .whitespacesAndNewlines).prefix(120).description
+                    return trimmed.prefix(120).description
                 }
             }
         }
         if let fallback = firstAliasSentence {
-            return fallback.trimmingCharacters(in: .whitespacesAndNewlines).prefix(120).description
+            return fallback.prefix(120).description
         }
         return ""
     }
@@ -2333,6 +2339,8 @@ class AnalysisEngine {
 
         for sentence in sentences {
             let trimmed = sentence.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !trimmed.isEmpty else { continue }
+            if isTOCSentence(trimmed) { continue }
             let lower = trimmed.lowercased()
 
             if firstIndicatorSentence == nil {
@@ -2385,6 +2393,8 @@ class AnalysisEngine {
 
         for sentence in sentences {
             let trimmed = sentence.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !trimmed.isEmpty else { continue }
+            if isTOCSentence(trimmed) { continue }
             let lower = trimmed.lowercased()
 
             if firstIndicatorSentence == nil {
@@ -2412,6 +2422,21 @@ class AnalysisEngine {
             return fallback.prefix(120).description
         }
         return ""
+    }
+
+    private func isTOCSentence(_ sentence: String) -> Bool {
+        let trimmed = sentence.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return false }
+        let lower = trimmed.lowercased()
+
+        if lower.contains("table of contents") { return true }
+        if lower.contains("contents") && lower.contains("chapter") { return true }
+
+        // Detect strings that enumerate multiple chapters (common TOC pattern).
+        let chapterOccurrences = lower.components(separatedBy: "chapter").count - 1
+        if chapterOccurrences >= 2 { return true }
+
+        return false
     }
 
     func generateDecisionConsequenceChains(text: String, characterNames: [String], outlineEntries: [DecisionBeliefLoopAnalyzer.OutlineEntry]? = nil) -> [DecisionConsequenceChain] {

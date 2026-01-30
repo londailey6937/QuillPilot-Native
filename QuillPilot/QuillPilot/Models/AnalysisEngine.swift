@@ -182,7 +182,6 @@ class AnalysisEngine {
 
     private func libraryValidatedCharacterNames(from input: [String]) -> [String] {
         let library = CharacterLibrary.shared
-        guard !library.characters.isEmpty else { return [] }
 
         // Map normalized keys back to the library’s canonical display/analysis key.
         let libraryKeys = library.analysisCharacterKeys
@@ -194,10 +193,12 @@ class AnalysisEngine {
         var seen: Set<String> = []
         var out: [String] = []
         for name in input {
-            let normalized = normalizedCharacterKey(name)
-            guard let libraryKey = normalizedToLibraryKey[normalized] else { continue }
-            if seen.insert(libraryKey).inserted {
-                out.append(libraryKey)
+            let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+            if trimmed.isEmpty { continue }
+            let normalized = normalizedCharacterKey(trimmed)
+            let canonical = normalizedToLibraryKey[normalized] ?? trimmed
+            if seen.insert(canonical).inserted {
+                out.append(canonical)
             }
         }
         return out
@@ -435,9 +436,12 @@ class AnalysisEngine {
         results.hasDialogueConflict = dialogueAnalysis.hasConflict
 
         // Page count (manuscript: ~250 words/page; screenplay: ~55 lines/page)
+        // Use content-based detection so screenplay behavior works even if the user didn't pick a screenplay template.
+        let formatDetector = DocumentFormatDetector()
+        let detectedFormat = formatDetector.detectFormat(text: analysisText).format
         if let override = pageCountOverride, override > 0 {
             results.pageCount = override
-        } else if StyleCatalog.shared.isScreenplayTemplate {
+        } else if detectedFormat == .screenplay {
             results.pageCount = estimateScreenplayPageCount(text: text)
         } else {
             results.pageCount = max(1, (results.wordCount + 249) / 250)
@@ -448,7 +452,7 @@ class AnalysisEngine {
         results.plotAnalysis = plotDetector.detectPlotPoints(text: analysisText, wordCount: results.wordCount)
 
         // Character arc analysis
-        // ONLY use Character Library (source of truth) and exclude minor characters.
+        // Characters must come ONLY from the Character Library.
         let characterNames = CharacterLibrary.shared.analysisCharacterKeys
 
         if !characterNames.isEmpty {
@@ -2015,6 +2019,10 @@ class AnalysisEngine {
             "The", "A", "An", "He", "She", "They", "I", "We", "You",
             "But", "And", "Or", "If", "When", "Where", "Why", "How",
             "Chapter", "Part", "Section", "Act",
+            // Decision–Belief Loop / analysis headings (avoid contaminating character-only charts)
+            "Pressure", "Belief", "Beliefs", "Decision", "Decisions", "Outcome", "Outcomes",
+            "Consequence", "Consequences", "Shift", "Shifts", "Evidence", "Counterpressure",
+            "Framework", "Loop", "Loops", "Matrix", "Matrices", "Arc", "Arcs",
             "His", "Her", "Their", "Its", "My", "Our", "Your",
             "It", "As", "At", "In", "On", "To", "From", "With",
             "This", "That", "These", "Those", "What", "Which", "Who",

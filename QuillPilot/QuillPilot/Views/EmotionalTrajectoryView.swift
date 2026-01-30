@@ -12,7 +12,7 @@ class EmotionalTrajectoryView: NSView {
 
     struct EmotionalState {
         let position: Double // 0.0 to 1.0 (percentage through document)
-        let confidence: Double // -1.0 to 1.0
+        let confidence: Double // 0.0 (low) to 1.0 (high)
         let hope: Double // -1.0 (despair) to 1.0 (hope)
         let control: Double // -1.0 (chaos) to 1.0 (control)
         let attachment: Double // -1.0 (isolation) to 1.0 (attachment)
@@ -75,9 +75,46 @@ class EmotionalTrajectoryView: NSView {
         NSColor.controlBackgroundColor.setFill()
         bounds.fill()
 
-        // Define chart area with padding for axes and labels
+        // Define chart and legend areas with padding for axes and labels
         let padding: CGFloat = 60
-        let chartRect = bounds.insetBy(dx: padding, dy: padding)
+        let legendGap: CGFloat = 10
+        let minChartWidth: CGFloat = 240
+
+        let maxLegendWidth = bounds.width - padding * 2 - minChartWidth - legendGap
+        let useRightLegend = maxLegendWidth >= 180
+
+        let chartRect: NSRect
+        let legendRect: NSRect
+
+        if useRightLegend {
+            let legendWidth = min(280, maxLegendWidth)
+            chartRect = NSRect(
+                x: bounds.minX + padding,
+                y: bounds.minY + padding,
+                width: max(60, bounds.width - padding * 2 - legendWidth - legendGap),
+                height: max(60, bounds.height - padding * 2)
+            )
+            legendRect = NSRect(
+                x: chartRect.maxX + legendGap,
+                y: bounds.minY + padding,
+                width: legendWidth,
+                height: max(60, bounds.height - padding * 2)
+            )
+        } else {
+            let legendHeight = min(140, max(80, bounds.height * 0.25))
+            legendRect = NSRect(
+                x: bounds.minX + padding,
+                y: bounds.minY + padding,
+                width: max(60, bounds.width - padding * 2),
+                height: legendHeight
+            )
+            chartRect = NSRect(
+                x: bounds.minX + padding,
+                y: legendRect.maxY + legendGap,
+                width: max(60, bounds.width - padding * 2),
+                height: max(60, bounds.height - padding * 2 - legendHeight - legendGap)
+            )
+        }
 
         // Draw grid and axes
         drawGrid(in: chartRect)
@@ -89,7 +126,7 @@ class EmotionalTrajectoryView: NSView {
         }
 
         // Draw legend
-        drawLegend(in: bounds)
+        drawLegend(in: legendRect)
     }
 
     private func drawEmptyState() {
@@ -107,7 +144,7 @@ class EmotionalTrajectoryView: NSView {
             width: textSize.width,
             height: textSize.height
         )
-        
+
 
         attrString.draw(in: textRect)
     }
@@ -144,7 +181,12 @@ class EmotionalTrajectoryView: NSView {
 
         // Y-axis labels
         let range = selectedMetric.range
-        let yLabels = [range.max, "", "Neutral", "", range.min]
+        let yLabels: [String]
+        if selectedMetric == .confidence {
+            yLabels = [range.max, "", "Medium", "", range.min]
+        } else {
+            yLabels = [range.max, "", "Neutral", "", range.min]
+        }
         for (i, label) in yLabels.enumerated() {
             let y = chartRect.maxY - (chartRect.height / 4) * CGFloat(i) - 6
             let labelString = NSAttributedString(string: label, attributes: labelAttributes)
@@ -182,8 +224,15 @@ class EmotionalTrajectoryView: NSView {
         var isFirst = true
         for state in trajectory.states {
             let x = chartRect.minX + chartRect.width * CGFloat(state.position)
-            // Map value from [-1, 1] to chart coordinates
-            let normalizedValue = (getValue(from: state) + 1.0) / 2.0 // Convert to [0, 1]
+            // Map metric value to chart coordinates
+            let rawValue = getValue(from: state)
+            let normalizedValue: Double
+            if selectedMetric == .confidence {
+                normalizedValue = max(0, min(1, rawValue))
+            } else {
+                // Map from [-1, 1] to [0, 1]
+                normalizedValue = max(0, min(1, (rawValue + 1.0) / 2.0))
+            }
             let y = chartRect.minY + chartRect.height * CGFloat(normalizedValue)
 
             if isFirst {
@@ -211,7 +260,13 @@ class EmotionalTrajectoryView: NSView {
         // Draw data points
         for state in trajectory.states {
             let x = chartRect.minX + chartRect.width * CGFloat(state.position)
-            let normalizedValue = (getValue(from: state) + 1.0) / 2.0
+            let rawValue = getValue(from: state)
+            let normalizedValue: Double
+            if selectedMetric == .confidence {
+                normalizedValue = max(0, min(1, rawValue))
+            } else {
+                normalizedValue = max(0, min(1, (rawValue + 1.0) / 2.0))
+            }
             let y = chartRect.minY + chartRect.height * CGFloat(normalizedValue)
 
             let point = NSBezierPath(ovalIn: NSRect(x: x - 3, y: y - 3, width: 6, height: 6))
@@ -225,18 +280,30 @@ class EmotionalTrajectoryView: NSView {
     }
 
     private func drawLegend(in bounds: NSRect) {
-        // Use two-column layout for legend to save space
-        let legendWidth: CGFloat = 400
-        let columnWidth: CGFloat = 200
-        let legendX: CGFloat = bounds.maxX - legendWidth - 10
-        let legendY: CGFloat = bounds.maxY - 40
-        let itemsPerColumn = (trajectories.count + 1) / 2
+        guard !trajectories.isEmpty else { return }
+
+        let legendBackground = NSBezierPath(roundedRect: bounds, xRadius: 6, yRadius: 6)
+        NSColor.windowBackgroundColor.withAlphaComponent(0.85).setFill()
+        legendBackground.fill()
+        NSColor.separatorColor.withAlphaComponent(0.4).setStroke()
+        legendBackground.lineWidth = 1
+        legendBackground.stroke()
+
+        let padding: CGFloat = 8
+        let itemHeight: CGFloat = 18
+        let availableHeight = max(1, bounds.height - padding * 2)
+        let maxRows = max(1, Int(floor(availableHeight / itemHeight)))
+        let columns = max(1, Int(ceil(Double(trajectories.count) / Double(maxRows))))
+        let columnWidth = max(80, (bounds.width - padding * 2) / CGFloat(columns))
+
+        let startX = bounds.minX + padding
+        let startY = bounds.maxY - padding
 
         for (index, trajectory) in trajectories.enumerated() {
-            let column = index / itemsPerColumn
-            let row = index % itemsPerColumn
-            let currentX = legendX + CGFloat(column) * columnWidth
-            let currentY = legendY - CGFloat(row) * 18
+            let column = index / maxRows
+            let row = index % maxRows
+            let currentX = startX + CGFloat(column) * columnWidth
+            let currentY = startY - CGFloat(row) * itemHeight
 
             // Line sample
             let linePath = NSBezierPath()

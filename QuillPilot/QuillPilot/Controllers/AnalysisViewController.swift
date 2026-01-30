@@ -59,6 +59,11 @@ class AnalysisViewController: NSViewController, NSWindowDelegate {
     private weak var analysisPopoutStack: NSStackView?
     private weak var analysisPopoutContainer: NSView?
 
+    // Monotonic counter incremented whenever new analysis results are stored.
+    // Used to ensure popouts wait for *fresh* analysis results rather than opening
+    // immediately with stale data.
+    private var analysisResultsVersion: Int = 0
+
 
     // Passive voice disclosure tracking
     private var passiveDisclosureViews: [NSButton: NSScrollView] = [:]
@@ -1354,7 +1359,6 @@ class AnalysisViewController: NSViewController, NSWindowDelegate {
         // Basic stats
         addStat("Words", "\(results.wordCount)")
         addStat("Sentences", "\(results.sentenceCount)")
-        addStat("Reading Level", results.readingLevel)
         addDivider()
 
         // Paragraph analysis
@@ -1997,6 +2001,7 @@ class AnalysisViewController: NSViewController, NSWindowDelegate {
 
     func storeAnalysisResults(_ results: AnalysisResults) {
         latestAnalysisResults = results
+        analysisResultsVersion += 1
     }
 
     func clearAllAnalysisUI() {
@@ -3614,7 +3619,6 @@ extension AnalysisViewController {
         // Basic stats (non-poetry templates)
         addStat("Words", "\(results.wordCount)")
         addStat("Sentences", "\(results.sentenceCount)")
-        addStat("Reading Level", results.readingLevel)
         addDivider()
 
         // Paragraph analysis
@@ -4547,22 +4551,33 @@ extension AnalysisViewController {
     }
 
     @objc private func showDecisionBeliefLoops() {
-        // Don't show if Character Library is empty
-        guard !CharacterLibrary.shared.characters.isEmpty else {
+        // Don't show if no analysis-eligible characters exist.
+        // (Library can be non-empty but still have no usable analysis keys.)
+        guard !CharacterLibrary.shared.analysisCharacterKeys.isEmpty else {
             showMissingCharactersAlert()
             return
         }
 
-        if let results = latestAnalysisResults {
-            openDecisionBeliefPopout(loops: results.decisionBeliefLoops)
-        } else {
-            analyzeCallback?()
-            DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) { [weak self] in
-                if let results = self?.latestAnalysisResults {
-                    self?.openDecisionBeliefPopout(loops: results.decisionBeliefLoops)
-                }
+        let startVersion = analysisResultsVersion
+
+        DebugLog.log("📊 showDecisionBeliefLoops: triggering fresh analysis")
+        analyzeCallback?()
+
+        var attemptOpen: ((Int) -> Void)?
+        attemptOpen = { [weak self] remaining in
+            guard let self else { return }
+            // Only open once we have *new* results (or if there were no results at all).
+            if let results = self.latestAnalysisResults,
+               (self.analysisResultsVersion > startVersion || startVersion == 0) {
+                self.openDecisionBeliefPopout(loops: results.decisionBeliefLoops)
+                return
+            }
+            guard remaining > 0 else { return }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
+                attemptOpen?(remaining - 1)
             }
         }
+        attemptOpen?(10)
     }
 
     @objc private func showBeliefShiftMatrix() {
@@ -4751,21 +4766,26 @@ extension AnalysisViewController {
     }
 
     @objc private func showEmotionalTrajectory() {
-        // Don't show if Character Library is empty
-        guard !CharacterLibrary.shared.characters.isEmpty else {
-            showMissingCharactersAlert()
-            return
+        DebugLog.log("📈 showEmotionalTrajectory called")
+
+        // Always trigger fresh analysis so the trajectory is document-specific.
+        // (Otherwise this can reuse stale `latestAnalysisResults` from a previous document.)
+        analyzeCallback?()
+
+        func attemptOpen(_ remaining: Int) {
+            if let results = self.latestAnalysisResults {
+                self.openEmotionalTrajectoryPopout(results: results)
+            } else if remaining > 0 {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
+                    attemptOpen(remaining - 1)
+                }
+            } else {
+                DebugLog.log("⚠️ showEmotionalTrajectory: No analysis results available")
+            }
         }
 
-        if let results = latestAnalysisResults {
-            openEmotionalTrajectoryPopout(results: results)
-        } else {
-            analyzeCallback?()
-            DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) { [weak self] in
-                if let results = self?.latestAnalysisResults {
-                    self?.openEmotionalTrajectoryPopout(results: results)
-                }
-            }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) {
+            attemptOpen(4)
         }
     }
 
@@ -4883,8 +4903,9 @@ extension AnalysisViewController {
         }
 
         var characterKeys: [String] = []
-        if !displayNameByKey.isEmpty {
-            characterKeys = library.analysisCharacterKeys.map { $0.lowercased() }
+        let libraryKeys = library.analysisCharacterKeys.map { $0.lowercased() }
+        if !libraryKeys.isEmpty {
+            characterKeys = libraryKeys
         } else {
             characterKeys = results.characterPresence.map { keyForName($0.characterName) }
         }
@@ -4910,11 +4931,26 @@ extension AnalysisViewController {
 
         let colors: [NSColor] = [.systemBlue, .systemRed, .systemGreen, .systemOrange, .systemPurple, .systemTeal, .systemIndigo, .systemPink]
 
-        // Find max chapter/scene across all presence data
+        // Find max chapter across presence data.
+        // IMPORTANT: `CharacterInteraction.sections` are “co-appearance section indexes” and can be a different
+        // scale than `CharacterPresence.chapterPresence` (which would distort the x-axis and cause trajectories
+        // to drop to zero for much of the graph).
         let allChapters = results.characterPresence.flatMap { Array($0.chapterPresence.keys) }
-        let interactionChapters = results.characterInteractions.flatMap { $0.sections }
-        let maxChapter = (allChapters + interactionChapters).max() ?? 10
-        let chapterCount = max(1, maxChapter)
+        let maxChapterFromPresence = allChapters.max() ?? 10
+        let chapterCount = max(1, maxChapterFromPresence)
+
+        // If interaction sections are on a different index scale, remap them to chapters.
+        let maxInteractionSection = results.characterInteractions.flatMap { $0.sections }.max() ?? 0
+        func mapInteractionSectionToChapter(_ section: Int) -> Int {
+            guard maxInteractionSection > 0 else { return 1 }
+            if maxInteractionSection <= 1 || chapterCount <= 1 {
+                return 1
+            }
+            // Map section index domain [1..maxInteractionSection] onto [1..chapterCount]
+            let t = Double(max(1, section) - 1) / Double(maxInteractionSection - 1)
+            let mapped = Int(round(t * Double(chapterCount - 1))) + 1
+            return min(chapterCount, max(1, mapped))
+        }
 
         // Pre-calculate interaction data per chapter for attachment metric
         var interactionsByChapter: [String: [Int: Int]] = [:] // key -> chapter -> interaction count
@@ -4926,7 +4962,8 @@ extension AnalysisViewController {
                     interactionsByChapter[key] = [:]
                 }
                 for section in interaction.sections {
-                    interactionsByChapter[key]![section, default: 0] += 1
+                    let chapter = mapInteractionSectionToChapter(section)
+                    interactionsByChapter[key]![chapter, default: 0] += 1
                 }
             }
         }
@@ -4939,6 +4976,18 @@ extension AnalysisViewController {
             presenceByName[key] = presence.chapterPresence
         }
         let maxPresenceGlobal = max(1, results.characterPresence.flatMap { $0.chapterPresence.values }.max() ?? 1)
+
+        // For confidence, we want a per-chapter dominance metric to avoid compressing
+        // values into a small band when a single chapter has an outlier max.
+        var maxPresenceByChapter: [Int: Int] = [:]
+        for chapterPresence in presenceByName.values {
+            for (chapter, count) in chapterPresence {
+                let existing = maxPresenceByChapter[chapter] ?? 0
+                if count > existing {
+                    maxPresenceByChapter[chapter] = count
+                }
+            }
+        }
 
         // Keep both the raw max (to detect “no interaction data”) and a non-zero max for normalization.
         let maxInteractionsGlobalRaw = interactionsByChapter.values.flatMap { $0.values }.max() ?? 0
@@ -4964,15 +5013,17 @@ extension AnalysisViewController {
                 let chapter = min(chapterCount, max(1, Int(round(position * Double(chapterCount - 1))) + 1))
 
                 // CONFIDENCE: Based on presence dominance (high presence = character is driving action)
+                // Confidence is a 0..1 metric (not bipolar).
                 let presenceCount = Double(presence[chapter] ?? 0)
-                let normalizedPresence = presenceCount / Double(maxPresenceGlobal)
-                let confidence = normalizedPresence * 2.0 - 1.0 // Map 0-1 to -1 to 1
+                let normalizedPresenceGlobal = presenceCount / Double(maxPresenceGlobal)
+                let chapterMaxPresence = Double(max(1, maxPresenceByChapter[chapter] ?? 1))
+                let confidence = max(0, min(1, presenceCount / chapterMaxPresence))
 
                 // HOPE: Based on presence trajectory (rising = hope, falling = despair)
-                let presenceDelta = normalizedPresence - previousPresence
+                let presenceDelta = normalizedPresenceGlobal - previousPresence
                 runningTrend = runningTrend * 0.7 + presenceDelta * 0.3 // Smoothed trend
                 let hope = max(-1, min(1, runningTrend * 5.0)) // Amplify for visibility
-                previousPresence = normalizedPresence
+                previousPresence = normalizedPresenceGlobal
 
                 // CONTROL: Based on presence consistency (stable presence = in control)
                 // Look at variance in nearby chapters
@@ -4991,12 +5042,12 @@ extension AnalysisViewController {
                 let normalizedInteractions = interactionCount / Double(maxInteractionsGlobal)
                 let attachmentSource = (maxInteractionsGlobalRaw > 0 && hasAnyInteractionDataForCharacter)
                     ? normalizedInteractions
-                    : normalizedPresence
+                    : normalizedPresenceGlobal
                 let attachment = attachmentSource * 2.0 - 1.0 // Map 0-1 to -1 to 1
 
                 let state = EmotionalTrajectoryView.EmotionalState(
                     position: position,
-                    confidence: max(-1, min(1, confidence)),
+                    confidence: confidence,
                     hope: max(-1, min(1, hope)),
                     control: max(-1, min(1, control)),
                     attachment: max(-1, min(1, attachment))

@@ -835,6 +835,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         styleDiagnosticsItem.target = self
         toolsMenu.addItem(styleDiagnosticsItem)
 
+        toolsMenu.addItem(.separator())
+
+        let purgeCharactersItem = NSMenuItem(title: "Purge Character Library for This Document…", action: #selector(purgeCharacterLibraryForThisDocument(_:)), keyEquivalent: "")
+        purgeCharactersItem.target = self
+        toolsMenu.addItem(purgeCharactersItem)
+
+
+
         // View Menu
         let viewMenuItem = NSMenuItem()
         mainMenu.addItem(viewMenuItem)
@@ -990,12 +998,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
+
+
     @objc private func toggleAutoAnalyzeOnOpen(_ sender: Any?) {
         QuillPilotSettings.autoAnalyzeOnOpen.toggle()
     }
 
     @objc private func toggleAutoAnalyzeWhileTyping(_ sender: Any?) {
         QuillPilotSettings.autoAnalyzeWhileTyping.toggle()
+    }
+
+    @objc private func purgeCharacterLibraryForThisDocument(_ sender: Any?) {
+        if mainWindowController == nil {
+            mainWindowController = MainWindowController()
+        }
+        presentMainWindow(orderingSource: sender)
+        mainWindowController?.purgeCharacterLibraryForCurrentDocument(sender)
     }
 
     @objc private func showHeaderFooterSettings(_ sender: Any?) {

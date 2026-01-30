@@ -323,7 +323,7 @@ class DecisionBeliefLoopAnalyzer {
     private let pressureWords = [
         "must", "need", "forced", "threatened", "danger", "risk", "challenge", "problem",
         "confronted", "demanded", "urgent", "crisis", "deadline", "pressure", "choice",
-        "decide", "conflict", "struggle", "dilemma", "torn", "caught", "trapped"
+        "conflict", "struggle", "dilemma", "torn", "caught", "trapped"
     ]
 
     // Decision indicators
@@ -344,8 +344,263 @@ class DecisionBeliefLoopAnalyzer {
     private let beliefWords = [
         "believe", "think", "thought", "realize", "understand", "see", "know",
         "trust", "faith", "doubt", "sure", "certain", "convinced", "learned",
-        "always", "never", "must", "should", "wrong", "right", "value"
+        "always", "never", "should", "wrong", "right", "value"
     ]
+
+    private enum LoopStage {
+        case pressure
+        case belief
+        case decision
+        case outcome
+        case shift
+    }
+
+    private func detectStageHeading(_ line: String) -> LoopStage? {
+        let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed.isEmpty { return nil }
+        let lower = trimmed.lowercased()
+
+        // Accept common variants; allow optional colon.
+        func isHeading(_ names: [String]) -> Bool {
+            for n in names {
+                if lower == n { return true }
+                if lower == n + ":" { return true }
+                if lower.hasPrefix(n + ":") { return true }
+            }
+            return false
+        }
+
+        if isHeading(["pressure", "counterpressure"]) { return .pressure }
+        if isHeading(["beliefs in play", "belief in play", "beliefs", "belief"]) { return .belief }
+        if isHeading(["decisions", "decision"]) { return .decision }
+        if isHeading(["outcome", "outcomes", "consequence", "consequences"]) { return .outcome }
+        if isHeading(["belief shift", "belief shifts", "shift", "shifts"]) { return .shift }
+        return nil
+    }
+
+    private func extractCharacterSpecificValue(from sectionText: String, character: String) -> String {
+        let trimmed = sectionText.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed.isEmpty { return "" }
+
+        let aliases = characterAliases(for: character)
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+
+        let lines = trimmed
+            .components(separatedBy: .newlines)
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+
+        // Prefer explicit attribution lines: "AVA: ...", "Ava — ...", "Ava - ..."
+        for line in lines {
+            for alias in aliases {
+                let pattern = "^" + NSRegularExpression.escapedPattern(for: alias) + "\\s*[:\\u2014\\-]\\s*(.+)$"
+                if let regex = try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive]) {
+                    let range = NSRange(line.startIndex..<line.endIndex, in: line)
+                    if let m = regex.firstMatch(in: line, options: [], range: range), m.numberOfRanges >= 2,
+                       let r = Range(m.range(at: 1), in: line) {
+                        return String(line[r]).trimmingCharacters(in: .whitespacesAndNewlines)
+                    }
+                }
+            }
+        }
+
+        // Otherwise, use the whole section as-is (keeps structured summaries usable).
+        if lines.count == 1 {
+            return lines[0]
+        }
+        return lines.joined(separator: " ")
+    }
+
+    private func pressureBlockRanges(in chapterText: String) -> [NSRange] {
+        let ns = chapterText as NSString
+        let fullRange = NSRange(location: 0, length: ns.length)
+        let pattern = "(?im)^\\s*pressure\\s*:?.*$"
+        guard let regex = try? NSRegularExpression(pattern: pattern, options: []) else { return [] }
+        let matches = regex.matches(in: chapterText, options: [], range: fullRange)
+        if matches.isEmpty { return [] }
+
+        var ranges: [NSRange] = []
+        ranges.reserveCapacity(matches.count)
+        for (idx, m) in matches.enumerated() {
+            let start = m.range.location
+            let end: Int
+            if idx < matches.count - 1 {
+                end = matches[idx + 1].range.location
+            } else {
+                end = ns.length
+            }
+            if end > start {
+                ranges.append(NSRange(location: start, length: end - start))
+            }
+        }
+        return ranges
+    }
+
+    private func extractStructuredLoopEntries(
+        chapterText: String,
+        chapterNumber: Int,
+        chapterStartPos: Int,
+        fullText: String,
+        character: String
+    ) -> [DecisionBeliefLoop.LoopEntry] {
+        let ns = chapterText as NSString
+        let blocks = pressureBlockRanges(in: chapterText)
+        guard !blocks.isEmpty else { return [] }
+
+        var entries: [DecisionBeliefLoop.LoopEntry] = []
+        entries.reserveCapacity(blocks.count)
+
+        for blockRange in blocks {
+            let blockText = ns.substring(with: blockRange)
+            let blockStartInChapter = blockRange.location
+
+            var sections: [LoopStage: String] = [:]
+            var sectionFirstPos: [LoopStage: Int] = [:]
+
+            var currentStage: LoopStage?
+            let blockNS = blockText as NSString
+            blockNS.enumerateSubstrings(in: NSRange(location: 0, length: blockNS.length), options: [.byLines]) { substring, range, _, _ in
+                guard let substring else { return }
+                let line = substring.trimmingCharacters(in: .whitespacesAndNewlines)
+                if line.isEmpty { return }
+
+                if let stage = self.detectStageHeading(line) {
+                    currentStage = stage
+                    return
+                }
+
+                guard let stage = currentStage else { return }
+                if sections[stage] == nil { sections[stage] = "" }
+                if sections[stage]?.isEmpty == true {
+                    // Capture the first position where this section has actual content.
+                    sectionFirstPos[stage] = blockStartInChapter + range.location
+                    sections[stage] = line
+                } else {
+                    sections[stage] = (sections[stage] ?? "") + "\n" + line
+                }
+            }
+
+            let pressureText = extractCharacterSpecificValue(from: sections[.pressure] ?? "", character: character)
+            let beliefText = extractCharacterSpecificValue(from: sections[.belief] ?? "", character: character)
+            let decisionText = extractCharacterSpecificValue(from: sections[.decision] ?? "", character: character)
+            let outcomeText = extractCharacterSpecificValue(from: sections[.outcome] ?? "", character: character)
+            let shiftText = extractCharacterSpecificValue(from: sections[.shift] ?? "", character: character)
+
+            // Require at least a meaningful loop skeleton.
+            if pressureText.isEmpty && decisionText.isEmpty && outcomeText.isEmpty && shiftText.isEmpty {
+                continue
+            }
+
+            func page(for stage: LoopStage) -> Int {
+                guard let relPos = sectionFirstPos[stage] else { return 0 }
+                let absolutePos = chapterStartPos + relPos
+                return calculatePageNumber(position: absolutePos, in: fullText)
+            }
+
+            let entry = DecisionBeliefLoop.LoopEntry(
+                chapter: chapterNumber,
+                pressure: cleanExtract(pressureText),
+                pressurePage: page(for: .pressure),
+                beliefInPlay: cleanExtract(beliefText),
+                beliefPage: page(for: .belief),
+                decision: cleanExtract(decisionText),
+                decisionPage: page(for: .decision),
+                outcome: cleanExtract(outcomeText),
+                outcomePage: page(for: .outcome),
+                beliefShift: cleanExtract(shiftText),
+                beliefShiftPage: page(for: .shift)
+            )
+
+            entries.append(entry)
+        }
+
+        return entries
+    }
+
+    private func extractPressureWithPosition(from text: String, character: String, allCharacters: [String], startPos: Int, fullText: String, afterPosition: Int) -> (String, Int, Int) {
+        let (sentences, positions) = getSentencesAbout(character: character, in: text, allCharacters: allCharacters, proximity: 2)
+
+        for (index, sentence) in sentences.enumerated() {
+            if afterPosition >= 0 && positions[index] <= afterPosition {
+                continue
+            }
+
+            let lower = sentence.lowercased()
+            for word in pressureWords {
+                if lower.contains(word) {
+                    let absolutePos = startPos + positions[index]
+                    let pageNum = calculatePageNumber(position: absolutePos, in: fullText)
+                    return (cleanExtract(sentence), pageNum, positions[index])
+                }
+            }
+
+            if sentence.contains("?") {
+                let absolutePos = startPos + positions[index]
+                let pageNum = calculatePageNumber(position: absolutePos, in: fullText)
+                return (cleanExtract(sentence), pageNum, positions[index])
+            }
+        }
+        return ("", 0, -1)
+    }
+
+    private func extractHeuristicLoopEntries(
+        chapterText: String,
+        chapterNumber: Int,
+        chapterStartPos: Int,
+        fullText: String,
+        character: String,
+        allCharacters: [String]
+    ) -> [DecisionBeliefLoop.LoopEntry] {
+        var entries: [DecisionBeliefLoop.LoopEntry] = []
+
+        var cursor = -1
+        var safety = 0
+        while safety < 25 {
+            safety += 1
+
+            let (pressure, pressurePage, pressurePos) = extractPressureWithPosition(from: chapterText, character: character, allCharacters: allCharacters, startPos: chapterStartPos, fullText: fullText, afterPosition: cursor)
+            if pressure.isEmpty || pressurePos < 0 {
+                break
+            }
+
+            let (belief, beliefPage, beliefPos) = extractBeliefWithPosition(from: chapterText, character: character, allCharacters: allCharacters, startPos: chapterStartPos, fullText: fullText, afterPosition: pressurePos)
+            let (decision, decisionPage, decisionPos) = extractDecisionWithPosition(from: chapterText, character: character, allCharacters: allCharacters, startPos: chapterStartPos, fullText: fullText, afterPosition: max(pressurePos, beliefPos))
+            let (outcome, outcomePage, outcomePos) = extractOutcomeWithPosition(from: chapterText, character: character, allCharacters: allCharacters, startPos: chapterStartPos, fullText: fullText, afterPosition: max(max(pressurePos, beliefPos), decisionPos))
+            let (shift, shiftPage, shiftPos) = extractBeliefShiftWithPosition(from: chapterText, character: character, allCharacters: allCharacters, startPos: chapterStartPos, fullText: fullText, afterPosition: max(max(max(pressurePos, beliefPos), decisionPos), outcomePos))
+
+            // If we only found pressure and nothing else, skip to avoid pure noise.
+            let hasAnySignal = !belief.isEmpty || !decision.isEmpty || !outcome.isEmpty || !shift.isEmpty
+            if !hasAnySignal {
+                cursor = max(cursor, pressurePos + 1)
+                continue
+            }
+
+            let entry = DecisionBeliefLoop.LoopEntry(
+                chapter: chapterNumber,
+                pressure: pressure,
+                pressurePage: pressurePage,
+                beliefInPlay: belief,
+                beliefPage: beliefPage,
+                decision: decision,
+                decisionPage: decisionPage,
+                outcome: outcome,
+                outcomePage: outcomePage,
+                beliefShift: shift,
+                beliefShiftPage: shiftPage
+            )
+            entries.append(entry)
+
+            let nextCursor = [pressurePos, beliefPos, decisionPos, outcomePos, shiftPos].max() ?? pressurePos
+            if nextCursor <= cursor {
+                cursor += 1
+            } else {
+                cursor = nextCursor
+            }
+        }
+
+        return entries
+    }
 
     // MARK: - Character Aliases (for interaction detection)
 
@@ -364,13 +619,38 @@ class DecisionBeliefLoopAnalyzer {
             aliases.append(first)
         }
 
-        // Add nickname (if present)
+        // Add nickname/fullName-derived aliases (if present)
         if let profile = library.analysisEligibleCharacters.first(where: {
             ($0.analysisKey ?? "").caseInsensitiveCompare(trimmedCanonical) == .orderedSame
         }) {
             let nick = profile.nickname.trimmingCharacters(in: .whitespacesAndNewlines)
             if !nick.isEmpty, nick.caseInsensitiveCompare(trimmedCanonical) != .orderedSame {
                 aliases.append(nick)
+            }
+
+            let full = profile.fullName.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !full.isEmpty {
+                aliases.append(full)
+
+                // Include significant tokens from the full name so prose that uses last names still matches.
+                let titleTokens: Set<String> = [
+                    "mr", "mrs", "ms", "miss", "dr", "prof", "professor",
+                    "chief", "capt", "captain", "officer", "detective", "sgt", "sergeant",
+                    "agent", "inspector", "superintendent", "lieutenant", "lt", "colonel", "col",
+                    "major", "gen", "general", "sir", "madam"
+                ]
+
+                let tokens = full.split(whereSeparator: { $0.isWhitespace }).map {
+                    String($0).trimmingCharacters(in: .punctuationCharacters)
+                }
+
+                for token in tokens {
+                    let key = token.lowercased()
+                    guard !token.isEmpty else { continue }
+                    guard token.count >= 3 else { continue }
+                    guard !titleTokens.contains(key) else { continue }
+                    aliases.append(token)
+                }
             }
         }
 
@@ -541,37 +821,36 @@ class DecisionBeliefLoopAnalyzer {
         for characterName in characterNames {
             var loop = DecisionBeliefLoop(characterName: characterName)
             let aliases = characterAliases(for: characterName)
+            let aliasRegexes = buildMentionRegexes(for: aliases)
 
             for chapter in chapters {
-                // Only analyze chapters where the character appears
-                guard aliases.contains(where: { alias in
-                    !alias.isEmpty && chapter.text.range(of: alias, options: .caseInsensitive) != nil
-                }) else {
+                // Only analyze chapters where the character appears (word-boundary match)
+                guard containsAny(aliasRegexes, in: chapter.text) else {
                     continue
                 }
 
-                // Extract elements from the chapter in narrative order (pressure → belief → decision → outcome → shift)
-                let (pressure, pressurePage, pressurePos) = extractPressureWithPosition(from: chapter.text, character: characterName, allCharacters: characterNames, startPos: chapter.startPos, fullText: text)
-                let (belief, beliefPage, beliefPos) = extractBeliefWithPosition(from: chapter.text, character: characterName, allCharacters: characterNames, startPos: chapter.startPos, fullText: text, afterPosition: pressurePos)
-                let (decision, decisionPage, decisionPos) = extractDecisionWithPosition(from: chapter.text, character: characterName, allCharacters: characterNames, startPos: chapter.startPos, fullText: text, afterPosition: beliefPos)
-                let (outcome, outcomePage, outcomePos) = extractOutcomeWithPosition(from: chapter.text, character: characterName, allCharacters: characterNames, startPos: chapter.startPos, fullText: text, afterPosition: decisionPos)
-                let (shift, shiftPage, _) = extractBeliefShiftWithPosition(from: chapter.text, character: characterName, allCharacters: characterNames, startPos: chapter.startPos, fullText: text, afterPosition: outcomePos)
-
-                let entry = DecisionBeliefLoop.LoopEntry(
-                    chapter: chapter.number,
-                    pressure: pressure,
-                    pressurePage: pressurePage,
-                    beliefInPlay: belief,
-                    beliefPage: beliefPage,
-                    decision: decision,
-                    decisionPage: decisionPage,
-                    outcome: outcome,
-                    outcomePage: outcomePage,
-                    beliefShift: shift,
-                    beliefShiftPage: shiftPage
+                // Prefer explicit section-style loops if present (supports multiple loops per chapter).
+                let structured = extractStructuredLoopEntries(
+                    chapterText: chapter.text,
+                    chapterNumber: chapter.number,
+                    chapterStartPos: chapter.startPos,
+                    fullText: text,
+                    character: characterName
                 )
 
-                loop.entries.append(entry)
+                if !structured.isEmpty {
+                    loop.entries.append(contentsOf: structured)
+                } else {
+                    let heuristic = extractHeuristicLoopEntries(
+                        chapterText: chapter.text,
+                        chapterNumber: chapter.number,
+                        chapterStartPos: chapter.startPos,
+                        fullText: text,
+                        character: characterName,
+                        allCharacters: characterNames
+                    )
+                    loop.entries.append(contentsOf: heuristic)
+                }
             }
 
             loops.append(loop)
@@ -626,16 +905,10 @@ class DecisionBeliefLoopAnalyzer {
     private func extractBeliefWithPosition(from text: String, character: String, allCharacters: [String], startPos: Int, fullText: String, afterPosition: Int) -> (String, Int, Int) {
         let (sentences, positions) = getSentencesAbout(character: character, in: text, allCharacters: allCharacters, proximity: 2)
 
-        var fallbackIndex: Int?
-
         for (index, sentence) in sentences.enumerated() {
             // Skip if this sentence appears before the previous element
             if afterPosition >= 0 && positions[index] <= afterPosition {
                 continue
-            }
-
-            if fallbackIndex == nil {
-                fallbackIndex = index
             }
 
             let lower = sentence.lowercased()
@@ -648,28 +921,16 @@ class DecisionBeliefLoopAnalyzer {
                 }
             }
         }
-
-        if let index = fallbackIndex {
-            let absolutePos = startPos + positions[index]
-            let pageNum = calculatePageNumber(position: absolutePos, in: fullText)
-            return (cleanExtract(sentences[index]), pageNum, positions[index])
-        }
         return ("", 0, -1)
     }
 
     private func extractDecisionWithPosition(from text: String, character: String, allCharacters: [String], startPos: Int, fullText: String, afterPosition: Int) -> (String, Int, Int) {
         let (sentences, positions) = getSentencesAbout(character: character, in: text, allCharacters: allCharacters, proximity: 2)
 
-        var fallbackIndex: Int?
-
         for (index, sentence) in sentences.enumerated() {
             // Skip if this sentence appears before the previous element
             if afterPosition >= 0 && positions[index] <= afterPosition {
                 continue
-            }
-
-            if fallbackIndex == nil {
-                fallbackIndex = index
             }
 
             let lower = sentence.lowercased()
@@ -682,28 +943,16 @@ class DecisionBeliefLoopAnalyzer {
                 }
             }
         }
-
-        if let index = fallbackIndex {
-            let absolutePos = startPos + positions[index]
-            let pageNum = calculatePageNumber(position: absolutePos, in: fullText)
-            return (cleanExtract(sentences[index]), pageNum, positions[index])
-        }
         return ("", 0, -1)
     }
 
     private func extractOutcomeWithPosition(from text: String, character: String, allCharacters: [String], startPos: Int, fullText: String, afterPosition: Int) -> (String, Int, Int) {
         let (sentences, positions) = getSentencesAbout(character: character, in: text, allCharacters: allCharacters, proximity: 2)
 
-        var fallbackIndex: Int?
-
         for (index, sentence) in sentences.enumerated() {
             // Skip if this sentence appears before the previous element
             if afterPosition >= 0 && positions[index] <= afterPosition {
                 continue
-            }
-
-            if fallbackIndex == nil {
-                fallbackIndex = index
             }
 
             let lower = sentence.lowercased()
@@ -716,12 +965,6 @@ class DecisionBeliefLoopAnalyzer {
                 }
             }
         }
-
-        if let index = fallbackIndex {
-            let absolutePos = startPos + positions[index]
-            let pageNum = calculatePageNumber(position: absolutePos, in: fullText)
-            return (cleanExtract(sentences[index]), pageNum, positions[index])
-        }
         return ("", 0, -1)
     }
 
@@ -732,16 +975,10 @@ class DecisionBeliefLoopAnalyzer {
         let changeWords = ["realized", "learned", "understood", "saw", "discovered",
                           "changed", "shifted", "no longer", "now", "finally"]
 
-        var fallbackIndex: Int?
-
         for (index, sentence) in sentences.enumerated() {
             // Skip if this sentence appears before the previous element
             if afterPosition >= 0 && positions[index] <= afterPosition {
                 continue
-            }
-
-            if fallbackIndex == nil {
-                fallbackIndex = index
             }
 
             let lower = sentence.lowercased()
@@ -752,12 +989,6 @@ class DecisionBeliefLoopAnalyzer {
                     return (cleanExtract(sentence), pageNum, positions[index])
                 }
             }
-        }
-
-        if let index = fallbackIndex {
-            let absolutePos = startPos + positions[index]
-            let pageNum = calculatePageNumber(position: absolutePos, in: fullText)
-            return (cleanExtract(sentences[index]), pageNum, positions[index])
         }
         return ("", 0, -1)
     }
@@ -857,43 +1088,160 @@ class DecisionBeliefLoopAnalyzer {
         return ("", 0)
     }
 
+    private func isLikelyScreenplay(_ text: String) -> Bool {
+        if text.range(of: "(?m)^(INT\\.|EXT\\.)", options: .regularExpression) != nil { return true }
+        if text.range(of: "(?m)^(INT\\./EXT\\.|EXT\\./INT\\.)", options: .regularExpression) != nil { return true }
+        if text.contains("\nINT.") || text.contains("\nEXT.") { return true }
+        return false
+    }
+
+    private func extractLineUnitsWithPositions(from text: String) -> [(unit: String, pos: Int)] {
+        let ns = text as NSString
+        var units: [(unit: String, pos: Int)] = []
+        units.reserveCapacity(256)
+
+        ns.enumerateSubstrings(in: NSRange(location: 0, length: ns.length), options: [.byLines]) { substring, range, _, _ in
+            guard let substring else { return }
+            let trimmed = substring.trimmingCharacters(in: .whitespacesAndNewlines)
+            if trimmed.isEmpty { return }
+            units.append((trimmed, range.location))
+        }
+        return units
+    }
+
+    private func extractSentenceUnitsWithPositions(from text: String) -> [(unit: String, pos: Int)] {
+        // Splits on . ! ? and newlines, while preserving accurate UTF-16 positions.
+        let ns = text as NSString
+        let fullRange = NSRange(location: 0, length: ns.length)
+        let pattern = "[^\\.\\!\\?\\n]+"
+        guard let regex = try? NSRegularExpression(pattern: pattern, options: []) else {
+            return extractLineUnitsWithPositions(from: text)
+        }
+        let matches = regex.matches(in: text, options: [], range: fullRange)
+        var units: [(unit: String, pos: Int)] = []
+        units.reserveCapacity(matches.count)
+        for m in matches {
+            let raw = ns.substring(with: m.range)
+            let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+            if trimmed.isEmpty { continue }
+            units.append((trimmed, m.range.location))
+        }
+        return units
+    }
+
+    private func isSpeakerCueLine(_ line: String, aliases: [String]) -> Bool {
+        let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return false }
+        if trimmed.count > 45 { return false }
+
+        let upper = trimmed.uppercased()
+        if upper.hasPrefix("INT.") || upper.hasPrefix("EXT.") || upper.hasPrefix("INT./EXT.") || upper.hasPrefix("EXT./INT.") { return false }
+        if upper == "FADE IN" || upper == "FADE OUT" { return false }
+        if trimmed != upper { return false }
+
+        let aliasUppers = aliases
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines).uppercased() }
+            .filter { !$0.isEmpty }
+
+        for aliasUpper in aliasUppers {
+            if upper == aliasUpper { return true }
+            if upper.hasPrefix(aliasUpper + "(") { return true }
+            if upper.hasPrefix(aliasUpper + " (") { return true }
+            if upper.hasPrefix(aliasUpper + ":") { return true }
+        }
+        return false
+    }
+
     private func getSentencesAbout(character: String, in text: String, allCharacters: [String], proximity: Int) -> ([String], [Int]) {
-        let allSentences = text.components(separatedBy: CharacterSet(charactersIn: ".!?"))
-            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
-            .filter { !$0.isEmpty }
+        let targetAliases = characterAliases(for: character)
+        let targetRegexes = buildMentionRegexes(for: targetAliases)
 
-        let aliases = characterAliases(for: character)
-            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() }
-            .filter { !$0.isEmpty }
+        let otherCharacters = allCharacters.filter { $0.caseInsensitiveCompare(character) != .orderedSame }
+        let otherRegexes: [NSRegularExpression] = otherCharacters
+            .flatMap { buildMentionRegexes(for: characterAliases(for: $0)) }
 
-        var relevantSentences: [String] = []
-        var positions: [Int] = []
-        var currentPos = 0
+        if isLikelyScreenplay(text) {
+            // Attribute dialogue lines to the current character when a speaker cue is detected.
+            // This prevents intermingling characters' loops while still letting the character reference others.
+            let lineUnits = extractLineUnitsWithPositions(from: text)
+            var relevant: [(String, Int)] = []
+            relevant.reserveCapacity(64)
 
-        for (index, sentence) in allSentences.enumerated() {
-            let lowerSentence = sentence.lowercased()
-            // Only include sentences that specifically mention this character
-            // AND don't strongly focus on another character
-            if aliases.contains(where: { lowerSentence.contains($0) }) {
-                // Skip if sentence strongly focuses on another character
-                // (another character appears before this character in the sentence)
-                if !isAboutOtherCharacter(sentence, targetCharacter: character, allCharacters: allCharacters) {
-                    relevantSentences.append(sentence)
-                    positions.append(currentPos)
+            var inTargetDialogue = false
+            for (unit, pos) in lineUnits {
+                if isSpeakerCueLine(unit, aliases: targetAliases) {
+                    inTargetDialogue = true
+                    continue
+                }
 
-                    // Include immediately adjacent sentences for context (but only if they don't mention other characters)
-                    if index > 0 && !relevantSentences.contains(allSentences[index - 1]) {
-                        let prevSentence = allSentences[index - 1]
-                        if !containsOtherCharacter(prevSentence, excluding: character, allCharacters: allCharacters) {
-                            relevantSentences.insert(prevSentence, at: relevantSentences.count - 1)
-                            positions.insert(currentPos - prevSentence.count - 1, at: positions.count - 1)
-                        }
+                if inTargetDialogue {
+                    let isOtherSpeaker = otherCharacters.contains(where: { isSpeakerCueLine(unit, aliases: characterAliases(for: $0)) })
+                    if isOtherSpeaker {
+                        inTargetDialogue = false
+                    } else {
+                        relevant.append((unit, pos))
+                        continue
                     }
                 }
+
+                // Narrative/action lines: only include lines that mention the target but not other characters.
+                let hasTarget = containsAny(targetRegexes, in: unit)
+                let hasOther = containsAny(otherRegexes, in: unit)
+                if hasTarget && !hasOther {
+                    relevant.append((unit, pos))
+                }
             }
-            currentPos += sentence.count + 1 // +1 for the separator
+
+            var seenPos = Set<Int>()
+            var sentences: [String] = []
+            var positions: [Int] = []
+            for (s, p) in relevant.sorted(by: { $0.1 < $1.1 }) {
+                if seenPos.contains(p) { continue }
+                seenPos.insert(p)
+                sentences.append(s)
+                positions.append(p)
+            }
+
+            // Fallback: if we found nothing with the strict filter, allow lines that mention the target
+            // even if other characters are present. This restores behavior for dense dialogue scenes.
+            if sentences.isEmpty {
+                let fallback = lineUnits.filter { containsAny(targetRegexes, in: $0.unit) }
+                for (unit, pos) in fallback {
+                    if seenPos.contains(pos) { continue }
+                    seenPos.insert(pos)
+                    sentences.append(unit)
+                    positions.append(pos)
+                }
+            }
+            return (sentences, positions)
         }
 
+        // Non-screenplay: sentence-like units with accurate positions.
+        let units = extractSentenceUnitsWithPositions(from: text)
+        var relevantSentences: [String] = []
+        var positions: [Int] = []
+        relevantSentences.reserveCapacity(64)
+        positions.reserveCapacity(64)
+
+        for (unit, pos) in units {
+            let hasTarget = containsAny(targetRegexes, in: unit)
+            let hasOther = containsAny(otherRegexes, in: unit)
+            if hasTarget && !hasOther {
+                relevantSentences.append(unit)
+                positions.append(pos)
+            }
+        }
+
+        // Fallback: if no sentences survived the strict filter, include any sentence that mentions
+        // the target. This prevents empty loops in multi-character prose.
+        if relevantSentences.isEmpty {
+            for (unit, pos) in units {
+                if containsAny(targetRegexes, in: unit) {
+                    relevantSentences.append(unit)
+                    positions.append(pos)
+                }
+            }
+        }
         return (relevantSentences, positions)
     }
 

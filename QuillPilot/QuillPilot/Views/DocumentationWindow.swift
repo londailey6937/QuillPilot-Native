@@ -546,32 +546,35 @@ class DocumentationWindowController: NSWindowController, NSWindowDelegate, NSOut
 
     private func performSearch(query: String) {
         searchResults.removeAll()
-        let lowerQuery = query.lowercased()
-        let queryWords = lowerQuery.split(separator: " ").map { String($0) }
+        let trimmedQuery = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        let queryWords = trimmedQuery.split(separator: " ").map { String($0) }
 
         for topic in flatTopics {
             guard let content = topicContent[topic.id] else { continue }
             let text = content.string
-            let lowerText = text.lowercased()
+            let nsText = text as NSString
+            let fullRange = NSRange(location: 0, length: nsText.length)
 
             // Score based on matches
             var score = 0
             var matchRange: NSRange?
 
             // Title match (highest priority)
-            if topic.title.lowercased().contains(lowerQuery) {
+            if (topic.title as NSString).range(of: trimmedQuery, options: [.caseInsensitive]).location != NSNotFound {
                 score += 100
             }
 
             // Exact phrase match (preferred)
-            if let range = lowerText.range(of: lowerQuery) {
+            let phraseRange = nsText.range(of: trimmedQuery, options: [.caseInsensitive], range: fullRange)
+            if phraseRange.location != NSNotFound {
                 score += 120
-                let location = lowerText.distance(from: lowerText.startIndex, to: range.lowerBound)
-                matchRange = NSRange(location: location, length: lowerQuery.count)
+                matchRange = phraseRange
             }
 
             // Word matches
-            let matchCount = queryWords.filter { lowerText.contains($0) }.count
+            let matchCount = queryWords.filter { word in
+                nsText.range(of: word, options: [.caseInsensitive], range: fullRange).location != NSNotFound
+            }.count
             if matchCount == queryWords.count {
                 score += 50
             } else if matchCount > 0 {
@@ -580,32 +583,29 @@ class DocumentationWindowController: NSWindowController, NSWindowDelegate, NSOut
 
             // If we have word matches but no phrase range yet, pick the earliest word occurrence.
             if matchRange == nil, matchCount > 0 {
-                var best: (location: Int, length: Int)?
+                var best: NSRange?
                 for word in queryWords where !word.isEmpty {
-                    if let r = lowerText.range(of: word) {
-                        let loc = lowerText.distance(from: lowerText.startIndex, to: r.lowerBound)
-                        let candidate = (location: loc, length: word.count)
-                        if best == nil || candidate.location < best!.location {
-                            best = candidate
-                        }
+                    let r = nsText.range(of: word, options: [.caseInsensitive], range: fullRange)
+                    if r.location == NSNotFound { continue }
+                    if best == nil || r.location < best!.location {
+                        best = r
                     }
                 }
-                if let best {
-                    matchRange = NSRange(location: best.location, length: best.length)
-                }
+                matchRange = best
             }
 
             if score > 0 {
                 // Extract context around match
                 var matchedText = topic.title
-                if let range = matchRange, range.location + 60 < text.count {
+                if let range = matchRange {
                     let start = max(0, range.location - 20)
-                    let end = min(text.count, range.location + range.length + 40)
-                    let startIndex = text.index(text.startIndex, offsetBy: start)
-                    let endIndex = text.index(text.startIndex, offsetBy: end)
-                    matchedText = String(text[startIndex..<endIndex]).trimmingCharacters(in: .whitespacesAndNewlines)
-                    if start > 0 { matchedText = "…" + matchedText }
-                    if end < text.count { matchedText += "…" }
+                    let end = min(nsText.length, range.location + range.length + 40)
+                    if end > start {
+                        let snippetRange = NSRange(location: start, length: end - start)
+                        matchedText = nsText.substring(with: snippetRange).trimmingCharacters(in: .whitespacesAndNewlines)
+                        if start > 0 { matchedText = "…" + matchedText }
+                        if end < nsText.length { matchedText += "…" }
+                    }
                 }
 
                 searchResults.append(HelpSearchResult(
@@ -643,20 +643,23 @@ class DocumentationWindowController: NSWindowController, NSWindowDelegate, NSOut
     }
 
     private func applySearchHighlights(to content: NSMutableAttributedString, query: String) {
-        let text = content.string
-        let lowerText = text.lowercased()
-        let lowerQuery = query.lowercased()
-        guard !lowerQuery.isEmpty else { return }
+        let trimmedQuery = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedQuery.isEmpty else { return }
+
+        let nsText = content.string as NSString
+        let textLength = nsText.length
 
         let highlightColor = ThemeManager.shared.currentTheme.pageBorder.withAlphaComponent(0.25)
-        var searchRange = lowerText.startIndex..<lowerText.endIndex
+        var searchRange = NSRange(location: 0, length: textLength)
 
-        while let range = lowerText.range(of: lowerQuery, options: [], range: searchRange) {
-            let location = lowerText.distance(from: lowerText.startIndex, to: range.lowerBound)
-            let length = lowerQuery.count
-            let nsRange = NSRange(location: location, length: length)
-            content.addAttribute(.backgroundColor, value: highlightColor, range: nsRange)
-            searchRange = range.upperBound..<lowerText.endIndex
+        while searchRange.location < textLength {
+            let found = nsText.range(of: trimmedQuery, options: [.caseInsensitive], range: searchRange)
+            if found.location == NSNotFound { break }
+            if found.length > 0 {
+                content.addAttribute(.backgroundColor, value: highlightColor, range: found)
+            }
+            let nextLocation = found.location + max(1, found.length)
+            searchRange = NSRange(location: nextLocation, length: max(0, textLength - nextLocation))
         }
     }
 

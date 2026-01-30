@@ -348,6 +348,10 @@ class DocumentFormatDetector {
         ("(?m)^\\s{20,}[A-Z][A-Z\\s]+\\s*$", 2.0),
         ("(?m)^[A-Z]{2,}\\s*\\(V\\.O\\.\\)|\\(O\\.S\\.\\)|\\(CONT'D\\)", 3.0),
 
+        // Plain-text screenplay dialogue styles (common in exports/pastes)
+        // Example: "JONAH: We need to go." or "AVA CROSS: ..."
+        ("(?m)^[A-Z][A-Z0-9\\s]{2,30}:\\s+", 2.5),
+
         // Parentheticals
         ("(?m)^\\s*\\([a-z][^)]+\\)\\s*$", 2.0),
 
@@ -357,15 +361,18 @@ class DocumentFormatDetector {
         // Action lines (short paragraphs typical of screenplays)
         ("(?m)^[A-Z][^.!?]{10,80}[.!?]\\s*$", 0.5),
 
-        // Courier font spacing patterns (lots of whitespace)
-        ("\\n{2,}", 0.3)
+        // NOTE: Avoid using raw whitespace/blank-line patterns here.
+        // Prose and internal fixtures often contain many blank lines.
     ]
 
     // Novel formatting indicators
     private static let novelPatterns: [(pattern: String, weight: Double)] = [
         // Chapter headings
-        ("(?i)chapter\\s+\\d+|chapter\\s+[a-z]+", 2.5),
+        ("(?im)^\\s*chapter\\s+\\d+\\b|^\\s*chapter\\s+[a-z]+\\b", 5.0),
         ("(?i)^part\\s+(one|two|three|four|five|\\d+)", 2.0),
+
+        // Common prose fixtures use ACT/SCENE/CHAPTER scaffolding but remain prose.
+        ("(?im)^\\s*act\\s+[ivx]+\\b", 1.5),
 
         // Long paragraphs (typical of prose)
         ("(?m)^[A-Z][^\\n]{200,}", 2.0),
@@ -418,9 +425,9 @@ class DocumentFormatDetector {
         if !paragraphs.isEmpty {
             let avgLength = paragraphs.reduce(0) { $0 + $1.count } / paragraphs.count
             if avgLength < 150 {
-                screenplayScore += 3.0
+                screenplayScore += 0.8
             } else if avgLength > 300 {
-                novelScore += 3.0
+                novelScore += 2.0
             }
         }
 
@@ -430,9 +437,9 @@ class DocumentFormatDetector {
             let lengths = lines.map { $0.count }
             let avgLineLength = lengths.reduce(0, +) / lengths.count
             if avgLineLength < 60 {
-                screenplayScore += 2.0
+                screenplayScore += 0.6
             } else if avgLineLength > 80 {
-                novelScore += 2.0
+                novelScore += 1.0
             }
         }
 
@@ -443,9 +450,9 @@ class DocumentFormatDetector {
 
         // Screenplays typically have 150-200 words per page, novels 250-300
         if wordsPerPage < 220 {
-            screenplayScore += 2.0
+            screenplayScore += 0.6
         } else if wordsPerPage > 240 {
-            novelScore += 2.0
+            novelScore += 0.8
         }
 
         // Normalize and calculate confidence

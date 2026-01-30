@@ -72,6 +72,7 @@ class MainWindowController: NSWindowController {
     var mainContentViewController: ContentViewController!
     private var themeObserver: NSObjectProtocol?
     private var settingsObserver: NSObjectProtocol?
+    private var characterLibraryObserver: NSObjectProtocol?
     private var headerFooterSettingsWindow: HeaderFooterSettingsWindow?
     private var styleEditorWindow: StyleEditorWindowController?
     private var tocIndexWindow: TOCIndexWindowController?
@@ -172,6 +173,12 @@ class MainWindowController: NSWindowController {
         }
         mainContentViewController.onTextChange = { [weak self] in
             self?.markDocumentDirty()
+        }
+
+        // If the character library changes (e.g. user deletes fictitious characters),
+        // clear analysis so graphs can't continue showing stale character series.
+        characterLibraryObserver = NotificationCenter.default.addObserver(forName: .characterLibraryDidChange, object: nil, queue: .main) { [weak self] _ in
+            self?.mainContentViewController?.clearAnalysis()
         }
 
         mainContentViewController.onNotesTapped = { [weak self] in
@@ -276,6 +283,33 @@ class MainWindowController: NSWindowController {
 
         // Start auto-save timer (interval set in Preferences)
         startAutoSaveTimer()
+    }
+
+    @objc func purgeCharacterLibraryForCurrentDocument(_ sender: Any?) {
+        guard let window else { return }
+
+        let title = "Purge Character Library"
+        let details: String
+        if let url = currentDocumentURL {
+            details = "This will permanently delete the character sidecar file for this document (\(url.lastPathComponent).characters.json) and remove all characters from the Character Library. Graphs will clear until you add characters again."
+        } else {
+            details = "This will clear the in-memory Character Library for this unsaved document."
+        }
+
+        let alert = NSAlert.themedConfirmation(
+            title: title,
+            message: details,
+            confirmTitle: "Purge",
+            cancelTitle: "Cancel"
+        )
+        alert.runThemedSheet(for: window) { [weak self] response in
+            guard let self else { return }
+            guard response == .alertFirstButtonReturn else { return }
+
+            CharacterLibrary.shared.purgeCharactersForCurrentDocument()
+            self.mainContentViewController.clearAnalysis()
+            self.mainContentViewController.documentDidChange(url: self.currentDocumentURL)
+        }
     }
 
     var isRulerVisible: Bool {
@@ -2647,13 +2681,11 @@ extension MainWindowController {
         mainContentViewController.editorViewController.setAttributedContentDirect(attributed)
         mainContentViewController.editorViewController.applyTheme(ThemeManager.shared.currentTheme)
 
-        // If this is a screenplay and the Character Library is empty for this document,
-        // auto-seed it from styled character cue lines so a sidecar is created on first import.
+        // Only auto-seed for Screenplay imports.
+        // For prose/fiction, characters must come ONLY from the Character Library (user-managed),
+        // so we do not infer/seed characters from the manuscript text.
         if StyleCatalog.shared.currentTemplateName == "Screenplay" && CharacterLibrary.shared.characters.isEmpty {
             let cues = mainContentViewController.editorViewController.extractScreenplayCharacterCues()
-            CharacterLibrary.shared.seedCharactersIfEmpty(cues)
-        } else if CharacterLibrary.shared.characters.isEmpty {
-            let cues = mainContentViewController.editorViewController.extractFictionCharacterCues()
             CharacterLibrary.shared.seedCharactersIfEmpty(cues)
         }
 
@@ -4700,22 +4732,32 @@ class ContentViewController: NSViewController {
         }
 
         // Determine character names on MAIN THREAD.
-        // Prefer the per-document CharacterLibrary; for Screenplay, fall back to extracting character cues.
-        // Use canonical analysis keys so AnalysisEngine's CharacterLibrary validation doesn't drop everyone
-        // (analysis keys are typically the first token of the character's full name).
+        // `AnalysisEngine.analyzeText` already runs character arc analysis using library + extracted names.
+        // However, for Screenplay templates we want to explicitly include screenplay character cues,
+        // and avoid limiting analysis to an incomplete Character Library.
         let libraryCharacterNames = CharacterLibrary.shared.analysisCharacterKeys
-
         let isScreenplay = StyleCatalog.shared.currentTemplateName == "Screenplay"
         let extractedScreenplayNames = isScreenplay ? editorViewController.extractScreenplayCharacterCues() : []
 
-        let characterNamesForAnalysis: [String]
-        if !libraryCharacterNames.isEmpty {
-            characterNamesForAnalysis = libraryCharacterNames
-        } else if !extractedScreenplayNames.isEmpty {
-            characterNamesForAnalysis = extractedScreenplayNames
-        } else {
-            characterNamesForAnalysis = []
+        func uniqueOrdered(_ values: [String]) -> [String] {
+            var out: [String] = []
+            var seen: Set<String> = []
+            for raw in values {
+                let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !trimmed.isEmpty else { continue }
+                let key = trimmed.lowercased()
+                if seen.insert(key).inserted {
+                    out.append(trimmed)
+                }
+            }
+            return out
         }
+
+        // Only used for the additional explicit character-arc pass below.
+        // For non-screenplay templates we intentionally *do not* override the engine's results.
+        let characterNamesForCharacterArc: [String] = isScreenplay
+            ? uniqueOrdered(libraryCharacterNames + extractedScreenplayNames)
+            : []
 
         let layoutPageCount = editorViewController.totalPageCount()
 
@@ -4741,11 +4783,14 @@ class ContentViewController: NSViewController {
                 pageCountOverride: layoutPageCount
             )
 
-            if !characterNamesForAnalysis.isEmpty {
-                DebugLog.log("📋 MainWindowController: Analyzing characters: \(characterNamesForAnalysis.count)")
+            // For Screenplay templates, explicitly re-run character analysis with screenplay cues.
+            // This ensures the Emotional Trajectory and related views include the lead characters
+            // even when the Character Library is empty or incomplete.
+            if !characterNamesForCharacterArc.isEmpty {
+                DebugLog.log("📋 MainWindowController: Screenplay character analysis: \(characterNamesForCharacterArc.count)")
                 let (loops, interactions, presence) = analysisEngine.analyzeCharacterArcs(
                     text: text,
-                    characterNames: characterNamesForAnalysis,
+                    characterNames: characterNamesForCharacterArc,
                     outlineEntries: analysisOutlineEntries,
                     pageMapping: pageMapping
                 )
@@ -4756,12 +4801,12 @@ class ContentViewController: NSViewController {
                 // Populate additional character-centric outputs used by popouts.
                 results.beliefShiftMatrices = analysisEngine.generateBeliefShiftMatrices(
                     text: text,
-                    characterNames: characterNamesForAnalysis,
+                    characterNames: characterNamesForCharacterArc,
                     outlineEntries: analysisOutlineEntries
                 )
                 results.decisionConsequenceChains = analysisEngine.generateDecisionConsequenceChains(
                     text: text,
-                    characterNames: characterNamesForAnalysis,
+                    characterNames: characterNamesForCharacterArc,
                     outlineEntries: analysisOutlineEntries
                 )
             }

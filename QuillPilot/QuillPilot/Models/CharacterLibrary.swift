@@ -40,6 +40,9 @@ struct CharacterProfile: Codable, Identifiable {
     var family: String
     var pets: String
     var personalityTraits: [String]
+    /// Primary worldview rule the character operates under.
+    /// Stored separately but also intended to be included in `principles` for analysis/UI consistency.
+    var coreBelief: String
     var principles: [String]
     var skills: [String]
     var motivations: String
@@ -63,6 +66,7 @@ struct CharacterProfile: Codable, Identifiable {
          family: String = "",
          pets: String = "",
          personalityTraits: [String] = [],
+         coreBelief: String = "",
          principles: [String] = [],
          skills: [String] = [],
          motivations: String = "",
@@ -84,6 +88,7 @@ struct CharacterProfile: Codable, Identifiable {
         self.family = family
         self.pets = pets
         self.personalityTraits = personalityTraits
+        self.coreBelief = coreBelief
         self.principles = principles
         self.skills = skills
         self.motivations = motivations
@@ -92,6 +97,84 @@ struct CharacterProfile: Codable, Identifiable {
         self.quotes = quotes
         self.notes = notes
         self.isSampleCharacter = isSampleCharacter
+    }
+
+    // Backward-compatible Codable: older saved JSON may not include `coreBelief`.
+    enum CodingKeys: String, CodingKey {
+        case id
+        case fullName
+        case nickname
+        case role
+        case age
+        case occupation
+        case appearance
+        case background
+        case education
+        case residence
+        case family
+        case pets
+        case personalityTraits
+        case coreBelief
+        case principles
+        case skills
+        case motivations
+        case weaknesses
+        case connections
+        case quotes
+        case notes
+        case isSampleCharacter
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decodeIfPresent(UUID.self, forKey: .id) ?? UUID()
+        fullName = try container.decodeIfPresent(String.self, forKey: .fullName) ?? ""
+        nickname = try container.decodeIfPresent(String.self, forKey: .nickname) ?? ""
+        role = (try? container.decode(CharacterRole.self, forKey: .role)) ?? .supporting
+        age = try container.decodeIfPresent(String.self, forKey: .age) ?? ""
+        occupation = try container.decodeIfPresent(String.self, forKey: .occupation) ?? ""
+        appearance = try container.decodeIfPresent(String.self, forKey: .appearance) ?? ""
+        background = try container.decodeIfPresent(String.self, forKey: .background) ?? ""
+        education = try container.decodeIfPresent(String.self, forKey: .education) ?? ""
+        residence = try container.decodeIfPresent(String.self, forKey: .residence) ?? ""
+        family = try container.decodeIfPresent(String.self, forKey: .family) ?? ""
+        pets = try container.decodeIfPresent(String.self, forKey: .pets) ?? ""
+        personalityTraits = try container.decodeIfPresent([String].self, forKey: .personalityTraits) ?? []
+        coreBelief = try container.decodeIfPresent(String.self, forKey: .coreBelief) ?? ""
+        principles = try container.decodeIfPresent([String].self, forKey: .principles) ?? []
+        skills = try container.decodeIfPresent([String].self, forKey: .skills) ?? []
+        motivations = try container.decodeIfPresent(String.self, forKey: .motivations) ?? ""
+        weaknesses = try container.decodeIfPresent(String.self, forKey: .weaknesses) ?? ""
+        connections = try container.decodeIfPresent(String.self, forKey: .connections) ?? ""
+        quotes = try container.decodeIfPresent([String].self, forKey: .quotes) ?? []
+        notes = try container.decodeIfPresent(String.self, forKey: .notes) ?? ""
+        isSampleCharacter = try container.decodeIfPresent(Bool.self, forKey: .isSampleCharacter) ?? false
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(id, forKey: .id)
+        try container.encode(fullName, forKey: .fullName)
+        try container.encode(nickname, forKey: .nickname)
+        try container.encode(role, forKey: .role)
+        try container.encode(age, forKey: .age)
+        try container.encode(occupation, forKey: .occupation)
+        try container.encode(appearance, forKey: .appearance)
+        try container.encode(background, forKey: .background)
+        try container.encode(education, forKey: .education)
+        try container.encode(residence, forKey: .residence)
+        try container.encode(family, forKey: .family)
+        try container.encode(pets, forKey: .pets)
+        try container.encode(personalityTraits, forKey: .personalityTraits)
+        try container.encode(coreBelief, forKey: .coreBelief)
+        try container.encode(principles, forKey: .principles)
+        try container.encode(skills, forKey: .skills)
+        try container.encode(motivations, forKey: .motivations)
+        try container.encode(weaknesses, forKey: .weaknesses)
+        try container.encode(connections, forKey: .connections)
+        try container.encode(quotes, forKey: .quotes)
+        try container.encode(notes, forKey: .notes)
+        try container.encode(isSampleCharacter, forKey: .isSampleCharacter)
     }
 
     var displayName: String {
@@ -107,9 +190,17 @@ struct CharacterProfile: Codable, Identifiable {
     var analysisKey: String? {
         let trimmedFull = fullName.trimmingCharacters(in: .whitespacesAndNewlines)
         if !trimmedFull.isEmpty {
-            // Be resilient to multi-word names and prefixes like "Dr." or "Mr.".
+            // Be resilient to multi-word names and prefixes/titles like "Dr.", "Mr.", "Chief", etc.
+            let titleTokens: Set<String> = [
+                "mr", "mrs", "ms", "miss", "dr", "prof", "professor",
+                "chief", "capt", "captain", "officer", "detective", "sgt", "sergeant",
+                "agent", "inspector", "superintendent", "lieutenant", "lt", "colonel", "col",
+                "major", "gen", "general", "sir", "madam"
+            ]
             for raw in trimmedFull.split(whereSeparator: { $0.isWhitespace }) {
                 let token = String(raw).trimmingCharacters(in: .punctuationCharacters)
+                let tokenKey = token.lowercased()
+                if titleTokens.contains(tokenKey) { continue }
                 if !token.isEmpty {
                     return token
                 }
@@ -172,12 +263,16 @@ class CharacterLibrary {
 
         do {
             let data = try Data(contentsOf: charactersFile)
-            let decoded = try JSONDecoder().decode([CharacterProfile].self, from: data)
-            characters = decoded
-            DebugLog.log("📚 Loaded \(characters.count) characters from \(charactersFile.lastPathComponent)")
+            if let decoded = decodeCharacterProfiles(from: data) {
+                characters = decoded
+                DebugLog.log("📚 Loaded \(characters.count) characters from \(charactersFile.lastPathComponent)")
+            } else {
+                DebugLog.log("❌ Could not decode characters from \(charactersFile.lastPathComponent); starting fresh")
+                characters = []
+            }
         } catch {
             // If no saved characters for this document, start with empty library
-            DebugLog.log("📚 No existing characters file for document, starting fresh")
+            DebugLog.log("📚 No existing characters file for document (\(charactersFile.lastPathComponent)); starting fresh")
             characters = []
         }
 
@@ -272,10 +367,105 @@ class CharacterLibrary {
         NotificationCenter.default.post(name: .characterLibraryDidChange, object: nil)
     }
 
+    /// Permanently remove all characters for the current document.
+    /// This deletes the sidecar `.characters.json` (if present) and clears the in-memory library.
+    func purgeCharactersForCurrentDocument() {
+        guard let documentURL = currentDocumentURL else {
+            characters = []
+            NotificationCenter.default.post(name: .characterLibraryDidChange, object: nil)
+            return
+        }
+
+        let charactersFile = charactersURL(for: documentURL)
+        if FileManager.default.fileExists(atPath: charactersFile.path) {
+            do {
+                try FileManager.default.removeItem(at: charactersFile)
+                DebugLog.log("🧹 Purged character sidecar: \(charactersFile.lastPathComponent)")
+            } catch {
+                DebugLog.log("⚠️ Failed to delete character sidecar (\(charactersFile.lastPathComponent)): \(error.localizedDescription)")
+            }
+        }
+
+        characters = []
+        NotificationCenter.default.post(name: .characterLibraryDidChange, object: nil)
+    }
+
     /// Clear all characters for a new document (for backward compatibility)
     func clearForNewDocument() {
         DebugLog.log("📚 CharacterLibrary: Clearing characters for new document")
         loadCharacters(for: nil)
+    }
+
+    private func decodeCharacterProfiles(from data: Data) -> [CharacterProfile]? {
+        let decoder = JSONDecoder()
+        if let decoded = try? decoder.decode([CharacterProfile].self, from: data) {
+            return decoded
+        }
+
+        // Salvage path: sometimes tools/formatters accidentally concatenate two JSON arrays.
+        // Attempt to decode the first top-level JSON array in the file.
+        guard let text = String(data: data, encoding: .utf8) else { return nil }
+        guard let firstArrayEndIndex = firstTopLevelJSONArrayEndIndex(in: text) else { return nil }
+
+        let prefix = String(text[..<firstArrayEndIndex])
+        guard let prefixData = prefix.data(using: .utf8) else { return nil }
+        if let decoded = try? decoder.decode([CharacterProfile].self, from: prefixData) {
+            DebugLog.log("⚠️ Salvaged characters by decoding the first JSON array only")
+            return decoded
+        }
+        return nil
+    }
+
+    private func firstTopLevelJSONArrayEndIndex(in text: String) -> String.Index? {
+        // Returns the index *after* the closing bracket of the first top-level array.
+        var depth = 0
+        var inString = false
+        var escaping = false
+        var started = false
+
+        var idx = text.startIndex
+        while idx < text.endIndex {
+            let ch = text[idx]
+
+            if inString {
+                if escaping {
+                    escaping = false
+                } else if ch == "\\" {
+                    escaping = true
+                } else if ch == "\"" {
+                    inString = false
+                }
+                idx = text.index(after: idx)
+                continue
+            }
+
+            if ch == "\"" {
+                inString = true
+                idx = text.index(after: idx)
+                continue
+            }
+
+            if !started {
+                if ch == "[" {
+                    started = true
+                    depth = 1
+                }
+                idx = text.index(after: idx)
+                continue
+            }
+
+            if ch == "[" { depth += 1 }
+            if ch == "]" {
+                depth -= 1
+                if depth == 0 {
+                    return text.index(after: idx)
+                }
+            }
+
+            idx = text.index(after: idx)
+        }
+
+        return nil
     }
 }
 

@@ -38,6 +38,7 @@ class CharacterLibraryViewController: NSViewController {
     private var familyField: NSTextView!
     private var petsField: NSTextField!
     private var traitsField: NSTextView!
+    private var coreBeliefField: NSTextField!
     private var principlesField: NSTextView!
     private var skillsField: NSTextView!
     private var motivationsField: NSTextView!
@@ -482,6 +483,7 @@ class CharacterLibraryViewController: NSViewController {
 
         addSection("Personality")
         traitsField = addTextArea("Personality Traits (one per line)", value: character.personalityTraits.joined(separator: "\n"), height: 80)
+        coreBeliefField = addTextField("Core Belief", value: character.coreBelief)
         principlesField = addTextArea("Principles / Beliefs (one per line)", value: character.principles.joined(separator: "\n"), height: 80)
 
         addSection("Abilities")
@@ -658,7 +660,22 @@ class CharacterLibraryViewController: NSViewController {
         updatedChar.education = educationField.stringValue
         updatedChar.family = familyField.string
         updatedChar.personalityTraits = traitsField.string.components(separatedBy: "\n").filter { !$0.isEmpty }
-        updatedChar.principles = principlesField.string.components(separatedBy: "\n").filter { !$0.isEmpty }
+        updatedChar.coreBelief = coreBeliefField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        var principles = principlesField.string
+            .components(separatedBy: "\n")
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+
+        if !updatedChar.coreBelief.isEmpty {
+            let coreLower = updatedChar.coreBelief.lowercased()
+            let alreadyIncluded = principles.contains(where: { $0.lowercased() == coreLower })
+            if !alreadyIncluded {
+                principles.insert(updatedChar.coreBelief, at: 0)
+            }
+        }
+
+        updatedChar.principles = principles
         updatedChar.skills = skillsField.string.components(separatedBy: "\n").filter { !$0.isEmpty }
         updatedChar.motivations = motivationsField.string
         updatedChar.weaknesses = weaknessesField.string

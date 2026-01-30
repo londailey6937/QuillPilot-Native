@@ -1846,7 +1846,8 @@ class EditorViewController: NSViewController {
     func findAll(_ searchText: String, caseSensitive: Bool = false, wholeWords: Bool = false) -> [NSRange] {
         guard !searchText.isEmpty else { return [] }
 
-        let text = textView.string
+        let nsText = textView.string as NSString
+        let textLength = nsText.length
         var options: String.CompareOptions = []
 
         if !caseSensitive {
@@ -1854,33 +1855,46 @@ class EditorViewController: NSViewController {
         }
 
         var ranges: [NSRange] = []
-        var searchRange = NSRange(location: 0, length: text.count)
+        var searchRange = NSRange(location: 0, length: textLength)
 
-        while searchRange.location < text.count {
-            let foundRange = (text as NSString).range(of: searchText, options: options, range: searchRange)
+        while searchRange.location < textLength {
+            let foundRange = nsText.range(of: searchText, options: options, range: searchRange)
 
             if foundRange.location == NSNotFound {
                 break
             }
 
-            // Check for whole word match if needed
-            if wholeWords {
-                let beforeOK = foundRange.location == 0 || !text[text.index(text.startIndex, offsetBy: foundRange.location - 1)].isLetter
-                let afterIndex = foundRange.location + foundRange.length
-                let afterOK = afterIndex >= text.count || !text[text.index(text.startIndex, offsetBy: afterIndex)].isLetter
-
-                if beforeOK && afterOK {
-                    ranges.append(foundRange)
-                }
-            } else {
+            if !wholeWords || isWholeWordMatch(foundRange, in: nsText) {
                 ranges.append(foundRange)
             }
 
-            searchRange.location = foundRange.location + foundRange.length
-            searchRange.length = text.count - searchRange.location
+            let nextLocation = foundRange.location + foundRange.length
+            searchRange.location = nextLocation
+            searchRange.length = max(0, textLength - nextLocation)
         }
 
         return ranges
+    }
+
+    private func isWholeWordMatch(_ range: NSRange, in text: NSString) -> Bool {
+        let wordChars = CharacterSet.alphanumerics.union(CharacterSet(charactersIn: "_"))
+
+        if range.location > 0 {
+            let beforeChar = text.character(at: range.location - 1)
+            if let scalar = UnicodeScalar(beforeChar), wordChars.contains(scalar) {
+                return false
+            }
+        }
+
+        let afterIndex = range.location + range.length
+        if afterIndex < text.length {
+            let afterChar = text.character(at: afterIndex)
+            if let scalar = UnicodeScalar(afterChar), wordChars.contains(scalar) {
+                return false
+            }
+        }
+
+        return true
     }
 
     /// Find and highlight the next occurrence of search text
@@ -1894,7 +1908,8 @@ class EditorViewController: NSViewController {
     func findNext(_ searchText: String, forward: Bool = true, caseSensitive: Bool = false, wholeWords: Bool = false) -> Bool {
         guard !searchText.isEmpty else { return false }
 
-        let text = textView.string
+        let nsText = textView.string as NSString
+        let textLength = nsText.length
         let currentRange = textView.selectedRange()
         var options: String.CompareOptions = forward ? [] : .backwards
 
@@ -1902,44 +1917,52 @@ class EditorViewController: NSViewController {
             options.insert(.caseInsensitive)
         }
 
-        let searchStart = forward ? (currentRange.location + currentRange.length) : 0
-        let searchLength = forward ? (text.count - searchStart) : currentRange.location
-        var searchRange = NSRange(location: searchStart, length: searchLength)
-
-        let foundRange = (text as NSString).range(of: searchText, options: options, range: searchRange)
-
-        if foundRange.location != NSNotFound {
-            // Check whole word if needed
-            if wholeWords {
-                let beforeOK = foundRange.location == 0 || !text[text.index(text.startIndex, offsetBy: foundRange.location - 1)].isLetter
-                let afterIndex = foundRange.location + foundRange.length
-                let afterOK = afterIndex >= text.count || !text[text.index(text.startIndex, offsetBy: afterIndex)].isLetter
-
-                if beforeOK && afterOK {
-                    textView.setSelectedRange(foundRange)
-                    textView.scrollRangeToVisible(foundRange)
-                    return true
+        func findMatch(in range: NSRange) -> NSRange? {
+            var searchRange = range
+            while searchRange.length > 0 {
+                let foundRange = nsText.range(of: searchText, options: options, range: searchRange)
+                if foundRange.location == NSNotFound {
+                    return nil
                 }
-            } else {
-                textView.setSelectedRange(foundRange)
-                textView.scrollRangeToVisible(foundRange)
-                return true
+
+                if !wholeWords || isWholeWordMatch(foundRange, in: nsText) {
+                    return foundRange
+                }
+
+                if options.contains(.backwards) {
+                    let newLength = foundRange.location
+                    searchRange = NSRange(location: 0, length: max(0, newLength))
+                } else {
+                    let nextLocation = foundRange.location + foundRange.length
+                    searchRange = NSRange(location: nextLocation, length: max(0, textLength - nextLocation))
+                }
             }
+            return nil
+        }
+
+        let searchStart = forward ? (currentRange.location + currentRange.length) : 0
+        let searchLength = forward ? max(0, textLength - searchStart) : currentRange.location
+        let primaryRange = NSRange(location: searchStart, length: searchLength)
+
+        if let foundRange = findMatch(in: primaryRange) {
+            textView.setSelectedRange(foundRange)
+            textView.scrollRangeToVisible(foundRange)
+            return true
         }
 
         // Wrap around if nothing found
         if forward && searchStart > 0 {
-            searchRange = NSRange(location: 0, length: currentRange.location)
-            let wrappedRange = (text as NSString).range(of: searchText, options: options, range: searchRange)
-            if wrappedRange.location != NSNotFound {
+            let wrapRange = NSRange(location: 0, length: min(textLength, currentRange.location))
+            if let wrappedRange = findMatch(in: wrapRange) {
                 textView.setSelectedRange(wrappedRange)
                 textView.scrollRangeToVisible(wrappedRange)
                 return true
             }
-        } else if !forward && searchLength < text.count {
-            searchRange = NSRange(location: currentRange.location + currentRange.length, length: text.count - (currentRange.location + currentRange.length))
-            let wrappedRange = (text as NSString).range(of: searchText, options: options, range: searchRange)
-            if wrappedRange.location != NSNotFound {
+        } else if !forward {
+            let wrapStart = currentRange.location + currentRange.length
+            let wrapLength = max(0, textLength - wrapStart)
+            let wrapRange = NSRange(location: wrapStart, length: wrapLength)
+            if let wrappedRange = findMatch(in: wrapRange) {
                 textView.setSelectedRange(wrappedRange)
                 textView.scrollRangeToVisible(wrappedRange)
                 return true

@@ -104,6 +104,23 @@ class DecisionBeliefLoopView: NSView {
         contentView.addSubview(divider1)
         yOffset += 15
 
+        if loops.isEmpty {
+            let emptyLabel = createLabel(
+                text: "No Decision–Belief Loop entries yet.\n\nAdd characters to the Character Library, then run Analyze to generate loops.",
+                font: NSFont.systemFont(ofSize: 13),
+                textColor: textColor.withAlphaComponent(0.75)
+            )
+            emptyLabel.frame = NSRect(x: leftPadding, y: 0, width: contentWidth, height: 80)
+            emptyLabel.lineBreakMode = .byWordWrapping
+            emptyLabel.maximumNumberOfLines = 0
+            contentView.addSubview(emptyLabel)
+            yOffset += 90
+
+            // Resize content view and stop.
+            contentView.frame = NSRect(x: 0, y: 0, width: bounds.width, height: max(yOffset + 40, bounds.height))
+            return
+        }
+
         // "The Loop" section header
         let loopHeaderLabel = createLabel(
             text: "The Loop (per scene)",

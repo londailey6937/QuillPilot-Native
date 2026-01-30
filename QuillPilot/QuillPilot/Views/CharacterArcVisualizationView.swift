@@ -590,6 +590,14 @@ struct DecisionBeliefLoopFullView: View {
                             .cornerRadius(4)
                         }
 
+                        let legendItems: [(String, Color)] = [
+                            ("Fear", .red),
+                            ("Agency", .purple),
+                            ("Trust", .blue),
+                            ("Identity", .green),
+                            ("Moral/Ethical", .yellow)
+                        ]
+
                         // Character Arc Timeline
                         VStack(alignment: .leading, spacing: 12) {
                             Text("Character Arc Timeline")
@@ -605,26 +613,14 @@ struct DecisionBeliefLoopFullView: View {
                                 .font(.caption)
                                 .foregroundColor(textColor.opacity(0.7))
 
-                            HStack(spacing: 10) {
-                                HStack(spacing: 4) {
-                                    Circle().fill(Color.red).frame(width: 8, height: 8)
-                                    Text("Fear").font(.caption2).foregroundColor(textColor.opacity(0.7))
-                                }
-                                HStack(spacing: 4) {
-                                    Circle().fill(Color.purple).frame(width: 8, height: 8)
-                                    Text("Agency").font(.caption2).foregroundColor(textColor.opacity(0.7))
-                                }
-                                HStack(spacing: 4) {
-                                    Circle().fill(Color.blue).frame(width: 8, height: 8)
-                                    Text("Trust").font(.caption2).foregroundColor(textColor.opacity(0.7))
-                                }
-                                HStack(spacing: 4) {
-                                    Circle().fill(Color.green).frame(width: 8, height: 8)
-                                    Text("Identity").font(.caption2).foregroundColor(textColor.opacity(0.7))
-                                }
-                                HStack(spacing: 4) {
-                                    Circle().fill(Color.yellow).frame(width: 8, height: 8)
-                                    Text("Moral/Ethical").font(.caption2).foregroundColor(textColor.opacity(0.7))
+                            LazyVGrid(columns: [GridItem(.adaptive(minimum: 110), spacing: 10)], alignment: .leading, spacing: 6) {
+                                ForEach(legendItems, id: \.0) { item in
+                                    HStack(spacing: 4) {
+                                        Circle().fill(item.1).frame(width: 8, height: 8)
+                                        Text(item.0)
+                                            .font(.caption2)
+                                            .foregroundColor(textColor.opacity(0.7))
+                                    }
                                 }
                             }
 
@@ -662,45 +658,15 @@ struct DecisionBeliefLoopFullView: View {
                                     .font(.caption)
                                     .fontWeight(.semibold)
                                     .foregroundColor(textColor)
-                                HStack(spacing: 4) {
-                                    Circle()
-                                        .fill(Color.red)
-                                        .frame(width: 8, height: 8)
-                                    Text("Fear")
-                                        .font(.caption)
-                                        .foregroundColor(textColor.opacity(0.7))
-                                }
-                                HStack(spacing: 4) {
-                                    Circle()
-                                        .fill(Color.purple)
-                                        .frame(width: 8, height: 8)
-                                    Text("Agency")
-                                        .font(.caption)
-                                        .foregroundColor(textColor.opacity(0.7))
-                                }
-                                HStack(spacing: 4) {
-                                    Circle()
-                                        .fill(Color.blue)
-                                        .frame(width: 8, height: 8)
-                                    Text("Trust")
-                                        .font(.caption)
-                                        .foregroundColor(textColor.opacity(0.7))
-                                }
-                                HStack(spacing: 4) {
-                                    Circle()
-                                        .fill(Color.green)
-                                        .frame(width: 8, height: 8)
-                                    Text("Identity")
-                                        .font(.caption)
-                                        .foregroundColor(textColor.opacity(0.7))
-                                }
-                                HStack(spacing: 4) {
-                                    Circle()
-                                        .fill(Color.yellow)
-                                        .frame(width: 8, height: 8)
-                                    Text("Moral/Ethical")
-                                        .font(.caption)
-                                        .foregroundColor(textColor.opacity(0.7))
+                                ForEach(legendItems, id: \.0) { item in
+                                    HStack(spacing: 4) {
+                                        Circle()
+                                            .fill(item.1)
+                                            .frame(width: 8, height: 8)
+                                        Text(item.0)
+                                            .font(.caption)
+                                            .foregroundColor(textColor.opacity(0.7))
+                                    }
                                 }
                             }
                             .padding(8)

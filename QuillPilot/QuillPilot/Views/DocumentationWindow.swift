@@ -1489,17 +1489,42 @@ Character data is saved automatically.
 
         content.append(makeTitle("📊 Analysis Overview", color: titleColor))
         content.append(makeBody("""
+Quill Pilot's Analysis tools help you objectively evaluate your manuscript's strengths and weaknesses. Analysis runs automatically when you open any tool.
+
 Open analysis from the right-side Analysis panel:
 • Click 📊 (Analysis) to open the main analysis popout
 • Click 📖 (Plot Structure) for plot/structure visualizations
 • Use the character tool buttons listed under the analysis buttons
 
 Quick access:
-• 📊 Analysis — document-level metrics, writing-quality flags, dialogue metrics, and Poetry Analysis when using Poetry templates
+• 📊 Analysis — document-level metrics, writing-quality flags, dialogue metrics
 • 📖 Plot Structure — plot/structure visualizations
 • 👥 Character Analysis Tools — character-focused tools and maps
 
 Tip: Auto-analyze behavior can be configured in Preferences.
+""", color: bodyColor))
+        content.append(makeNewline())
+
+        content.append(makeHeading("How Analysis Works", color: headingColor))
+        content.append(makeBody("""
+When you trigger analysis (by opening a tool), Quill Pilot:
+
+1. Scans your entire document for patterns
+2. Identifies chapters/scenes using your outline headings
+3. Extracts character names from your Character Library
+4. Detects decisions, beliefs, outcomes, and interactions
+5. Generates visualizations and metrics
+
+Analysis Loading Indicator:
+When analysis is running, you'll see a spinning indicator and "Analyzing..." text at the bottom of the sidebar. When complete, it briefly shows "Analysis Ready" before hiding.
+
+Waiting for Results:
+If you click a character tool while analysis is still running, the tool will automatically wait for analysis to complete before opening (up to ~6 seconds). This ensures you always see current data.
+
+Best Practices:
+• Keep your Character Library updated with character names
+• Use consistent chapter/scene headings for accurate segmentation
+• Write clear action sentences for better decision detection
 """, color: bodyColor))
         content.append(makeNewline())
 
@@ -1513,8 +1538,13 @@ What you'll see:
 • Paragraph Count — Total paragraphs
 • Average Sentence Length — Words per sentence
 
+Example Interpretation:
+A 60,000 word manuscript with 4,500 sentences has ~13 words/sentence average. If your genre typically runs 15-18 words/sentence, you might need longer, more complex sentences in places.
+
 How to use it:
-• Treat these as "manuscript telemetry," not goals. What matters is the delta: before vs after revisions.
+• Treat these as "manuscript telemetry," not goals
+• What matters is the delta: before vs after revisions
+• Compare against genre norms for context
 """, color: bodyColor))
         content.append(makeNewline())
 
@@ -1525,25 +1555,31 @@ Access: Right panel → 📊 Analysis
 Passive Voice Detection
 • Shows percentage of passive constructions
 • Target: Keep below 10% for most genres
+• Example: "The door was opened by Sarah" → "Sarah opened the door"
 
 Adverb Usage
 • Counts -ly adverbs
 • Helps strengthen verb choices
+• Example: "She walked slowly" → "She crept" or "She shuffled"
 
 Weak Verbs
-• Detects: is, was, get, make, etc.
+• Detects: is, was, were, get, make, have, etc.
 • Suggests stronger alternatives
+• Example: "He was angry" → "He fumed" or "His fists clenched"
 
 Clichés & Overused Phrases
 • Identifies common clichés
 • Helps keep writing fresh
+• Example: "It was a dark and stormy night" → Describe specific sensory details
 
 Filter Words
-• Perception words that distance readers: saw, felt, thought, realized, wondered
+• Perception words that distance readers: saw, felt, thought, realized, wondered, noticed
+• Example: "She felt the cold wind" → "The cold wind bit her face"
 
 Sensory Details
 • Balance of sight, sound, touch, taste, smell
 • Shows sensory distribution chart
+• Aim for variety; don't rely only on visual descriptions
 """, color: bodyColor))
         content.append(makeNewline())
 
@@ -1552,13 +1588,21 @@ Sensory Details
 Access: Right panel → 📊 Analysis
 
 Visual graph showing distribution of:
-• Short sentences (1-10 words)
-• Medium sentences (11-20 words)
-• Long sentences (21-30 words)
-• Very long sentences (31+ words)
+• Short sentences (1-10 words) — Punchy, urgent
+• Medium sentences (11-20 words) — Standard narrative
+• Long sentences (21-30 words) — Complex, flowing
+• Very long sentences (31+ words) — Elaborate, potentially difficult
+
+Example Good Distribution:
+• Short: 20%
+• Medium: 50%
+• Long: 25%
+• Very Long: 5%
 
 Good variety = engaging rhythm
 Too uniform = monotonous reading
+
+Tip: Action scenes benefit from shorter sentences. Introspection and description can use longer ones.
 """, color: bodyColor))
         content.append(makeNewline())
 
@@ -1568,16 +1612,35 @@ Access: Right panel → 📊 Analysis
 
 10 comprehensive metrics for dialogue quality:
 
-• Filler Word Percentage - um, uh, like, you know
-• Repetition Detection - overused phrases in dialogue
-• Clichéd Phrases - avoid predictable dialogue
-• Exposition Levels - info-dumping in conversation
-• Conflict Presence - tension and disagreement
-• Pacing Variety - rhythm of exchanges
-• Tag Variety - "said" alternatives
-• Subtext Quality - what's unsaid
-• Authenticity Score - sounds like real speech
-• Balance - distribution among characters
+• Filler Word Percentage — "um," "uh," "like," "you know"
+  Example: "Um, I think, you know, we should go" → "We should go"
+
+• Repetition Detection — overused phrases in dialogue
+  Example: If "I don't know" appears 15 times, characters need more varied responses
+
+• Clichéd Phrases — avoid predictable dialogue
+  Example: "It's not what it looks like" → Find a fresher way to express denial
+
+• Exposition Levels — info-dumping in conversation
+  Example: "As you know, Bob, our company was founded in 1952..." is exposition disguised as dialogue
+
+• Conflict Presence — tension and disagreement
+  Good dialogue has subtext and competing wants
+
+• Pacing Variety — rhythm of exchanges
+  Mix quick back-and-forth with longer speeches
+
+• Tag Variety — "said" alternatives
+  "Said" is often invisible, but occasional variety adds color: whispered, snapped, murmured
+
+• Subtext Quality — what's unsaid
+  Characters rarely say exactly what they mean
+
+• Authenticity Score — sounds like real speech
+  Read dialogue aloud to test naturalness
+
+• Balance — distribution among characters
+  Watch for one character dominating every conversation
 """, color: bodyColor))
         content.append(makeNewline())
 
@@ -1609,7 +1672,12 @@ Availability depends on your macOS version, device support, and region.
         content.append(makeBody("""
 Character analysis lives in the right-side Analysis panel. Each character tool has its own button.
 
-If results aren't available yet, Quill Pilot runs analysis automatically when you open a character tool.
+If results aren't available yet, Quill Pilot runs analysis automatically when you open a character tool. You'll see "Analyzing..." at the bottom of the sidebar while it runs.
+
+Prerequisites for Best Results:
+• Add your main characters to the Character Library (use exact names as they appear in your manuscript)
+• Use consistent chapter/scene headings for accurate segmentation
+• Write clear action verbs when characters make decisions
 """, color: bodyColor))
         content.append(makeNewline())
 
@@ -1623,39 +1691,60 @@ Features:
 • Multi-character overlay with color coding
 • Four emotional metrics: Confidence, Hope vs Despair, Control vs Chaos, Attachment vs Isolation
 • Continuous line plots showing progression
-• Character list uses the union of Character Library, presence data, and interaction data (no truncation)
 
 How to interpret the curves:
 • Look for changes (rises/drops), not exact numbers
 • Sudden shifts often indicate turning points
 • Crossovers between characters indicate conflict or reversal
 
-Metric definitions (current implementation):
-• Confidence = presence dominance per chapter (mentions normalized to the global max)
+Example Interpretation:
+If your protagonist's "Confidence" line drops sharply in Chapter 5, then gradually rises through Chapters 6-8, that's a clear arc pattern. If it stays flat, the character may need more emotional variation.
+
+Metric definitions:
+• Confidence = presence dominance per chapter (more mentions = higher confidence displayed)
 • Hope vs Despair = presence trend (rising presence = hope, falling = despair)
-• Control vs Chaos = presence stability (low variance = control, high variance = chaos)
-• Attachment vs Isolation = interaction intensity (fallback to presence if no interaction data)
+• Control vs Chaos = presence stability (steady appearance = control, erratic = chaos)
+• Attachment vs Isolation = interaction frequency with other characters
 """, color: bodyColor))
         content.append(makeNewline())
 
         content.append(makeHeading("Decision-Belief Loops", color: headingColor))
         content.append(makeBody("""
-Tracks how character decisions reinforce or challenge their beliefs.
+Tracks how character decisions reinforce or challenge their beliefs. This is the core framework for understanding character growth.
 
 Access: Right panel → 📊 Decision-Belief Loops
 
 What the framework tracks (per chapter):
-• Pressure — new forces acting on the character
-• Belief in Play — the value/worldview being tested
+• Pressure — new forces acting on the character (external conflict, internal doubt, deadline)
+• Belief in Play — the value/worldview being tested ("I can't trust anyone," "Love conquers all")
 • Decision — the choice made because of (or against) that belief
 • Outcome — the immediate result of that decision
 • Belief Shift — how the belief changes (reinforced, refined, reversed)
+
+Example Loop:
+Chapter 3:
+  Pressure: "Deadline to pay rent"
+  Belief: "I have to handle everything alone"
+  Decision: "Refuses roommate's offer to help"
+  Outcome: "Fails to pay rent, faces eviction"
+  Belief Shift: "Beginning to question self-reliance"
+
+How the tool detects these:
+• Decisions: Action verbs like "decided," "chose," "refused," "took," "grabbed," "nodded," "agreed"
+• Outcomes: Result indicators like "then," "suddenly," "discovered," "found," "resulted," "meant"
+• Beliefs: Cognitive words like "believed," "thought," "knew," "felt," "assumed," "expected"
+
+If fields are empty ("No explicit keyword found"):
+1. Check if the scene contains clear decision language
+2. Add action verbs that signal choices: "Sarah decided to..." or "He chose the..."
+3. Make outcomes explicit: "As a result..." or "This led to..."
 
 How to use it:
 1) Start with your protagonist
 2) Scan for rows with 2+ empty cells
 3) Open that chapter and ask: "What is the pressure? What is the choice? What does it cost?"
-4) Revise, then re-run analysis
+4) Revise to make the decision-consequence chain clearer
+5) Re-run analysis to verify
 """, color: bodyColor))
         content.append(makeNewline())
 
@@ -1666,16 +1755,23 @@ Table format tracking character belief evolution through chapters.
 Access: Right panel → 📋 Belief Shift Matrix
 
 Columns:
-• Chapter - Where the belief appears
-• Core Belief - Character's worldview at that point
-• Evidence - Actions/decisions reflecting the belief
-• Counterpressure - Forces challenging the belief
+• Chapter — Where the belief appears
+• Core Belief — Character's worldview at that point
+• Evidence — Actions/decisions reflecting the belief
+• Counterpressure — Forces challenging the belief
+
+Example Progression:
+Ch 1: Belief: "People always let you down" | Evidence: "Refuses team assignment"
+Ch 5: Belief: "People always let you down" | Counterpressure: "Partner saves his life"
+Ch 9: Belief: "Some people can be trusted" | Evidence: "Asks for help voluntarily"
 
 Evolution Quality Badge:
-• Logical Evolution - Clear pressures causing belief shifts
-• Developing - Some belief shifts occurring
-• Unchanging - Beliefs remain static
-• Insufficient Data - Not enough entries to assess
+• Logical Evolution — Clear pressures causing belief shifts (ideal)
+• Developing — Some belief shifts occurring (needs more work)
+• Unchanging — Beliefs remain static (character may feel flat)
+• Insufficient Data — Not enough entries to assess
+
+If you see "Unchanging": Your character may need more moments where their worldview is challenged and they must respond.
 """, color: bodyColor))
         content.append(makeNewline())
 
@@ -1685,14 +1781,33 @@ Maps choices, not traits. Ensures growth comes from action, not narration.
 
 Access: Right panel → ⛓️ Decision-Consequence Chains
 
-Structure:
-• Chapter → Decision → Immediate Outcome → Long-term Effect
+Structure (per row):
+• Scene — Chapter number where the decision occurs
+• Decision — The choice the character makes
+• Immediate Outcome — What happens right after
+• Long-term Effect — How it changes the story going forward
+
+Example Chain:
+Scene: Ch 2
+Decision: "Lies to cover friend's theft"
+Immediate Outcome: "Friend escapes punishment"
+Long-term Effect: "Creates guilt that drives confession in Ch 8"
 
 Agency Assessment Badge:
-• Active Protagonist - Character drives the story
-• Developing - Good balance of action and consequence
-• Reactive - Some agency, needs strengthening
-• Passive - Character reacts, doesn't act (warning)
+• Active Protagonist — Character drives the story (ideal)
+• Developing — Good balance of action and consequence
+• Reactive — Some agency, needs strengthening
+• Passive — Character reacts to events rather than causing them (warning)
+
+"Insufficient Data" Means:
+The tool couldn't find enough explicit decision keywords. Try adding clearer choice language:
+  Instead of: "The door opened and she went through"
+  Try: "She chose the left door, knowing it might be locked"
+
+Common Patterns to Watch For:
+• All decisions in early chapters, none later = character becomes passive
+• No immediate outcomes = missing cause-and-effect
+• No long-term effects = decisions feel inconsequential
 """, color: bodyColor))
         content.append(makeNewline())
 
@@ -1704,13 +1819,17 @@ Access: Right panel → 🤝 Character Interactions
 
 Features:
 • Network graph of character relationships
-• Frequency of interactions
+• Frequency of interactions (how often characters appear together)
 • Strength of relationships (0-100%)
 • Identifies isolated characters
+
+Example Reading:
+If Character A and Character B show 85% interaction strength but Character C shows only 12%, Character C may be underdeveloped in the relationship web.
 
 If the network looks incomplete:
 • Make sure Character Library names match what the manuscript uses (including nicknames)
 • Add/confirm chapter headings so segmentation aligns with your structure
+• Characters need to appear in the same paragraphs/scenes to register as interacting
 """, color: bodyColor))
         content.append(makeNewline())
 
@@ -1725,10 +1844,15 @@ Displays:
 • Color intensity = mention frequency
 • Numbers show exact count per chapter
 
-Use cases:
-• Spot characters who disappear mid-story
-• Balance POV distribution
-• Track subplot threads
+Example Use Cases:
+• Spot characters who disappear mid-story (gaps in their row)
+• Balance POV distribution (ensure protagonist appears consistently)
+• Track subplot threads (secondary characters should have presence patterns that make sense)
+
+Warning Signs:
+• A main character with zero presence in 3+ consecutive chapters
+• A subplot character who appears once and never returns
+• One character dominating every chapter (may overshadow others)
 """, color: bodyColor))
         content.append(makeNewline())
 
@@ -1745,9 +1869,13 @@ Visual Elements:
 • Red/Orange lines = Conflict relationships
 • Arrows = Power direction between characters
 
+Example Interpretation:
+A thick green line between Hero and Mentor with arrow pointing from Mentor to Hero = strong trust, Mentor has influence. A thin red line between Hero and Rival = low-stakes conflict (may need intensifying).
+
 Interactive Features:
 • Drag nodes to rearrange the layout
 • Edges follow as you move nodes
+• Use this to visualize relationship clusters
 """, color: bodyColor))
         content.append(makeNewline())
 
@@ -1762,9 +1890,16 @@ Two Parallel Tracks:
 • Teal line = Outer Behavior (what they show/do)
 
 Gap Interpretation:
-• Wide gap = Denial, repression, or masking
-• Narrow gap = Authenticity or integration
-• Gap closing = Character becoming more authentic OR collapsing
+• Wide gap = Denial, repression, or masking (character hiding true self)
+• Narrow gap = Authenticity or integration (character being genuine)
+• Gap closing = Character becoming more authentic OR inner walls collapsing
+
+Example Arc:
+Chapter 1: Wide gap (character pretends confidence, feels insecure)
+Chapter 5: Gap narrows (crack in façade after failure)
+Chapter 10: Gap closes (accepts vulnerability, asks for help)
+
+Use this to ensure characters aren't emotionally static.
 """, color: bodyColor))
         content.append(makeNewline())
 
@@ -1775,11 +1910,28 @@ Track how character's language changes — reveals unconscious growth.
 Access: Right panel → 📝 Language Drift Analysis
 
 Five Metrics Tracked:
-1. Pronouns (I vs We) - I → We shift = Community growth
-2. Modal Verbs (Must vs Choose) - Must → Choose = Growing agency
-3. Emotional Vocabulary - Increasing = Character opening up
-4. Sentence Length - Longer = More complex thought
-5. Certainty Level - Rising = Growing confidence
+1. Pronouns (I vs We)
+   I → We shift = Growing sense of community/belonging
+   Example: "I'll handle it" (Ch1) → "We can figure this out" (Ch10)
+
+2. Modal Verbs (Must vs Choose)
+   Must → Choose = Growing agency and autonomy
+   Example: "I must obey" → "I choose to help"
+
+3. Emotional Vocabulary
+   Increasing range = Character opening up emotionally
+   Limited range = Character may be emotionally stunted
+
+4. Sentence Length
+   Increasing = More complex, confident thought
+   Decreasing = Possible distress or urgency
+
+5. Certainty Level
+   Rising = Growing confidence in worldview
+   Falling = Doubt or transformation in progress
+
+How to Use This:
+If your character's language doesn't drift, they may feel static even if plot events happen TO them. Growth should show in HOW they speak, not just what they do.
 """, color: bodyColor))
         content.append(makeNewline())
 
@@ -1791,9 +1943,14 @@ Access: Right panel → 🎯 Thematic Resonance Map
 
 What it shows:
 • Theme alignment (from opposed → embodied)
-• Awareness of the theme
+• Awareness of the theme (unconscious → fully aware)
 • Influence (how much the character drives thematic exploration)
 • Personal cost (what it costs the character to engage the theme)
+
+Example (Theme: "Forgiveness"):
+Protagonist: Starts opposed (revenge-focused), ends embodied (forgives antagonist)
+Antagonist: Starts unaware, ends aware but rejecting
+Mentor: Embodies theme from start, high influence, low personal cost
 """, color: bodyColor))
         content.append(makeNewline())
 
@@ -1804,12 +1961,23 @@ Shows how character failures evolve across the story.
 Access: Right panel → 📉 Failure Pattern Charts
 
 Failure types tracked:
-• Naive, Reactive, Misinformed, Strategic, Principled, Costly but Chosen
+• Naive — Fails from inexperience ("I didn't know that would happen")
+• Reactive — Fails from hasty response ("I panicked and ran")
+• Misinformed — Fails from bad information ("They told me it was safe")
+• Strategic — Fails despite good planning ("The plan was sound but...")
+• Principled — Fails because of values ("I couldn't betray them")
+• Costly but Chosen — Accepts failure for greater good ("I knew I'd lose, but...")
 
 What it indicates:
-• Early failures trend toward naive/reactive patterns
-• Later failures should show better judgment (strategic/principled)
+• Early failures should trend toward naive/reactive patterns (character learning)
+• Middle failures should show misinformed/strategic patterns (character trying)
+• Late failures should show principled/costly-but-chosen patterns (character evolved)
 • A flat pattern suggests limited growth in decision quality
+
+Example Arc:
+Ch 2: Naive failure (didn't know enemy's strength)
+Ch 5: Strategic failure (good plan, unexpected variable)
+Ch 9: Principled failure (could have won by cheating, chose not to)
 """, color: bodyColor))
 
         normalizeAppNameInDocumentation(content)

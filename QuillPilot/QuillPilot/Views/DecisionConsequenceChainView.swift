@@ -129,14 +129,14 @@ struct DecisionConsequenceChainView: View {
     }
 
     private func decisionTable(_ entries: [DecisionConsequenceChain.ChainEntry]) -> some View {
-        ScrollView(.horizontal) {
+        ScrollView(.horizontal, showsIndicators: true) {
             VStack(spacing: 0) {
                 // Table header
                 HStack(spacing: 0) {
-                    tableHeaderCell("Scene", width: 80)
-                    tableHeaderCell("Decision", width: nil)
-                    tableHeaderCell("Immediate Outcome", width: nil)
-                    tableHeaderCell("Long-term Effect", width: nil)
+                    tableHeaderCell("Scene", width: 70)
+                    tableHeaderCell("Decision", width: 220)
+                    tableHeaderCell("Immediate Outcome", width: 250)
+                    tableHeaderCell("Long-term Effect", width: 250)
                 }
                 .background(Color.gray.opacity(0.2))
 
@@ -156,18 +156,20 @@ struct DecisionConsequenceChainView: View {
                                             .foregroundColor(.secondary)
                                     }
                                 },
-                                width: 80
+                                width: 70
                             )
 
                             tableCell(
                                 VStack(alignment: .leading, spacing: 4) {
-                                    HStack(spacing: 4) {
+                                    HStack(alignment: .top, spacing: 4) {
                                         Image(systemName: "hand.point.up.left.fill")
                                             .font(.caption)
                                             .foregroundColor(.blue)
                                         Text(entry.decision.isEmpty ? "—" : entry.decision)
                                             .font(.body)
                                             .foregroundColor(entry.decision.isEmpty ? .secondary : .primary)
+                                            .lineLimit(nil)
+                                            .fixedSize(horizontal: false, vertical: true)
                                     }
                                     if entry.decisionPage > 0 {
                                         Text("Page \(entry.decisionPage)")
@@ -175,18 +177,20 @@ struct DecisionConsequenceChainView: View {
                                             .foregroundColor(.secondary)
                                     }
                                 },
-                                width: nil
+                                width: 220
                             )
 
                             tableCell(
                                 VStack(alignment: .leading, spacing: 4) {
-                                    HStack(spacing: 4) {
+                                    HStack(alignment: .top, spacing: 4) {
                                         Image(systemName: "arrow.right.circle.fill")
                                             .font(.caption)
                                             .foregroundColor(.orange)
                                         Text(entry.immediateOutcome.isEmpty ? "—" : entry.immediateOutcome)
                                             .font(.body)
                                             .foregroundColor(entry.immediateOutcome.isEmpty ? .secondary : .primary)
+                                            .lineLimit(nil)
+                                            .fixedSize(horizontal: false, vertical: true)
                                     }
                                     if entry.immediateOutcomePage > 0 {
                                         Text("Page \(entry.immediateOutcomePage)")
@@ -194,18 +198,20 @@ struct DecisionConsequenceChainView: View {
                                             .foregroundColor(.secondary)
                                     }
                                 },
-                                width: nil
+                                width: 250
                             )
 
                             tableCell(
                                 VStack(alignment: .leading, spacing: 4) {
-                                    HStack(spacing: 4) {
+                                    HStack(alignment: .top, spacing: 4) {
                                         Image(systemName: "sparkles")
                                             .font(.caption)
                                             .foregroundColor(.green)
                                         Text(entry.longTermEffect.isEmpty ? "—" : entry.longTermEffect)
                                             .font(.body)
                                             .foregroundColor(entry.longTermEffect.isEmpty ? .secondary : .primary)
+                                            .lineLimit(nil)
+                                            .fixedSize(horizontal: false, vertical: true)
                                     }
                                     if entry.longTermEffectPage > 0 {
                                         Text("Page \(entry.longTermEffectPage)")
@@ -213,7 +219,7 @@ struct DecisionConsequenceChainView: View {
                                             .foregroundColor(.secondary)
                                     }
                                 },
-                                width: nil
+                                width: 250
                             )
                         }
                         .background(index % 2 == 0 ? Color.clear : Color.gray.opacity(0.05))
@@ -233,7 +239,7 @@ struct DecisionConsequenceChainView: View {
                         }
                     }
                 }
-                .frame(minWidth: 900, alignment: .leading)
+                .frame(minWidth: 790, alignment: .leading)
             }
             .scrollIndicators(.visible)
             .overlay(
@@ -248,14 +254,14 @@ struct DecisionConsequenceChainView: View {
             .font(.caption)
             .fontWeight(.bold)
             .foregroundColor(.primary.opacity(0.7))
-            .frame(maxWidth: width == nil ? .infinity : width, alignment: .leading)
+            .frame(width: width, alignment: .leading)
             .padding(.horizontal, 12)
             .padding(.vertical, 10)
     }
 
     private func tableCell<Content: View>(_ content: Content, width: CGFloat?) -> some View {
         content
-            .frame(maxWidth: width == nil ? .infinity : width, alignment: .leading)
+            .frame(width: width, alignment: .leading)
             .padding(.horizontal, 12)
             .padding(.vertical, 12)
     }

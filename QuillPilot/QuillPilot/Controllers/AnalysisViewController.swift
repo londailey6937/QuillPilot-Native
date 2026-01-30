@@ -23,6 +23,13 @@ private class AutoCloseWindowDelegate: NSObject, NSWindowDelegate {
     }
 }
 
+// Sidebar buttons should respond on first click even when the window is inactive.
+private final class SidebarButton: NSButton {
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool {
+        true
+    }
+}
+
 class AnalysisViewController: NSViewController, NSWindowDelegate {
 
     var onNotesTapped: (() -> Void)?
@@ -53,6 +60,7 @@ class AnalysisViewController: NSViewController, NSWindowDelegate {
     private var outlinePopoutWindow: NSWindow?
     private var analysisPopoutWindow: NSWindow?
     private var plotPopoutWindow: NSWindow?
+    private var decisionBeliefPopoutWindow: NSWindow?
     private weak var plotPopoutScrollView: NSScrollView?
     private weak var plotPopoutContentView: NSView?
     private weak var plotPopoutStack: NSStackView?
@@ -64,6 +72,14 @@ class AnalysisViewController: NSViewController, NSWindowDelegate {
     // immediately with stale data.
     private var analysisResultsVersion: Int = 0
 
+    // Analysis loading state
+    private(set) var isAnalyzing: Bool = false {
+        didSet {
+            updateAnalysisLoadingUI()
+        }
+    }
+    private var analysisLoadingIndicator: NSProgressIndicator?
+    private var analysisStatusLabel: NSTextField?
 
     // Passive voice disclosure tracking
     private var passiveDisclosureViews: [NSButton: NSScrollView] = [:]
@@ -174,7 +190,6 @@ class AnalysisViewController: NSViewController, NSWindowDelegate {
 
     /// Called when a new document is loaded or created
     func documentDidChange(url: URL?) {
-        DebugLog.log("📄 AnalysisViewController: documentDidChange called")
         // Store current document URL for when scene window is created
         currentDocumentURL = url
         // Load scenes for this document if window exists
@@ -195,7 +210,6 @@ class AnalysisViewController: NSViewController, NSWindowDelegate {
 
         // Clear plot visualization view to remove stale data
         if #available(macOS 13.0, *) {
-            DebugLog.log("📊 Clearing plot and character visualization views")
             plotVisualizationView.configure(with: nil)
             plotVisualizationView.removeFromSuperview()
             characterArcVisualizationView.removeFromSuperview()
@@ -433,7 +447,7 @@ class AnalysisViewController: NSViewController, NSWindowDelegate {
             // Poetry: hide the navigator chrome entirely (more writing/outline space)
             let categories: [NavigatorCategory] = isPoetry ? [] : NavigatorCategory.allCases
             for category in categories {
-                let button = NSButton(frame: NSRect(x: 0, y: 0, width: buttonSize, height: buttonSize))
+                let button = SidebarButton(frame: NSRect(x: 0, y: 0, width: buttonSize, height: buttonSize))
 
                 // Prose templates: use the square-box outline toggle icon for the first (Outline) button.
                 // This replaces the previous 📝 icon so there is only one outline toggle.
@@ -476,6 +490,7 @@ class AnalysisViewController: NSViewController, NSWindowDelegate {
                 button.action = #selector(navigatorButtonTapped(_:))
                 button.tag = NavigatorCategory.allCases.firstIndex(of: category) ?? 0
                 button.translatesAutoresizingMaskIntoConstraints = false
+                button.sendAction(on: [.leftMouseDown])
 
                 menuSidebar.addSubview(button)
                 menuButtons.append(button)
@@ -492,7 +507,7 @@ class AnalysisViewController: NSViewController, NSWindowDelegate {
 
             // Notes button: sits under the Characters icon in the left sidebar.
             if !isPoetry {
-                let notesButton = NSButton(frame: NSRect(x: 0, y: 0, width: buttonSize, height: buttonSize))
+                let notesButton = SidebarButton(frame: NSRect(x: 0, y: 0, width: buttonSize, height: buttonSize))
                 if #available(macOS 11.0, *) {
                     let base = NSImage(systemSymbolName: "note.text", accessibilityDescription: "Notes")
                     let config = NSImage.SymbolConfiguration(pointSize: iconPointSize, weight: .regular)
@@ -515,6 +530,7 @@ class AnalysisViewController: NSViewController, NSWindowDelegate {
                 notesButton.action = #selector(notesSidebarButtonTapped(_:))
                 notesButton.translatesAutoresizingMaskIntoConstraints = false
                 notesButton.toolTip = "Notes"
+                notesButton.sendAction(on: [.leftMouseDown])
 
                 menuSidebar.addSubview(notesButton)
                 menuButtons.append(notesButton)
@@ -532,7 +548,7 @@ class AnalysisViewController: NSViewController, NSWindowDelegate {
             // Poetry: only show the Poetry-focused Analysis popout (hide Plot/Characters)
             let categories: [AnalysisCategory] = isPoetry ? [.basic] : [.basic, .plot]
             for category in categories {
-                let button = NSButton(frame: NSRect(x: 0, y: 0, width: buttonSize, height: buttonSize))
+                let button = SidebarButton(frame: NSRect(x: 0, y: 0, width: buttonSize, height: buttonSize))
                 if #available(macOS 11.0, *) {
                     let base = NSImage(systemSymbolName: category.symbolName, accessibilityDescription: category.rawValue)
                     let config = NSImage.SymbolConfiguration(pointSize: iconPointSize, weight: .regular)
@@ -556,6 +572,7 @@ class AnalysisViewController: NSViewController, NSWindowDelegate {
                 button.tag = AnalysisCategory.allCases.firstIndex(of: category) ?? 0
                 button.translatesAutoresizingMaskIntoConstraints = false
                 button.toolTip = (isPoetry && category == .basic) ? "Poetry Analysis" : category.rawValue
+                button.sendAction(on: [.leftMouseDown])
 
                 menuSidebar.addSubview(button)
                 menuButtons.append(button)
@@ -577,7 +594,7 @@ class AnalysisViewController: NSViewController, NSWindowDelegate {
                         continue
                     }
 
-                    let button = NSButton(frame: NSRect(x: 0, y: 0, width: buttonSize, height: buttonSize))
+                    let button = SidebarButton(frame: NSRect(x: 0, y: 0, width: buttonSize, height: buttonSize))
                     if #available(macOS 11.0, *) {
                         let base = NSImage(systemSymbolName: tool.symbolName, accessibilityDescription: tool.title)
                         let config = NSImage.SymbolConfiguration(pointSize: iconPointSize, weight: .regular)
@@ -602,6 +619,7 @@ class AnalysisViewController: NSViewController, NSWindowDelegate {
                     button.tag = tool.rawValue
                     button.translatesAutoresizingMaskIntoConstraints = false
                     button.toolTip = tool.title
+                    button.sendAction(on: [.leftMouseDown])
 
                     menuSidebar.addSubview(button)
                     menuButtons.append(button)
@@ -618,7 +636,7 @@ class AnalysisViewController: NSViewController, NSWindowDelegate {
             }
 
             // Help button: sits directly after the analysis buttons.
-            let helpButton = NSButton(frame: NSRect(x: 0, y: 0, width: buttonSize, height: buttonSize))
+            let helpButton = SidebarButton(frame: NSRect(x: 0, y: 0, width: buttonSize, height: buttonSize))
             if #available(macOS 11.0, *) {
                 let base = NSImage(systemSymbolName: "questionmark.circle", accessibilityDescription: "Help")
                 let config = NSImage.SymbolConfiguration(pointSize: iconPointSize, weight: .regular)
@@ -641,6 +659,7 @@ class AnalysisViewController: NSViewController, NSWindowDelegate {
             helpButton.action = #selector(helpButtonTapped(_:))
             helpButton.translatesAutoresizingMaskIntoConstraints = false
             helpButton.toolTip = "Help (opens Quill Pilot Help)"
+            helpButton.sendAction(on: [.leftMouseDown])
 
             menuSidebar.addSubview(helpButton)
             menuButtons.append(helpButton)
@@ -1317,7 +1336,6 @@ class AnalysisViewController: NSViewController, NSWindowDelegate {
     }
 
     func toggleMenuSidebar() {
-        DebugLog.log("[DEBUG] toggleMenuSidebar called, isOutlinePanel: \(isOutlinePanel)")
         setMenuSidebarHidden(!isMenuSidebarHidden)
     }
 
@@ -1331,6 +1349,11 @@ class AnalysisViewController: NSViewController, NSWindowDelegate {
 
         // Store results for visualization
         storeAnalysisResults(results)
+
+        // Refresh Decision-Belief Loop popout if it's open
+        if decisionBeliefPopoutWindow?.isVisible == true, !results.decisionBeliefLoops.isEmpty {
+            openDecisionBeliefPopout(loops: results.decisionBeliefLoops)
+        }
 
         // For analysis panel we show results only in the popout
         if !isOutlinePanel {
@@ -2002,6 +2025,66 @@ class AnalysisViewController: NSViewController, NSWindowDelegate {
     func storeAnalysisResults(_ results: AnalysisResults) {
         latestAnalysisResults = results
         analysisResultsVersion += 1
+        isAnalyzing = false
+    }
+
+    /// Call this when analysis starts
+    func setAnalysisStarted() {
+        isAnalyzing = true
+    }
+
+    /// Updates the loading indicator UI based on isAnalyzing state
+    private func updateAnalysisLoadingUI() {
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            if self.isAnalyzing {
+                // Show loading indicator
+                if self.analysisLoadingIndicator == nil {
+                    let indicator = NSProgressIndicator()
+                    indicator.style = .spinning
+                    indicator.controlSize = .small
+                    indicator.translatesAutoresizingMaskIntoConstraints = false
+                    self.analysisLoadingIndicator = indicator
+                    // Add to the main view at the bottom of the sidebar
+                    self.view.addSubview(indicator)
+                    NSLayoutConstraint.activate([
+                        indicator.bottomAnchor.constraint(equalTo: self.view.bottomAnchor, constant: -8),
+                        indicator.leadingAnchor.constraint(equalTo: self.view.leadingAnchor, constant: 12)
+                    ])
+                }
+                self.analysisLoadingIndicator?.startAnimation(nil)
+                self.analysisLoadingIndicator?.isHidden = false
+
+                if self.analysisStatusLabel == nil {
+                    let label = NSTextField(labelWithString: "Analyzing...")
+                    label.font = NSFont.systemFont(ofSize: 11)
+                    label.textColor = .secondaryLabelColor
+                    label.translatesAutoresizingMaskIntoConstraints = false
+                    self.analysisStatusLabel = label
+                    // Add next to indicator
+                    self.view.addSubview(label)
+                    if let indicator = self.analysisLoadingIndicator {
+                        NSLayoutConstraint.activate([
+                            label.centerYAnchor.constraint(equalTo: indicator.centerYAnchor),
+                            label.leadingAnchor.constraint(equalTo: indicator.trailingAnchor, constant: 6)
+                        ])
+                    }
+                }
+                self.analysisStatusLabel?.stringValue = "Analyzing..."
+                self.analysisStatusLabel?.isHidden = false
+            } else {
+                // Hide loading indicator
+                self.analysisLoadingIndicator?.stopAnimation(nil)
+                self.analysisStatusLabel?.stringValue = "Analysis Ready"
+                // Hide after a moment
+                DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in
+                    if self?.isAnalyzing == false {
+                        self?.analysisStatusLabel?.isHidden = true
+                        self?.analysisLoadingIndicator?.isHidden = true
+                    }
+                }
+            }
+        }
     }
 
     func clearAllAnalysisUI() {
@@ -2323,22 +2406,28 @@ extension AnalysisViewController {
     }
 
     func openDecisionBeliefPopout(loops: [DecisionBeliefLoop]) {
-        // Close existing window if open
-        emotionalJourneyPopoutWindow?.close()
-        emotionalJourneyPopoutWindow = nil
-
-        let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 1200, height: 800),
-            styleMask: [.titled, .closable, .resizable, .miniaturizable],
-            backing: .buffered,
-            defer: false
-        )
-        window.title = "Decision-Belief Loop Framework"
-        window.level = .normal
-        window.isMovableByWindowBackground = true
-        window.isExcludedFromWindowsMenu = false
-        window.isReleasedWhenClosed = false
-        window.hidesOnDeactivate = true
+        let window: NSWindow
+        if let existing = decisionBeliefPopoutWindow {
+            window = existing
+        } else {
+            let created = NSWindow(
+                contentRect: NSRect(x: 0, y: 0, width: 1200, height: 800),
+                styleMask: [.titled, .closable, .resizable, .miniaturizable],
+                backing: .buffered,
+                defer: false
+            )
+            created.title = "Decision-Belief Loop Framework"
+            created.level = .normal
+            created.isMovableByWindowBackground = true
+            created.isExcludedFromWindowsMenu = false
+            created.isReleasedWhenClosed = false
+            created.hidesOnDeactivate = true
+            // Auto-close when user clicks elsewhere
+            created.delegate = autoCloseDelegate
+            created.center()
+            decisionBeliefPopoutWindow = created
+            window = created
+        }
 
         // Apply theme colors and appearance
         let theme = ThemeManager.shared.currentTheme
@@ -2378,20 +2467,17 @@ extension AnalysisViewController {
         decisionBeliefView.setLoops(displayLoops)
 
         window.contentView = decisionBeliefView
-        window.center()
         window.makeKeyAndOrderFront(nil)
 
         // Scroll to top
         decisionBeliefView.scrollToTop()
 
-        // Store window reference and set up cleanup
-        emotionalJourneyPopoutWindow = window
         NotificationCenter.default.addObserver(
             forName: NSWindow.willCloseNotification,
             object: window,
             queue: .main
         ) { [weak self] _ in
-            self?.emotionalJourneyPopoutWindow = nil
+            self?.decisionBeliefPopoutWindow = nil
         }
     }
 
@@ -3310,7 +3396,6 @@ extension AnalysisViewController {
     }
 
     func openDecisionConsequenceChainsPopout(chains: [DecisionConsequenceChain]) {
-        DebugLog.log("⛓️ Opening Decision-Consequence Chains popout with \(chains.count) chains")
         // Close existing window if open
         decisionConsequenceChainPopoutWindow?.close()
         decisionConsequenceChainPopoutWindow = nil
@@ -4533,12 +4618,15 @@ extension AnalysisViewController {
     }
 
     private func showMissingCharactersAlert() {
-        guard let window = view.window else { return }
         let alert = NSAlert.themedWarning(
             title: "No Characters Detected",
             message: "Run Character Analysis or add characters before opening these popouts."
         )
-        alert.runThemedSheet(for: window)
+        if let window = view.window {
+            alert.runThemedSheet(for: window)
+        } else {
+            _ = alert.runThemedModal()
+        }
     }
 
     private func showUnsupportedOSAlert() {
@@ -4551,33 +4639,41 @@ extension AnalysisViewController {
     }
 
     @objc private func showDecisionBeliefLoops() {
-        // Don't show if no analysis-eligible characters exist.
-        // (Library can be non-empty but still have no usable analysis keys.)
-        guard !CharacterLibrary.shared.analysisCharacterKeys.isEmpty else {
+        // If there are no analysis-eligible characters *and* no cached results,
+        // show a warning right away. Otherwise allow existing results to open.
+        if CharacterLibrary.shared.analysisCharacterKeys.isEmpty,
+           (latestAnalysisResults?.decisionBeliefLoops.isEmpty ?? true) {
             showMissingCharactersAlert()
             return
         }
 
-        let startVersion = analysisResultsVersion
-
-        DebugLog.log("📊 showDecisionBeliefLoops: triggering fresh analysis")
-        analyzeCallback?()
-
-        var attemptOpen: ((Int) -> Void)?
-        attemptOpen = { [weak self] remaining in
-            guard let self else { return }
-            // Only open once we have *new* results (or if there were no results at all).
-            if let results = self.latestAnalysisResults,
-               (self.analysisResultsVersion > startVersion || startVersion == 0) {
-                self.openDecisionBeliefPopout(loops: results.decisionBeliefLoops)
-                return
+        // If analysis is in progress, wait for it to complete before opening
+        if isAnalyzing {
+            // Wait for analysis to complete, then open
+            var attempts = 0
+            func waitAndOpen() {
+                attempts += 1
+                if !isAnalyzing || attempts > 30 {
+                    let loops = latestAnalysisResults?.decisionBeliefLoops ?? []
+                    openDecisionBeliefPopout(loops: loops)
+                } else {
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+                        waitAndOpen()
+                    }
+                }
             }
-            guard remaining > 0 else { return }
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
-                attemptOpen?(remaining - 1)
-            }
+            waitAndOpen()
+            return
         }
-        attemptOpen?(10)
+
+        // Open immediately with cached data (like Plot Structure does)
+        let loops = latestAnalysisResults?.decisionBeliefLoops ?? []
+        openDecisionBeliefPopout(loops: loops)
+
+        // Trigger fresh analysis in background to update if needed
+        if latestAnalysisResults == nil {
+            analyzeCallback?()
+        }
     }
 
     @objc private func showBeliefShiftMatrix() {
@@ -4592,15 +4688,29 @@ extension AnalysisViewController {
             return
         }
 
-        if let results = latestAnalysisResults {
-            openBeliefShiftMatrixPopout(matrices: results.beliefShiftMatrices)
-        } else {
-            analyzeCallback?()
-            DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) { [weak self] in
-                if let results = self?.latestAnalysisResults {
-                    self?.openBeliefShiftMatrixPopout(matrices: results.beliefShiftMatrices)
+        // If analysis is in progress, wait for it to complete before opening
+        if isAnalyzing {
+            var attempts = 0
+            func waitAndOpen() {
+                attempts += 1
+                if !isAnalyzing || attempts > 30 {
+                    let matrices = latestAnalysisResults?.beliefShiftMatrices ?? []
+                    openBeliefShiftMatrixPopout(matrices: matrices)
+                } else {
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+                        waitAndOpen()
+                    }
                 }
             }
+            waitAndOpen()
+            return
+        }
+
+        let matrices = latestAnalysisResults?.beliefShiftMatrices ?? []
+        openBeliefShiftMatrixPopout(matrices: matrices)
+
+        if latestAnalysisResults == nil {
+            analyzeCallback?()
         }
     }
 
@@ -4611,25 +4721,29 @@ extension AnalysisViewController {
             return
         }
 
-        DebugLog.log("⛓️ showDecisionConsequenceChains: triggering fresh analysis")
-        // Always trigger fresh analysis so the popout reflects the current document + library.
-        analyzeCallback?()
-
-        var attemptOpen: ((Int) -> Void)?
-        attemptOpen = { [weak self] remaining in
-            guard let self else { return }
-            if let results = self.latestAnalysisResults {
-                DebugLog.log("⛓️ showDecisionConsequenceChains: latest results chains=\(results.decisionConsequenceChains.count)")
-                self.openDecisionConsequenceChainsPopout(chains: results.decisionConsequenceChains)
-            } else if remaining > 0 {
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
-                    attemptOpen?(remaining - 1)
+        // If analysis is in progress, wait for it to complete before opening
+        if isAnalyzing {
+            var attempts = 0
+            func waitAndOpen() {
+                attempts += 1
+                if !isAnalyzing || attempts > 30 {
+                    let chains = latestAnalysisResults?.decisionConsequenceChains ?? []
+                    openDecisionConsequenceChainsPopout(chains: chains)
+                } else {
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+                        waitAndOpen()
+                    }
                 }
             }
+            waitAndOpen()
+            return
         }
 
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) {
-            attemptOpen?(4)
+        let chains = latestAnalysisResults?.decisionConsequenceChains ?? []
+        openDecisionConsequenceChainsPopout(chains: chains)
+
+        if latestAnalysisResults == nil {
+            analyzeCallback?()
         }
     }
 
@@ -4640,38 +4754,62 @@ extension AnalysisViewController {
             return
         }
 
-        if let results = latestAnalysisResults {
-            openInteractionsPopout(interactions: results.characterInteractions)
-        } else {
-            analyzeCallback?()
-            DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) { [weak self] in
-                if let results = self?.latestAnalysisResults {
-                    self?.openInteractionsPopout(interactions: results.characterInteractions)
+        // If analysis is in progress, wait for it to complete before opening
+        if isAnalyzing {
+            var attempts = 0
+            func waitAndOpen() {
+                attempts += 1
+                if !isAnalyzing || attempts > 30 {
+                    let interactions = latestAnalysisResults?.characterInteractions ?? []
+                    openInteractionsPopout(interactions: interactions)
+                } else {
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+                        waitAndOpen()
+                    }
                 }
             }
+            waitAndOpen()
+            return
+        }
+
+        let interactions = latestAnalysisResults?.characterInteractions ?? []
+        openInteractionsPopout(interactions: interactions)
+
+        if latestAnalysisResults == nil {
+            analyzeCallback?()
         }
     }
 
     @objc private func showPresence() {
-        DebugLog.log("👥 showPresence called")
         // Don't show if Character Library is empty
         guard !CharacterLibrary.shared.characters.isEmpty else {
-            DebugLog.log("⚠️ Character Library is empty, not showing presence")
             showMissingCharactersAlert()
             return
         }
 
-        // Always trigger fresh analysis to ensure we use current outline structure
-        // Document outline is the source of truth for chapter detection
-        DebugLog.log("🔄 Triggering fresh analysis for character presence")
-        analyzeCallback?()
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in
-            if let results = self?.latestAnalysisResults {
-                DebugLog.log("📊 Opening presence popout with \(results.characterPresence.count) entries")
-                self?.openPresencePopout(presence: results.characterPresence)
-            } else {
-                DebugLog.log("⚠️ No analysis results available for presence")
+        // If analysis is in progress, wait for it to complete before opening
+        if isAnalyzing {
+            var attempts = 0
+            func waitAndOpen() {
+                attempts += 1
+                if !isAnalyzing || attempts > 30 {
+                    let presence = latestAnalysisResults?.characterPresence ?? []
+                    openPresencePopout(presence: presence)
+                } else {
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+                        waitAndOpen()
+                    }
+                }
             }
+            waitAndOpen()
+            return
+        }
+
+        let presence = latestAnalysisResults?.characterPresence ?? []
+        openPresencePopout(presence: presence)
+
+        if latestAnalysisResults == nil {
+            analyzeCallback?()
         }
     }
 
@@ -4682,23 +4820,29 @@ extension AnalysisViewController {
             return
         }
 
-        // Always trigger fresh analysis so the popout reflects the current document + library.
-        analyzeCallback?()
-
-        var attemptOpen: ((Int) -> Void)?
-        attemptOpen = { [weak self] remaining in
-            guard let self else { return }
-            if let results = self.latestAnalysisResults {
-                self.openRelationshipEvolutionMapPopout(evolutionData: results.relationshipEvolutionData)
-            } else if remaining > 0 {
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
-                    attemptOpen?(remaining - 1)
+        // If analysis is in progress, wait for it to complete before opening
+        if isAnalyzing {
+            var attempts = 0
+            func waitAndOpen() {
+                attempts += 1
+                if !isAnalyzing || attempts > 30 {
+                    let evolutionData = latestAnalysisResults?.relationshipEvolutionData ?? RelationshipEvolutionData()
+                    openRelationshipEvolutionMapPopout(evolutionData: evolutionData)
+                } else {
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+                        waitAndOpen()
+                    }
                 }
             }
+            waitAndOpen()
+            return
         }
 
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) {
-            attemptOpen?(4)
+        let evolutionData = latestAnalysisResults?.relationshipEvolutionData ?? RelationshipEvolutionData()
+        openRelationshipEvolutionMapPopout(evolutionData: evolutionData)
+
+        if latestAnalysisResults == nil {
+            analyzeCallback?()
         }
     }
 
@@ -4709,15 +4853,29 @@ extension AnalysisViewController {
             return
         }
 
-        if let results = latestAnalysisResults {
-            openInternalExternalAlignmentPopout(alignmentData: results.internalExternalAlignment)
-        } else {
-            analyzeCallback?()
-            DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) { [weak self] in
-                if let results = self?.latestAnalysisResults {
-                    self?.openInternalExternalAlignmentPopout(alignmentData: results.internalExternalAlignment)
+        // If analysis is in progress, wait for it to complete before opening
+        if isAnalyzing {
+            var attempts = 0
+            func waitAndOpen() {
+                attempts += 1
+                if !isAnalyzing || attempts > 30 {
+                    let alignmentData = latestAnalysisResults?.internalExternalAlignment ?? InternalExternalAlignmentData()
+                    openInternalExternalAlignmentPopout(alignmentData: alignmentData)
+                } else {
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+                        waitAndOpen()
+                    }
                 }
             }
+            waitAndOpen()
+            return
+        }
+
+        let alignmentData = latestAnalysisResults?.internalExternalAlignment ?? InternalExternalAlignmentData()
+        openInternalExternalAlignmentPopout(alignmentData: alignmentData)
+
+        if latestAnalysisResults == nil {
+            analyzeCallback?()
         }
     }
 
@@ -4728,15 +4886,29 @@ extension AnalysisViewController {
             return
         }
 
-        if let results = latestAnalysisResults {
-            openLanguageDriftPopout(driftData: results.languageDriftData)
-        } else {
-            analyzeCallback?()
-            DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) { [weak self] in
-                if let results = self?.latestAnalysisResults {
-                    self?.openLanguageDriftPopout(driftData: results.languageDriftData)
+        // If analysis is in progress, wait for it to complete before opening
+        if isAnalyzing {
+            var attempts = 0
+            func waitAndOpen() {
+                attempts += 1
+                if !isAnalyzing || attempts > 30 {
+                    let driftData = latestAnalysisResults?.languageDriftData ?? LanguageDriftData()
+                    openLanguageDriftPopout(driftData: driftData)
+                } else {
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+                        waitAndOpen()
+                    }
                 }
             }
+            waitAndOpen()
+            return
+        }
+
+        let driftData = latestAnalysisResults?.languageDriftData ?? LanguageDriftData()
+        openLanguageDriftPopout(driftData: driftData)
+
+        if latestAnalysisResults == nil {
+            analyzeCallback?()
         }
     }
 
@@ -4766,26 +4938,36 @@ extension AnalysisViewController {
     }
 
     @objc private func showEmotionalTrajectory() {
-        DebugLog.log("📈 showEmotionalTrajectory called")
-
-        // Always trigger fresh analysis so the trajectory is document-specific.
-        // (Otherwise this can reuse stale `latestAnalysisResults` from a previous document.)
-        analyzeCallback?()
-
-        func attemptOpen(_ remaining: Int) {
-            if let results = self.latestAnalysisResults {
-                self.openEmotionalTrajectoryPopout(results: results)
-            } else if remaining > 0 {
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
-                    attemptOpen(remaining - 1)
+        // If analysis is in progress, wait for it to complete before opening
+        if isAnalyzing {
+            var attempts = 0
+            func waitAndOpen() {
+                attempts += 1
+                if !isAnalyzing || attempts > 30 {
+                    if let results = latestAnalysisResults {
+                        openEmotionalTrajectoryPopout(results: results)
+                    }
+                } else {
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+                        waitAndOpen()
+                    }
                 }
-            } else {
-                DebugLog.log("⚠️ showEmotionalTrajectory: No analysis results available")
             }
+            waitAndOpen()
+            return
         }
 
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) {
-            attemptOpen(4)
+        // Open immediately with cached data (like Plot Structure does)
+        if let results = latestAnalysisResults {
+            openEmotionalTrajectoryPopout(results: results)
+        } else {
+            // No cached results - trigger analysis and open when ready
+            analyzeCallback?()
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { [weak self] in
+                if let results = self?.latestAnalysisResults {
+                    self?.openEmotionalTrajectoryPopout(results: results)
+                }
+            }
         }
     }
 

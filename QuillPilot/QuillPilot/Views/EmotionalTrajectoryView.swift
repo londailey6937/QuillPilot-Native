@@ -72,7 +72,8 @@ class EmotionalTrajectoryView: NSView {
         let context = NSGraphicsContext.current?.cgContext
 
         // Draw background
-        NSColor.controlBackgroundColor.setFill()
+        let themeBackground = ThemeManager.shared.currentTheme.pageAround
+        themeBackground.setFill()
         bounds.fill()
 
         // Define chart and legend areas with padding for axes and labels
@@ -130,10 +131,11 @@ class EmotionalTrajectoryView: NSView {
     }
 
     private func drawEmptyState() {
+        let theme = ThemeManager.shared.currentTheme
         let text = "No emotional trajectory data available.\nAnalyze your document to see character emotional arcs."
         let attributes: [NSAttributedString.Key: Any] = [
             .font: NSFont.systemFont(ofSize: 14),
-            .foregroundColor: NSColor.secondaryLabelColor
+            .foregroundColor: theme.textColor.withAlphaComponent(0.7)
         ]
 
         let attrString = NSAttributedString(string: text, attributes: attributes)
@@ -173,10 +175,11 @@ class EmotionalTrajectoryView: NSView {
     }
 
     private func drawAxes(in chartRect: NSRect) {
+        let theme = ThemeManager.shared.currentTheme
         // Draw axis labels
         let labelAttributes: [NSAttributedString.Key: Any] = [
             .font: NSFont.systemFont(ofSize: 11),
-            .foregroundColor: NSColor.labelColor
+            .foregroundColor: theme.textColor
         ]
 
         // Y-axis labels
@@ -281,11 +284,11 @@ class EmotionalTrajectoryView: NSView {
 
     private func drawLegend(in bounds: NSRect) {
         guard !trajectories.isEmpty else { return }
-
+        let theme = ThemeManager.shared.currentTheme
         let legendBackground = NSBezierPath(roundedRect: bounds, xRadius: 6, yRadius: 6)
-        NSColor.windowBackgroundColor.withAlphaComponent(0.85).setFill()
+        theme.pageAround.withAlphaComponent(0.95).setFill()
         legendBackground.fill()
-        NSColor.separatorColor.withAlphaComponent(0.4).setStroke()
+        theme.pageBorder.withAlphaComponent(0.55).setStroke()
         legendBackground.lineWidth = 1
         legendBackground.stroke()
 
@@ -321,7 +324,7 @@ class EmotionalTrajectoryView: NSView {
             // Label - truncate if needed
             let labelAttributes: [NSAttributedString.Key: Any] = [
                 .font: NSFont.systemFont(ofSize: 10),
-                .foregroundColor: NSColor.labelColor
+                .foregroundColor: theme.textColor
             ]
 
             var labelText = trajectory.characterName

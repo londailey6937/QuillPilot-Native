@@ -68,14 +68,12 @@ class SplitViewController: NSSplitViewController {
         splitView.autosaveName = "QuillPilotSplitView"
 
         // Listen for sidebar toggle notification
-        DebugLog.log("[DEBUG] SplitViewController.viewDidLoad - adding observer for ToggleSidebars")
         NotificationCenter.default.addObserver(
             self,
             selector: #selector(toggleAllSidebars),
             name: NSNotification.Name("ToggleSidebars"),
             object: nil
         )
-        DebugLog.log("[DEBUG] SplitViewController.viewDidLoad - observer added")
     }
 
     deinit {

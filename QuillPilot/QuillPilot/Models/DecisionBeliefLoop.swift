@@ -327,24 +327,37 @@ class DecisionBeliefLoopAnalyzer {
     ]
 
     // Decision indicators
+    // Decision indicators - expanded for better coverage
     private let decisionWords = [
         "decided", "chose", "choose", "picked", "selected", "agreed", "refused",
         "accepted", "rejected", "committed", "promised", "vowed", "resolved",
-        "determined", "opted", "went with", "settled on"
+        "determined", "opted", "went with", "settled on", "made up", "mind",
+        "would", "wouldn't", "will", "won't", "going to", "not going to",
+        "took", "grabbed", "reached for", "stepped", "turned", "walked",
+        "ran", "left", "stayed", "followed", "confronted", "avoided",
+        "told", "said yes", "said no", "nodded", "shook", "head"
     ]
 
-    // Outcome indicators
+    // Outcome indicators - expanded for better coverage
     private let outcomeWords = [
         "resulted", "consequence", "outcome", "happened", "led to", "caused",
         "because of", "as a result", "therefore", "thus", "success", "failed",
-        "worked", "backfired", "paid off", "cost", "gained", "lost"
+        "worked", "backfired", "paid off", "cost", "gained", "lost",
+        "then", "suddenly", "immediately", "moment later", "next",
+        "discovered", "found", "saw", "heard", "felt", "noticed",
+        "was", "were", "had", "became", "turned out", "ended up",
+        "realized", "understood", "knew", "recognized", "hit", "struck"
     ]
 
-    // Belief/value words
+    // Belief/value words - expanded for better coverage
     private let beliefWords = [
         "believe", "think", "thought", "realize", "understand", "see", "know",
         "trust", "faith", "doubt", "sure", "certain", "convinced", "learned",
-        "always", "never", "should", "wrong", "right", "value"
+        "always", "never", "should", "wrong", "right", "value",
+        "felt", "knew", "assumed", "expected", "hoped", "feared",
+        "wanted", "needed", "wished", "dreamed", "imagined",
+        "couldn't", "wouldn't", "mustn't", "had to", "supposed to",
+        "matter", "important", "meant", "meant to", "deserved"
     ]
 
     private enum LoopStage {
@@ -559,20 +572,31 @@ class DecisionBeliefLoopAnalyzer {
         while safety < 25 {
             safety += 1
 
-            let (pressure, pressurePage, pressurePos) = extractPressureWithPosition(from: chapterText, character: character, allCharacters: allCharacters, startPos: chapterStartPos, fullText: fullText, afterPosition: cursor)
-            if pressure.isEmpty || pressurePos < 0 {
-                break
-            }
+            var (pressure, pressurePage, pressurePos) = extractPressureWithPosition(from: chapterText, character: character, allCharacters: allCharacters, startPos: chapterStartPos, fullText: fullText, afterPosition: cursor)
 
-            let (belief, beliefPage, beliefPos) = extractBeliefWithPosition(from: chapterText, character: character, allCharacters: allCharacters, startPos: chapterStartPos, fullText: fullText, afterPosition: pressurePos)
-            let (decision, decisionPage, decisionPos) = extractDecisionWithPosition(from: chapterText, character: character, allCharacters: allCharacters, startPos: chapterStartPos, fullText: fullText, afterPosition: max(pressurePos, beliefPos))
-            let (outcome, outcomePage, outcomePos) = extractOutcomeWithPosition(from: chapterText, character: character, allCharacters: allCharacters, startPos: chapterStartPos, fullText: fullText, afterPosition: max(max(pressurePos, beliefPos), decisionPos))
-            let (shift, shiftPage, shiftPos) = extractBeliefShiftWithPosition(from: chapterText, character: character, allCharacters: allCharacters, startPos: chapterStartPos, fullText: fullText, afterPosition: max(max(max(pressurePos, beliefPos), decisionPos), outcomePos))
+            // If no pressure signal, allow other loop elements to drive the entry.
+            let afterForBelief = max(cursor, pressurePos)
+            let (belief, beliefPage, beliefPos) = extractBeliefWithPosition(from: chapterText, character: character, allCharacters: allCharacters, startPos: chapterStartPos, fullText: fullText, afterPosition: afterForBelief)
+            let (decision, decisionPage, decisionPos) = extractDecisionWithPosition(from: chapterText, character: character, allCharacters: allCharacters, startPos: chapterStartPos, fullText: fullText, afterPosition: max(afterForBelief, beliefPos))
+            let (outcome, outcomePage, outcomePos) = extractOutcomeWithPosition(from: chapterText, character: character, allCharacters: allCharacters, startPos: chapterStartPos, fullText: fullText, afterPosition: max(max(afterForBelief, beliefPos), decisionPos))
+            let (shift, shiftPage, shiftPos) = extractBeliefShiftWithPosition(from: chapterText, character: character, allCharacters: allCharacters, startPos: chapterStartPos, fullText: fullText, afterPosition: max(max(max(afterForBelief, beliefPos), decisionPos), outcomePos))
+
+            if (pressure.isEmpty || pressurePos < 0) {
+                let (sentences, positions) = getSentencesAbout(character: character, in: chapterText, allCharacters: allCharacters, proximity: 2)
+                if let first = sentences.first, let pos = positions.first {
+                    pressure = cleanExtract(first)
+                    pressurePos = pos
+                    let absolutePos = chapterStartPos + pos
+                    pressurePage = calculatePageNumber(position: absolutePos, in: fullText)
+                }
+            }
 
             // If we only found pressure and nothing else, skip to avoid pure noise.
             let hasAnySignal = !belief.isEmpty || !decision.isEmpty || !outcome.isEmpty || !shift.isEmpty
             if !hasAnySignal {
-                cursor = max(cursor, pressurePos + 1)
+                let nextPos = [pressurePos, beliefPos, decisionPos, outcomePos, shiftPos].filter { $0 >= 0 }.min() ?? -1
+                if nextPos < 0 { break }
+                cursor = max(cursor, nextPos + 1)
                 continue
             }
 
@@ -591,7 +615,7 @@ class DecisionBeliefLoopAnalyzer {
             )
             entries.append(entry)
 
-            let nextCursor = [pressurePos, beliefPos, decisionPos, outcomePos, shiftPos].max() ?? pressurePos
+            let nextCursor = [pressurePos, beliefPos, decisionPos, outcomePos, shiftPos].max() ?? cursor
             if nextCursor <= cursor {
                 cursor += 1
             } else {

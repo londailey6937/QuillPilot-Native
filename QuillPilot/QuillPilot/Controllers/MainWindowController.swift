@@ -4399,7 +4399,6 @@ class ContentViewController: NSViewController {
 
         // Set up analysis callback
         analysisViewController.analyzeCallback = { [weak self] in
-            DebugLog.log("🔗 Analysis callback triggered")
             guard QuillPilotSettings.autoAnalyzeOnOpen else { return }
             self?.performAnalysis()
         }
@@ -4699,37 +4698,26 @@ class ContentViewController: NSViewController {
     private var isAnalyzing = false
 
     func performAnalysis() {
-        DebugLog.log("🔍 performAnalysis called in ContentViewController")
-
         // Skip if already analyzing to prevent queue buildup
         guard !isAnalyzing else {
-            DebugLog.log("⏸️ Analysis already in progress, skipping")
             return
         }
 
         guard let text = editorViewController.getTextContent(), !text.isEmpty else {
-            DebugLog.log("⚠️ No text to analyze")
             return
         }
 
         // Also verify document storage has content (prevents analyzing during/before import)
         guard editorViewController.textView.textStorage?.length ?? 0 > 0 else {
-            DebugLog.log("⚠️ Document storage is empty, skipping analysis")
             return
         }
 
         isAnalyzing = true
-        DebugLog.log("📊 MainWindowController: Starting background analysis thread")
+        analysisViewController.setAnalysisStarted()
 
         // Build outline entries on MAIN THREAD before background work
         // (textStorage and layoutManager must be accessed on main thread only)
         let editorOutlines = editorViewController.buildOutlineEntries()
-        DebugLog.log("📋 MainWindowController: Built \(editorOutlines.count) outline entries on main thread")
-        if !editorOutlines.isEmpty {
-            editorOutlines.prefix(3).forEach { entry in
-                DebugLog.log("  - '\(entry.title)' level=\(entry.level) range=\(NSStringFromRange(entry.range))")
-            }
-        }
 
         // Determine character names on MAIN THREAD.
         // `AnalysisEngine.analyzeText` already runs character arc analysis using library + extracted names.
@@ -4766,15 +4754,12 @@ class ContentViewController: NSViewController {
 
         // Run analysis on background thread to avoid blocking UI
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
-            DebugLog.log("📊 MainWindowController: Inside background thread")
             let analysisEngine = AnalysisEngine()
 
             // Convert outline entries for AnalysisEngine. Always pass an array (empty means no outline yet).
             let analysisOutlineEntries: [DecisionBeliefLoopAnalyzer.OutlineEntry] = editorOutlines.map {
                 DecisionBeliefLoopAnalyzer.OutlineEntry(title: $0.title, level: $0.level, range: $0.range, page: $0.page)
             }
-
-            DebugLog.log("📋 MainWindowController: Passing \(analysisOutlineEntries.count) outline entries to analyzeText")
 
             var results = analysisEngine.analyzeText(
                 text,
@@ -4787,7 +4772,6 @@ class ContentViewController: NSViewController {
             // This ensures the Emotional Trajectory and related views include the lead characters
             // even when the Character Library is empty or incomplete.
             if !characterNamesForCharacterArc.isEmpty {
-                DebugLog.log("📋 MainWindowController: Screenplay character analysis: \(characterNamesForCharacterArc.count)")
                 let (loops, interactions, presence) = analysisEngine.analyzeCharacterArcs(
                     text: text,
                     characterNames: characterNamesForCharacterArc,
@@ -4810,8 +4794,6 @@ class ContentViewController: NSViewController {
                     outlineEntries: analysisOutlineEntries
                 )
             }
-
-            DebugLog.log("📊 Analysis results: \(results.wordCount) words, \(results.sentenceCount) sentences, \(results.paragraphCount) paragraphs")
 
             // Update UI on main thread
             DispatchQueue.main.async {

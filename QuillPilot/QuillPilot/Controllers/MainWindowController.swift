@@ -181,6 +181,12 @@ class MainWindowController: NSWindowController {
             self?.mainContentViewController?.clearAnalysis()
         }
 
+        // If the template changes (e.g. Screenplay → Poetry), cancel any in-flight analysis
+        // and clear results so analysis restarts with the new template's settings.
+        NotificationCenter.default.addObserver(forName: .styleTemplateDidChange, object: nil, queue: .main) { [weak self] _ in
+            self?.mainContentViewController?.cancelAndClearAnalysis()
+        }
+
         mainContentViewController.onNotesTapped = { [weak self] in
             self?.openNotesWindow()
         }
@@ -4696,6 +4702,16 @@ class ContentViewController: NSViewController {
     }
 
     private var isAnalyzing = false
+    private var analysisWorkItem: DispatchWorkItem?
+
+    /// Cancels any in-flight analysis, clears results, and resets state.
+    func cancelAndClearAnalysis() {
+        analysisWorkItem?.cancel()
+        analysisWorkItem = nil
+        isAnalyzing = false
+        analysisViewController?.storeAnalysisResults(AnalysisResults()) // Resets isAnalyzing flag
+        clearAnalysis()
+    }
 
     func performAnalysis() {
         // Skip if already analyzing to prevent queue buildup
@@ -4719,41 +4735,16 @@ class ContentViewController: NSViewController {
         // (textStorage and layoutManager must be accessed on main thread only)
         let editorOutlines = editorViewController.buildOutlineEntries()
 
-        // Determine character names on MAIN THREAD.
-        // `AnalysisEngine.analyzeText` already runs character arc analysis using library + extracted names.
-        // However, for Screenplay templates we want to explicitly include screenplay character cues,
-        // and avoid limiting analysis to an incomplete Character Library.
-        let libraryCharacterNames = CharacterLibrary.shared.analysisCharacterKeys
-        let isScreenplay = StyleCatalog.shared.currentTemplateName == "Screenplay"
-        let extractedScreenplayNames = isScreenplay ? editorViewController.extractScreenplayCharacterCues() : []
-
-        func uniqueOrdered(_ values: [String]) -> [String] {
-            var out: [String] = []
-            var seen: Set<String> = []
-            for raw in values {
-                let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
-                guard !trimmed.isEmpty else { continue }
-                let key = trimmed.lowercased()
-                if seen.insert(key).inserted {
-                    out.append(trimmed)
-                }
-            }
-            return out
-        }
-
-        // Only used for the additional explicit character-arc pass below.
-        // For non-screenplay templates we intentionally *do not* override the engine's results.
-        let characterNamesForCharacterArc: [String] = isScreenplay
-            ? uniqueOrdered(libraryCharacterNames + extractedScreenplayNames)
-            : []
-
         let layoutPageCount = editorViewController.totalPageCount()
 
         // Page mapping no longer needed - page numbers removed from Decision-Belief Loop display
         let pageMapping: [(location: Int, page: Int)] = []
 
+        // Cancel any previous analysis
+        analysisWorkItem?.cancel()
+
         // Run analysis on background thread to avoid blocking UI
-        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+        let workItem = DispatchWorkItem { [weak self] in
             let analysisEngine = AnalysisEngine()
 
             // Convert outline entries for AnalysisEngine. Always pass an array (empty means no outline yet).
@@ -4761,46 +4752,25 @@ class ContentViewController: NSViewController {
                 DecisionBeliefLoopAnalyzer.OutlineEntry(title: $0.title, level: $0.level, range: $0.range, page: $0.page)
             }
 
-            var results = analysisEngine.analyzeText(
+            let results = analysisEngine.analyzeText(
                 text,
                 outlineEntries: analysisOutlineEntries,
                 pageMapping: pageMapping,
                 pageCountOverride: layoutPageCount
             )
 
-            // For Screenplay templates, explicitly re-run character analysis with screenplay cues.
-            // This ensures the Emotional Trajectory and related views include the lead characters
-            // even when the Character Library is empty or incomplete.
-            if !characterNamesForCharacterArc.isEmpty {
-                let (loops, interactions, presence) = analysisEngine.analyzeCharacterArcs(
-                    text: text,
-                    characterNames: characterNamesForCharacterArc,
-                    outlineEntries: analysisOutlineEntries,
-                    pageMapping: pageMapping
-                )
-                results.decisionBeliefLoops = loops
-                results.characterInteractions = interactions
-                results.characterPresence = presence
-
-                // Populate additional character-centric outputs used by popouts.
-                results.beliefShiftMatrices = analysisEngine.generateBeliefShiftMatrices(
-                    text: text,
-                    characterNames: characterNamesForCharacterArc,
-                    outlineEntries: analysisOutlineEntries
-                )
-                results.decisionConsequenceChains = analysisEngine.generateDecisionConsequenceChains(
-                    text: text,
-                    characterNames: characterNamesForCharacterArc,
-                    outlineEntries: analysisOutlineEntries
-                )
-            }
-
-            // Update UI on main thread
+            // Update UI on main thread only if not cancelled
             DispatchQueue.main.async {
+                guard self?.analysisWorkItem?.isCancelled == false else {
+                    self?.isAnalyzing = false
+                    return
+                }
                 self?.analysisViewController.displayResults(results)
                 self?.isAnalyzing = false
             }
         }
+        analysisWorkItem = workItem
+        DispatchQueue.global(qos: .userInitiated).async(execute: workItem)
     }
 }
 

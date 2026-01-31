@@ -12,7 +12,7 @@
 
 /* Begin PBXFileReference section */
 		95D4E7942EED15A300D9FD96 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
-		95F565052EED0D890079E9C2 /* QuillPilot.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; name = QuillPilot.app; path = "Quill Pilot.app"; sourceTree = BUILT_PRODUCTS_DIR; };
+		95F565052EED0D890079E9C2 /* Quill Pilot.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "Quill Pilot.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -46,7 +46,7 @@
 		95F565062EED0D890079E9C2 /* Products */ = {
 			isa = PBXGroup;
 			children = (
-				95F565052EED0D890079E9C2 /* QuillPilot.app */,
+				95F565052EED0D890079E9C2 /* Quill Pilot.app */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -74,7 +74,7 @@
 			packageProductDependencies = (
 			);
 			productName = QuillPilot;
-			productReference = 95F565052EED0D890079E9C2 /* QuillPilot.app */;
+			productReference = 95F565052EED0D890079E9C2 /* Quill Pilot.app */;
 			productType = "com.apple.product-type.application";
 		};
 /* End PBXNativeTarget section */
@@ -300,6 +300,7 @@
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
+				MACOSX_DEPLOYMENT_TARGET = 13.5;
 				MARKETING_VERSION = 1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = ai.quillpilot.QuillPilot;
 				PRODUCT_NAME = "Quill Pilot";
@@ -333,6 +334,7 @@
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
+				MACOSX_DEPLOYMENT_TARGET = 13.5;
 				MARKETING_VERSION = 1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = ai.quillpilot.QuillPilot;
 				PRODUCT_NAME = "Quill Pilot";

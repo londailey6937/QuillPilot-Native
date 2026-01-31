@@ -115,16 +115,16 @@ class CharacterInteractionsView: NSView {
         let maxCo = max(1, interactions.map { $0.coAppearances }.max() ?? 1)
 
         func edgeColor(for strength: Double) -> NSColor {
-            if strength >= 0.66 { return NSColor.systemGreen.withAlphaComponent(0.7) }
-            if strength >= 0.33 { return NSColor.systemOrange.withAlphaComponent(0.65) }
-            return textColor.withAlphaComponent(0.25)
+            if strength >= 0.66 { return NSColor.systemGreen.withAlphaComponent(0.8) }
+            if strength >= 0.33 { return NSColor.systemOrange.withAlphaComponent(0.75) }
+            return NSColor.systemGray.withAlphaComponent(0.5)
         }
 
         // Draw edges first
         for interaction in interactions {
             guard let p1 = nodePositions[interaction.character1], let p2 = nodePositions[interaction.character2] else { continue }
             let t = CGFloat(interaction.coAppearances) / CGFloat(maxCo)
-            let width = 1.0 + 5.0 * t
+            let width = 2.0 + 4.0 * t
 
             let path = NSBezierPath()
             path.move(to: p1)

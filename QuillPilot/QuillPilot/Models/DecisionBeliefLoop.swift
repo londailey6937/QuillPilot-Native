@@ -319,6 +319,25 @@ class DecisionBeliefLoopAnalyzer {
     // Store page mapping for accurate character-position-to-page lookups
     private var pageMapping: [(location: Int, page: Int)]?
 
+    // Cache sentence/line units to avoid repeated splitting on large texts
+    private struct TextUnitsCacheKey: Hashable {
+        let length: Int
+        let hash: Int
+    }
+
+    private struct TextUnitsCacheEntry {
+        let isScreenplay: Bool
+        let lineUnits: [(unit: String, pos: Int)]
+        let sentenceUnits: [(unit: String, pos: Int)]
+    }
+
+    private var textUnitsCache: [TextUnitsCacheKey: TextUnitsCacheEntry] = [:]
+    private var textUnitsCacheOrder: [TextUnitsCacheKey] = []
+    private let textUnitsCacheLimit = 6
+
+    // Cache mention regexes for character aliases
+    private var mentionRegexCache: [String: [NSRegularExpression]] = [:]
+
     // Pressure indicators (conflict, dilemma, force)
     private let pressureWords = [
         "must", "need", "forced", "threatened", "danger", "risk", "challenge", "problem",
@@ -691,16 +710,25 @@ class DecisionBeliefLoopAnalyzer {
     }
 
     private func buildMentionRegexes(for aliases: [String]) -> [NSRegularExpression] {
+        let normalized = aliases
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+            .map { $0.lowercased() }
+
+        let cacheKey = normalized.joined(separator: "|")
+        if let cached = mentionRegexCache[cacheKey] {
+            return cached
+        }
+
         var regexes: [NSRegularExpression] = []
-        regexes.reserveCapacity(aliases.count)
-        for alias in aliases {
-            let trimmed = alias.trimmingCharacters(in: .whitespacesAndNewlines)
-            if trimmed.isEmpty { continue }
-            let pattern = "\\b" + NSRegularExpression.escapedPattern(for: trimmed) + "\\b"
+        regexes.reserveCapacity(normalized.count)
+        for alias in normalized {
+            let pattern = "\\b" + NSRegularExpression.escapedPattern(for: alias) + "\\b"
             if let regex = try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive]) {
                 regexes.append(regex)
             }
         }
+        mentionRegexCache[cacheKey] = regexes
         return regexes
     }
 
@@ -1119,6 +1147,39 @@ class DecisionBeliefLoopAnalyzer {
         return false
     }
 
+    private func cachedUnits(for text: String) -> TextUnitsCacheEntry {
+        let key = TextUnitsCacheKey(length: text.count, hash: text.hashValue)
+        if let cached = textUnitsCache[key] {
+            touchCacheKey(key)
+            return cached
+        }
+
+        let screenplay = isLikelyScreenplay(text)
+        let entry: TextUnitsCacheEntry
+        if screenplay {
+            let lineUnits = extractLineUnitsWithPositions(from: text)
+            entry = TextUnitsCacheEntry(isScreenplay: true, lineUnits: lineUnits, sentenceUnits: [])
+        } else {
+            let sentenceUnits = extractSentenceUnitsWithPositions(from: text)
+            entry = TextUnitsCacheEntry(isScreenplay: false, lineUnits: [], sentenceUnits: sentenceUnits)
+        }
+
+        textUnitsCache[key] = entry
+        touchCacheKey(key)
+        return entry
+    }
+
+    private func touchCacheKey(_ key: TextUnitsCacheKey) {
+        if let idx = textUnitsCacheOrder.firstIndex(of: key) {
+            textUnitsCacheOrder.remove(at: idx)
+        }
+        textUnitsCacheOrder.append(key)
+        if textUnitsCacheOrder.count > textUnitsCacheLimit {
+            let evict = textUnitsCacheOrder.removeFirst()
+            textUnitsCache.removeValue(forKey: evict)
+        }
+    }
+
     private func extractLineUnitsWithPositions(from text: String) -> [(unit: String, pos: Int)] {
         let ns = text as NSString
         var units: [(unit: String, pos: Int)] = []
@@ -1184,10 +1245,12 @@ class DecisionBeliefLoopAnalyzer {
         let otherRegexes: [NSRegularExpression] = otherCharacters
             .flatMap { buildMentionRegexes(for: characterAliases(for: $0)) }
 
-        if isLikelyScreenplay(text) {
+        let cached = cachedUnits(for: text)
+
+        if cached.isScreenplay {
             // Attribute dialogue lines to the current character when a speaker cue is detected.
             // This prevents intermingling characters' loops while still letting the character reference others.
-            let lineUnits = extractLineUnitsWithPositions(from: text)
+            let lineUnits = cached.lineUnits
             var relevant: [(String, Int)] = []
             relevant.reserveCapacity(64)
 
@@ -1241,7 +1304,7 @@ class DecisionBeliefLoopAnalyzer {
         }
 
         // Non-screenplay: sentence-like units with accurate positions.
-        let units = extractSentenceUnitsWithPositions(from: text)
+        let units = cached.sentenceUnits
         var relevantSentences: [String] = []
         var positions: [Int] = []
         relevantSentences.reserveCapacity(64)

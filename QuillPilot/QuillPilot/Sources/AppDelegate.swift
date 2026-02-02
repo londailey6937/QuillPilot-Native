@@ -540,7 +540,136 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         return value
     }
 
+    // MARK: - Poetry Tools
 
+    private var poetryToolsWindowController: PoetryToolsWindowController?
+    private var poetryFormTemplateWindowController: PoetryFormTemplateWindowController?
+    private var poetryCollectionWindowController: PoetryCollectionWindowController?
+    private var draftVersionWindowController: DraftVersionWindowController?
+    private var submissionTrackerWindowController: SubmissionTrackerWindowController?
+
+    @objc func showPoetryToolsPanel(_ sender: Any?) {
+        let text = mainWindowController?.mainContentViewController?.editorViewController.textView.string ?? ""
+
+        if poetryToolsWindowController == nil {
+            poetryToolsWindowController = PoetryToolsWindowController(text: text)
+            poetryToolsWindowController?.onInsertTemplate = { [weak self] template in
+                self?.mainWindowController?.mainContentViewController?.editorViewController.textView.insertText(template, replacementRange: NSRange(location: NSNotFound, length: 0))
+            }
+        } else {
+            poetryToolsWindowController?.updateText(text)
+        }
+
+        poetryToolsWindowController?.showWindow(relativeTo: mainWindowController?.window)
+    }
+
+    @objc func showPoetryFormTemplates(_ sender: Any?) {
+        if poetryFormTemplateWindowController == nil {
+            poetryFormTemplateWindowController = PoetryFormTemplateWindowController()
+            poetryFormTemplateWindowController?.onInsertTemplate = { [weak self] template in
+                self?.mainWindowController?.mainContentViewController?.editorViewController.textView.insertText(template, replacementRange: NSRange(location: NSNotFound, length: 0))
+            }
+        }
+
+        poetryFormTemplateWindowController?.showWindow(relativeTo: mainWindowController?.window)
+    }
+
+    @objc func showPoetryCollections(_ sender: Any?) {
+        if poetryCollectionWindowController == nil {
+            poetryCollectionWindowController = PoetryCollectionWindowController()
+            poetryCollectionWindowController?.onSelectPoem = { [weak self] poem in
+                guard let self = self else { return }
+
+                // If there's a file reference, open it properly to preserve formatting
+                if let path = poem.fileReference {
+                    let url = URL(fileURLWithPath: path)
+                    self.presentMainWindow(orderingSource: nil)
+                    self.mainWindowController?.performOpenDocumentForURL(url)
+                    return
+                }
+
+                // For inline content (plain text), load it but warn that formatting wasn't stored
+                if let content = poem.content {
+                    self.presentMainWindow(orderingSource: nil)
+                    self.mainWindowController?.mainContentViewController?.editorViewController.textView.string = content
+                    return
+                }
+            }
+            poetryCollectionWindowController?.onAddCurrentPoem = { [weak self] collection in
+                guard let self else { return }
+
+                guard let textView = self.mainWindowController?.mainContentViewController?.editorViewController.textView else { return }
+
+                let plainText = textView.string
+                let title = self.mainWindowController?.currentDocumentTitle() ?? "Untitled"
+
+                // Best case: the document is saved; store its URL so opening preserves formatting.
+                if let url = self.mainWindowController?.currentDocumentURLValue() {
+                    PoetryCollectionManager.shared.addPoem(
+                        to: collection.id,
+                        title: title,
+                        content: plainText,
+                        fileReference: url.path
+                    )
+                    return
+                }
+
+                // Unsaved document: export a temporary RTFD snapshot so formatting is preserved when opening from the collection.
+                do {
+                    let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
+                    let snapshotsDir = appSupport?.appendingPathComponent("QuillPilot/CollectionPoems", isDirectory: true)
+                    if let snapshotsDir {
+                        try FileManager.default.createDirectory(at: snapshotsDir, withIntermediateDirectories: true)
+
+                        let snapshotURL = snapshotsDir.appendingPathComponent("\(UUID().uuidString).rtfd", isDirectory: true)
+
+                        let attributed = textView.textStorage ?? NSTextStorage(attributedString: textView.attributedString())
+                        let range = NSRange(location: 0, length: attributed.length)
+                        let wrapper = try attributed.fileWrapper(
+                            from: range,
+                            documentAttributes: [.documentType: NSAttributedString.DocumentType.rtfd]
+                        )
+                        try wrapper.write(to: snapshotURL, options: .atomic, originalContentsURL: nil)
+
+                        PoetryCollectionManager.shared.addPoem(
+                            to: collection.id,
+                            title: title,
+                            content: plainText,
+                            fileReference: snapshotURL.path
+                        )
+                        return
+                    }
+                } catch {
+                    DebugLog.log("Failed to export RTFD snapshot for collection poem: \(error)")
+                }
+
+                // Fallback: plain text only.
+                PoetryCollectionManager.shared.addPoem(to: collection.id, title: title, content: plainText)
+            }
+        }
+
+        poetryCollectionWindowController?.showWindow(self)
+    }
+
+    @objc func showDraftVersions(_ sender: Any?) {
+        let documentId = mainWindowController?.currentDocumentTitle() ?? "untitled"
+        let currentContent = mainWindowController?.mainContentViewController?.editorViewController.textView.string ?? ""
+
+        draftVersionWindowController = DraftVersionWindowController(documentId: documentId, currentContent: currentContent)
+        draftVersionWindowController?.onRestoreDraft = { [weak self] content in
+            self?.mainWindowController?.mainContentViewController?.editorViewController.textView.string = content
+        }
+
+        draftVersionWindowController?.showWindow(self)
+    }
+
+    @objc func showSubmissionTracker(_ sender: Any?) {
+        if submissionTrackerWindowController == nil {
+            submissionTrackerWindowController = SubmissionTrackerWindowController()
+        }
+
+        submissionTrackerWindowController?.showWindow(self)
+    }
 
     @objc private func openDocument(_ sender: Any?) {
         Task { @MainActor [weak self] in
@@ -841,7 +970,35 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         purgeCharactersItem.target = self
         toolsMenu.addItem(purgeCharactersItem)
 
+        toolsMenu.addItem(.separator())
 
+        // Poetry Tools submenu
+        let poetryToolsItem = NSMenuItem(title: "Poetry Tools", action: nil, keyEquivalent: "")
+        let poetryToolsMenu = NSMenu(title: "Poetry Tools")
+        poetryToolsItem.submenu = poetryToolsMenu
+        toolsMenu.addItem(poetryToolsItem)
+
+        let poetryToolsPanelItem = NSMenuItem(title: "Poetry Analysis Tools…", action: #selector(showPoetryToolsPanel(_:)), keyEquivalent: "")
+        poetryToolsPanelItem.target = self
+        poetryToolsMenu.addItem(poetryToolsPanelItem)
+
+        let formTemplatesItem = NSMenuItem(title: "Form Templates…", action: #selector(showPoetryFormTemplates(_:)), keyEquivalent: "")
+        formTemplatesItem.target = self
+        poetryToolsMenu.addItem(formTemplatesItem)
+
+        poetryToolsMenu.addItem(.separator())
+
+        let collectionsItem = NSMenuItem(title: "Poetry Collections…", action: #selector(showPoetryCollections(_:)), keyEquivalent: "")
+        collectionsItem.target = self
+        poetryToolsMenu.addItem(collectionsItem)
+
+        let draftVersionsItem = NSMenuItem(title: "Draft Versions…", action: #selector(showDraftVersions(_:)), keyEquivalent: "")
+        draftVersionsItem.target = self
+        poetryToolsMenu.addItem(draftVersionsItem)
+
+        let submissionTrackerItem = NSMenuItem(title: "Submission Tracker…", action: #selector(showSubmissionTracker(_:)), keyEquivalent: "")
+        submissionTrackerItem.target = self
+        poetryToolsMenu.addItem(submissionTrackerItem)
 
         // View Menu
         let viewMenuItem = NSMenuItem()

@@ -96,6 +96,15 @@ class MainWindowController: NSWindowController {
     private var tableRowsSheetField: NSTextField?
     private var tableColsSheetField: NSTextField?
 
+    /// Public accessor for the current document title
+    func currentDocumentTitle() -> String {
+        return headerView.documentTitle().trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    /// Public accessor for the current document URL (nil for unsaved documents)
+    func currentDocumentURLValue() -> URL? {
+        currentDocumentURL
+    }
 
     convenience init() {
         let window = NSWindow(
@@ -3806,7 +3815,7 @@ class FormattingToolbar: NSView {
             }
 
             addOrdered([
-                "Poem Title", "Title", "Poet Name", "Author", "Dedication", "Epigraph",
+                "Poem Title", "Poet Name", "Dedication", "Epigraph",
                 "Argument Title", "Argument",
                 "— divider —",
                 "Poem", "Stanza", "Verse", "Refrain", "Chorus", "Voice", "Speaker",

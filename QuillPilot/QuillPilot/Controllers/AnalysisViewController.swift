@@ -425,11 +425,14 @@ class AnalysisViewController: NSViewController, NSWindowDelegate {
         } else {
             let categories: [AnalysisCategory] = isPoetry ? [.basic] : [.basic, .plot]
             buttonCount += categories.count
-            if !isPoetry {
+            if isPoetry {
+                // Poetry tools buttons
+                buttonCount += PoetryTool.allCases.count
+            } else {
                 let tools = CharacterTool.allCases.filter { $0.isAvailable(forScreenplay: StyleCatalog.shared.isScreenplayTemplate) }
                 buttonCount += tools.count
             }
-            buttonCount += 1
+            buttonCount += 1 // Help button
         }
 
         let defaultTotal = CGFloat(buttonCount) * maxButtonSize + CGFloat(max(0, buttonCount - 1)) * maxSpacing
@@ -585,6 +588,50 @@ class AnalysisViewController: NSViewController, NSWindowDelegate {
                 ])
 
                 yPosition += buttonSize + spacing
+            }
+
+            // Poetry tools: add buttons for poetry-specific tools when poetry template is active
+            if isPoetry {
+                for tool in PoetryTool.allCases {
+                    let button = SidebarButton(frame: NSRect(x: 0, y: 0, width: buttonSize, height: buttonSize))
+                    if #available(macOS 11.0, *) {
+                        let base = NSImage(systemSymbolName: tool.symbolName, accessibilityDescription: tool.title)
+                        let config = NSImage.SymbolConfiguration(pointSize: iconPointSize, weight: .regular)
+                        if let base, let image = base.withSymbolConfiguration(config) {
+                            button.image = image
+                            button.imagePosition = .imageOnly
+                            button.title = ""
+                            button.image?.isTemplate = true
+                        } else {
+                            button.title = tool.fallbackGlyph
+                            button.font = .systemFont(ofSize: glyphPointSize)
+                        }
+                    } else {
+                        button.title = tool.fallbackGlyph
+                        button.font = .systemFont(ofSize: glyphPointSize)
+                    }
+
+                    button.isBordered = false
+                    button.bezelStyle = .rounded
+                    button.target = self
+                    button.action = #selector(poetryToolButtonTapped(_:))
+                    button.tag = tool.rawValue
+                    button.translatesAutoresizingMaskIntoConstraints = false
+                    button.toolTip = tool.title
+                    button.sendAction(on: [.leftMouseDown])
+
+                    menuSidebar.addSubview(button)
+                    menuButtons.append(button)
+
+                    NSLayoutConstraint.activate([
+                        button.topAnchor.constraint(equalTo: menuSidebar.topAnchor, constant: yPosition),
+                        button.centerXAnchor.constraint(equalTo: menuSidebar.centerXAnchor),
+                        button.widthAnchor.constraint(equalToConstant: buttonSize),
+                        button.heightAnchor.constraint(equalToConstant: buttonSize)
+                    ])
+
+                    yPosition += buttonSize + spacing
+                }
             }
 
             // Character analysis tools: break out the old Characters menu into individual buttons.
@@ -820,14 +867,19 @@ class AnalysisViewController: NSViewController, NSWindowDelegate {
 
     @objc private func helpButtonTapped(_ sender: NSButton) {
         // Map the current analysis category to the matching Help window tab.
+        // Poetry template gets poetry-specific help.
         let tabIdentifier: String
-        switch currentCategory {
-        case .basic:
-            tabIdentifier = "analysis"
-        case .plot:
-            tabIdentifier = "plot"
-        case .characters:
-            tabIdentifier = "characters"
+        if StyleCatalog.shared.isPoetryTemplate {
+            tabIdentifier = "poetry"
+        } else {
+            switch currentCategory {
+            case .basic:
+                tabIdentifier = "analysis"
+            case .plot:
+                tabIdentifier = "plot"
+            case .characters:
+                tabIdentifier = "characters"
+            }
         }
 
         (NSApp.delegate as? AppDelegate)?.openDocumentation(tabIdentifier: tabIdentifier)
@@ -908,6 +960,46 @@ class AnalysisViewController: NSViewController, NSWindowDelegate {
         }
     }
 
+    // MARK: - Poetry Tool Enum
+
+    private enum PoetryTool: Int, CaseIterable {
+        case poetryTools       // Combined panel
+        case formTemplates     // Form templates
+        case collections       // Poetry collections
+        case drafts            // Draft versions
+        case submissions       // Submission tracker
+
+        var title: String {
+            switch self {
+            case .poetryTools: return "Poetry Tools"
+            case .formTemplates: return "Form Templates"
+            case .collections: return "Collections"
+            case .drafts: return "Draft Versions"
+            case .submissions: return "Submissions"
+            }
+        }
+
+        var symbolName: String {
+            switch self {
+            case .poetryTools: return "waveform.path.ecg"
+            case .formTemplates: return "text.book.closed"
+            case .collections: return "books.vertical"
+            case .drafts: return "doc.on.doc"
+            case .submissions: return "envelope"
+            }
+        }
+
+        var fallbackGlyph: String {
+            switch self {
+            case .poetryTools: return "🔬"
+            case .formTemplates: return "📖"
+            case .collections: return "📚"
+            case .drafts: return "📄"
+            case .submissions: return "✉️"
+            }
+        }
+    }
+
     @objc private func characterToolButtonTapped(_ sender: NSButton) {
         guard let tool = CharacterTool(rawValue: sender.tag) else { return }
         currentCategory = .characters
@@ -935,6 +1027,26 @@ class AnalysisViewController: NSViewController, NSWindowDelegate {
             showInteractions()
         case .presence:
             showPresence()
+        }
+    }
+
+    @objc private func poetryToolButtonTapped(_ sender: NSButton) {
+        guard let tool = PoetryTool(rawValue: sender.tag) else { return }
+
+        // Dispatch to AppDelegate for opening poetry tool windows
+        guard let appDelegate = NSApp.delegate as? AppDelegate else { return }
+
+        switch tool {
+        case .poetryTools:
+            appDelegate.showPoetryToolsPanel(sender)
+        case .formTemplates:
+            appDelegate.showPoetryFormTemplates(sender)
+        case .collections:
+            appDelegate.showPoetryCollections(sender)
+        case .drafts:
+            appDelegate.showDraftVersions(sender)
+        case .submissions:
+            appDelegate.showSubmissionTracker(sender)
         }
     }
 

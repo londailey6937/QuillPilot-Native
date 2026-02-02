@@ -88,6 +88,9 @@ class DocumentationWindowController: NSWindowController, NSWindowDelegate, NSOut
     private var searchResults: [HelpSearchResult] = []
     private var headerView: NSView!
     private var currentSearchQuery: String?
+    private var searchMatchRanges: [NSRange] = []
+    private var currentMatchIndex: Int = 0
+    private var currentMatchTopicId: String?
 
     private var searchTextObserver: NSObjectProtocol?
 
@@ -167,7 +170,12 @@ class DocumentationWindowController: NSWindowController, NSWindowDelegate, NSOut
     }
 
     func windowDidResignKey(_ notification: Notification) {
-        window?.close()
+        guard let window = window else { return }
+        // Don't close if a sheet is currently presented
+        if window.attachedSheet != nil {
+            return
+        }
+        window.close()
     }
 
     // MARK: - Build Help Structure
@@ -190,7 +198,8 @@ class DocumentationWindowController: NSWindowController, NSWindowDelegate, NSOut
 
             HelpTopic(id: "analysis-tools", title: "Analysis & Story Tools", icon: "▸", children: [
                 HelpTopic(id: "analysis-overview", title: "Overview", icon: "📊", contentLoader: { self.makeAnalysisOverviewContent() }),
-                HelpTopic(id: "character-analysis", title: "Character Analysis", icon: "📈", contentLoader: { self.makeCharacterAnalysisContent() })
+                HelpTopic(id: "character-analysis", title: "Character Analysis", icon: "📈", contentLoader: { self.makeCharacterAnalysisContent() }),
+                HelpTopic(id: "poetry-analysis", title: "Poetry Analysis", icon: "🪶", contentLoader: { self.makePoetryAnalysisContent() })
             ]),
 
             HelpTopic(id: "formatting-layout", title: "Formatting & Layout", icon: "▸", children: [
@@ -450,6 +459,8 @@ class DocumentationWindowController: NSWindowController, NSWindowDelegate, NSOut
         if let container = contentTextView.textContainer {
             contentTextView.layoutManager?.ensureLayout(for: container)
         }
+            currentMatchTopicId = id
+            updateSearchMatches(for: currentSearchQuery)
         contentTextView.setSelectedRange(NSRange(location: 0, length: 0))
         contentTextView.scrollRangeToVisible(NSRange(location: 0, length: 0))
         contentScrollView.reflectScrolledClipView(contentScrollView.contentView)
@@ -494,6 +505,8 @@ class DocumentationWindowController: NSWindowController, NSWindowDelegate, NSOut
             "character-library": "character-library",
             "analysis": "analysis-overview",
             "character-analysis": "character-analysis",
+            "poetry": "poetry-analysis",
+            "poetry-analysis": "poetry-analysis",
             "typography": "typography-styles",
             "sections": "sections-pagenumbers",
             "formatting": "sections-pagenumbers",
@@ -518,6 +531,9 @@ class DocumentationWindowController: NSWindowController, NSWindowDelegate, NSOut
 
         if query.isEmpty {
             contentTextView.setSelectedRange(NSRange(location: 0, length: 0))
+            searchMatchRanges = []
+            currentMatchIndex = 0
+            currentMatchTopicId = nil
             return
         }
 
@@ -537,7 +553,11 @@ class DocumentationWindowController: NSWindowController, NSWindowDelegate, NSOut
             if query.isEmpty {
                 return true
             }
-            performSearch(query: query)
+            if currentSearchQuery == query, !searchMatchRanges.isEmpty {
+                goToNextSearchMatch()
+            } else {
+                performSearch(query: query)
+            }
             return true
         }
 
@@ -632,14 +652,56 @@ class DocumentationWindowController: NSWindowController, NSWindowDelegate, NSOut
         // Make search navigation work even if the outline selection is finicky.
         selectTopic(id: result.topicId)
 
+        currentMatchTopicId = result.topicId
+
         if result.range.length > 0 {
             DispatchQueue.main.async { [weak self] in
                 guard let self else { return }
+                self.updateSearchMatches(for: self.currentSearchQuery)
+                self.setSearchMatchIndex(for: result.range)
                 self.contentTextView.setSelectedRange(result.range)
                 self.contentTextView.scrollRangeToVisible(result.range)
                 self.contentTextView.showFindIndicator(for: result.range)
             }
         }
+    }
+
+    private func updateSearchMatches(for query: String?) {
+        guard let query, !query.isEmpty else {
+            searchMatchRanges = []
+            currentMatchIndex = 0
+            return
+        }
+
+        let nsText = contentTextView.string as NSString
+        var ranges: [NSRange] = []
+        var searchRange = NSRange(location: 0, length: nsText.length)
+
+        while searchRange.location < nsText.length {
+            let found = nsText.range(of: query, options: [.caseInsensitive], range: searchRange)
+            if found.location == NSNotFound { break }
+            ranges.append(found)
+            let nextLocation = found.location + max(1, found.length)
+            searchRange = NSRange(location: nextLocation, length: max(0, nsText.length - nextLocation))
+        }
+
+        searchMatchRanges = ranges
+        currentMatchIndex = ranges.isEmpty ? 0 : min(currentMatchIndex, ranges.count - 1)
+    }
+
+    private func setSearchMatchIndex(for range: NSRange) {
+        if let idx = searchMatchRanges.firstIndex(where: { $0.location == range.location && $0.length == range.length }) {
+            currentMatchIndex = idx
+        }
+    }
+
+    private func goToNextSearchMatch() {
+        guard !searchMatchRanges.isEmpty else { return }
+        currentMatchIndex = (currentMatchIndex + 1) % searchMatchRanges.count
+        let range = searchMatchRanges[currentMatchIndex]
+        contentTextView.setSelectedRange(range)
+        contentTextView.scrollRangeToVisible(range)
+        contentTextView.showFindIndicator(for: range)
     }
 
     private func applySearchHighlights(to content: NSMutableAttributedString, query: String) {
@@ -1978,6 +2040,277 @@ Example Arc:
 Ch 2: Naive failure (didn't know enemy's strength)
 Ch 5: Strategic failure (good plan, unexpected variable)
 Ch 9: Principled failure (could have won by cheating, chose not to)
+""", color: bodyColor))
+
+        normalizeAppNameInDocumentation(content)
+        return content
+    }
+
+    private func makePoetryAnalysisContent() -> NSAttributedString {
+        let theme = ThemeManager.shared.currentTheme
+        let titleColor = theme.textColor
+        let headingColor = theme.textColor
+        let bodyColor = theme.textColor
+
+        let content = NSMutableAttributedString()
+
+        content.append(makeTitle("🪶 Poetry Analysis", color: titleColor))
+        content.append(makeBody("""
+When the Poetry template is active, Quill Pilot provides specialized analysis tools designed for verse. The Analysis popout (📊 button) opens a poetry-focused window with six analytical lenses.
+
+Access: Right panel → 📊 Analysis (with Poetry template active)
+""", color: bodyColor))
+        content.append(makeNewline())
+
+        content.append(makeHeading("Formal / Technical Analysis", color: headingColor))
+        content.append(makeBody("""
+Examines the structural mechanics of your poem.
+
+What it tracks:
+• Line Count — Total lines in the poem body (excludes title/author)
+• Stanza Count — Number of stanza groupings (separated by blank lines)
+• Average Line Length — Mean syllables or words per line
+• Enjambment Rate — Percentage of lines that run over without punctuation
+• End-Stop Rate — Percentage of lines ending with punctuation
+• Rhyme Scheme Detection — Identifies patterns (ABAB, AABB, free verse, etc.)
+• Meter Hints — Detects dominant rhythmic patterns if present
+
+How to use it:
+• Compare enjambment vs end-stop rates to understand your poem's pacing
+• High enjambment (60%+) creates urgency and forward momentum
+• High end-stop (70%+) creates a more measured, deliberate feel
+• Use rhyme scheme detection to verify intentional patterns
+""", color: bodyColor))
+        content.append(makeNewline())
+
+        content.append(makeHeading("Imagery / Sensory Analysis", color: headingColor))
+        content.append(makeBody("""
+Maps the sensory landscape of your poem.
+
+What it tracks:
+• Visual imagery — sight-based descriptions (colors, light, shapes)
+• Auditory imagery — sound references (music, noise, silence)
+• Tactile imagery — touch sensations (texture, temperature, pressure)
+• Olfactory imagery — smell references
+• Gustatory imagery — taste references
+• Kinesthetic imagery — movement and bodily sensation
+
+Distribution chart shows which senses dominate your poem.
+
+How to use it:
+• Poems relying solely on visual imagery may feel flat
+• Adding unexpected senses (taste in a grief poem, sound in a visual scene) creates depth
+• The balance should serve your poem's intent, not follow a formula
+""", color: bodyColor))
+        content.append(makeNewline())
+
+        content.append(makeHeading("Voice / Rhetoric Analysis", color: headingColor))
+        content.append(makeBody("""
+Analyzes the speaker's presence and persuasive techniques.
+
+What it tracks:
+• Point of View — First person (I/we), second person (you), third person
+• Tone Indicators — Words suggesting emotional register (intimate, distant, urgent)
+• Rhetorical Devices — Questions, repetition, imperatives, apostrophe
+• Direct Address — How often the poem speaks TO someone/something
+
+How to use it:
+• A shift from "I" to "we" can signal a move from isolation to connection
+• Questions without answers create different tension than answered questions
+• Imperatives ("Listen," "Remember") demand reader engagement
+• Apostrophe (addressing absent/abstract entities) elevates emotional stakes
+""", color: bodyColor))
+        content.append(makeNewline())
+
+        content.append(makeHeading("Emotional Trajectory", color: headingColor))
+        content.append(makeBody("""
+Charts the emotional arc of your poem from beginning to end.
+
+What it tracks:
+• Opening Emotional State — Where the poem begins emotionally
+• Volta/Turn Detection — Identifies shifts in tone, subject, or perspective
+• Closing Emotional State — Where the poem resolves (or doesn't)
+• Emotional Range — The distance between highest and lowest points
+
+How to use it:
+• Poems that start and end in the same emotional place may feel circular (intentionally or not)
+• A clear volta often marks the poem's emotional center of gravity
+• Wide emotional range creates drama; narrow range creates meditation
+• The trajectory should match your poem's intent
+""", color: bodyColor))
+        content.append(makeNewline())
+
+        content.append(makeHeading("Motif & Symbol Tracking", color: headingColor))
+        content.append(makeBody("""
+Identifies recurring images, words, and symbolic patterns.
+
+What it tracks:
+• Repeated Words — Words appearing 2+ times (excluding articles/prepositions)
+• Image Clusters — Related images that form patterns (water imagery, light/dark, etc.)
+• Symbolic Candidates — Concrete nouns that may carry abstract meaning
+• Motif Frequency — How often key images recur throughout the poem
+
+How to use it:
+• Repetition creates emphasis—make sure repeated words earn their recurrence
+• Image clusters reveal unconscious themes you may want to strengthen
+• If a symbol appears only once, consider whether it needs development or removal
+• Three occurrences often establishes a pattern; two may feel accidental
+""", color: bodyColor))
+        content.append(makeNewline())
+
+        content.append(makeHeading("Macro Structure", color: headingColor))
+        content.append(makeBody("""
+Examines the poem's overall architecture.
+
+What it tracks:
+• Opening Strategy — How the poem begins (in medias res, setting, question, statement)
+• Stanza Function — What each stanza accomplishes in the whole
+• Closure Type — How the poem ends (resolution, open-ended, circular, escalation)
+• White Space Usage — How blank lines create pause and section
+
+How to use it:
+• Strong openings hook readers; analyze whether your first line/stanza does work
+• Each stanza should advance the poem—look for stanzas that repeat without adding
+• Endings that surprise while feeling inevitable are strongest
+• White space is punctuation at the stanza level; use it deliberately
+""", color: bodyColor))
+        content.append(makeNewline())
+
+        content.append(makeHeading("Pressure Points (Writer's Feedback)", color: headingColor))
+        content.append(makeBody("""
+Quill Pilot identifies specific areas that may benefit from revision attention.
+
+Pressure points include:
+• Lines with weak verbs that could be strengthened
+• Abstract language that could become concrete
+• Passive constructions that distance the reader
+• Clichés or familiar phrases that could be made fresh
+• Moments where form and content may be misaligned
+
+These are suggestions, not rules:
+• Sometimes a cliché is the right choice (for irony, character voice, etc.)
+• Passive voice can create specific effects (mystery, victim perspective)
+• Abstract language has its place in philosophical or meditative poems
+
+The goal is awareness, not compliance. You decide what serves your poem.
+""", color: bodyColor))
+        content.append(makeNewline())
+
+        content.append(makeHeading("Poetry Tools Panel", color: headingColor))
+        content.append(makeBody("""
+When the Poetry template is active, additional poetry-specific tools appear in the right sidebar.
+
+Sidebar buttons (from top to bottom):
+• 📊 Poetry Analysis — Opens the main analysis popout with writer-focused insights
+• 🔬 Poetry Tools — Combined panel with all analysis tools in one window
+• 📖 Form Templates — Selector for classic poetry forms (Sonnet, Villanelle, Haiku, etc.)
+• 📚 Collections — Organize poems into chapbooks and full-length manuscripts
+• 📄 Draft Versions — Track revision history and compare drafts
+• ✉️ Submissions — Track submissions to journals, magazines, and contests
+
+Access: These buttons appear automatically when you select the Poetry template.
+""", color: bodyColor))
+        content.append(makeNewline())
+
+        content.append(makeHeading("Poetry Tools Panel Details", color: headingColor))
+        content.append(makeBody("""
+The Poetry Tools window (accessible via the 🔬 button or Tools → Poetry Tools → Poetry Analysis Tools) provides:
+
+Syllables Tab:
+• Counts syllables per line
+• Shows total, average, and line count statistics
+• Detects meter patterns (Haiku, Iambic Pentameter, etc.)
+
+Scansion Tab:
+• Marks stressed (/) and unstressed (u) syllables
+• Shows secondary stress marks (\\)
+• Navigate line by line to examine stress patterns
+
+Sound Devices Tab:
+• Detects alliteration, assonance, consonance
+• Identifies sibilance and internal rhyme
+• Finds onomatopoeia
+
+Word Cloud Tab:
+• Visual display of word frequency
+• Excludes common stop words
+• Larger words appear more frequently
+
+Line Length Tab:
+• Bar graph showing syllable/word/character counts per line
+• Statistics: average, min, max, and standard deviation
+• Helps identify rhythm patterns and variations
+
+Form Templates Tab:
+• 10 classic poetry forms with structures and examples
+• Sonnet, Villanelle, Haiku, Tanka, Ghazal, Pantoum, Sestina, Limerick, Free Verse, Blank Verse
+• Insert template structures directly into your document
+""", color: bodyColor))
+        content.append(makeNewline())
+
+        content.append(makeHeading("Poetry Collections", color: headingColor))
+        content.append(makeBody("""
+Organize your poems into collections (chapbooks or full manuscripts).
+
+Features:
+• Create named collections with author and description
+• Add poems from your current document
+• Organize poems into sections
+• Generate table of contents
+• Export collection data
+
+Using Collections:
+1. Click the ＋ button in the sidebar to create a new collection
+2. Select a collection from the sidebar to view its contents
+3. Click "Add Current Poem" to add the poem you're editing to the collection
+4. Use the folder+ button to create sections within a collection
+5. Click the list button to view/copy the table of contents
+
+Access: Tools → Poetry Tools → Poetry Collections, or the 📚 sidebar button.
+Tip: Modal dialogs appear inside the window (the window dims while the dialog is open). Complete the dialog or press Cancel/Esc to return.
+""", color: bodyColor))
+        content.append(makeNewline())
+
+        content.append(makeHeading("Draft Versioning", color: headingColor))
+        content.append(makeBody("""
+Track your revision history and compare versions.
+
+Features:
+• Save snapshots of your poem at any point
+• Add notes to each version
+• Compare two versions side-by-side with diff highlighting
+• Restore previous versions
+
+Access: Tools → Poetry Tools → Draft Versions, or the 📄 sidebar button.
+""", color: bodyColor))
+        content.append(makeNewline())
+
+        content.append(makeHeading("Submission Tracker", color: headingColor))
+        content.append(makeBody("""
+Track submissions to journals, magazines, contests, and publishers.
+
+Features:
+• Log submissions with date, status, and notes
+• Filter by status (Pending, Accepted, Rejected, Withdrawn)
+• Track submission statistics
+• Save publication venues for reuse
+
+Access: Tools → Poetry Tools → Submission Tracker, or the ✉️ sidebar button.
+Tip: Click New Submission to open the entry sheet. The window dims while the sheet is open—save or cancel to return.
+""", color: bodyColor))
+        content.append(makeNewline())
+
+        content.append(makeHeading("Best Practices for Poetry Analysis", color: headingColor))
+        content.append(makeBody("""
+To get the most from poetry analysis:
+
+1. Use the Poetry template — Analysis adapts to the template type
+2. Separate stanzas with blank lines — This enables stanza-level analysis
+3. Place title and author at the top — The analyzer detects and excludes header lines
+4. Run analysis after significant revisions — Compare before/after metrics
+5. Use analysis as a mirror, not a judge — It shows what's there, not what should be
+
+Remember: Analysis can identify patterns but cannot evaluate meaning. A "low" score in any category may be exactly right for your poem's intent.
 """, color: bodyColor))
 
         normalizeAppNameInDocumentation(content)

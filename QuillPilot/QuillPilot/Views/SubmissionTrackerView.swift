@@ -7,85 +7,192 @@
 //
 
 import SwiftUI
+import AppKit
 
-/// Main view for tracking poetry submissions
+private struct RatioHSplitView<Left: View, Right: View>: NSViewControllerRepresentable {
+    let ratio: CGFloat
+    let resetToken: UUID
+    let left: Left
+    let right: Right
+
+    func makeNSViewController(context: Context) -> Controller {
+        let controller = Controller()
+        controller.set(left: AnyView(left), right: AnyView(right))
+        controller.setRatio(ratio)
+        controller.requestReset(to: resetToken)
+        return controller
+    }
+
+    func updateNSViewController(_ nsViewController: Controller, context: Context) {
+        nsViewController.set(left: AnyView(left), right: AnyView(right))
+        nsViewController.setRatio(ratio)
+        nsViewController.requestReset(to: resetToken)
+    }
+
+    final class Controller: NSSplitViewController {
+        private let leftHost = NSHostingController(rootView: AnyView(EmptyView()))
+        private let rightHost = NSHostingController(rootView: AnyView(EmptyView()))
+        private var desiredRatio: CGFloat = 0.5
+        private var lastResetToken: UUID?
+
+        override func viewDidLoad() {
+            super.viewDidLoad()
+
+            let leftItem = NSSplitViewItem(viewController: leftHost)
+            let rightItem = NSSplitViewItem(viewController: rightHost)
+
+            addSplitViewItem(leftItem)
+            addSplitViewItem(rightItem)
+
+            splitView.isVertical = true
+            splitView.dividerStyle = .thin
+        }
+
+        override func viewDidLayout() {
+            super.viewDidLayout()
+            applyRatioIfPossible()
+        }
+
+        func set(left: AnyView, right: AnyView) {
+            leftHost.rootView = left
+            rightHost.rootView = right
+        }
+
+        func setRatio(_ ratio: CGFloat) {
+            desiredRatio = max(0.1, min(0.9, ratio))
+        }
+
+        func requestReset(to token: UUID) {
+            guard token != lastResetToken else { return }
+            lastResetToken = token
+            applyRatioIfPossible()
+        }
+
+        private func applyRatioIfPossible() {
+            guard splitView.arrangedSubviews.count >= 2 else { return }
+            let totalWidth = splitView.bounds.width
+            guard totalWidth > 10 else { return }
+            splitView.setPosition(totalWidth * desiredRatio, ofDividerAt: 0)
+        }
+    }
+}
+
+/// Main view for tracking submissions
 struct SubmissionTrackerView: View {
     @State private var submissions: [Submission] = []
     @State private var selectedSubmissionId: Submission.ID?
     @State private var showingNewSubmission = false
     @State private var searchText = ""
     @State private var showingStatistics = false
+    @State private var splitResetToken = UUID()
+    @State private var themeRefreshToken = UUID()
     @Environment(\.colorScheme) private var colorScheme
     private var themeAccent: Color { Color(ThemeManager.shared.currentTheme.pageBorder) }
+    private var themeBackground: Color { Color(ThemeManager.shared.currentTheme.pageAround) }
 
     var body: some View {
-        NavigationView {
-            // Sidebar with filters
-            VStack(spacing: 0) {
-                // Search
+        RatioHSplitView(
+            ratio: 0.5,
+            resetToken: splitResetToken,
+            left: leftPane,
+            right: detailPane
+        )
+        .id(themeRefreshToken)
+        .sheet(isPresented: $showingNewSubmission) {
+            NewSubmissionSheet { poem, publication, type in
+                _ = SubmissionManager.shared.createSubmission(
+                    poemTitle: poem,
+                    publicationName: publication,
+                    publicationType: type
+                )
+                refreshSubmissions()
+            }
+        }
+        .sheet(isPresented: $showingStatistics) {
+            StatisticsSheet(statistics: SubmissionManager.shared.getStatistics())
+        }
+        .onAppear {
+            refreshSubmissions()
+            splitResetToken = UUID()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .themeDidChange)) { _ in
+            // Force a rebuild so accent/background colors update immediately.
+            themeRefreshToken = UUID()
+        }
+        .tint(themeAccent)
+        .accentColor(themeAccent)
+        .background(themeBackground)
+    }
+
+    private var leftPane: some View {
+        VStack(spacing: 0) {
+            // Search + actions
+            HStack(spacing: 12) {
                 TextField("Search...", text: $searchText)
                     .textFieldStyle(.roundedBorder)
-                    .padding()
 
-                // Status filters
+                Button {
+                    showingStatistics = true
+                } label: {
+                    Image(systemName: "chart.pie")
+                }
+                .buttonStyle(.borderless)
+                .help("View Statistics")
+            }
+            .padding()
+
+            DisclosureGroup("Status") {
+                VStack(spacing: 0) {
+                    StatusRow(title: "All", count: submissions.count)
+
+                    ForEach(Submission.SubmissionStatus.allCases, id: \.self) { status in
+                        let count = submissions.filter { $0.status == status }.count
+                        StatusRow(title: "\(status.emoji) \(status.rawValue)", count: count)
+                    }
+                }
+                .padding(.top, 6)
+            }
+            .padding(.horizontal)
+            .padding(.bottom, 8)
+
+            HStack {
+                Text("Submissions")
+                    .font(.headline)
+                Spacer()
+                Button(action: { showingNewSubmission = true }) {
+                    Label("New Submission", systemImage: "plus")
+                }
+                .buttonStyle(ThemedActionButtonStyle())
+            }
+            .padding([.horizontal, .bottom])
+
+            Divider()
+
+            if filteredSubmissions.isEmpty {
+                EmptySubmissionsView()
+            } else {
                 List {
-                    Section("Status") {
-                        StatusRow(title: "All", count: submissions.count)
-
-                        ForEach(Submission.SubmissionStatus.allCases, id: \.self) { status in
-                            let count = submissions.filter { $0.status == status }.count
-                            StatusRow(title: "\(status.emoji) \(status.rawValue)", count: count)
-                        }
-                    }
-
-                    Section {
-                        Button(action: { showingStatistics = true }) {
-                            Label("View Statistics", systemImage: "chart.pie")
-                        }
-                        .buttonStyle(ThemedActionButtonStyle())
+                    ForEach(filteredSubmissions) { submission in
+                        SubmissionRow(submission: submission)
+                            .listRowBackground(
+                                selectedSubmissionId == submission.id
+                                    ? themeAccent.opacity(0.2)
+                                    : Color.clear
+                            )
+                            .contentShape(Rectangle())
+                            .onTapGesture {
+                                selectedSubmissionId = submission.id
+                            }
                     }
                 }
             }
-            .frame(minWidth: 180)
+        }
+        .frame(minWidth: 360)
+        .background(themeBackground)
+    }
 
-            // Main content
-            VStack(spacing: 0) {
-                // Toolbar
-                HStack {
-                    Text("Submissions")
-                        .font(.headline)
-                    Spacer()
-                    Button(action: { showingNewSubmission = true }) {
-                        Label("New Submission", systemImage: "plus")
-                    }
-                    .buttonStyle(ThemedActionButtonStyle())
-                }
-                .padding()
-
-                Divider()
-
-                // Submission list
-                if filteredSubmissions.isEmpty {
-                    EmptySubmissionsView()
-                } else {
-                    List {
-                        ForEach(filteredSubmissions) { submission in
-                            SubmissionRow(submission: submission)
-                                .listRowBackground(
-                                    selectedSubmissionId == submission.id
-                                        ? themeAccent.opacity(0.2)
-                                        : Color.clear
-                                )
-                                .contentShape(Rectangle())
-                                .onTapGesture {
-                                    selectedSubmissionId = submission.id
-                                }
-                        }
-                    }
-                }
-            }
-
-            // Detail view
+    private var detailPane: some View {
+        Group {
             if let id = selectedSubmissionId,
                let selected = submissions.first(where: { $0.id == id }) {
                 SubmissionDetailView(
@@ -113,24 +220,6 @@ struct SubmissionTrackerView: View {
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
         }
-        .sheet(isPresented: $showingNewSubmission) {
-            NewSubmissionSheet { poem, publication, type in
-                _ = SubmissionManager.shared.createSubmission(
-                    poemTitle: poem,
-                    publicationName: publication,
-                    publicationType: type
-                )
-                refreshSubmissions()
-            }
-        }
-        .sheet(isPresented: $showingStatistics) {
-            StatisticsSheet(statistics: SubmissionManager.shared.getStatistics())
-        }
-        .onAppear {
-            refreshSubmissions()
-        }
-        .tint(themeAccent)
-        .accentColor(themeAccent)
     }
 
     private var filteredSubmissions: [Submission] {
@@ -232,6 +321,7 @@ struct SubmissionDetailView: View {
 
     @State private var edited: Submission
     @State private var hasUnsavedChanges = false
+    @State private var showSavedFeedback = false
 
     init(submission: Submission, onSave: @escaping (_ updated: Submission, _ refreshList: Bool) -> Void, onDelete: @escaping () -> Void) {
         self.submission = submission
@@ -345,8 +435,20 @@ struct SubmissionDetailView: View {
                     Button(action: {
                         onSave(edited, true)
                         hasUnsavedChanges = false
+                        withAnimation(.easeInOut(duration: 0.15)) {
+                            showSavedFeedback = true
+                        }
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) {
+                            withAnimation(.easeInOut(duration: 0.2)) {
+                                showSavedFeedback = false
+                            }
+                        }
                     }) {
-                        Label("Save Changes", systemImage: "square.and.arrow.down")
+                        if showSavedFeedback {
+                            Label("Saved", systemImage: "checkmark.circle.fill")
+                        } else {
+                            Label("Save Changes", systemImage: "square.and.arrow.down")
+                        }
                     }
                     .buttonStyle(ThemedActionButtonStyle())
                     .disabled(!hasUnsavedChanges)
@@ -410,7 +512,7 @@ struct EmptySubmissionsView: View {
                 .foregroundColor(.secondary)
             Text("No Submissions Yet")
                 .font(.title2)
-            Text("Track where you've sent your poems and their status.")
+            Text("Track where you've sent your work and its status.")
                 .foregroundColor(.secondary)
                 .multilineTextAlignment(.center)
         }
@@ -431,7 +533,7 @@ struct NewSubmissionSheet: View {
             Text("New Submission")
                 .font(.headline)
 
-            TextField("Poem Title", text: $poemTitle)
+            TextField("Work Title", text: $poemTitle)
                 .textFieldStyle(.roundedBorder)
 
             TextField("Publication Name", text: $publicationName)
@@ -538,9 +640,11 @@ extension Submission: Equatable, Hashable {
 
 final class SubmissionTrackerWindowController: NSWindowController, NSWindowDelegate {
 
+    private var themeObserver: Any?
+
     convenience init() {
         let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 900, height: 600),
+            contentRect: NSRect(x: 0, y: 0, width: 1100, height: 650),
             styleMask: [.titled, .closable, .resizable, .miniaturizable],
             backing: .buffered,
             defer: false
@@ -548,16 +652,38 @@ final class SubmissionTrackerWindowController: NSWindowController, NSWindowDeleg
         window.title = "Submission Tracker"
         window.center()
         window.isReleasedWhenClosed = false
+        window.minSize = NSSize(width: 980, height: 600)
+        // Ensure the window appears in the current Space, including when the main window is fullscreen.
+        window.collectionBehavior.insert([.moveToActiveSpace, .fullScreenAuxiliary])
 
         // Apply theme appearance
         let isDarkMode = ThemeManager.shared.isDarkMode
         window.appearance = NSAppearance(named: isDarkMode ? .darkAqua : .aqua)
+        window.backgroundColor = ThemeManager.shared.currentTheme.pageAround
 
         self.init(window: window)
         window.delegate = self
 
         let hostingView = FirstMouseHostingView(rootView: SubmissionTrackerView())
         window.contentView = hostingView
+
+        // Keep appearance in sync with app theme.
+        themeObserver = NotificationCenter.default.addObserver(forName: .themeDidChange, object: nil, queue: .main) { [weak self] notification in
+            guard let self, let window = self.window, let theme = notification.object as? AppTheme else { return }
+            self.applyTheme(theme, to: window)
+        }
+    }
+
+    deinit {
+        if let themeObserver {
+            NotificationCenter.default.removeObserver(themeObserver)
+        }
+    }
+
+    private func applyTheme(_ theme: AppTheme, to window: NSWindow) {
+        let isDarkMode = ThemeManager.shared.isDarkMode
+        window.appearance = NSAppearance(named: isDarkMode ? .darkAqua : .aqua)
+        window.backgroundColor = theme.pageAround
     }
 
     // Close window when it loses key status (user clicks elsewhere)

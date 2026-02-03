@@ -91,6 +91,7 @@ struct PoetryCollectionView: View {
                             PoetryCollectionManager.shared.updateCollection(updated)
                         }
                     ),
+                    allCollections: collections,
                     onSelectPoem: onSelectPoem,
                     onAddCurrentPoem: {
                         onAddCurrentPoem?(collections[index])
@@ -157,6 +158,21 @@ struct PoetryCollectionView: View {
         if let provider = providers.first(where: { $0.canLoadObject(ofClass: NSString.self) }) {
             provider.loadObject(ofClass: NSString.self) { object, _ in
                 guard let text = object as? String else { return }
+
+                // Internal drag-drop: move an existing poem between collections.
+                if let payload = PoetryCollectionDragPayload.parse(from: text) {
+                    DispatchQueue.main.async {
+                        PoetryCollectionManager.shared.movePoem(
+                            payload.poemId,
+                            from: payload.sourceCollectionId,
+                            to: collectionId,
+                            sectionId: nil
+                        )
+                        collections = PoetryCollectionManager.shared.getCollections()
+                        return
+                    }
+                }
+
                 let title = text.components(separatedBy: .newlines).first?.trimmingCharacters(in: .whitespacesAndNewlines)
                 let safeTitle = (title?.isEmpty == false) ? title! : "Untitled"
                 DispatchQueue.main.async {
@@ -210,6 +226,7 @@ struct CollectionRow: View {
 
 struct CollectionDetailView: View {
     @Binding var collection: PoetryCollection
+    let allCollections: [PoetryCollection]
     var onSelectPoem: ((PoemEntry) -> Void)?
     var onAddCurrentPoem: (() -> Void)?
 
@@ -296,10 +313,13 @@ struct CollectionDetailView: View {
                         ForEach(collection.poems.sorted(by: { $0.order < $1.order })) { poem in
                             PoemRow(
                                 poem: poem,
+                                sourceCollectionId: collection.id,
                                 onOpen: { onSelectPoem?(poem) },
                                 onRemove: { removePoem(poem) },
                                 onMoveToSection: { movePoem(poem, to: $0) },
+                                onMoveToCollection: { movePoem(poem, to: $0) },
                                 availableSections: collection.sections
+                                ,availableCollections: allCollections.filter { $0.id != collection.id }
                             )
                         }
                     } else {
@@ -309,9 +329,15 @@ struct CollectionDetailView: View {
                                 .filter { $0.sectionId == section.id }
                                 .sorted(by: { $0.order < $1.order })
 
-                            Section(header: SectionHeader(title: section.title, onDelete: {
+                            Section(header: SectionHeader(
+                                title: section.title,
+                                onDelete: {
                                 pendingDeleteSection = section
-                            })) {
+                                },
+                                onDropPoem: { payload in
+                                    handlePoemDrop(payload, to: section.id)
+                                }
+                            )) {
                                 if poemsInSection.isEmpty {
                                     Text("No poems in this section")
                                         .font(.caption)
@@ -321,10 +347,13 @@ struct CollectionDetailView: View {
                                     ForEach(poemsInSection) { poem in
                                         PoemRow(
                                             poem: poem,
+                                            sourceCollectionId: collection.id,
                                             onOpen: { onSelectPoem?(poem) },
                                             onRemove: { removePoem(poem) },
                                             onMoveToSection: { movePoem(poem, to: $0) },
+                                            onMoveToCollection: { movePoem(poem, to: $0) },
                                             availableSections: collection.sections
+                                            ,availableCollections: allCollections.filter { $0.id != collection.id }
                                         )
                                     }
                                 }
@@ -333,14 +362,22 @@ struct CollectionDetailView: View {
 
                         // Uncategorized
                         if !unsectioned.isEmpty {
-                            Section(header: SectionHeader(title: "Uncategorized")) {
+                            Section(header: SectionHeader(
+                                title: "Uncategorized",
+                                onDropPoem: { payload in
+                                    handlePoemDrop(payload, to: nil)
+                                }
+                            )) {
                                 ForEach(unsectioned) { poem in
                                     PoemRow(
                                         poem: poem,
+                                        sourceCollectionId: collection.id,
                                         onOpen: { onSelectPoem?(poem) },
                                         onRemove: { removePoem(poem) },
                                         onMoveToSection: { movePoem(poem, to: $0) },
+                                        onMoveToCollection: { movePoem(poem, to: $0) },
                                         availableSections: collection.sections
+                                        ,availableCollections: allCollections.filter { $0.id != collection.id }
                                     )
                                 }
                             }
@@ -355,7 +392,8 @@ struct CollectionDetailView: View {
                 Text("\(collection.poemCount) \(collection.poemCount == 1 ? "poem" : "poems")")
                 Spacer()
                 if !collection.sections.isEmpty {
-                    Text("\(collection.sections.count) sections")
+                        let count = collection.sections.count
+                        Text("\(count) \(count == 1 ? "section" : "sections")")
                 }
             }
             .font(.caption)
@@ -423,17 +461,41 @@ struct CollectionDetailView: View {
             }
         }
     }
+
+    private func movePoem(_ poem: PoemEntry, to destination: PoetryCollection) {
+        PoetryCollectionManager.shared.movePoem(poem.id, from: collection.id, to: destination.id, sectionId: nil)
+        if let updated = PoetryCollectionManager.shared.getCollection(id: collection.id) {
+            withAnimation {
+                collection = updated
+            }
+        }
+    }
+
+    private func handlePoemDrop(_ payload: PoetryCollectionDragPayload, to sectionId: UUID?) {
+        if payload.sourceCollectionId == collection.id {
+            PoetryCollectionManager.shared.movePoem(payload.poemId, to: sectionId, in: collection.id)
+        } else {
+            PoetryCollectionManager.shared.movePoem(payload.poemId, from: payload.sourceCollectionId, to: collection.id, sectionId: sectionId)
+        }
+        if let updated = PoetryCollectionManager.shared.getCollection(id: collection.id) {
+            withAnimation {
+                collection = updated
+            }
+        }
+    }
 }
 
 struct PoemRow: View {
     let poem: PoemEntry
+    let sourceCollectionId: UUID
     var onOpen: (() -> Void)?
     var onRemove: (() -> Void)?
     var onMoveToSection: ((CollectionSection?) -> Void)?
+    var onMoveToCollection: ((PoetryCollection) -> Void)?
     var availableSections: [CollectionSection]
+    var availableCollections: [PoetryCollection] = []
 
-    @State private var showingActionSheet = false
-    @State private var showingDeleteConfirmation = false
+    @State private var showingActions = false
 
     private var themeAccent: Color { Color(ThemeManager.shared.currentTheme.pageBorder) }
 
@@ -468,38 +530,37 @@ struct PoemRow: View {
         .padding(.horizontal, 8)
         .background(Color.secondary.opacity(0.05))
         .cornerRadius(6)
-        .onTapGesture { showingActionSheet = true }
-        .confirmationDialog(poem.title, isPresented: $showingActionSheet, titleVisibility: .visible) {
-            Button("Open Poem") {
-                onOpen?()
-            }
-
-            if !availableSections.isEmpty {
-                Menu("Move to Section") {
-                    Button("No Section") {
-                        onMoveToSection?(nil)
-                    }
-                    ForEach(availableSections.sorted(by: { $0.order < $1.order })) { section in
-                        Button(section.title) {
-                            onMoveToSection?(section)
-                        }
-                    }
-                }
-            }
-
-            Button("Remove from Collection", role: .destructive) {
-                showingDeleteConfirmation = true
-            }
-
-            Button("Cancel", role: .cancel) { }
+        .onTapGesture { showingActions = true }
+        .onDrag {
+            NSItemProvider(object: NSString(string: PoetryCollectionDragPayload(sourceCollectionId: sourceCollectionId, poemId: poem.id).serialized))
         }
-        .alert("Remove Poem?", isPresented: $showingDeleteConfirmation) {
-            Button("Remove", role: .destructive) {
-                onRemove?()
-            }
-            Button("Cancel", role: .cancel) { }
-        } message: {
-            Text("Remove \"\(poem.title)\" from this collection?")
+        .popover(isPresented: $showingActions, arrowEdge: .trailing) {
+            PoemActionsPopover(
+                poemTitle: poem.title,
+                hasSections: !availableSections.isEmpty,
+                sections: availableSections.sorted(by: { $0.order < $1.order }),
+                collections: availableCollections.sorted(by: { $0.title.localizedCaseInsensitiveCompare($1.title) == .orderedAscending }),
+                onOpen: {
+                    showingActions = false
+                    onOpen?()
+                },
+                onMoveToSection: { section in
+                    showingActions = false
+                    onMoveToSection?(section)
+                },
+                onMoveToCollection: { collection in
+                    showingActions = false
+                    onMoveToCollection?(collection)
+                },
+                onRemove: {
+                    showingActions = false
+                    onRemove?()
+                },
+                onCancel: {
+                    showingActions = false
+                }
+            )
+            .tint(themeAccent)
         }
     }
 }
@@ -507,6 +568,9 @@ struct PoemRow: View {
 struct SectionHeader: View {
     let title: String
     var onDelete: (() -> Void)? = nil
+    var onDropPoem: ((PoetryCollectionDragPayload) -> Void)? = nil
+
+    @State private var isDropTargeted = false
 
     var body: some View {
         HStack {
@@ -526,6 +590,125 @@ struct SectionHeader: View {
             }
         }
         .padding(.vertical, 8)
+        .background(isDropTargeted ? Color(ThemeManager.shared.currentTheme.pageBorder).opacity(0.12) : Color.clear)
+        .onDrop(
+            of: ["public.utf8-plain-text"],
+            isTargeted: $isDropTargeted,
+            perform: { providers in
+                guard let onDropPoem,
+                      let provider = providers.first(where: { $0.canLoadObject(ofClass: NSString.self) }) else {
+                    return false
+                }
+                provider.loadObject(ofClass: NSString.self) { object, _ in
+                    guard let text = object as? String,
+                          let payload = PoetryCollectionDragPayload.parse(from: text) else { return }
+                    DispatchQueue.main.async {
+                        onDropPoem(payload)
+                    }
+                }
+                return true
+            }
+        )
+    }
+}
+
+struct PoetryCollectionDragPayload {
+    let sourceCollectionId: UUID
+    let poemId: UUID
+
+    var serialized: String {
+        "quillpilot-poem:\(sourceCollectionId.uuidString):\(poemId.uuidString)"
+    }
+
+    static func parse(from text: String) -> PoetryCollectionDragPayload? {
+        let prefix = "quillpilot-poem:"
+        guard text.hasPrefix(prefix) else { return nil }
+        let remainder = String(text.dropFirst(prefix.count))
+        let parts = remainder.split(separator: ":", omittingEmptySubsequences: false)
+        guard parts.count == 2,
+              let sourceId = UUID(uuidString: String(parts[0])),
+              let poemId = UUID(uuidString: String(parts[1])) else {
+            return nil
+        }
+        return PoetryCollectionDragPayload(sourceCollectionId: sourceId, poemId: poemId)
+    }
+}
+
+struct PoemActionsPopover: View {
+    let poemTitle: String
+    let hasSections: Bool
+    let sections: [CollectionSection]
+    let collections: [PoetryCollection]
+    var onOpen: () -> Void
+    var onMoveToSection: (CollectionSection?) -> Void
+    var onMoveToCollection: (PoetryCollection) -> Void
+    var onRemove: () -> Void
+    var onCancel: () -> Void
+
+    @State private var confirmingRemove = false
+
+    private var theme: AppTheme { ThemeManager.shared.currentTheme }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text(poemTitle)
+                .font(.headline)
+                .foregroundColor(Color(theme.textColor))
+                .lineLimit(2)
+
+            Divider()
+
+            if confirmingRemove {
+                Text("Remove this poem from the collection?")
+                    .font(.subheadline)
+                    .foregroundColor(Color(theme.textColor))
+
+                HStack {
+                    Button("Cancel") {
+                        confirmingRemove = false
+                    }
+                    .buttonStyle(ThemedActionButtonStyle())
+
+                    Spacer()
+
+                    Button("Remove") {
+                        onRemove()
+                    }
+                    .buttonStyle(ThemedDestructiveButtonStyle())
+                }
+            } else {
+                Button("Open Poem") { onOpen() }
+                    .buttonStyle(ThemedActionButtonStyle())
+
+                if hasSections {
+                    Menu("Move to Section") {
+                        Button("Uncategorized") { onMoveToSection(nil) }
+                        ForEach(sections) { section in
+                            Button(section.title) { onMoveToSection(section) }
+                        }
+                    }
+                }
+
+                if !collections.isEmpty {
+                    Menu("Move to Collection") {
+                        ForEach(collections) { collection in
+                            Button(collection.title) { onMoveToCollection(collection) }
+                        }
+                    }
+                }
+
+                Button("Remove from Collection") {
+                    confirmingRemove = true
+                }
+                .buttonStyle(ThemedDestructiveButtonStyle())
+
+                Button("Cancel") { onCancel() }
+                    .buttonStyle(ThemedActionButtonStyle())
+            }
+        }
+        .padding(16)
+        .frame(width: 320)
+        .background(Color(theme.popoutBackground))
     }
 }
 

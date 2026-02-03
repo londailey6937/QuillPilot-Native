@@ -44,6 +44,9 @@ class InsertNoteWindowController: NSWindowController {
         super.init(window: window)
         setupUI()
         applyTheme()
+        DispatchQueue.main.async { [weak self] in
+            self?.applyTheme()
+        }
         NotificationCenter.default.addObserver(self, selector: #selector(themeDidChange(_:)), name: Notification.Name.themeDidChange, object: nil)
     }
 
@@ -241,24 +244,12 @@ class InsertNoteWindowController: NSWindowController {
 
         // Theme the table view
         notesList.backgroundColor = theme.pageBackground
-        listScrollView.backgroundColor = theme.pageBackground
-        listScrollView.drawsBackground = true
-
-        // Theme scroll view borders
-        listScrollView.wantsLayer = true
-        listScrollView.layer?.borderColor = theme.pageBorder.cgColor
-        listScrollView.layer?.borderWidth = 1
-        listScrollView.borderType = .noBorder
+        styleTextAreaScrollView(listScrollView, theme: theme)
 
         // Theme the content text view
         contentField.backgroundColor = theme.pageBackground
         contentField.textColor = theme.textColor
-        contentScrollView.backgroundColor = theme.pageBackground
-        contentScrollView.drawsBackground = true
-        contentScrollView.wantsLayer = true
-        contentScrollView.layer?.borderColor = theme.pageBorder.cgColor
-        contentScrollView.layer?.borderWidth = 1
-        contentScrollView.borderType = .noBorder
+        styleTextAreaScrollView(contentScrollView, theme: theme)
 
         // Theme buttons
         themeButton(insertButton, theme: theme)
@@ -294,6 +285,26 @@ class InsertNoteWindowController: NSWindowController {
         popup.layer?.borderColor = theme.pageBorder.cgColor
         popup.layer?.borderWidth = 1
         popup.layer?.cornerRadius = 4
+    }
+
+    private func styleTextAreaScrollView(_ scrollView: NSScrollView, theme: AppTheme) {
+        // NSScrollView is sometimes finicky about rendering its own layer border.
+        // Styling the clip view (contentView) is more reliable visually.
+        scrollView.drawsBackground = true
+        scrollView.backgroundColor = theme.pageBackground
+        scrollView.borderType = .noBorder
+
+        scrollView.wantsLayer = true
+        scrollView.layer?.backgroundColor = theme.pageBackground.cgColor
+        scrollView.layer?.cornerRadius = 6
+        scrollView.layer?.masksToBounds = false
+
+        scrollView.contentView.wantsLayer = true
+        scrollView.contentView.layer?.backgroundColor = theme.pageBackground.cgColor
+        scrollView.contentView.layer?.borderWidth = 1
+        scrollView.contentView.layer?.cornerRadius = 6
+        scrollView.contentView.layer?.borderColor = theme.pageBorder.cgColor
+        scrollView.contentView.layer?.masksToBounds = true
     }
 
     func reloadNotes() {

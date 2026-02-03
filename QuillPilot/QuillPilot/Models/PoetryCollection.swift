@@ -236,6 +236,26 @@ final class PoetryCollectionManager {
         updateCollection(collection)
     }
 
+    func movePoem(_ poemId: UUID, from sourceCollectionId: UUID, to destinationCollectionId: UUID, sectionId: UUID? = nil) {
+        guard sourceCollectionId != destinationCollectionId else {
+            movePoem(poemId, to: sectionId, in: sourceCollectionId)
+            return
+        }
+        guard var source = getCollection(id: sourceCollectionId),
+              var destination = getCollection(id: destinationCollectionId) else {
+            return
+        }
+        guard let index = source.poems.firstIndex(where: { $0.id == poemId }) else { return }
+
+        var poem = source.poems.remove(at: index)
+        poem.sectionId = sectionId
+        poem.order = (destination.poems.map { $0.order }.max().map { $0 + 1 } ?? 0)
+        destination.poems.append(poem)
+
+        updateCollection(source)
+        updateCollection(destination)
+    }
+
     func reorderPoems(in collectionId: UUID, poemIds: [UUID]) {
         guard var collection = getCollection(id: collectionId) else { return }
 
@@ -268,6 +288,8 @@ final class PoetryCollectionManager {
 
         if let index = collection.poems.firstIndex(where: { $0.id == poemId }) {
             collection.poems[index].sectionId = sectionId
+            // Force a new array instance so SwiftUI reliably refreshes derived section groupings.
+            collection.poems = Array(collection.poems)
             updateCollection(collection)
         }
     }

@@ -199,7 +199,8 @@ class DocumentationWindowController: NSWindowController, NSWindowDelegate, NSOut
             HelpTopic(id: "analysis-tools", title: "Analysis & Story Tools", icon: "▸", children: [
                 HelpTopic(id: "analysis-overview", title: "Overview", icon: "📊", contentLoader: { self.makeAnalysisOverviewContent() }),
                 HelpTopic(id: "character-analysis", title: "Character Analysis", icon: "📈", contentLoader: { self.makeCharacterAnalysisContent() }),
-                HelpTopic(id: "poetry-analysis", title: "Poetry Analysis", icon: "🪶", contentLoader: { self.makePoetryAnalysisContent() })
+                HelpTopic(id: "poetry-analysis", title: "Poetry Analysis", icon: "🪶", contentLoader: { self.makePoetryAnalysisContent() }),
+                HelpTopic(id: "poetry-collections", title: "Poetry Collections", icon: "📚", contentLoader: { self.makePoetryCollectionsContent() })
             ]),
 
             HelpTopic(id: "formatting-layout", title: "Formatting & Layout", icon: "▸", children: [
@@ -2316,6 +2317,74 @@ Remember: Analysis can identify patterns but cannot evaluate meaning. A "low" sc
         normalizeAppNameInDocumentation(content)
         return content
     }
+
+        private func makePoetryCollectionsContent() -> NSAttributedString {
+        let theme = ThemeManager.shared.currentTheme
+        let titleColor = theme.textColor
+        let headingColor = theme.textColor
+        let bodyColor = theme.textColor
+
+        let content = NSMutableAttributedString()
+
+        content.append(makeTitle("📚 Poetry Collections", color: titleColor))
+        content.append(makeBody("""
+    Poetry Collections help you organize poems into chapbooks or full-length manuscripts. Collections can contain sections (chapters) and poems.
+
+    Access: Poetry Tools → Poetry Collections
+    """, color: bodyColor))
+        content.append(makeNewline())
+
+        content.append(makeHeading("Recommended Workflow (avoid moving things around)", color: headingColor))
+        content.append(makeBody("""
+    1) Create a Collection first.
+    2) Create Sections next (optional, but recommended).
+    3) Add Poems last.
+
+    This order prevents you from having to move poems around after the fact.
+    """, color: bodyColor))
+        content.append(makeNewline())
+
+        content.append(makeHeading("Adding Poems", color: headingColor))
+        content.append(makeBody("""
+    Ways to add:
+    • Add Current Poem — Adds what’s currently in the editor to the selected collection.
+    • Drag & drop text or a file onto a collection in the sidebar.
+
+    Formatting note:
+    • If the document is saved, Collections store a file reference so “Open Poem” preserves formatting.
+    • If the document is unsaved, Quill Pilot saves a temporary RTFD snapshot so formatting is preserved when opening from the collection.
+    """, color: bodyColor))
+        content.append(makeNewline())
+
+        content.append(makeHeading("Opening Poems", color: headingColor))
+        content.append(makeBody("""
+    Click a poem row to open the actions popup, then choose Open Poem.
+    """, color: bodyColor))
+        content.append(makeNewline())
+
+        content.append(makeHeading("Sections", color: headingColor))
+        content.append(makeBody("""
+    • Create sections with the folder-plus button.
+    • Delete a section using the trash icon in the section header.
+
+    Deleting a section does NOT delete poems — poems move to “Uncategorized”.
+    """, color: bodyColor))
+        content.append(makeNewline())
+
+        content.append(makeHeading("Moving Poems", color: headingColor))
+        content.append(makeBody("""
+    From the poem actions popup:
+    • Move to Section
+    • Move to Collection
+
+    Drag & drop:
+    • Drag a poem onto a section header to move it into that section.
+    • Drag a poem onto a collection in the sidebar to move it to that collection.
+    """, color: bodyColor))
+
+        normalizeAppNameInDocumentation(content)
+        return content
+        }
 
     private func makeTypographyContent() -> NSAttributedString {
         let theme = ThemeManager.shared.currentTheme

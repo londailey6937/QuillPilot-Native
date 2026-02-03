@@ -38,6 +38,9 @@ class InsertBookmarkWindowController: NSWindowController {
         self.init(window: window)
         setupUI()
         applyTheme()
+        DispatchQueue.main.async { [weak self] in
+            self?.applyTheme()
+        }
         NotificationCenter.default.addObserver(self, selector: #selector(themeDidChange(_:)), name: Notification.Name.themeDidChange, object: nil)
     }
 
@@ -176,20 +179,16 @@ class InsertBookmarkWindowController: NSWindowController {
         nameField.drawsBackground = true
         nameField.isBordered = false
         nameField.wantsLayer = true
+        if nameField.layer == nil {
+            nameField.layer = CALayer()
+        }
         nameField.layer?.borderColor = theme.pageBorder.cgColor
         nameField.layer?.borderWidth = 1
         nameField.layer?.cornerRadius = 4
 
         // Theme the table view
         existingBookmarksList.backgroundColor = theme.pageBackground
-        scrollView.backgroundColor = theme.pageBackground
-        scrollView.drawsBackground = true
-
-        // Theme scroll view border
-        scrollView.wantsLayer = true
-        scrollView.layer?.borderColor = theme.pageBorder.cgColor
-        scrollView.layer?.borderWidth = 1
-        scrollView.borderType = .noBorder
+        styleTextAreaScrollView(scrollView, theme: theme)
 
         // Theme buttons
         themeButton(addButton, theme: theme)
@@ -214,6 +213,26 @@ class InsertBookmarkWindowController: NSWindowController {
                 .font: font
             ]
         )
+    }
+
+    private func styleTextAreaScrollView(_ scrollView: NSScrollView, theme: AppTheme) {
+        // NSScrollView is sometimes finicky about rendering its own layer border.
+        // Styling the clip view (contentView) is more reliable visually.
+        scrollView.drawsBackground = true
+        scrollView.backgroundColor = theme.pageBackground
+        scrollView.borderType = .noBorder
+
+        scrollView.wantsLayer = true
+        scrollView.layer?.backgroundColor = theme.pageBackground.cgColor
+        scrollView.layer?.cornerRadius = 6
+        scrollView.layer?.masksToBounds = false
+
+        scrollView.contentView.wantsLayer = true
+        scrollView.contentView.layer?.backgroundColor = theme.pageBackground.cgColor
+        scrollView.contentView.layer?.borderWidth = 1
+        scrollView.contentView.layer?.cornerRadius = 6
+        scrollView.contentView.layer?.borderColor = theme.pageBorder.cgColor
+        scrollView.contentView.layer?.masksToBounds = true
     }
 
     func reloadBookmarks() {
@@ -310,6 +329,9 @@ class InsertCrossReferenceWindowController: NSWindowController {
         self.init(window: window)
         setupUI()
         applyTheme()
+        DispatchQueue.main.async { [weak self] in
+            self?.applyTheme()
+        }
         NotificationCenter.default.addObserver(self, selector: #selector(themeDidChange(_:)), name: Notification.Name.themeDidChange, object: nil)
     }
 
@@ -471,17 +493,10 @@ class InsertCrossReferenceWindowController: NSWindowController {
 
         // Theme the table view
         targetsList.backgroundColor = theme.pageBackground
-        scrollView.backgroundColor = theme.pageBackground
-        scrollView.drawsBackground = true
-
-        // Theme scroll view border
-        scrollView.wantsLayer = true
-        scrollView.layer?.borderColor = theme.pageBorder.cgColor
-        scrollView.layer?.borderWidth = 1
-        scrollView.borderType = .noBorder
+        styleTextAreaScrollView(scrollView, theme: theme)
 
         // Theme checkbox
-        hyperlinkCheckbox.contentTintColor = theme.textColor
+        hyperlinkCheckbox.contentTintColor = theme.pageBorder
         let checkboxFont = hyperlinkCheckbox.font ?? NSFont.systemFont(ofSize: 13)
         hyperlinkCheckbox.attributedTitle = NSAttributedString(
             string: hyperlinkCheckbox.title,
@@ -522,6 +537,26 @@ class InsertCrossReferenceWindowController: NSWindowController {
         popup.layer?.borderColor = theme.pageBorder.cgColor
         popup.layer?.borderWidth = 1
         popup.layer?.cornerRadius = 4
+    }
+
+    private func styleTextAreaScrollView(_ scrollView: NSScrollView, theme: AppTheme) {
+        // NSScrollView is sometimes finicky about rendering its own layer border.
+        // Styling the clip view (contentView) is more reliable visually.
+        scrollView.drawsBackground = true
+        scrollView.backgroundColor = theme.pageBackground
+        scrollView.borderType = .noBorder
+
+        scrollView.wantsLayer = true
+        scrollView.layer?.backgroundColor = theme.pageBackground.cgColor
+        scrollView.layer?.cornerRadius = 6
+        scrollView.layer?.masksToBounds = false
+
+        scrollView.contentView.wantsLayer = true
+        scrollView.contentView.layer?.backgroundColor = theme.pageBackground.cgColor
+        scrollView.contentView.layer?.borderWidth = 1
+        scrollView.contentView.layer?.cornerRadius = 6
+        scrollView.contentView.layer?.borderColor = theme.pageBorder.cgColor
+        scrollView.contentView.layer?.masksToBounds = true
     }
 
     private func filterTargets() {

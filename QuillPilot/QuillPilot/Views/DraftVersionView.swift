@@ -8,6 +8,74 @@
 
 import SwiftUI
 
+private struct RatioHSplitView<Left: View, Right: View>: NSViewControllerRepresentable {
+    let ratio: CGFloat
+    let resetToken: UUID
+    let left: Left
+    let right: Right
+
+    func makeNSViewController(context: Context) -> Controller {
+        let controller = Controller()
+        controller.set(left: AnyView(left), right: AnyView(right))
+        controller.setRatio(ratio)
+        controller.requestReset(to: resetToken)
+        return controller
+    }
+
+    func updateNSViewController(_ nsViewController: Controller, context: Context) {
+        nsViewController.set(left: AnyView(left), right: AnyView(right))
+        nsViewController.setRatio(ratio)
+        nsViewController.requestReset(to: resetToken)
+    }
+
+    final class Controller: NSSplitViewController {
+        private let leftHost = NSHostingController(rootView: AnyView(EmptyView()))
+        private let rightHost = NSHostingController(rootView: AnyView(EmptyView()))
+        private var desiredRatio: CGFloat = 0.5
+        private var lastResetToken: UUID?
+
+        override func viewDidLoad() {
+            super.viewDidLoad()
+
+            let leftItem = NSSplitViewItem(viewController: leftHost)
+            let rightItem = NSSplitViewItem(viewController: rightHost)
+
+            addSplitViewItem(leftItem)
+            addSplitViewItem(rightItem)
+
+            splitView.isVertical = true
+            splitView.dividerStyle = .thin
+        }
+
+        override func viewDidLayout() {
+            super.viewDidLayout()
+            applyRatioIfPossible()
+        }
+
+        func set(left: AnyView, right: AnyView) {
+            leftHost.rootView = left
+            rightHost.rootView = right
+        }
+
+        func setRatio(_ ratio: CGFloat) {
+            desiredRatio = max(0.1, min(0.9, ratio))
+        }
+
+        func requestReset(to token: UUID) {
+            guard token != lastResetToken else { return }
+            lastResetToken = token
+            applyRatioIfPossible()
+        }
+
+        private func applyRatioIfPossible() {
+            guard splitView.arrangedSubviews.count >= 2 else { return }
+            let totalWidth = splitView.bounds.width
+            guard totalWidth > 10 else { return }
+            splitView.setPosition(totalWidth * desiredRatio, ofDividerAt: 0)
+        }
+    }
+}
+
 /// View for managing draft versions of a document
 struct DraftVersionView: View {
     let documentId: String
@@ -17,11 +85,14 @@ struct DraftVersionView: View {
     @State private var compareDraft1: DraftVersion?
     @State private var compareDraft2: DraftVersion?
     @State private var comparisonResult: DraftComparison?
+    @State private var splitResetToken = UUID()
+    @State private var themeRefreshToken = UUID()
     @Environment(\.colorScheme) private var colorScheme
     private var themeAccent: Color { Color(ThemeManager.shared.currentTheme.pageBorder) }
 
-    var onRestoreDraft: ((String) -> Void)?
-    var currentContent: String = ""
+    var onRestoreDraft: ((DraftVersion) -> Void)?
+    var currentContentProvider: (() -> String)?
+    var currentFormattedSnapshotProvider: (() -> String?)?
 
     var body: some View {
         VStack(spacing: 0) {
@@ -68,9 +139,10 @@ struct DraftVersionView: View {
                 )
             } else {
                 // Normal list mode
-                HSplitView {
-                    // Draft list
-                    List {
+                RatioHSplitView(
+                    ratio: 0.5,
+                    resetToken: splitResetToken,
+                    left: List {
                         ForEach(drafts) { draft in
                             DraftRow(draft: draft, isSelected: selectedDraftId == draft.id)
                                 .listRowBackground(
@@ -84,35 +156,44 @@ struct DraftVersionView: View {
                                 }
                         }
                     }
-                    .frame(minWidth: 200)
-
-                    // Draft detail
-                    if let id = selectedDraftId,
-                       let draft = drafts.first(where: { $0.id == id }) {
-                        DraftDetailView(
-                            draft: draft,
-                            onRestore: { onRestoreDraft?(draft.content) },
-                            onDelete: { deleteDraft(draft) },
-                            onUpdateNotes: { notes in
-                                DraftVersionManager.shared.updateDraftNotes(
-                                    id: draft.id,
-                                    documentId: documentId,
-                                    notes: notes
-                                )
-                                refreshDrafts()
-                            }
-                        )
-                    } else {
-                        Text("Select a draft to view")
-                            .foregroundColor(.secondary)
-                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .frame(minWidth: 240),
+                    right: Group {
+                        if let id = selectedDraftId,
+                           let draft = drafts.first(where: { $0.id == id }) {
+                            DraftDetailView(
+                                draft: draft,
+                                onRestore: { onRestoreDraft?(draft) },
+                                onDelete: { deleteDraft(draft) },
+                                onUpdateNotes: { notes in
+                                    DraftVersionManager.shared.updateDraftNotes(
+                                        id: draft.id,
+                                        documentId: documentId,
+                                        notes: notes
+                                    )
+                                    refreshDrafts()
+                                }
+                            )
+                        } else {
+                            Text("Select a draft to view")
+                                .foregroundColor(.secondary)
+                                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        }
                     }
-                }
+                )
             }
         }
         .onAppear {
             refreshDrafts()
+            splitResetToken = UUID()
         }
+        .onReceive(NotificationCenter.default.publisher(for: .themeDidChange)) { _ in
+            // Force a rebuild so accent/background update immediately.
+            themeRefreshToken = UUID()
+        }
+        .onChange(of: selectedDraftId) { _ in
+            splitResetToken = UUID()
+        }
+        .id(themeRefreshToken)
         .tint(themeAccent)
         .accentColor(themeAccent)
     }
@@ -122,9 +203,12 @@ struct DraftVersionView: View {
     }
 
     private func saveDraft() {
+        let content = currentContentProvider?() ?? ""
+        let fileReference = currentFormattedSnapshotProvider?()
         _ = DraftVersionManager.shared.saveDraft(
             documentId: documentId,
-            content: currentContent
+            content: content,
+            fileReference: fileReference
         )
         refreshDrafts()
     }
@@ -141,25 +225,28 @@ struct DraftRow: View {
     let isSelected: Bool
 
     var body: some View {
+        let titleColor: Color = .primary
+        let metaColor: Color = isSelected ? .primary.opacity(0.75) : .secondary
+
         VStack(alignment: .leading, spacing: 4) {
             HStack {
                 Text(draft.title)
                     .font(.headline)
-                    .foregroundColor(isSelected ? .white : .primary)
+                    .foregroundColor(titleColor)
                 Spacer()
                 Text("v\(draft.versionNumber)")
                     .font(.caption)
-                    .foregroundColor(isSelected ? .white.opacity(0.9) : .secondary)
+                    .foregroundColor(metaColor)
             }
 
             HStack {
                 Text(formatDate(draft.createdAt))
                     .font(.caption)
-                    .foregroundColor(isSelected ? .white.opacity(0.9) : .secondary)
+                    .foregroundColor(metaColor)
                 Spacer()
                 Text("\(draft.wordCount) words")
                     .font(.caption)
-                    .foregroundColor(isSelected ? .white.opacity(0.9) : .secondary)
+                    .foregroundColor(metaColor)
             }
         }
         .padding(.vertical, 4)
@@ -362,12 +449,17 @@ extension DraftVersion: Equatable, Hashable {
 final class DraftVersionWindowController: NSWindowController, NSWindowDelegate {
 
     var documentId: String = ""
-    var currentContent: String = ""
-    var onRestoreDraft: ((String) -> Void)?
+    var currentContentProvider: (() -> String)?
+    var currentFormattedSnapshotProvider: (() -> String?)?
+    var onRestoreDraft: ((DraftVersion) -> Void)?
 
-    convenience init(documentId: String, currentContent: String) {
+    convenience init(
+        documentId: String,
+        currentContentProvider: @escaping () -> String,
+        currentFormattedSnapshotProvider: @escaping () -> String?
+    ) {
         let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 600, height: 500),
+            contentRect: NSRect(x: 0, y: 0, width: 980, height: 650),
             styleMask: [.titled, .closable, .resizable],
             backing: .buffered,
             defer: false
@@ -375,6 +467,7 @@ final class DraftVersionWindowController: NSWindowController, NSWindowDelegate {
         window.title = "Draft Versions"
         window.center()
         window.isReleasedWhenClosed = false
+        window.minSize = NSSize(width: 860, height: 560)
 
         // Apply theme appearance
         let isDarkMode = ThemeManager.shared.isDarkMode
@@ -382,7 +475,8 @@ final class DraftVersionWindowController: NSWindowController, NSWindowDelegate {
 
         self.init(window: window)
         self.documentId = documentId
-        self.currentContent = currentContent
+        self.currentContentProvider = currentContentProvider
+        self.currentFormattedSnapshotProvider = currentFormattedSnapshotProvider
         window.delegate = self
         updateContent()
     }
@@ -401,10 +495,11 @@ final class DraftVersionWindowController: NSWindowController, NSWindowDelegate {
     func updateContent() {
         let view = DraftVersionView(
             documentId: documentId,
-            onRestoreDraft: { [weak self] content in
-                self?.onRestoreDraft?(content)
+            onRestoreDraft: { [weak self] draft in
+                self?.onRestoreDraft?(draft)
             },
-            currentContent: currentContent
+            currentContentProvider: currentContentProvider,
+            currentFormattedSnapshotProvider: currentFormattedSnapshotProvider
         )
         window?.contentView = FirstMouseHostingView(rootView: view)
     }

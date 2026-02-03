@@ -17,6 +17,7 @@ struct DraftVersion: Codable, Identifiable {
     var versionNumber: Int
     var title: String
     var content: String
+    var fileReference: String?
     var notes: String
     var createdAt: Date
     var wordCount: Int
@@ -28,6 +29,7 @@ struct DraftVersion: Codable, Identifiable {
         versionNumber: Int,
         title: String = "",
         content: String,
+        fileReference: String? = nil,
         notes: String = "",
         createdAt: Date = Date()
     ) {
@@ -36,6 +38,7 @@ struct DraftVersion: Codable, Identifiable {
         self.versionNumber = versionNumber
         self.title = title.isEmpty ? "Draft \(versionNumber)" : title
         self.content = content
+        self.fileReference = fileReference
         self.notes = notes
         self.createdAt = createdAt
         self.wordCount = content.components(separatedBy: .whitespacesAndNewlines).filter { !$0.isEmpty }.count
@@ -120,7 +123,7 @@ final class DraftVersionManager {
     // MARK: - CRUD Operations
 
     /// Save a new draft version for a document
-    func saveDraft(documentId: String, content: String, notes: String = "", title: String = "") -> DraftVersion {
+    func saveDraft(documentId: String, content: String, fileReference: String? = nil, notes: String = "", title: String = "") -> DraftVersion {
         var documentDrafts = drafts[documentId] ?? []
 
         let nextVersion = (documentDrafts.map { $0.versionNumber }.max() ?? 0) + 1
@@ -129,6 +132,7 @@ final class DraftVersionManager {
             versionNumber: nextVersion,
             title: title,
             content: content,
+            fileReference: fileReference,
             notes: notes
         )
 

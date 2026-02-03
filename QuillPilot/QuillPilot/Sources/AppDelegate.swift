@@ -30,6 +30,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var aboutWindow: NSWindow?
     private var welcomeWindow: WelcomeWindowController?
     private var specialCharactersWindow: SpecialCharactersWindowController?
+    private var sectionBreaksWindow: SectionBreaksWindowController?
     private var recentlyOpenedMenu: NSMenu?
     private var viewMenu: NSMenu?
     private var windowMenu: NSMenu?
@@ -250,7 +251,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationSupportsSecureRestorableState(_ app: NSApplication) -> Bool {
-        false
+        true
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
@@ -363,7 +364,40 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let visible = editor.toggleSectionBreaksVisibility()
         if let menuItem = sender as? NSMenuItem {
             menuItem.state = visible ? .on : .off
+            menuItem.title = visible ? "Hide Section Breaks" : "Show Section Breaks"
         }
+    }
+
+    @objc private func showSectionBreaksManager(_ sender: Any?) {
+        if mainWindowController == nil {
+            mainWindowController = MainWindowController()
+        }
+        presentMainWindow(orderingSource: sender)
+
+        guard let editor = mainWindowController?.mainContentViewController?.editorViewController else { return }
+
+        if sectionBreaksWindow == nil {
+            sectionBreaksWindow = SectionBreaksWindowController(
+                provider: { [weak editor] in
+                    editor?.sectionBreakInfos() ?? []
+                },
+                onGoTo: { [weak editor] id in
+                    editor?.goToSectionBreak(withID: id)
+                },
+                onEdit: { [weak editor] id in
+                    editor?.editSectionBreak(withID: id)
+                },
+                onRemove: { [weak editor] id in
+                    _ = editor?.removeSectionBreak(withID: id)
+                }
+            )
+        }
+
+        sectionBreaksWindow?.reload()
+        sectionBreaksWindow?.showWindow(nil)
+        sectionBreaksWindow?.window?.makeKeyAndOrderFront(nil)
+        sectionBreaksWindow?.window?.collectionBehavior = [.moveToActiveSpace, .fullScreenAuxiliary]
+        NSApp.activate(ignoringOtherApps: true)
     }
 
     @objc private func insertHyperlink(_ sender: Any?) {
@@ -652,12 +686,67 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     @objc func showDraftVersions(_ sender: Any?) {
+        guard let textView = mainWindowController?.mainContentViewController?.editorViewController.textView else { return }
         let documentId = mainWindowController?.currentDocumentTitle() ?? "untitled"
-        let currentContent = mainWindowController?.mainContentViewController?.editorViewController.textView.string ?? ""
 
-        draftVersionWindowController = DraftVersionWindowController(documentId: documentId, currentContent: currentContent)
-        draftVersionWindowController?.onRestoreDraft = { [weak self] content in
-            self?.mainWindowController?.mainContentViewController?.editorViewController.textView.string = content
+        let currentContentProvider: () -> String = { [weak textView] in
+            textView?.string ?? ""
+        }
+
+        let currentFormattedSnapshotProvider: () -> String? = { [weak textView] in
+            guard let textView else { return nil }
+            do {
+                let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
+                let snapshotsDir = appSupport?.appendingPathComponent("QuillPilot/DraftVersions", isDirectory: true)
+                guard let snapshotsDir else { return nil }
+                try FileManager.default.createDirectory(at: snapshotsDir, withIntermediateDirectories: true)
+
+                let snapshotURL = snapshotsDir.appendingPathComponent("\(UUID().uuidString).rtfd", isDirectory: true)
+                let attributed = textView.textStorage ?? NSTextStorage(attributedString: textView.attributedString())
+                let range = NSRange(location: 0, length: attributed.length)
+                let wrapper = try attributed.fileWrapper(
+                    from: range,
+                    documentAttributes: [.documentType: NSAttributedString.DocumentType.rtfd]
+                )
+                try wrapper.write(to: snapshotURL, options: .atomic, originalContentsURL: nil)
+                return snapshotURL.path
+            } catch {
+                DebugLog.log("Failed to export RTFD snapshot for draft version: \(error)")
+                return nil
+            }
+        }
+
+        draftVersionWindowController = DraftVersionWindowController(
+            documentId: documentId,
+            currentContentProvider: currentContentProvider,
+            currentFormattedSnapshotProvider: currentFormattedSnapshotProvider
+        )
+        draftVersionWindowController?.onRestoreDraft = { [weak textView] draft in
+            guard let textView else { return }
+            if let path = draft.fileReference {
+                let url = URL(fileURLWithPath: path)
+                do {
+                    switch url.pathExtension.lowercased() {
+                    case "rtfd":
+                        let wrapper = try FileWrapper(url: url, options: .immediate)
+                        if let attributed = NSAttributedString(rtfdFileWrapper: wrapper, documentAttributes: nil) {
+                            textView.textStorage?.setAttributedString(attributed)
+                            return
+                        }
+                    case "rtf":
+                        let attributed = try NSAttributedString(url: url, options: [:], documentAttributes: nil)
+                        textView.textStorage?.setAttributedString(attributed)
+                        return
+                    default:
+                        break
+                    }
+                } catch {
+                    DebugLog.log("Failed to restore formatted draft content from \(path): \(error)")
+                }
+            }
+
+            // Fallback: plain text only.
+            textView.string = draft.content
         }
 
         draftVersionWindowController?.showWindow(self)
@@ -1013,9 +1102,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         toggleRulerItem.target = self
         viewMenu.addItem(toggleRulerItem)
 
+        let sectionBreaksMenuItem = NSMenuItem(title: "Section Breaks", action: nil, keyEquivalent: "")
+        let sectionBreaksMenu = NSMenu(title: "Section Breaks")
+        sectionBreaksMenuItem.submenu = sectionBreaksMenu
+        viewMenu.addItem(sectionBreaksMenuItem)
+
         let toggleSectionBreaksItem = NSMenuItem(title: "Show Section Breaks", action: #selector(toggleSectionBreaksVisibility(_:)), keyEquivalent: "")
         toggleSectionBreaksItem.target = self
-        viewMenu.addItem(toggleSectionBreaksItem)
+        sectionBreaksMenu.addItem(toggleSectionBreaksItem)
+
+        let manageSectionBreaksItem = NSMenuItem(title: "Manage Section Breaks…", action: #selector(showSectionBreaksManager(_:)), keyEquivalent: "")
+        manageSectionBreaksItem.target = self
+        sectionBreaksMenu.addItem(manageSectionBreaksItem)
 
         viewMenu.addItem(.separator())
 

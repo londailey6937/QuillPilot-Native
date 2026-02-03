@@ -84,6 +84,9 @@ class AnalysisViewController: NSViewController, NSWindowDelegate {
     // Passive voice disclosure tracking
     private var passiveDisclosureViews: [NSButton: NSScrollView] = [:]
 
+    // Coalesce popout resize work to avoid layout recursion warnings.
+    private var pendingPopoutResizeWorkItem: DispatchWorkItem?
+
     // NSWindowDelegate: keep plot popout scroll sizing in sync
     func windowDidResize(_ notification: Notification) {
         guard let window = notification.object as? NSWindow,
@@ -91,15 +94,35 @@ class AnalysisViewController: NSViewController, NSWindowDelegate {
               let scrollView = plotPopoutScrollView,
               let contentView = plotPopoutContentView,
               let stack = plotPopoutStack else { return }
-        resizePopoutContent(scrollView: scrollView, contentView: contentView, stack: stack)
+        schedulePopoutResize(scrollView: scrollView, contentView: contentView, stack: stack)
     }
 
     /// Force the popout scroll view to have a content height larger than the viewport so the mouse wheel scrolls.
     private func resizePopoutContent(scrollView: NSScrollView, contentView: NSView, stack: NSStackView) {
-        contentView.layoutSubtreeIfNeeded()
-        stack.layoutSubtreeIfNeeded()
-        let targetHeight = max(stack.fittingSize.height + 24, scrollView.contentSize.height + 1)
-        contentView.setFrameSize(NSSize(width: scrollView.contentSize.width, height: targetHeight))
+        // Avoid forcing layout here; this can be called during an active layout pass.
+        let viewportHeight = scrollView.contentSize.height
+        let viewportWidth = scrollView.contentSize.width
+
+        let stackHeight = max(stack.fittingSize.height, stack.bounds.height)
+        let targetHeight = max(stackHeight + 24, viewportHeight + 1)
+        let targetWidth = max(1, viewportWidth)
+
+        if contentView.frame.size.width != targetWidth || contentView.frame.size.height != targetHeight {
+            contentView.setFrameSize(NSSize(width: targetWidth, height: targetHeight))
+        }
+    }
+
+    private func schedulePopoutResize(scrollView: NSScrollView, contentView: NSView, stack: NSStackView) {
+        pendingPopoutResizeWorkItem?.cancel()
+        let item = DispatchWorkItem { [weak self, weak scrollView, weak contentView, weak stack] in
+            guard let self,
+                  let scrollView,
+                  let contentView,
+                  let stack else { return }
+            self.resizePopoutContent(scrollView: scrollView, contentView: contentView, stack: stack)
+        }
+        pendingPopoutResizeWorkItem = item
+        DispatchQueue.main.async(execute: item)
     }
 
     @objc private func scrollPlotPopoutToChart() {
@@ -421,7 +444,7 @@ class AnalysisViewController: NSViewController, NSWindowDelegate {
         if isOutlinePanel {
             let categories: [NavigatorCategory] = isPoetry ? [] : NavigatorCategory.allCases
             buttonCount += categories.count
-            if !isPoetry { buttonCount += 1 }
+            if !isPoetry { buttonCount += 2 } // Notes + Submission Tracker
         } else {
             let categories: [AnalysisCategory] = isPoetry ? [.basic] : [.basic, .plot]
             buttonCount += categories.count
@@ -543,6 +566,44 @@ class AnalysisViewController: NSViewController, NSWindowDelegate {
                     notesButton.centerXAnchor.constraint(equalTo: menuSidebar.centerXAnchor),
                     notesButton.widthAnchor.constraint(equalToConstant: buttonSize),
                     notesButton.heightAnchor.constraint(equalToConstant: buttonSize)
+                ])
+
+                yPosition += buttonSize + spacing
+
+                // Submission Tracker button: sits directly under Notes.
+                let submissionButton = SidebarButton(frame: NSRect(x: 0, y: 0, width: buttonSize, height: buttonSize))
+                if #available(macOS 11.0, *) {
+                    let base = NSImage(systemSymbolName: "envelope", accessibilityDescription: "Submission Tracker")
+                    let config = NSImage.SymbolConfiguration(pointSize: iconPointSize, weight: .regular)
+                    if let base, let image = base.withSymbolConfiguration(config) {
+                        submissionButton.image = image
+                        submissionButton.imagePosition = .imageOnly
+                        submissionButton.title = ""
+                        submissionButton.image?.isTemplate = true
+                    } else {
+                        submissionButton.title = "Sub"
+                        submissionButton.font = .systemFont(ofSize: labelPointSize)
+                    }
+                } else {
+                    submissionButton.title = "Sub"
+                    submissionButton.font = .systemFont(ofSize: labelPointSize)
+                }
+                submissionButton.isBordered = false
+                submissionButton.bezelStyle = .rounded
+                submissionButton.target = self
+                submissionButton.action = #selector(submissionTrackerSidebarButtonTapped(_:))
+                submissionButton.translatesAutoresizingMaskIntoConstraints = false
+                submissionButton.toolTip = "Submission Tracker"
+                submissionButton.sendAction(on: [.leftMouseDown])
+
+                menuSidebar.addSubview(submissionButton)
+                menuButtons.append(submissionButton)
+
+                NSLayoutConstraint.activate([
+                    submissionButton.topAnchor.constraint(equalTo: menuSidebar.topAnchor, constant: yPosition),
+                    submissionButton.centerXAnchor.constraint(equalTo: menuSidebar.centerXAnchor),
+                    submissionButton.widthAnchor.constraint(equalToConstant: buttonSize),
+                    submissionButton.heightAnchor.constraint(equalToConstant: buttonSize)
                 ])
 
                 yPosition += buttonSize + spacing
@@ -747,6 +808,10 @@ class AnalysisViewController: NSViewController, NSWindowDelegate {
                 button.layer?.borderWidth = 0
             }
         }
+    }
+
+    @objc private func submissionTrackerSidebarButtonTapped(_ sender: Any?) {
+        (NSApp.delegate as? AppDelegate)?.showSubmissionTracker(sender)
     }
 
     private func applyTemplateAdaptiveUI() {
@@ -1740,10 +1805,7 @@ class AnalysisViewController: NSViewController, NSWindowDelegate {
                   let scrollView,
                   let contentView,
                   let stack else { return }
-            scrollView.layoutSubtreeIfNeeded()
-            contentView.layoutSubtreeIfNeeded()
-            stack.layoutSubtreeIfNeeded()
-            self.resizePopoutContent(scrollView: scrollView, contentView: contentView, stack: stack)
+            self.schedulePopoutResize(scrollView: scrollView, contentView: contentView, stack: stack)
         }
     }
 
@@ -4634,10 +4696,7 @@ extension AnalysisViewController {
                   let scrollView,
                   let contentView,
                   let stack else { return }
-            scrollView.layoutSubtreeIfNeeded()
-            scrollView.superview?.layoutSubtreeIfNeeded()
-            scrollView.window?.contentView?.layoutSubtreeIfNeeded()
-            self.resizePopoutContent(scrollView: scrollView, contentView: contentView, stack: stack)
+            self.schedulePopoutResize(scrollView: scrollView, contentView: contentView, stack: stack)
         }
 
         NotificationCenter.default.addObserver(

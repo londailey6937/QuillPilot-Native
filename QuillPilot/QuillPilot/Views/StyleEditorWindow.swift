@@ -299,6 +299,7 @@ final class StyleEditorViewController: NSViewController {
         let checkboxes: [NSButton?] = [boldCheckbox, italicCheckbox]
         for checkbox in checkboxes {
             guard let checkbox else { continue }
+            checkbox.contentTintColor = theme.pageBorder
             let font = checkbox.font ?? NSFont.systemFont(ofSize: NSFont.systemFontSize)
             checkbox.attributedTitle = NSAttributedString(
                 string: checkbox.title,

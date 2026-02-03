@@ -9,6 +9,7 @@ enum QuillPilotSettings {
         static let autoNumberOnReturn = "QuillPilot.autoNumberOnReturn"
         static let numberingScheme = "QuillPilot.numberingScheme"
         static let bulletStyle = "QuillPilot.bulletStyle"
+        static let showSectionBreaks = "QuillPilot.showSectionBreaks"
     }
 
     enum BulletStyle: String, CaseIterable {
@@ -145,6 +146,17 @@ enum QuillPilotSettings {
         }
         set {
             UserDefaults.standard.set(newValue.rawValue, forKey: Keys.bulletStyle)
+            NotificationCenter.default.post(name: .quillPilotSettingsDidChange, object: nil)
+        }
+    }
+
+    static var showSectionBreaks: Bool {
+        get {
+            if UserDefaults.standard.object(forKey: Keys.showSectionBreaks) == nil { return false }
+            return UserDefaults.standard.bool(forKey: Keys.showSectionBreaks)
+        }
+        set {
+            UserDefaults.standard.set(newValue, forKey: Keys.showSectionBreaks)
             NotificationCenter.default.post(name: .quillPilotSettingsDidChange, object: nil)
         }
     }

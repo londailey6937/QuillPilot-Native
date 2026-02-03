@@ -16,6 +16,14 @@ extension NSAttributedString.Key {
     static let qpSectionBreak = NSAttributedString.Key("QPSectionBreak")
 }
 
+struct SectionBreakInfo: Identifiable, Equatable {
+    let id: String
+    var name: String
+    var startPageNumber: Int
+    var numberFormatDisplay: String
+    var location: Int
+}
+
 private struct SectionBreak: Codable, Equatable {
     let id: String
     var name: String
@@ -115,6 +123,13 @@ private final class AttachmentClickableTextView: NSTextView {
         draggedAttachmentRange = nil
         draggedAttachmentImage = nil
 
+        // If the user clicked a visible section break marker (the drawn §), select the underlying
+        // zero-width anchor so the user gets immediate selection feedback.
+        if selectSectionBreakMarkerIfClicked(at: point) {
+            onMouseDownInTextView?(point)
+            return
+        }
+
         // If the user clicked an image attachment, select it and prep for dragging.
         if let layoutManager = layoutManager,
            let textContainer = textContainer,
@@ -153,6 +168,64 @@ private final class AttachmentClickableTextView: NSTextView {
 
         onMouseDownInTextView?(point)
         super.mouseDown(with: event)
+    }
+
+    private func selectSectionBreakMarkerIfClicked(at viewPoint: NSPoint) -> Bool {
+        guard showsSectionBreaks,
+              let layoutManager,
+              let textContainer,
+              let storage = textStorage,
+              storage.length > 0 else { return false }
+
+        let containerPoint = NSPoint(
+            x: viewPoint.x - textContainerOrigin.x,
+            y: viewPoint.y - textContainerOrigin.y
+        )
+
+        // Find the line fragment at this point.
+        let glyphIndex = layoutManager.glyphIndex(for: containerPoint, in: textContainer)
+        var lineGlyphRange = NSRange(location: 0, length: 0)
+        let lineFragmentRect = layoutManager.lineFragmentRect(
+            forGlyphAt: glyphIndex,
+            effectiveRange: &lineGlyphRange,
+            withoutAdditionalLayout: true
+        )
+
+        let charRange = layoutManager.characterRange(forGlyphRange: lineGlyphRange, actualGlyphRange: nil)
+        guard charRange.length > 0 else { return false }
+
+        // Only treat clicks near the drawn glyph position as a marker click.
+        let styleIndex = max(0, min(charRange.location, storage.length - 1))
+        let paragraphStyle = (storage.attribute(.paragraphStyle, at: styleIndex, effectiveRange: nil) as? NSParagraphStyle)
+            ?? (typingAttributes[.paragraphStyle] as? NSParagraphStyle)
+            ?? defaultParagraphStyle
+            ?? NSParagraphStyle.default
+
+        let glyphX = textContainerOrigin.x + lineFragmentRect.origin.x + paragraphStyle.firstLineHeadIndent
+        let clickableRect = NSRect(
+            x: glyphX - 6,
+            y: textContainerOrigin.y + lineFragmentRect.origin.y,
+            width: 26,
+            height: lineFragmentRect.height
+        )
+        guard clickableRect.contains(viewPoint) else { return false }
+
+        // If this line contains a section break marker, select it.
+        var markerRange: NSRange?
+        storage.enumerateAttribute(.qpSectionBreak, in: charRange, options: []) { value, range, stop in
+            if value != nil {
+                markerRange = range
+                stop.pointee = true
+            }
+        }
+        guard let markerRange, markerRange.location != NSNotFound else { return false }
+
+        window?.makeFirstResponder(self)
+        setSelectedRange(markerRange)
+        scrollRangeToVisible(markerRange)
+        showFindIndicator(for: markerRange)
+        needsDisplay = true
+        return true
     }
 
     override func mouseDragged(with event: NSEvent) {
@@ -205,6 +278,51 @@ private final class AttachmentClickableTextView: NSTextView {
             setSelectedRange(pending)
             pendingAttachmentSelection = nil
         }
+    }
+
+    override func doCommand(by selector: Selector) {
+        if selector == #selector(deleteBackward(_:)) {
+            if deleteAdjacentSectionBreak(isBackward: true) { return }
+        } else if selector == #selector(deleteForward(_:)) {
+            if deleteAdjacentSectionBreak(isBackward: false) { return }
+        }
+        super.doCommand(by: selector)
+    }
+
+    private func deleteAdjacentSectionBreak(isBackward: Bool) -> Bool {
+        guard let storage = textStorage, storage.length > 0 else { return false }
+        let sel = selectedRange()
+
+        // If the user selected a marker, delete it directly.
+        if sel.length > 0 {
+            var effective = NSRange(location: NSNotFound, length: 0)
+            let hasMarker = storage.attribute(.qpSectionBreak, at: sel.location, effectiveRange: &effective) != nil
+            if hasMarker && effective.location != NSNotFound {
+                return deleteSectionBreak(range: effective)
+            }
+            return false
+        }
+
+        let cursor = sel.location
+        let index = isBackward ? (cursor - 1) : cursor
+        guard index >= 0, index < storage.length else { return false }
+        var effective = NSRange(location: NSNotFound, length: 0)
+        let hasMarker = storage.attribute(.qpSectionBreak, at: index, effectiveRange: &effective) != nil
+        guard hasMarker, effective.location != NSNotFound else { return false }
+        return deleteSectionBreak(range: effective)
+    }
+
+    private func deleteSectionBreak(range: NSRange) -> Bool {
+        guard let storage = textStorage else { return false }
+        if shouldChangeText(in: range, replacementString: "") {
+            storage.beginEditing()
+            storage.deleteCharacters(in: range)
+            storage.endEditing()
+            didChangeText()
+            undoManager?.setActionName("Delete Section Break")
+            return true
+        }
+        return false
     }
 
     override func draw(_ dirtyRect: NSRect) {
@@ -2208,11 +2326,12 @@ class EditorViewController: NSViewController {
 
     // MARK: - Section break visibility
 
-    private var sectionBreaksVisibleState: Bool = false
+    private var sectionBreaksVisibleState: Bool = QuillPilotSettings.showSectionBreaks
 
     @discardableResult
     func toggleSectionBreaksVisibility() -> Bool {
         sectionBreaksVisibleState.toggle()
+        QuillPilotSettings.showSectionBreaks = sectionBreaksVisibleState
         applyParagraphMarksVisibility()
         return sectionBreaksVisibleState
     }
@@ -4064,6 +4183,7 @@ class EditorViewController: NSViewController {
             }
         }
 
+        injectSectionBreakPersistenceLinks(into: normalized)
         return normalized
     }
 
@@ -4197,8 +4317,12 @@ class EditorViewController: NSViewController {
             textView.layoutManager?.backgroundLayoutEnabled = false
         }
 
+        // Restore QuillPilot internal markers (e.g. section breaks) from safe, cross-format attributes
+        // before retagging so they don't interfere with style inference.
+        let restored = restoreSectionBreaksFromPersistenceLinks(in: attributed)
+
         // Run style detection to ensure TOC Title, Index Title, etc. appear in document outline
-        let retagged = detectAndRetagStyles(in: attributed)
+        let retagged = detectAndRetagStyles(in: restored)
         textView.textStorage?.setAttributedString(retagged)
         textView.setSelectedRange(NSRange(location: 0, length: 0))
 
@@ -5127,6 +5251,8 @@ class EditorViewController: NSViewController {
     // MARK: - Section Breaks
 
     private let sectionBreakAnchor = "\u{200B}"
+    private let sectionBreakPersistenceScheme = "quillpilot"
+    private let sectionBreakPersistenceHost = "section-break"
 
     func insertSectionBreak() {
         guard let storage = textView.textStorage else { return }
@@ -5156,6 +5282,145 @@ class EditorViewController: NSViewController {
             textView.setSelectedRange(NSRange(location: insertLocation + 1, length: 0))
             delegate?.textDidChange()
         }
+    }
+
+    func sectionBreakInfos() -> [SectionBreakInfo] {
+        guard let storage = textView.textStorage else { return [] }
+        return sectionBreaks(in: storage).map { entry in
+            SectionBreakInfo(
+                id: entry.section.id,
+                name: entry.section.name,
+                startPageNumber: entry.section.startPageNumber,
+                numberFormatDisplay: entry.section.numberFormat.rawValue,
+                location: entry.range.location
+            )
+        }
+    }
+
+    @discardableResult
+    func removeSectionBreak(withID id: String) -> Bool {
+        guard let storage = textView.textStorage else { return false }
+        guard let found = sectionBreaks(in: storage).first(where: { $0.section.id == id }) else { return false }
+        removeSectionBreak(in: storage, range: found.range)
+        return true
+    }
+
+    func goToSectionBreak(withID id: String) {
+        guard let storage = textView.textStorage else { return }
+        guard let found = sectionBreaks(in: storage).first(where: { $0.section.id == id }) else {
+            NSSound.beep()
+            return
+        }
+        textView.window?.makeFirstResponder(textView)
+        textView.setSelectedRange(NSRange(location: found.range.location, length: 0))
+        textView.scrollRangeToVisible(NSRange(location: found.range.location, length: 0))
+    }
+
+    func editSectionBreak(withID id: String) {
+        goToSectionBreak(withID: id)
+        DispatchQueue.main.async { [weak self] in
+            self?.editSectionSettingsAtCursor()
+        }
+    }
+
+    private func base64URLEncode(_ data: Data) -> String {
+        data.base64EncodedString()
+            .replacingOccurrences(of: "+", with: "-")
+            .replacingOccurrences(of: "/", with: "_")
+            .replacingOccurrences(of: "=", with: "")
+    }
+
+    private func base64URLDecode(_ string: String) -> Data? {
+        var s = string
+            .replacingOccurrences(of: "-", with: "+")
+            .replacingOccurrences(of: "_", with: "/")
+        let remainder = s.count % 4
+        if remainder != 0 {
+            s.append(String(repeating: "=", count: 4 - remainder))
+        }
+        return Data(base64Encoded: s)
+    }
+
+    private func makeSectionBreakPersistenceURL(for section: SectionBreak) -> URL? {
+        guard let data = try? JSONEncoder().encode(section) else { return nil }
+        let token = base64URLEncode(data)
+        var components = URLComponents()
+        components.scheme = sectionBreakPersistenceScheme
+        components.host = sectionBreakPersistenceHost
+        components.path = "/" + token
+        return components.url
+    }
+
+    private func decodeSectionBreak(fromPersistenceURL url: URL) -> SectionBreak? {
+        guard url.scheme == sectionBreakPersistenceScheme,
+              url.host == sectionBreakPersistenceHost else { return nil }
+        let token = url.path.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+        guard !token.isEmpty,
+              let data = base64URLDecode(token),
+              let section = try? JSONDecoder().decode(SectionBreak.self, from: data) else { return nil }
+        return section
+    }
+
+    private func injectSectionBreakPersistenceLinks(into attributed: NSMutableAttributedString) {
+        let fullRange = NSRange(location: 0, length: attributed.length)
+        attributed.enumerateAttribute(.qpSectionBreak, in: fullRange, options: []) { value, range, _ in
+            guard let data = value as? Data,
+                  let section = try? JSONDecoder().decode(SectionBreak.self, from: data),
+                  let url = makeSectionBreakPersistenceURL(for: section) else { return }
+            // Using a QuillPilot-only hyperlink makes the marker survive DOCX/RTF/ODT round-trips
+            // without introducing visible placeholder characters in other editors.
+            attributed.addAttribute(.link, value: url, range: range)
+        }
+    }
+
+    private func restoreSectionBreaksFromPersistenceLinks(in attributed: NSAttributedString) -> NSAttributedString {
+        let mutable = NSMutableAttributedString(attributedString: attributed)
+        let fullRange = NSRange(location: 0, length: mutable.length)
+
+        var matches: [(range: NSRange, section: SectionBreak)] = []
+        mutable.enumerateAttribute(.link, in: fullRange, options: []) { value, range, _ in
+            let url: URL?
+            if let u = value as? URL {
+                url = u
+            } else if let s = value as? String {
+                url = URL(string: s)
+            } else {
+                url = nil
+            }
+            guard let url, let section = decodeSectionBreak(fromPersistenceURL: url) else { return }
+            matches.append((range, section))
+        }
+
+        guard !matches.isEmpty else { return mutable }
+
+        // Apply in reverse so replacements don't invalidate later ranges.
+        for match in matches.reversed() {
+            let range = match.range
+            let section = match.section
+
+            var attrs = mutable.attributes(at: max(0, min(range.location, max(0, mutable.length - 1))), effectiveRange: nil)
+            attrs[.link] = nil
+            if let data = try? JSONEncoder().encode(section) {
+                attrs[.qpSectionBreak] = data
+            }
+            // Keep it invisible.
+            attrs[.foregroundColor] = NSColor.clear
+
+            // Ensure the stored representation is our zero-width anchor.
+            let current = (mutable.string as NSString).substring(with: range)
+            if current != sectionBreakAnchor {
+                let marker = NSAttributedString(string: sectionBreakAnchor, attributes: attrs)
+                mutable.beginEditing()
+                mutable.replaceCharacters(in: range, with: marker)
+                mutable.endEditing()
+            } else {
+                mutable.beginEditing()
+                mutable.setAttributes(attrs, range: range)
+                mutable.endEditing()
+            }
+        }
+
+        return mutable
     }
 
     func editSectionSettingsAtCursor() {
@@ -5212,10 +5477,17 @@ class EditorViewController: NSViewController {
 
     private func insertSectionBreak(in storage: NSTextStorage, at location: Int, section: SectionBreak) {
         var existingAttrs: [NSAttributedString.Key: Any] = [:]
-        if location > 0 && location <= storage.length {
-            existingAttrs = storage.attributes(at: max(0, location - 1), effectiveRange: nil)
-        } else if storage.length > 0 {
-            existingAttrs = storage.attributes(at: 0, effectiveRange: nil)
+        if storage.length > 0 {
+            // Prefer inheriting from the character AT the insertion location.
+            // This prevents inserting a section break at the start of a styled paragraph
+            // (e.g. Book Title) from inheriting the previous paragraph's (Body Text) style.
+            let index: Int
+            if location >= 0 && location < storage.length {
+                index = location
+            } else {
+                index = max(0, min(location - 1, storage.length - 1))
+            }
+            existingAttrs = storage.attributes(at: index, effectiveRange: nil)
         }
 
         var attrs = existingAttrs
@@ -5312,13 +5584,21 @@ class EditorViewController: NSViewController {
 
         alert.accessoryView = container
 
-        // Apply theme to alert buttons and popup
+        // Apply theme to alert controls
         let theme = currentTheme
         [nameLabel, startLabel, formatLabel].forEach { label in
             label.textColor = theme.textColor
         }
+
         [nameField, startField].forEach { field in
             field.textColor = theme.textColor
+            field.drawsBackground = true
+            field.backgroundColor = theme.pageBackground
+            field.wantsLayer = true
+            field.layer?.borderColor = theme.pageBorder.cgColor
+            field.layer?.borderWidth = 1
+            field.layer?.cornerRadius = 5
+            field.focusRingType = .none
         }
 
         for button in alert.buttons {
@@ -5335,6 +5615,7 @@ class EditorViewController: NSViewController {
                 attributes: [.foregroundColor: theme.textColor, .font: font]
             )
         }
+        formatPopup.contentTintColor = theme.textColor
         formatPopup.qpApplyDropdownBorder(theme: theme)
 
         guard let window = textView.window else {

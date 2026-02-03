@@ -5447,9 +5447,10 @@ private enum DocxBuilder {
     }
 
     static func makeDocxData(from attributed: NSAttributedString) throws -> Data {
+        let hyperlinkIds = collectHyperlinks(from: attributed)
         // First pass: collect images and generate document XML
         var images: [ImageInfo] = []
-        let documentXml = makeDocumentXml(from: attributed, images: &images)
+        let documentXml = makeDocumentXml(from: attributed, images: &images, hyperlinkIds: hyperlinkIds)
         let usedStyleNames = collectStyleNames(from: attributed)
         let stylesXml = StyleSheetBuilder.makeStylesXml(using: usedStyleNames)
 
@@ -5494,6 +5495,14 @@ private enum DocxBuilder {
           <Relationship Id=\"rIdStyles\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles\" Target=\"styles.xml\"/>
         """)
 
+                // Hyperlinks (including QuillPilot section-break persistence URLs)
+                // Keep deterministic ordering for stable output.
+                for (urlString, rId) in hyperlinkIds.sorted(by: { $0.key < $1.key }) {
+                        docRelItems.append("""
+                            <Relationship Id=\"\(rId)\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink\" Target=\"\(xmlEscape(urlString))\" TargetMode=\"External\"/>
+                        """)
+                }
+
         for img in images {
             docRelItems.append("""
               <Relationship Id=\"\(img.rId)\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/image\" Target=\"media/\(img.filename)\"/>
@@ -5522,8 +5531,8 @@ private enum DocxBuilder {
         return ZipWriter.makeZip(entries: entries)
     }
 
-    private static func makeDocumentXml(from attributed: NSAttributedString, images: inout [ImageInfo]) -> String {
-        let body = makeParagraphs(from: attributed, images: &images)
+    private static func makeDocumentXml(from attributed: NSAttributedString, images: inout [ImageInfo], hyperlinkIds: [String: String]) -> String {
+        let body = makeParagraphs(from: attributed, images: &images, hyperlinkIds: hyperlinkIds)
                 // Letter size in twips (1 point = 20 twips). Matches editor defaults (8.5" x 11").
                 let pageWidthTwips = 612 * 20
                 let pageHeightTwips = 792 * 20
@@ -5565,7 +5574,7 @@ private enum DocxBuilder {
         return names.sorted()
     }
 
-    private static func makeParagraphs(from attributed: NSAttributedString, images: inout [ImageInfo]) -> String {
+    private static func makeParagraphs(from attributed: NSAttributedString, images: inout [ImageInfo], hyperlinkIds: [String: String]) -> String {
         let fullString = attributed.string as NSString
         var location = 0
         var paragraphs: [String] = []
@@ -5597,7 +5606,7 @@ private enum DocxBuilder {
                                         runsRange = contentRange
                                 }
 
-                                let runs = makeRuns(from: runsSource, in: runsRange, images: &images)
+                                                                let runs = makeRuns(from: runsSource, in: runsRange, images: &images, hyperlinkIds: hyperlinkIds)
                 let cellContent = """
                 <w:p>
                   \(paragraphPropertiesXml(from: paragraphStyle, styleName: styleName))\(runs.joined())
@@ -5651,7 +5660,7 @@ private enum DocxBuilder {
                     runsRange = contentRange
                 }
 
-                let runs = makeRuns(from: runsSource, in: runsRange, images: &images)
+                                let runs = makeRuns(from: runsSource, in: runsRange, images: &images, hyperlinkIds: hyperlinkIds)
                 let pPr = paragraphPropertiesXml(from: paragraphStyle, styleName: styleName)
                 let paragraphXml = """
                 <w:p>
@@ -5757,7 +5766,7 @@ private enum DocxBuilder {
         """
     }
 
-    private static func makeRuns(from attributed: NSAttributedString, in range: NSRange, images: inout [ImageInfo]) -> [String] {
+    private static func makeRuns(from attributed: NSAttributedString, in range: NSRange, images: inout [ImageInfo], hyperlinkIds: [String: String]) -> [String] {
         let fullString = attributed.string as NSString
         var runs: [String] = []
         var hasImageAttachment = false
@@ -5777,8 +5786,25 @@ private enum DocxBuilder {
                 // Skip the attachment placeholder character (U+FFFC)
                 let filteredText = text.replacingOccurrences(of: "\u{FFFC}", with: "")
                 if !filteredText.isEmpty {
-                    let runXml = runXml(for: filteredText, attributes: attrs)
-                    runs.append(runXml)
+                    let linkValue = attrs[.link]
+                    let urlString: String?
+                    if let u = linkValue as? URL {
+                        urlString = u.absoluteString
+                    } else if let s = linkValue as? String {
+                        urlString = s
+                    } else {
+                        urlString = nil
+                    }
+
+                    if let urlString, let rId = hyperlinkIds[urlString] {
+                        var attrsWithoutLink = attrs
+                        attrsWithoutLink[.link] = nil
+                        let innerRun = runXml(for: filteredText, attributes: attrsWithoutLink)
+                        runs.append("<w:hyperlink r:id=\"\(rId)\">\(innerRun)</w:hyperlink>")
+                    } else {
+                        let runXml = runXml(for: filteredText, attributes: attrs)
+                        runs.append(runXml)
+                    }
                 }
             }
         }
@@ -6136,6 +6162,32 @@ private enum DocxBuilder {
             .replacingOccurrences(of: "\"", with: "&quot;")
             .replacingOccurrences(of: "'", with: "&apos;")
     }
+
+    private static func collectHyperlinks(from attributed: NSAttributedString) -> [String: String] {
+        var urls = Set<String>()
+        let fullRange = NSRange(location: 0, length: attributed.length)
+        attributed.enumerateAttribute(.link, in: fullRange, options: []) { value, _, _ in
+            let url: URL?
+            if let u = value as? URL {
+                url = u
+            } else if let s = value as? String {
+                url = URL(string: s)
+            } else {
+                url = nil
+            }
+            guard let url else { return }
+            urls.insert(url.absoluteString)
+        }
+
+        // Assign relationship ids.
+        // Avoid collisions with image rIds (which are currently rId(100+)) and keep stable ordering.
+        var mapping: [String: String] = [:]
+        let sorted = urls.sorted()
+        for (idx, urlString) in sorted.enumerated() {
+            mapping[urlString] = "rIdLink\(idx + 1)"
+        }
+        return mapping
+    }
 }
 
 // MARK: - Minimal DOCX text extractor (plain text)
@@ -6326,6 +6378,7 @@ private enum DocxTextExtractor {
         private var currentImageHeight: Int?
         private var currentParagraphHasImage = false
         private var relationships: [String: String] = [:]
+        private var hyperlinkURLStack: [URL] = []
 
         // Table tracking
         private var currentTable: NSTextTable? = nil
@@ -6476,6 +6529,15 @@ private enum DocxTextExtractor {
             let name = (qName ?? elementName).lowercased()
 
             switch name {
+            case "w:hyperlink", "hyperlink":
+                // Hyperlinks are represented as <w:hyperlink r:id="..."> ... <w:r><w:t>...</w:t></w:r> ...</w:hyperlink>
+                // We attach the resolved URL to any runs inside so QuillPilot can restore internal markers.
+                if let rId = attributeDict["r:id"] ?? attributeDict["id"],
+                   let target = relationships[rId],
+                   let url = URL(string: target) {
+                    hyperlinkURLStack.append(url)
+                }
+
             case "w:tbl", "tbl":
                 // Start a new table
                 currentTable = NSTextTable()
@@ -6784,6 +6846,10 @@ private enum DocxTextExtractor {
             let name = (qName ?? elementName).lowercased()
 
             switch name {
+            case "w:hyperlink", "hyperlink":
+                if !hyperlinkURLStack.isEmpty {
+                    _ = hyperlinkURLStack.removeLast()
+                }
             case "w:t", "t":
                 inText = false
             case "w:tabs", "tabs":
@@ -6852,6 +6918,10 @@ private enum DocxTextExtractor {
                 attrs[.backgroundColor] = bg
             } else if let theme = RunAttributes.color(fromTheme: runAttributes.shadingThemeColorName, tint: runAttributes.shadingThemeTint, shade: runAttributes.shadingThemeShade) {
                 attrs[.backgroundColor] = theme
+            }
+
+            if let activeLink = hyperlinkURLStack.last {
+                attrs[.link] = activeLink
             }
 
             let runString = NSAttributedString(string: currentText, attributes: attrs)

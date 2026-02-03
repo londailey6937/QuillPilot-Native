@@ -4035,7 +4035,22 @@ class EditorViewController: NSViewController {
         let fullString = normalized.string as NSString
         let defaultParagraph = textView.defaultParagraphStyle ?? NSParagraphStyle.default
         let defaultFont = textView.font ?? NSFont.systemFont(ofSize: 12)
-        let defaultColor = currentTheme.textColor
+        // Export should be appearance-neutral (dark mode shouldn't produce white ink).
+        // Use a fixed, standard default color for any missing ink.
+        let defaultColor: NSColor = .black
+
+        func colorsAreClose(_ a: NSColor, _ b: NSColor, tolerance: CGFloat = 0.02) -> Bool {
+            let ca = (a.usingColorSpace(.sRGB) ?? a)
+            let cb = (b.usingColorSpace(.sRGB) ?? b)
+            return abs(ca.redComponent - cb.redComponent) <= tolerance &&
+                abs(ca.greenComponent - cb.greenComponent) <= tolerance &&
+                abs(ca.blueComponent - cb.blueComponent) <= tolerance
+        }
+
+        func perceivedBrightness(_ c: NSColor) -> CGFloat {
+            let rgb = (c.usingColorSpace(.sRGB) ?? c)
+            return (0.299 * rgb.redComponent) + (0.587 * rgb.greenComponent) + (0.114 * rgb.blueComponent)
+        }
 
         func enforceBodyIndentIfNeeded(
             styleName: String,
@@ -4180,6 +4195,31 @@ class EditorViewController: NSViewController {
             }
             if attrs[.foregroundColor] == nil {
                 normalized.addAttribute(.foregroundColor, value: defaultColor, range: range)
+            }
+        }
+
+        // If the editor is in a dark theme, the text storage may carry theme-injected light ink.
+        // Normalize those runs back to standard black for export so Word/LibreOffice remain readable.
+        let themeText = currentTheme.textColor
+        let themeBg = currentTheme.pageBackground
+        let themeTextBrightness = perceivedBrightness(themeText)
+        if themeTextBrightness > 0.70 {
+            let fullRange = NSRange(location: 0, length: normalized.length)
+            normalized.enumerateAttributes(in: fullRange, options: []) { attrs, range, _ in
+                if let fg = attrs[.foregroundColor] as? NSColor {
+                    // Only rewrite colors that are essentially the current theme's text color.
+                    // This avoids destroying intentional colored spans.
+                    if colorsAreClose(fg, themeText) {
+                        normalized.addAttribute(.foregroundColor, value: NSColor.black, range: range)
+                    }
+                }
+
+                if let bg = attrs[.backgroundColor] as? NSColor {
+                    // Strip theme page background fills so exports don't carry dark shading.
+                    if colorsAreClose(bg, themeBg) {
+                        normalized.removeAttribute(.backgroundColor, range: range)
+                    }
+                }
             }
         }
 

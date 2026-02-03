@@ -7,6 +7,7 @@
 //
 
 import Foundation
+import Combine
 
 // MARK: - Submission Model
 
@@ -213,15 +214,16 @@ struct SubmissionStatistics {
 // MARK: - Submission Manager
 
 /// Manages poem submissions
-final class SubmissionManager {
+@MainActor
+final class SubmissionManager: ObservableObject {
 
     static let shared = SubmissionManager()
 
     private let submissionsKey = "poetrySubmissions"
     private let publicationsKey = "savedPublications"
 
-    private var submissions: [Submission] = []
-    private var publications: [Publication] = []
+    @Published private(set) var submissions: [Submission] = []
+    @Published private(set) var publications: [Publication] = []
 
     private init() {
         loadData()
@@ -239,7 +241,7 @@ final class SubmissionManager {
             publicationName: publicationName,
             publicationType: publicationType
         )
-        submissions.append(submission)
+        submissions = submissions + [submission]
         saveData()
         return submission
     }
@@ -264,7 +266,9 @@ final class SubmissionManager {
 
     func updateSubmission(_ submission: Submission) {
         if let index = submissions.firstIndex(where: { $0.id == submission.id }) {
-            submissions[index] = submission
+            var updated = submissions
+            updated[index] = submission
+            submissions = updated
             saveData()
         }
     }
@@ -279,7 +283,7 @@ final class SubmissionManager {
     }
 
     func deleteSubmission(id: UUID) {
-        submissions.removeAll { $0.id == id }
+        submissions = submissions.filter { $0.id != id }
         saveData()
     }
 
@@ -287,9 +291,11 @@ final class SubmissionManager {
 
     func savePublication(_ publication: Publication) {
         if let index = publications.firstIndex(where: { $0.id == publication.id }) {
-            publications[index] = publication
+            var updated = publications
+            updated[index] = publication
+            publications = updated
         } else {
-            publications.append(publication)
+            publications = publications + [publication]
         }
         saveData()
     }
@@ -303,7 +309,7 @@ final class SubmissionManager {
     }
 
     func deletePublication(id: UUID) {
-        publications.removeAll { $0.id == id }
+        publications = publications.filter { $0.id != id }
         saveData()
     }
 

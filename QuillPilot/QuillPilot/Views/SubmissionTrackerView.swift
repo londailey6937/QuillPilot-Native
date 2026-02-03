@@ -34,6 +34,8 @@ private struct RatioHSplitView<Left: View, Right: View>: NSViewControllerReprese
         private let rightHost = NSHostingController(rootView: AnyView(EmptyView()))
         private var desiredRatio: CGFloat = 0.5
         private var lastResetToken: UUID?
+        private var needsApply = true
+        private var isApplying = false
 
         override func viewDidLoad() {
             super.viewDidLoad()
@@ -50,7 +52,7 @@ private struct RatioHSplitView<Left: View, Right: View>: NSViewControllerReprese
 
         override func viewDidLayout() {
             super.viewDidLayout()
-            applyRatioIfPossible()
+            requestApplyIfNeeded()
         }
 
         func set(left: AnyView, right: AnyView) {
@@ -60,26 +62,45 @@ private struct RatioHSplitView<Left: View, Right: View>: NSViewControllerReprese
 
         func setRatio(_ ratio: CGFloat) {
             desiredRatio = max(0.1, min(0.9, ratio))
+            needsApply = true
+            requestApplyIfNeeded()
         }
 
         func requestReset(to token: UUID) {
             guard token != lastResetToken else { return }
             lastResetToken = token
-            applyRatioIfPossible()
+            needsApply = true
+            requestApplyIfNeeded()
+        }
+
+        private func requestApplyIfNeeded() {
+            guard needsApply, !isApplying else { return }
+            isApplying = true
+            DispatchQueue.main.async { [weak self] in
+                self?.applyRatioIfPossible()
+            }
         }
 
         private func applyRatioIfPossible() {
+            defer { isApplying = false }
             guard splitView.arrangedSubviews.count >= 2 else { return }
             let totalWidth = splitView.bounds.width
             guard totalWidth > 10 else { return }
-            splitView.setPosition(totalWidth * desiredRatio, ofDividerAt: 0)
+            let target = totalWidth * desiredRatio
+            let current = splitView.arrangedSubviews.first?.frame.width ?? 0
+            guard abs(current - target) > 0.5 else {
+                needsApply = false
+                return
+            }
+            splitView.setPosition(target, ofDividerAt: 0)
+            needsApply = false
         }
     }
 }
 
 /// Main view for tracking submissions
 struct SubmissionTrackerView: View {
-    @State private var submissions: [Submission] = []
+    @ObservedObject private var submissionStore = SubmissionManager.shared
     @State private var selectedSubmissionId: Submission.ID?
     @State private var showingNewSubmission = false
     @State private var searchText = ""
@@ -89,6 +110,10 @@ struct SubmissionTrackerView: View {
     @Environment(\.colorScheme) private var colorScheme
     private var themeAccent: Color { Color(ThemeManager.shared.currentTheme.pageBorder) }
     private var themeBackground: Color { Color(ThemeManager.shared.currentTheme.pageAround) }
+
+    private var submissions: [Submission] {
+        submissionStore.getSubmissions()
+    }
 
     var body: some View {
         RatioHSplitView(
@@ -100,20 +125,27 @@ struct SubmissionTrackerView: View {
         .id(themeRefreshToken)
         .sheet(isPresented: $showingNewSubmission) {
             NewSubmissionSheet { poem, publication, type in
-                _ = SubmissionManager.shared.createSubmission(
+                _ = submissionStore.createSubmission(
                     poemTitle: poem,
                     publicationName: publication,
                     publicationType: type
                 )
-                refreshSubmissions()
+                syncSelectionAfterRefresh()
             }
         }
         .sheet(isPresented: $showingStatistics) {
-            StatisticsSheet(statistics: SubmissionManager.shared.getStatistics())
+            StatisticsSheet(statistics: submissionStore.getStatistics())
         }
         .onAppear {
-            refreshSubmissions()
+            DispatchQueue.main.async {
+                syncSelectionAfterRefresh()
+            }
             splitResetToken = UUID()
+        }
+        .onReceive(submissionStore.$submissions) { _ in
+            DispatchQueue.main.async {
+                syncSelectionAfterRefresh()
+            }
         }
         .onReceive(NotificationCenter.default.publisher(for: .themeDidChange)) { _ in
             // Force a rebuild so accent/background colors update immediately.
@@ -197,23 +229,23 @@ struct SubmissionTrackerView: View {
                let selected = submissions.first(where: { $0.id == id }) {
                 SubmissionDetailView(
                     submission: selected,
-                    onSave: { updated, refresh in
-                        SubmissionManager.shared.updateSubmission(updated)
-                        if refresh {
-                            refreshSubmissions()
-                        } else {
-                            // Keep UI in sync without disrupting editing focus.
-                            if let index = submissions.firstIndex(where: { $0.id == updated.id }) {
-                                submissions[index] = updated
-                            }
+                    onSave: { updated, _ in
+                        submissionStore.updateSubmission(updated)
+                        DispatchQueue.main.async {
+                            selectedSubmissionId = updated.id
                         }
                     },
                     onDelete: {
-                        SubmissionManager.shared.deleteSubmission(id: selected.id)
-                        selectedSubmissionId = nil
-                        refreshSubmissions()
+                        submissionStore.deleteSubmission(id: selected.id)
+                        DispatchQueue.main.async {
+                            selectedSubmissionId = nil
+                            syncSelectionAfterRefresh()
+                        }
                     }
                 )
+                // CRITICAL: Use .id() to force SwiftUI to create a NEW view instance
+                // for each submission, preventing state bleeding between submissions.
+                .id(selected.id)
             } else {
                 Text("Select a submission")
                     .foregroundColor(.secondary)
@@ -235,8 +267,7 @@ struct SubmissionTrackerView: View {
         return result
     }
 
-    private func refreshSubmissions() {
-        submissions = SubmissionManager.shared.getSubmissions()
+    private func syncSelectionAfterRefresh() {
         // Preserve selection across refreshes.
         if let id = selectedSubmissionId, !submissions.contains(where: { $0.id == id }) {
             selectedSubmissionId = nil
@@ -263,25 +294,36 @@ struct SubmissionRow: View {
     let submission: Submission
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
+        VStack(alignment: .leading, spacing: 6) {
             HStack {
                 Text(submission.poemTitle)
                     .font(.headline)
+                    .lineLimit(1)
                 Spacer()
                 StatusBadge(status: submission.status)
             }
 
-            HStack {
-                Text(submission.publicationName)
+            Text(submission.publicationName)
+                .font(.subheadline)
+                .foregroundColor(.secondary)
+                .lineLimit(1)
+
+            HStack(spacing: 8) {
+                // Show status emoji + text for clarity
+                Text("\(submission.status.emoji) \(submission.status.rawValue)")
+                    .font(.caption)
                     .foregroundColor(.secondary)
-                Spacer()
+
                 if let days = submission.daysSinceSubmission {
+                    Text("•")
+                        .foregroundColor(.secondary)
                     Text("\(days) days")
                         .font(.caption)
                         .foregroundColor(days > 90 ? .orange : .secondary)
                 }
+
+                Spacer()
             }
-            .font(.subheadline)
         }
         .padding(.vertical, 4)
     }
@@ -322,6 +364,9 @@ struct SubmissionDetailView: View {
     @State private var edited: Submission
     @State private var hasUnsavedChanges = false
     @State private var showSavedFeedback = false
+    @State private var isSaving = false
+    @State private var saveFeedbackToken = UUID()
+    @State private var lastSavedAt: Date?
 
     init(submission: Submission, onSave: @escaping (_ updated: Submission, _ refreshList: Bool) -> Void, onDelete: @escaping () -> Void) {
         self.submission = submission
@@ -337,8 +382,11 @@ struct SubmissionDetailView: View {
                 VStack(alignment: .leading, spacing: 4) {
                     Text(edited.poemTitle)
                         .font(.title)
-                    Text("Submitted to \(edited.publicationName)")
+                    Text("\(statusVerb(for: edited.status)) \(edited.publicationName)")
                         .font(.title3)
+                        .foregroundColor(.secondary)
+                    Text(buildStamp())
+                        .font(.caption)
                         .foregroundColor(.secondary)
                 }
 
@@ -354,11 +402,32 @@ struct SubmissionDetailView: View {
                     .pickerStyle(.menu)
                     .labelsHidden()
                 }
-                .onChange(of: edited.status) { _ in
-                    // Auto-save status changes immediately (no extra click required).
+                .onChange(of: edited.status) { newStatus in
+                    // Auto-save status changes immediately.
                     hasUnsavedChanges = true
-                    onSave(edited, false)
-                    hasUnsavedChanges = false
+                    edited = normalizeDatesForStatus(edited)
+                    triggerSaveFeedback {
+                        onSave(edited, false)
+                        hasUnsavedChanges = false
+                    }
+                }
+
+                if isSaving || showSavedFeedback || lastSavedAt != nil {
+                    HStack(spacing: 6) {
+                        if isSaving {
+                            ProgressView()
+                                .controlSize(.small)
+                            Text("Saving…")
+                        } else if showSavedFeedback {
+                            Image(systemName: "checkmark.circle.fill")
+                                .foregroundColor(.green)
+                            Text("Saved")
+                        } else if let lastSavedAt {
+                            Text("Last saved at \(formatTime(lastSavedAt))")
+                        }
+                    }
+                    .font(.caption)
+                    .foregroundColor(.secondary)
                 }
 
                 Divider()
@@ -433,52 +502,38 @@ struct SubmissionDetailView: View {
                     .disabled(!hasUnsavedChanges)
 
                     Button(action: {
-                        onSave(edited, true)
-                        hasUnsavedChanges = false
-                        withAnimation(.easeInOut(duration: 0.15)) {
-                            showSavedFeedback = true
-                        }
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) {
-                            withAnimation(.easeInOut(duration: 0.2)) {
-                                showSavedFeedback = false
-                            }
+                        edited = normalizeDatesForStatus(edited)
+                        triggerSaveFeedback {
+                            onSave(edited, false)
+                            hasUnsavedChanges = false
                         }
                     }) {
-                        if showSavedFeedback {
+                        if isSaving {
+                            Label("Saving…", systemImage: "hourglass")
+                        } else if showSavedFeedback {
                             Label("Saved", systemImage: "checkmark.circle.fill")
                         } else {
                             Label("Save Changes", systemImage: "square.and.arrow.down")
                         }
                     }
                     .buttonStyle(ThemedActionButtonStyle())
-                    .disabled(!hasUnsavedChanges)
+                    .disabled(!hasUnsavedChanges || isSaving)
                 }
             }
             .padding()
         }
-        .onAppear {
-            syncFromSelected(force: true)
+        // With .id(submission.id) on the parent, this view is recreated for each
+        // submission, so we don't need complex sync logic - just track external updates.
+        .onChange(of: submission.status) { newStatus in
+            // External update (e.g., from another source) - sync if no local edits.
+            if !hasUnsavedChanges {
+                edited.status = newStatus
+            }
         }
-        .onChange(of: submission.id) { _ in
-            syncFromSelected(force: true)
-        }
-        .onChange(of: submission.status) { _ in
-            syncFromSelected()
-        }
-        .onChange(of: submission.notes) { _ in
-            syncFromSelected()
-        }
-    }
-
-    // Keep edit buffer in sync when the selection changes or when the model refreshes.
-    // Avoid clobbering in-progress edits (e.g. while typing notes).
-    private func syncFromSelected(force: Bool = false) {
-        if force || !hasUnsavedChanges {
-            edited = submission
-            hasUnsavedChanges = false
-        } else if edited.id != submission.id {
-            edited = submission
-            hasUnsavedChanges = false
+        .onChange(of: submission.notes) { newNotes in
+            if !hasUnsavedChanges {
+                edited.notes = newNotes
+            }
         }
     }
 
@@ -486,6 +541,87 @@ struct SubmissionDetailView: View {
         let formatter = DateFormatter()
         formatter.dateStyle = .medium
         return formatter.string(from: date)
+    }
+
+    private func formatTime(_ date: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.timeStyle = .short
+        return formatter.string(from: date)
+    }
+
+    private func buildStamp() -> String {
+        let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? ""
+        let build = Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? ""
+        let exeDate: String
+        if let url = Bundle.main.executableURL,
+           let attrs = try? FileManager.default.attributesOfItem(atPath: url.path),
+           let date = attrs[.modificationDate] as? Date {
+            exeDate = " • \(formatDate(date)) \(formatTime(date))"
+        } else {
+            exeDate = ""
+        }
+
+        if !version.isEmpty || !build.isEmpty {
+            let parts = [version, build].filter { !$0.isEmpty }.joined(separator: " (")
+            let suffix = build.isEmpty ? "" : ")"
+            return "Build: \(parts)\(suffix)\(exeDate)"
+        }
+
+        return "Build: \(exeDate.isEmpty ? "Unknown" : exeDate)"
+    }
+
+    private func normalizeDatesForStatus(_ submission: Submission) -> Submission {
+        var normalized = submission
+        switch normalized.status {
+        case .accepted, .rejected, .withdrawn:
+            if normalized.respondedAt == nil {
+                normalized.respondedAt = Date()
+            }
+        case .draft, .submitted, .underReview, .published:
+            break
+        }
+        return normalized
+    }
+
+    private func statusVerb(for status: Submission.SubmissionStatus) -> String {
+        switch status {
+        case .draft:
+            return "For"
+        case .submitted, .underReview:
+            return "Submitted to"
+        case .accepted:
+            return "Accepted by"
+        case .rejected:
+            return "Rejected by"
+        case .withdrawn:
+            return "Withdrawn from"
+        case .published:
+            return "Published in"
+        }
+    }
+
+    private func triggerSaveFeedback(_ saveAction: @escaping () -> Void) {
+        let token = UUID()
+        saveFeedbackToken = token
+
+        isSaving = true
+        showSavedFeedback = false
+        saveAction()
+        lastSavedAt = Date()
+
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
+            guard saveFeedbackToken == token else { return }
+            isSaving = false
+            withAnimation(.easeInOut(duration: 0.15)) {
+                showSavedFeedback = true
+            }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) {
+                guard saveFeedbackToken == token else { return }
+                withAnimation(.easeInOut(duration: 0.2)) {
+                    showSavedFeedback = false
+                }
+            }
+        }
     }
 }
 
@@ -628,11 +764,29 @@ struct StatCard: View {
 
 extension Submission: Equatable, Hashable {
     static func == (lhs: Submission, rhs: Submission) -> Bool {
-        lhs.id == rhs.id
+        lhs.id == rhs.id &&
+        lhs.poemTitle == rhs.poemTitle &&
+        lhs.publicationName == rhs.publicationName &&
+        lhs.publicationType == rhs.publicationType &&
+        lhs.status == rhs.status &&
+        lhs.submittedAt == rhs.submittedAt &&
+        lhs.respondedAt == rhs.respondedAt &&
+        lhs.responseDeadline == rhs.responseDeadline &&
+        lhs.fee == rhs.fee &&
+        lhs.payment == rhs.payment &&
+        lhs.notes == rhs.notes &&
+        lhs.simultaneousSubmissionAllowed == rhs.simultaneousSubmissionAllowed &&
+        lhs.coverLetter == rhs.coverLetter &&
+        lhs.confirmationNumber == rhs.confirmationNumber &&
+        lhs.contactEmail == rhs.contactEmail &&
+        lhs.websiteURL == rhs.websiteURL
     }
 
     func hash(into hasher: inout Hasher) {
         hasher.combine(id)
+        hasher.combine(status)
+        hasher.combine(submittedAt)
+        hasher.combine(respondedAt)
     }
 }
 
@@ -686,16 +840,6 @@ final class SubmissionTrackerWindowController: NSWindowController, NSWindowDeleg
         window.backgroundColor = theme.pageAround
     }
 
-    // Close window when it loses key status (user clicks elsewhere)
-    // but NOT if a sheet is attached (modal dialog open)
-    func windowDidResignKey(_ notification: Notification) {
-        guard let window = window else { return }
-        // Don't close if a sheet is currently presented
-        if window.attachedSheet != nil {
-            return
-        }
-        window.close()
-    }
 }
 
 // MARK: - Preview

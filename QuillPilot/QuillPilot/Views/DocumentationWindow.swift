@@ -200,6 +200,7 @@ class DocumentationWindowController: NSWindowController, NSWindowDelegate, NSOut
                 HelpTopic(id: "analysis-overview", title: "Overview", icon: "📊", contentLoader: { self.makeAnalysisOverviewContent() }),
                 HelpTopic(id: "character-analysis", title: "Character Analysis", icon: "📈", contentLoader: { self.makeCharacterAnalysisContent() }),
                 HelpTopic(id: "poetry-analysis", title: "Poetry Analysis", icon: "🪶", contentLoader: { self.makePoetryAnalysisContent() }),
+                HelpTopic(id: "submission-tracker", title: "Submission Tracker", icon: "✉️", contentLoader: { self.makeSubmissionTrackerContent() }),
                 HelpTopic(id: "poetry-collections", title: "Poetry Collections", icon: "📚", contentLoader: { self.makePoetryCollectionsContent() })
             ]),
 
@@ -2291,10 +2292,15 @@ Access: Tools → Poetry Tools → Draft Versions, or the 📄 sidebar button.
 Track submissions to journals, magazines, contests, and publishers.
 
 Features:
-• Log submissions with date, status, and notes
-• Filter by status (Pending, Accepted, Rejected, Withdrawn)
+    • Log submissions with date, status, venue, and notes
+    • Filter by status (Draft, Submitted, Under Review, Accepted, Rejected, Withdrawn, Published)
 • Track submission statistics
 • Save publication venues for reuse
+
+    Saving behavior:
+    • Status changes auto-save immediately (counts/filters update right away)
+    • Notes and other edits enable Save Changes
+    • A Saving… / Saved indicator confirms persistence
 
 Access: Tools → Poetry Tools → Submission Tracker, or the ✉️ sidebar button.
 Tip: Click New Submission to open the entry sheet. The window dims while the sheet is open—save or cancel to return.
@@ -2312,6 +2318,55 @@ To get the most from poetry analysis:
 5. Use analysis as a mirror, not a judge — It shows what's there, not what should be
 
 Remember: Analysis can identify patterns but cannot evaluate meaning. A "low" score in any category may be exactly right for your poem's intent.
+""", color: bodyColor))
+
+        normalizeAppNameInDocumentation(content)
+        return content
+    }
+
+    private func makeSubmissionTrackerContent() -> NSAttributedString {
+        let theme = ThemeManager.shared.currentTheme
+        let titleColor = theme.textColor
+        let headingColor = theme.textColor
+        let bodyColor = theme.textColor
+
+        let content = NSMutableAttributedString()
+
+        content.append(makeTitle("✉️ Submission Tracker", color: titleColor))
+        content.append(makeBody("""
+The Submission Tracker helps you log, review, and manage poetry submissions to journals, magazines, contests, and publishers.
+
+Access:
+• Tools → Poetry Tools → Submission Tracker…
+• Or click the ✉️ button in the Poetry Tools sidebar
+""", color: bodyColor))
+        content.append(makeNewline())
+
+        content.append(makeHeading("Creating a Submission", color: headingColor))
+        content.append(makeBody("""
+1. Click New Submission
+2. Choose a poem title, venue, and submission type
+3. Add optional notes, fee/payment info, and expected response date
+
+Tip: Venues are remembered for reuse.
+""", color: bodyColor))
+        content.append(makeNewline())
+
+        content.append(makeHeading("Editing and Saving", color: headingColor))
+        content.append(makeBody("""
+• Changing Status auto-saves immediately.
+• Editing Notes or other fields enables Save Changes.
+• You’ll see Saving… and then Saved (plus a “Last saved” timestamp) to confirm your edits were written.
+
+Best practice: If you’ve edited notes, click Save Changes before switching to another submission.
+""", color: bodyColor))
+        content.append(makeNewline())
+
+        content.append(makeHeading("Filtering and Stats", color: headingColor))
+        content.append(makeBody("""
+• Use the status chips to filter (e.g., Submitted, Under Review).
+• The overview counts update as you change statuses.
+• Use Statistics for response times, totals, and outcomes.
 """, color: bodyColor))
 
         normalizeAppNameInDocumentation(content)
@@ -2501,11 +2556,26 @@ To edit or remove an existing section break:
         content.append(makeBody("""
 Section breaks are invisible by default. To see them:
 
-• Go to View → Show Section Breaks
+• Go to View → Section Breaks → Show Section Breaks
 • Section breaks appear as § markers in the document
 • Toggle off to hide them again
 
+To manage all section breaks in a document:
+• Go to View → Section Breaks → Manage Section Breaks…
+• Jump to a section break from the list, then edit or remove it
+
 This is useful for verifying section placement without affecting print output.
+""", color: bodyColor))
+        content.append(makeNewline())
+
+        content.append(makeHeading("Saving & Export Notes", color: headingColor))
+        content.append(makeBody("""
+Section breaks are stored as invisible structural markers in your document.
+
+Compatibility:
+• Quill Pilot documents preserve section breaks.
+• DOCX exports include hidden markers so section breaks can be restored when you reopen the DOCX in Quill Pilot.
+• Other word processors may ignore these markers, since Quill Pilot sections don’t necessarily map 1:1 to native Word section breaks.
 """, color: bodyColor))
         content.append(makeNewline())
 
@@ -2539,7 +2609,7 @@ Page numbers will appear:
         content.append(makeHeading("Tips", color: headingColor))
         content.append(makeBody("""
 • Insert section breaks at the TOP of each section (before any text)
-• Use View → Show Section Breaks to verify placement
+• Use View → Section Breaks → Show Section Breaks to verify placement
 • Remember: a section break affects everything AFTER it until the next section break
 • Test page numbering by scrolling through the document in page view
 """, color: bodyColor))

@@ -6,10 +6,18 @@
 
 - **Auto-save (saved documents)**: QuillPilot auto-saves periodically when changes are detected (default ~30 seconds; configurable in Preferences). New/unsaved documents won’t auto-save until you choose File → Save / Save As.
 - **Export formats (File → Save As…)**: DOCX, RTF, RTFD, ODT, TXT, Markdown, HTML, PDF, ePub, Mobi.
+- **Sections & page numbering (Insert → Section Break… / View → Section Breaks)**: Create sections with independent page numbering, show/hide § markers, and manage all section breaks from a single list (View → Section Breaks → Manage Section Breaks…).
 - **Table of Contents & Index (View → Table of Contents & Index… / ⌘⇧T)**: Insert/manage TOC entries and index markers.
 - **Header & Footer Settings (View → Header & Footer Settings…)**: Configure running headers/footers.
 - **Typography tools (Format → Typography)**: Drop caps, old-style numerals, optical kerning.
 - **Cleanup tools (Edit)**: Find Invisible Characters… and Remove Extra Blank Lines.
+
+### ✉️ Submission Tracker (Poetry)
+
+- Track submissions to journals, magazines, contests, and publishers.
+- Status changes auto-save immediately (filters and counts update right away).
+- Notes/field edits enable **Save Changes**, with **Saving… / Saved** feedback.
+- Access: Tools → Poetry Tools → Submission Tracker…
 
 ### 1. Analyze Your Manuscript Structure
 

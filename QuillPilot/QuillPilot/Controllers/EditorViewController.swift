@@ -5553,14 +5553,23 @@ class EditorViewController: NSViewController {
             // If the rect is valid
             if rect.height > 0 || insertionLocation == 0 {
                 // Determine the Y position where the spacer will start.
-                // We must account for both the 'paragraphSpacing' of the preceding paragraph
-                // AND the 'paragraphSpacingBefore' of the new paragraph (which inherits the same style).
                 var extraSpacing: CGFloat = 0
+
+                // 1. Get paragraphSpacing from the PREVIOUS paragraph (if any)
+                // We must use the attributes of the text *before* the insertion point
+                // to correctly calculate the gap that precedes the spacer.
+                if insertionLocation > 0 {
+                    let prevIndex = min(insertionLocation - 1, storage.length - 1)
+                    let prevAttrs = storage.attributes(at: prevIndex, effectiveRange: nil)
+                    if let s = prevAttrs[.paragraphStyle] as? NSParagraphStyle {
+                        extraSpacing += s.paragraphSpacing
+                    }
+                }
+
+                // 2. Get paragraphSpacingBefore from the NEW paragraph (spacer inherits baseAttrs)
                 let style = (baseAttrs[.paragraphStyle] as? NSParagraphStyle)
                     ?? textView.defaultParagraphStyle
                     ?? NSParagraphStyle.default
-
-                extraSpacing += style.paragraphSpacing
                 extraSpacing += style.paragraphSpacingBefore
 
                 // 25pt buffer is safer to prevent rounding errors from pushing the spacer to the next page.
@@ -5575,7 +5584,14 @@ class EditorViewController: NSViewController {
                 // But for now, let's assume simple line height + previous paragraph spacing.
 
                 let lineHeight = (rect.height > 0) ? rect.height : 14.0
-                var startY = rect.maxY + extraSpacing
+
+                var startY: CGFloat
+                if insertionLocation == 0 {
+                    startY = 0
+                } else {
+                    startY = rect.maxY + extraSpacing
+                }
+
                 if needsLeadingNewline {
                      startY += lineHeight
                      // The blank line inserted also has paragraph spacing?
@@ -5588,13 +5604,17 @@ class EditorViewController: NSViewController {
                 // 1. Look for explicit exclusion paths (headers, footers, gaps)
                 let sortedPaths = textContainer.exclusionPaths.map { $0.bounds }.sorted { $0.minY < $1.minY }
 
-                // Find the first exclusion that starts significantly after our calculated start position
-                if let nextObstacle = sortedPaths.first(where: { $0.minY > startY + 5.0 }) {
+                // Find the first exclusion that starts at or after our calculated start position.
+                // We typically look for something strictly > startY, but if startY is e.g. 799.9 and obstacle is 800, we want to find it.
+                // We use a small epsilon for float comparison.
+                if let nextObstacle = sortedPaths.first(where: { $0.minY > startY + 0.1 }) {
                    let available = nextObstacle.minY - startY
-                   // Reduce by a larger safe buffer (15pt) to ensure the spacer fits even with minor rounding errors.
-                   // If available < 30, it's too small for a useful spacer, just let natural flow handle it.
-                   if available < (safetyBuffer + 10.0) {
-                       spacerHeight = 20 // Minimal spacer just to show the marker
+
+                   // If available space is tiny (less than buffer), we make a minimal spacer (1pt).
+                   // A 1pt spacer usually fits. If it doesn't, it wraps, creating a 1pt gap on next page (negligible).
+                   // If available is large, we subtract buffer to be safe.
+                   if available < safetyBuffer {
+                       spacerHeight = 1.0
                    } else {
                        spacerHeight = available - safetyBuffer
                    }
@@ -5613,16 +5633,16 @@ class EditorViewController: NSViewController {
 
                    if startY < effectivePageBottom {
                        let available = effectivePageBottom - startY
-                       if available < (safetyBuffer + 10.0) {
-                           spacerHeight = 20
+                       if available < safetyBuffer {
+                           spacerHeight = 1.0
                        } else {
                            spacerHeight = available - safetyBuffer
                        }
                        DebugLog.log("📄 PageBreakCalc: No obstacle. LastPage logic. effectiveBottom=\(effectivePageBottom) spacer=\(spacerHeight)")
                    } else {
-                       // We are already deep? Force full page minus margins.
-                       spacerHeight = pHeight - (standardMargin * editorZoom * 2)
-                       DebugLog.log("📄 PageBreakCalc: Deep in margin. Forced full height spacer=\(spacerHeight)")
+                       // We are already deep?
+                       spacerHeight = 1.0
+                       DebugLog.log("📄 PageBreakCalc: Deep in margin. Forced minimal spacer=\(spacerHeight)")
                    }
                 }
             }
@@ -5866,9 +5886,9 @@ class EditorViewController: NSViewController {
     private func makePageBreakAttachment(initialHeight: CGFloat) -> NSTextAttachment {
         let attachment = NSTextAttachment()
         // Use the requested height, or a safe default, capped to avoid infinite pagination.
-        // We use a reasonably large minimum (20) to ensure visibility if the math is off.
+        // We allow small spacers (down to 1pt) to avoid forcing a wrap when near the margin.
         // We cap at pageHeight to prevent "500 page" explosions.
-        let safeHeight = min(max(20, initialHeight), (pageHeight * editorZoom))
+        let safeHeight = min(max(1.0, initialHeight), (pageHeight * editorZoom))
         let cell = SpacerAttachmentCell(height: safeHeight)
         attachment.attachmentCell = cell
         attachment.bounds = NSRect(x: 0, y: 0, width: 0.1, height: safeHeight)

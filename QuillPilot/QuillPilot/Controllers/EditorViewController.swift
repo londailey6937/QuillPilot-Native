@@ -14,6 +14,10 @@ import UniformTypeIdentifiers
 extension NSAttributedString.Key {
     /// Marks a section break. Value is SectionBreak encoded as Data.
     static let qpSectionBreak = NSAttributedString.Key("QPSectionBreak")
+
+    /// Marks a page break. Value is `true`.
+    /// Internally represented as a spacer attachment that expands to fill the remainder of the current page.
+    static let qpPageBreak = NSAttributedString.Key("QPPageBreak")
 }
 
 struct SectionBreakInfo: Identifiable, Equatable {
@@ -100,10 +104,13 @@ private final class AttachmentClickableTextView: NSTextView {
     var spaceDotsColor: NSColor = .darkGray
     var showsSectionBreaks: Bool = false
     var sectionBreaksColor: NSColor = .systemOrange
+    var showsPageBreaks: Bool = false
+    var pageBreaksColor: NSColor = .systemOrange
     private let paragraphGlyph = "¶"
     private let spaceGlyph = "•"
     private let tabGlyph = "→"
     private let sectionBreakGlyph = "§"
+    private let pageBreakLabel = "⇣ Page Break"
 
     @objc func qpToggleBulletedList(_ sender: Any?) {
         onToggleBulletedList?()
@@ -130,6 +137,11 @@ private final class AttachmentClickableTextView: NSTextView {
             return
         }
 
+        if selectPageBreakMarkerIfClicked(at: point) {
+            onMouseDownInTextView?(point)
+            return
+        }
+
         // If the user clicked an image attachment, select it and prep for dragging.
         if let layoutManager = layoutManager,
            let textContainer = textContainer,
@@ -142,6 +154,9 @@ private final class AttachmentClickableTextView: NSTextView {
                 guard storage.length > 0 else { return nil }
                 let clamped = max(0, min(loc, storage.length - 1))
                 var effective = NSRange(location: NSNotFound, length: 0)
+                if storage.attribute(.qpPageBreak, at: clamped, effectiveRange: nil) != nil {
+                    return nil
+                }
                 guard let attachment = storage.attribute(.attachment, at: clamped, effectiveRange: &effective) as? NSTextAttachment,
                       effective.location != NSNotFound else { return nil }
                 return (effective, attachment)
@@ -228,6 +243,61 @@ private final class AttachmentClickableTextView: NSTextView {
         return true
     }
 
+    private func selectPageBreakMarkerIfClicked(at viewPoint: NSPoint) -> Bool {
+        guard showsPageBreaks,
+              let layoutManager,
+              let textContainer,
+              let storage = textStorage,
+              storage.length > 0 else { return false }
+
+        let containerPoint = NSPoint(
+            x: viewPoint.x - textContainerOrigin.x,
+            y: viewPoint.y - textContainerOrigin.y
+        )
+
+        let glyphIndex = layoutManager.glyphIndex(for: containerPoint, in: textContainer)
+        var lineGlyphRange = NSRange(location: 0, length: 0)
+        let lineFragmentRect = layoutManager.lineFragmentRect(
+            forGlyphAt: glyphIndex,
+            effectiveRange: &lineGlyphRange,
+            withoutAdditionalLayout: true
+        )
+
+        let charRange = layoutManager.characterRange(forGlyphRange: lineGlyphRange, actualGlyphRange: nil)
+        guard charRange.length > 0 else { return false }
+
+        let styleIndex = max(0, min(charRange.location, storage.length - 1))
+        let paragraphStyle = (storage.attribute(.paragraphStyle, at: styleIndex, effectiveRange: nil) as? NSParagraphStyle)
+            ?? (typingAttributes[.paragraphStyle] as? NSParagraphStyle)
+            ?? defaultParagraphStyle
+            ?? NSParagraphStyle.default
+
+        let glyphX = textContainerOrigin.x + lineFragmentRect.origin.x + paragraphStyle.firstLineHeadIndent
+        let clickableRect = NSRect(
+            x: glyphX - 6,
+            y: textContainerOrigin.y + lineFragmentRect.origin.y,
+            width: 120,
+            height: max(18, min(28, lineFragmentRect.height))
+        )
+        guard clickableRect.contains(viewPoint) else { return false }
+
+        var markerRange: NSRange?
+        storage.enumerateAttribute(.qpPageBreak, in: charRange, options: []) { value, range, stop in
+            if value != nil {
+                markerRange = range
+                stop.pointee = true
+            }
+        }
+        guard let markerRange, markerRange.location != NSNotFound else { return false }
+
+        window?.makeFirstResponder(self)
+        setSelectedRange(markerRange)
+        scrollRangeToVisible(markerRange)
+        showFindIndicator(for: markerRange)
+        needsDisplay = true
+        return true
+    }
+
     override func mouseDragged(with event: NSEvent) {
         let attachmentRange: NSRange?
         if let pending = pendingAttachmentSelection {
@@ -283,8 +353,10 @@ private final class AttachmentClickableTextView: NSTextView {
     override func doCommand(by selector: Selector) {
         if selector == #selector(deleteBackward(_:)) {
             if deleteAdjacentSectionBreak(isBackward: true) { return }
+            if deleteAdjacentPageBreak(isBackward: true) { return }
         } else if selector == #selector(deleteForward(_:)) {
             if deleteAdjacentSectionBreak(isBackward: false) { return }
+            if deleteAdjacentPageBreak(isBackward: false) { return }
         }
         super.doCommand(by: selector)
     }
@@ -325,10 +397,46 @@ private final class AttachmentClickableTextView: NSTextView {
         return false
     }
 
+    private func deleteAdjacentPageBreak(isBackward: Bool) -> Bool {
+        guard let storage = textStorage, storage.length > 0 else { return false }
+        let sel = selectedRange()
+
+        // If the user selected a marker, delete it directly.
+        if sel.length > 0 {
+            var effective = NSRange(location: NSNotFound, length: 0)
+            let hasMarker = storage.attribute(.qpPageBreak, at: sel.location, effectiveRange: &effective) != nil
+            if hasMarker && effective.location != NSNotFound {
+                return deletePageBreak(range: effective)
+            }
+            return false
+        }
+
+        let cursor = sel.location
+        let index = isBackward ? (cursor - 1) : cursor
+        guard index >= 0, index < storage.length else { return false }
+        var effective = NSRange(location: NSNotFound, length: 0)
+        let hasMarker = storage.attribute(.qpPageBreak, at: index, effectiveRange: &effective) != nil
+        guard hasMarker, effective.location != NSNotFound else { return false }
+        return deletePageBreak(range: effective)
+    }
+
+    private func deletePageBreak(range: NSRange) -> Bool {
+        guard let storage = textStorage else { return false }
+        if shouldChangeText(in: range, replacementString: "") {
+            storage.beginEditing()
+            storage.deleteCharacters(in: range)
+            storage.endEditing()
+            didChangeText()
+            undoManager?.setActionName("Delete Page Break")
+            return true
+        }
+        return false
+    }
+
     override func draw(_ dirtyRect: NSRect) {
         super.draw(dirtyRect)
 
-          guard showsParagraphMarks || showsSectionBreaks,
+          guard showsParagraphMarks || showsSectionBreaks || showsPageBreaks,
               let layoutManager = layoutManager,
               let textContainer = textContainer,
               let textStorage = textStorage else { return }
@@ -412,6 +520,21 @@ private final class AttachmentClickableTextView: NSTextView {
                     let drawX = origin.x + lineFragmentRect.origin.x + paragraphStyle.firstLineHeadIndent
                     let drawPoint = NSPoint(x: drawX, y: baselineY)
                     (self.sectionBreakGlyph as NSString).draw(at: drawPoint, withAttributes: [.font: lineFont, .foregroundColor: self.sectionBreaksColor])
+                }
+            }
+
+            if self.showsPageBreaks {
+                var hasPageBreak = false
+                textStorage.enumerateAttribute(.qpPageBreak, in: charRange, options: []) { value, _, stop in
+                    if value != nil {
+                        hasPageBreak = true
+                        stop.pointee = true
+                    }
+                }
+                if hasPageBreak {
+                    let drawX = origin.x + lineFragmentRect.origin.x + paragraphStyle.firstLineHeadIndent
+                    let drawPoint = NSPoint(x: drawX, y: baselineY)
+                    (self.pageBreakLabel as NSString).draw(at: drawPoint, withAttributes: [.font: lineFont, .foregroundColor: self.pageBreaksColor])
                 }
             }
 
@@ -1825,6 +1948,10 @@ class EditorViewController: NSViewController {
             layoutManager.ensureLayout(for: textContainer)
         }
 
+        // Update page-break spacers so usedRect reflects forced page boundaries.
+        updatePageBreakSpacerHeights(layoutManager: layoutManager, textContainer: textContainer)
+        layoutManager.ensureLayout(for: textContainer)
+
         let usedRect = layoutManager.usedRect(for: textContainer)
         let usedHeight = max(0, usedRect.height)
         let scaledPageHeight = pageHeight * editorZoom
@@ -1860,6 +1987,23 @@ class EditorViewController: NSViewController {
         } else {
             setPageCount(neededPages)
         }
+    }
+
+    private func currentTextInsetsForPagination() -> (top: CGFloat, bottom: CGFloat) {
+        // Must mirror the header/footer exclusion sizing used in updatePageCentering().
+        let headerClearance = showHeaders ? (headerHeight * editorZoom * 0.25) : 0
+        let footerClearance = showFooters ? (footerHeight * editorZoom * 0.5) : 0
+        let textInsetTop = (standardMargin * editorZoom) + headerClearance
+        let textInsetBottom = (standardMargin * editorZoom) + footerClearance
+        return (textInsetTop, textInsetBottom)
+    }
+
+    private var isUpdatingPageBreakSpacers = false
+
+    private func updatePageBreakSpacerHeights(layoutManager: NSLayoutManager, textContainer: NSTextContainer) {
+        // Page breaks use fixed-height spacers set at insertion time.
+        // Dynamic resizing creates feedback loops that cause text to disappear or runaway pagination.
+        // This function is kept as a no-op stub to avoid breaking callers.
     }
 
     private func ensurePageCountForCharacterLocation(_ location: Int) {
@@ -1948,6 +2092,14 @@ class EditorViewController: NSViewController {
         documentView.frame = NSRect(x: 0, y: 0, width: containerWidth, height: totalHeight)
         pageContainer.needsDisplay = true
         updatePageCentering()
+
+        // updatePageCentering() can change the effective text geometry (frames + exclusion paths),
+        // so we must recompute page-break spacer heights afterwards to ensure they land on the
+        // next page boundary in the final layout.
+        if let layoutManager = textView.layoutManager, let textContainer = textView.textContainer {
+            updatePageBreakSpacerHeights(layoutManager: layoutManager, textContainer: textContainer)
+            layoutManager.ensureLayout(for: textContainer)
+        }
 
         debugLog(
             "📄 Pagination.frames: pageContainer=\(NSStringFromRect(pageContainer.frame)) textView=\(NSStringFromRect(textView.frame)) documentView=\(NSStringFromRect(documentView.frame))"
@@ -2321,12 +2473,30 @@ class EditorViewController: NSViewController {
         paragraphTextView.spaceDotsColor = spaceDotsColor(for: currentTheme)
         paragraphTextView.showsSectionBreaks = sectionBreaksVisibleState
         paragraphTextView.sectionBreaksColor = sectionBreaksColor(for: currentTheme)
+        paragraphTextView.showsPageBreaks = pageBreaksVisibleState
+        paragraphTextView.pageBreaksColor = pageBreaksColor(for: currentTheme)
         paragraphTextView.needsDisplay = true
     }
 
     // MARK: - Section break visibility
 
     private var sectionBreaksVisibleState: Bool = QuillPilotSettings.showSectionBreaks
+
+    // MARK: - Page break visibility
+
+    private var pageBreaksVisibleState: Bool = QuillPilotSettings.showPageBreaks
+
+    @discardableResult
+    func togglePageBreaksVisibility() -> Bool {
+        pageBreaksVisibleState.toggle()
+        QuillPilotSettings.showPageBreaks = pageBreaksVisibleState
+        applyParagraphMarksVisibility()
+        return pageBreaksVisibleState
+    }
+
+    func pageBreaksVisible() -> Bool {
+        pageBreaksVisibleState
+    }
 
     @discardableResult
     func toggleSectionBreaksVisibility() -> Bool {
@@ -2347,6 +2517,10 @@ class EditorViewController: NSViewController {
         case .day, .cream:
             return theme.pageBorder.withAlphaComponent(0.7)
         }
+    }
+
+    private func pageBreaksColor(for theme: AppTheme) -> NSColor {
+        sectionBreaksColor(for: theme)
     }
 
     private func paragraphMarksColor(for theme: AppTheme) -> NSColor {
@@ -3059,8 +3233,14 @@ class EditorViewController: NSViewController {
         func attachmentRangeIfPresent(at loc: Int) -> NSRange? {
             let clampedLoc = max(0, min(loc, storage.length - 1))
             var effectiveRange = NSRange(location: NSNotFound, length: 0)
+            if storage.attribute(.qpPageBreak, at: clampedLoc, effectiveRange: nil) != nil {
+                return nil
+            }
             if storage.attribute(.attachment, at: clampedLoc, effectiveRange: &effectiveRange) != nil {
-                return effectiveRange
+                // Only treat as an image attachment if we have our size stamp.
+                if storage.attribute(NSAttributedString.Key("QuillPilotImageSize"), at: clampedLoc, effectiveRange: nil) != nil {
+                    return effectiveRange
+                }
             }
             return nil
         }
@@ -4224,7 +4404,24 @@ class EditorViewController: NSViewController {
         }
 
         injectSectionBreakPersistenceLinks(into: normalized)
+        materializePageBreaksForExport(into: normalized)
         return normalized
+    }
+
+    private func materializePageBreaksForExport(into attributed: NSMutableAttributedString) {
+        guard attributed.length > 0 else { return }
+        let fullRange = NSRange(location: 0, length: attributed.length)
+
+        // Replace internal marker attachments with a form-feed character for broad exporter compatibility.
+        attributed.enumerateAttribute(.qpPageBreak, in: fullRange, options: [.reverse]) { value, range, _ in
+            guard value != nil, range.length > 0 else { return }
+            let attrs = attributed.attributes(at: range.location, effectiveRange: nil)
+            var cleaned = attrs
+            cleaned[.attachment] = nil
+            cleaned[.qpPageBreak] = nil
+            let replacement = NSAttributedString(string: "\u{000C}", attributes: cleaned)
+            attributed.replaceCharacters(in: range, with: replacement)
+        }
     }
 
 
@@ -4303,8 +4500,11 @@ class EditorViewController: NSViewController {
         manuscriptTitle = "Untitled"
         manuscriptAuthor = "Author Name"
 
+        // Restore page breaks from form-feed markers before style inference.
+        let restoredPageBreaks = restorePageBreakMarkersFromFormFeed(in: attributed)
+
         // Apply style retagging to infer paragraph styles
-        let retagged = detectAndRetagStyles(in: attributed)
+        let retagged = detectAndRetagStyles(in: restoredPageBreaks)
         textView.textStorage?.setAttributedString(retagged)
         textView.setSelectedRange(NSRange(location: 0, length: 0))
 
@@ -4359,7 +4559,8 @@ class EditorViewController: NSViewController {
 
         // Restore QuillPilot internal markers (e.g. section breaks) from safe, cross-format attributes
         // before retagging so they don't interfere with style inference.
-        let restored = restoreSectionBreaksFromPersistenceLinks(in: attributed)
+        let restoredSectionBreaks = restoreSectionBreaksFromPersistenceLinks(in: attributed)
+        let restored = restorePageBreakMarkersFromFormFeed(in: restoredSectionBreaks)
 
         // Run style detection to ensure TOC Title, Index Title, etc. appear in document outline
         let retagged = detectAndRetagStyles(in: restored)
@@ -5288,6 +5489,175 @@ class EditorViewController: NSViewController {
         textView.window?.makeFirstResponder(textView)
     }
 
+    // MARK: - Page Breaks
+
+    func insertPageBreak() {
+        guard let storage = textView.textStorage else { return }
+
+        let selection = textView.selectedRange()
+        let insertionLocation = selection.location
+
+        debugLog("📄 InsertPageBreak: selection=\(selection) storageLength=\(storage.length)")
+
+        // Avoid inserting page breaks inside text tables.
+        if storage.length > 0 {
+            let styleIndex = max(0, min(insertionLocation, storage.length - 1))
+            let paragraphStyle = (storage.attribute(.paragraphStyle, at: styleIndex, effectiveRange: nil) as? NSParagraphStyle)
+                ?? (textView.typingAttributes[.paragraphStyle] as? NSParagraphStyle)
+                ?? textView.defaultParagraphStyle
+                ?? NSParagraphStyle.default
+
+            if !paragraphStyle.textBlocks.isEmpty {
+                let alert = NSAlert()
+                alert.messageText = "Page Break"
+                alert.informativeText = "Page breaks can't be inserted inside tables."
+                alert.addButton(withTitle: "OK")
+                alert.runModal()
+                return
+            }
+        }
+
+        let ns = storage.string as NSString
+        let isLineBreakChar: (unichar) -> Bool = { ch in
+            ch == 0x0A || ch == 0x0D || ch == 0x2029 || ch == 0x2028
+        }
+
+        let needsLeadingNewline: Bool = {
+            guard insertionLocation > 0 else { return false }
+            return !isLineBreakChar(ns.character(at: insertionLocation - 1))
+        }()
+
+        let needsTrailingNewline: Bool = {
+            guard insertionLocation < ns.length else { return false }
+            return !isLineBreakChar(ns.character(at: insertionLocation))
+        }()
+
+        let baseAttrs: [NSAttributedString.Key: Any] = {
+            if storage.length == 0 { return textView.typingAttributes }
+            let i = max(0, min(insertionLocation, storage.length - 1))
+            return storage.attributes(at: i, effectiveRange: nil)
+        }()
+
+        let block = NSMutableAttributedString()
+        if needsLeadingNewline {
+            block.append(NSAttributedString(string: "\n", attributes: baseAttrs))
+        }
+
+        // Calculate height to fill the remainder of the page
+        var spacerHeight: CGFloat = 300 // Fallback
+        if let layoutManager = textView.layoutManager, let textContainer = textView.textContainer {
+            let limitIndex = max(0, insertionLocation - 1)
+            let glyphIndex = layoutManager.glyphIndexForCharacter(at: limitIndex)
+            let rect = layoutManager.lineFragmentRect(forGlyphAt: glyphIndex, effectiveRange: nil)
+
+            // If the rect is valid
+            if rect.height > 0 || insertionLocation == 0 {
+                // Determine the Y position where the spacer will start.
+                // We must account for both the 'paragraphSpacing' of the preceding paragraph
+                // AND the 'paragraphSpacingBefore' of the new paragraph (which inherits the same style).
+                var extraSpacing: CGFloat = 0
+                let style = (baseAttrs[.paragraphStyle] as? NSParagraphStyle)
+                    ?? textView.defaultParagraphStyle
+                    ?? NSParagraphStyle.default
+
+                extraSpacing += style.paragraphSpacing
+                extraSpacing += style.paragraphSpacingBefore
+
+                // 25pt buffer is safer to prevent rounding errors from pushing the spacer to the next page.
+                // If the spacer is just 1px too tall, AppKit moves the whole thing to the next page,
+                // causing a massive gap. Being slightly shorter (larger buffer) is harmless.
+                let safetyBuffer: CGFloat = 25.0
+
+                // If we insert a leading newline, the spacer starts one line lower.
+                // Warning: The leading newline ALSO inherits baseAttrs, so it might inject ANOTHER paragraph spacing?
+                // If needsLeadingNewline is true, we are finishing the previous paragraph (applying its spacing)
+                // AND creating a blank line (height) AND potentially its own spacing if we aren't careful.
+                // But for now, let's assume simple line height + previous paragraph spacing.
+
+                let lineHeight = (rect.height > 0) ? rect.height : 14.0
+                var startY = rect.maxY + extraSpacing
+                if needsLeadingNewline {
+                     startY += lineHeight
+                     // The blank line inserted also has paragraph spacing?
+                     // Usually yes. So we might need to add it again.
+                     startY += extraSpacing
+                }
+
+                DebugLog.log("📄 PageBreakCalc: rectMaxY=\(rect.maxY) extraSpacing=\(extraSpacing) needsLeading=\(needsLeadingNewline) startY=\(startY)")
+
+                // 1. Look for explicit exclusion paths (headers, footers, gaps)
+                let sortedPaths = textContainer.exclusionPaths.map { $0.bounds }.sorted { $0.minY < $1.minY }
+
+                // Find the first exclusion that starts significantly after our calculated start position
+                if let nextObstacle = sortedPaths.first(where: { $0.minY > startY + 5.0 }) {
+                   let available = nextObstacle.minY - startY
+                   // Reduce by a larger safe buffer (15pt) to ensure the spacer fits even with minor rounding errors.
+                   // If available < 30, it's too small for a useful spacer, just let natural flow handle it.
+                   if available < (safetyBuffer + 10.0) {
+                       spacerHeight = 20 // Minimal spacer just to show the marker
+                   } else {
+                       spacerHeight = available - safetyBuffer
+                   }
+
+                   DebugLog.log("📄 PageBreakCalc: Found obstacle at \(nextObstacle.minY). available=\(available) spacer=\(spacerHeight)")
+                } else {
+                   // 2. No exclusion path ahead? Likely last page.
+                   let pHeight = pageHeight * editorZoom
+                   let pGap: CGFloat = 20
+                   let totalPageStride = pHeight + pGap
+                   let pageIndex = floor(startY / totalPageStride)
+
+                   let pageStart = pageIndex * totalPageStride
+                   // Visual bottom text area
+                   let effectivePageBottom = pageStart + pHeight - (standardMargin * editorZoom)
+
+                   if startY < effectivePageBottom {
+                       let available = effectivePageBottom - startY
+                       if available < (safetyBuffer + 10.0) {
+                           spacerHeight = 20
+                       } else {
+                           spacerHeight = available - safetyBuffer
+                       }
+                       DebugLog.log("📄 PageBreakCalc: No obstacle. LastPage logic. effectiveBottom=\(effectivePageBottom) spacer=\(spacerHeight)")
+                   } else {
+                       // We are already deep? Force full page minus margins.
+                       spacerHeight = pHeight - (standardMargin * editorZoom * 2)
+                       DebugLog.log("📄 PageBreakCalc: Deep in margin. Forced full height spacer=\(spacerHeight)")
+                   }
+                }
+            }
+        }
+
+        let attachment = makePageBreakAttachment(initialHeight: spacerHeight)
+        let marker = NSMutableAttributedString(attachment: attachment)
+        marker.addAttributes(baseAttrs, range: NSRange(location: 0, length: 1))
+        marker.addAttribute(.qpPageBreak, value: true, range: NSRange(location: 0, length: 1))
+        block.append(marker)
+
+        if needsTrailingNewline {
+            block.append(NSAttributedString(string: "\n", attributes: baseAttrs))
+        }
+
+        debugLog("📄 InsertPageBreak: blockLength=\(block.length) needsLeading=\(needsLeadingNewline) needsTrailing=\(needsTrailingNewline)")
+
+        if !textView.shouldChangeText(in: selection, replacementString: block.string) {
+            debugLog("📄 InsertPageBreak: shouldChangeText returned false")
+            return
+        }
+
+        storage.beginEditing()
+        storage.replaceCharacters(in: selection, with: block)
+        storage.endEditing()
+        textView.didChangeText()
+        textView.undoManager?.setActionName("Insert Page Break")
+
+        debugLog("📄 InsertPageBreak: after replace, storageLength=\(storage.length)")
+
+        let newLoc = min(selection.location + block.length, storage.length)
+        textView.setSelectedRange(NSRange(location: newLoc, length: 0))
+        updatePageLayout()
+    }
+
     // MARK: - Section Breaks
 
     private let sectionBreakAnchor = "\u{200B}"
@@ -5461,6 +5831,48 @@ class EditorViewController: NSViewController {
         }
 
         return mutable
+    }
+
+    private func restorePageBreakMarkersFromFormFeed(in attributed: NSAttributedString) -> NSAttributedString {
+        guard attributed.length > 0 else { return attributed }
+        guard (attributed.string as NSString).range(of: "\u{000C}").location != NSNotFound else { return attributed }
+
+        let mutable = NSMutableAttributedString(attributedString: attributed)
+        var searchLocation = 0
+
+        while searchLocation < mutable.length {
+            let current = mutable.string as NSString
+            let r = current.range(
+                of: "\u{000C}",
+                options: [],
+                range: NSRange(location: searchLocation, length: current.length - searchLocation)
+            )
+            if r.location == NSNotFound { break }
+
+            let attrs = mutable.attributes(at: r.location, effectiveRange: nil)
+            // Use a moderate default height for imported breaks since we can't measure layout yet
+            let attachment = makePageBreakAttachment(initialHeight: 200)
+            let marker = NSMutableAttributedString(attachment: attachment)
+            marker.addAttributes(attrs, range: NSRange(location: 0, length: 1))
+            marker.addAttribute(.qpPageBreak, value: true, range: NSRange(location: 0, length: 1))
+
+            mutable.replaceCharacters(in: r, with: marker)
+            searchLocation = r.location + 1
+        }
+
+        return mutable
+    }
+
+    private func makePageBreakAttachment(initialHeight: CGFloat) -> NSTextAttachment {
+        let attachment = NSTextAttachment()
+        // Use the requested height, or a safe default, capped to avoid infinite pagination.
+        // We use a reasonably large minimum (20) to ensure visibility if the math is off.
+        // We cap at pageHeight to prevent "500 page" explosions.
+        let safeHeight = min(max(20, initialHeight), (pageHeight * editorZoom))
+        let cell = SpacerAttachmentCell(height: safeHeight)
+        attachment.attachmentCell = cell
+        attachment.bounds = NSRect(x: 0, y: 0, width: 0.1, height: safeHeight)
+        return attachment
     }
 
     func editSectionSettingsAtCursor() {

@@ -351,6 +351,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         mainWindowController?.mainContentViewController?.editorViewController.insertColumnBreak()
     }
 
+    @objc private func insertPageBreak(_ sender: Any?) {
+        if mainWindowController == nil {
+            mainWindowController = MainWindowController()
+        }
+        presentMainWindow(orderingSource: sender)
+        mainWindowController?.mainContentViewController?.editorViewController.insertPageBreak()
+    }
+
     @objc private func insertSectionBreak(_ sender: Any?) {
         if mainWindowController == nil {
             mainWindowController = MainWindowController()
@@ -365,6 +373,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if let menuItem = sender as? NSMenuItem {
             menuItem.state = visible ? .on : .off
             menuItem.title = visible ? "Hide Section Breaks" : "Show Section Breaks"
+        }
+    }
+
+    @objc private func togglePageBreaksVisibility(_ sender: Any?) {
+        guard let editor = mainWindowController?.mainContentViewController?.editorViewController else { return }
+        let visible = editor.togglePageBreaksVisibility()
+        if let menuItem = sender as? NSMenuItem {
+            menuItem.state = visible ? .on : .off
+            menuItem.title = visible ? "Hide Page Breaks" : "Show Page Breaks"
         }
     }
 
@@ -930,6 +947,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         insertSectionBreakItem.target = self
         insertMenu.addItem(insertSectionBreakItem)
 
+        let insertPageBreakItem = NSMenuItem(title: "Page Break", action: #selector(insertPageBreak(_:)), keyEquivalent: "")
+        insertPageBreakItem.target = self
+        insertMenu.addItem(insertPageBreakItem)
+
         insertMenu.addItem(.separator())
 
         let insertFootnoteItem = NSMenuItem(title: "Insert Footnote", action: #selector(insertFootnote(_:)), keyEquivalent: "")
@@ -1114,6 +1135,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let manageSectionBreaksItem = NSMenuItem(title: "Manage Section Breaks…", action: #selector(showSectionBreaksManager(_:)), keyEquivalent: "")
         manageSectionBreaksItem.target = self
         sectionBreaksMenu.addItem(manageSectionBreaksItem)
+
+        let pageBreaksMenuItem = NSMenuItem(title: "Page Breaks", action: nil, keyEquivalent: "")
+        let pageBreaksMenu = NSMenu(title: "Page Breaks")
+        pageBreaksMenuItem.submenu = pageBreaksMenu
+        viewMenu.addItem(pageBreaksMenuItem)
+
+        let togglePageBreaksItem = NSMenuItem(title: "Show Page Breaks", action: #selector(togglePageBreaksVisibility(_:)), keyEquivalent: "")
+        togglePageBreaksItem.target = self
+        pageBreaksMenu.addItem(togglePageBreaksItem)
 
         viewMenu.addItem(.separator())
 
@@ -1526,6 +1556,15 @@ extension AppDelegate: NSUserInterfaceValidations {
             return true
         }
 
+        if item.action == #selector(togglePageBreaksVisibility(_:)) {
+            let visible = mainWindowController?.mainContentViewController?.editorViewController.pageBreaksVisible() ?? false
+            if let menuItem = item as? NSMenuItem {
+                menuItem.title = visible ? "Hide Page Breaks" : "Show Page Breaks"
+                menuItem.state = visible ? .on : .off
+            }
+            return true
+        }
+
         return true
     }
 }
@@ -1590,6 +1629,7 @@ extension AppDelegate: NSMenuItemValidation {
             #selector(analyzeDocumentNow(_:)),
             #selector(insertColumnBreak(_:)),
             #selector(toggleSectionBreaksVisibility(_:)),
+            #selector(togglePageBreaksVisibility(_:)),
         ]
 
         if let action = menuItem.action, requiresWindow.contains(action) {

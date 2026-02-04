@@ -1,0 +1,8 @@
+Command line invocation:
+    /Applications/Xcode.app/Contents/Developer/usr/bin/xcodebuild -project QuillPilot.xcodeproj -scheme QuillPilot -configuration Release CODE_SIGNING_ALLOWED=NO build
+
+Build settings from command line:
+    CODE_SIGNING_ALLOWED = NO
+
+2026-02-03 20:22:33.927 xcodebuild[18603:8946790] Writing error result bundle to /var/folders/5n/qr2mqwgj27q77332qsmr89nw0000gn/T/ResultBundle_2026-03-02_20-22-0033.xcresult
+xcodebuild: error: 'QuillPilot.xcodeproj' does not exist.

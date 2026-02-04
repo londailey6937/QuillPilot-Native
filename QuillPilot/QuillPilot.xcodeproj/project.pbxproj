@@ -125,7 +125,6 @@
 /* Begin PBXShellScriptBuildPhase section */
 		95A1B2C32F0A1B2C0033A1B2 /* Copy App to build/ */ = {
 			isa = PBXShellScriptBuildPhase;
-			alwaysOutOfDate = 1;
 			buildActionMask = 2147483647;
 			files = (
 			);
@@ -143,7 +142,7 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
-			shellScript = "set -e\n\n# Copy the just-built app bundle into a stable location inside the repo.\n# Result: ${SRCROOT}/build/${CONFIGURATION}/${WRAPPER_NAME}\n#\n# NOTE: This script runs before Xcode's final CodeSign step. The copied bundle\n# would otherwise be unsigned (and can fail to launch), so we ad-hoc sign it.\n# Also, /usr/bin/ditto preserves source mtimes by default, which can make the\n# copied bundle *look* stale in Finder. We touch the bundle after signing.\n\nDEST_DIR=\"${SRCROOT}/build/${CONFIGURATION}\"\nDEST_APP=\"${DEST_DIR}/${WRAPPER_NAME}\"\nSRC_APP=\"${TARGET_BUILD_DIR}/${WRAPPER_NAME}\"\n\nmkdir -p \"${DEST_DIR}\"\nrm -rf \"${DEST_APP}\"\n/usr/bin/ditto \"${SRC_APP}\" \"${DEST_APP}\"\n\nSIGN_ID=\"${EXPANDED_CODE_SIGN_IDENTITY:-${CODE_SIGN_IDENTITY:-}}\"\nif [ -n \"${SIGN_ID}\" ]; then\n  /usr/bin/codesign --force --deep --sign \"${SIGN_ID}\" --timestamp=none \"${DEST_APP}\" || true\nfi\n\n# Ensure the bundle's modified date reflects this build.\n/usr/bin/touch \"${DEST_APP}\" || true\n/usr/bin/touch \"${DEST_APP}/Contents/Info.plist\" 2>/dev/null || true\n/usr/bin/touch \"${DEST_APP}/Contents/MacOS/${EXECUTABLE_NAME}\" 2>/dev/null || true\n";
+			shellScript = "set -e\n\n# Copy the just-built app bundle into a stable location inside the repo.\n# Result: ${SRCROOT}/build/${CONFIGURATION}/${WRAPPER_NAME}\n#\n# For App Store packaging (Archive/Release), this is usually unnecessary.\n# By default we skip it for Release unless explicitly enabled via:\n#   QUILLPILOT_COPY_APP=1\n\nif [ \"${CONFIGURATION}\" = \"Release\" ] && [ -z \"${QUILLPILOT_COPY_APP:-}\" ]; then\n  exit 0\nfi\n\nDEST_DIR=\"${SRCROOT}/build/${CONFIGURATION}\"\nDEST_APP=\"${DEST_DIR}/${WRAPPER_NAME}\"\nSRC_APP=\"${TARGET_BUILD_DIR}/${WRAPPER_NAME}\"\n\nmkdir -p \"${DEST_DIR}\"\nrm -rf \"${DEST_APP}\"\n/usr/bin/ditto \"${SRC_APP}\" \"${DEST_APP}\"\n\nSIGN_ID=\"${EXPANDED_CODE_SIGN_IDENTITY:-${CODE_SIGN_IDENTITY:-}}\"\nif [ -n \"${SIGN_ID}\" ]; then\n  /usr/bin/codesign --force --deep --sign \"${SIGN_ID}\" --timestamp=none \"${DEST_APP}\" || true\nfi\n\n# Ensure the bundle's modified date reflects this build.\n/usr/bin/touch \"${DEST_APP}\" || true\n/usr/bin/touch \"${DEST_APP}/Contents/Info.plist\" 2>/dev/null || true\n/usr/bin/touch \"${DEST_APP}/Contents/MacOS/${EXECUTABLE_NAME}\" 2>/dev/null || true\n";
 		};
 /* End PBXShellScriptBuildPhase section */
 
@@ -212,7 +211,7 @@
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
 				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
-				MACOSX_DEPLOYMENT_TARGET = 15.6;
+				MACOSX_DEPLOYMENT_TARGET = 13.5;
 				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
 				MTL_FAST_MATH = YES;
 				ONLY_ACTIVE_ARCH = YES;
@@ -256,7 +255,7 @@
 				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
 				CLANG_WARN_UNREACHABLE_CODE = YES;
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
-				COPY_PHASE_STRIP = NO;
+				COPY_PHASE_STRIP = YES;
 				DEAD_CODE_STRIPPING = YES;
 				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
 				ENABLE_NS_ASSERTIONS = NO;
@@ -264,6 +263,7 @@
 				ENABLE_USER_SCRIPT_SANDBOXING = YES;
 				GCC_C_LANGUAGE_STANDARD = gnu17;
 				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = s;
 				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
 				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
 				GCC_WARN_UNDECLARED_SELECTOR = YES;
@@ -271,12 +271,17 @@
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
 				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
-				MACOSX_DEPLOYMENT_TARGET = 15.6;
+				MACOSX_DEPLOYMENT_TARGET = 13.5;
 				MTL_ENABLE_DEBUG_INFO = NO;
 				MTL_FAST_MATH = YES;
+				ONLY_ACTIVE_ARCH = NO;
 				SDKROOT = macosx;
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				STRIP_INSTALLED_PRODUCT = YES;
+				STRIP_STYLE = all;
 				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_OPTIMIZATION_LEVEL = "-Owholemodule";
+				VALIDATE_PRODUCT = YES;
 			};
 			name = Release;
 		};
@@ -285,11 +290,12 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = QuillPilot.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
 				CURRENT_PROJECT_VERSION = 1;
 				DEAD_CODE_STRIPPING = YES;
-				ENABLE_APP_SANDBOX = NO;
+				ENABLE_APP_SANDBOX = YES;
 				ENABLE_USER_SCRIPT_SANDBOXING = NO;
 				ENABLE_USER_SELECTED_FILES = readwrite;
 				GENERATE_INFOPLIST_FILE = NO;
@@ -319,11 +325,14 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = QuillPilot.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
 				CURRENT_PROJECT_VERSION = 1;
 				DEAD_CODE_STRIPPING = YES;
-				ENABLE_APP_SANDBOX = NO;
+				DEVELOPMENT_TEAM = 7YD53MV78N;
+				ENABLE_APP_SANDBOX = YES;
+				ENABLE_HARDENED_RUNTIME = YES;
 				ENABLE_USER_SCRIPT_SANDBOXING = NO;
 				ENABLE_USER_SELECTED_FILES = readwrite;
 				GENERATE_INFOPLIST_FILE = NO;

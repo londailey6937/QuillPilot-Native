@@ -174,7 +174,7 @@ class HeaderFooterSettingsWindow: NSWindowController, NSWindowDelegate {
 
         // Show Headers checkbox
         showHeadersCheckbox = NSButton(checkboxWithTitle: "Show Headers", target: self, action: #selector(checkboxChanged))
-        showHeadersCheckbox.state = .on
+        showHeadersCheckbox.state = .off
         showHeadersCheckbox.translatesAutoresizingMaskIntoConstraints = false
         contentView.addSubview(showHeadersCheckbox)
 
@@ -201,7 +201,7 @@ class HeaderFooterSettingsWindow: NSWindowController, NSWindowDelegate {
 
         // Show Footers checkbox
         showFootersCheckbox = NSButton(checkboxWithTitle: "Show Footers", target: self, action: #selector(checkboxChanged))
-        showFootersCheckbox.state = .on
+        showFootersCheckbox.state = .off
         showFootersCheckbox.translatesAutoresizingMaskIntoConstraints = false
         contentView.addSubview(showFootersCheckbox)
 

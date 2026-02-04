@@ -1732,8 +1732,8 @@ class EditorViewController: NSViewController {
     var manuscriptAuthor: String = "Author Name"
 
     // Header/Footer configuration
-    var showHeaders: Bool = true
-    var showFooters: Bool = true
+    var showHeaders: Bool = false
+    var showFooters: Bool = false
     var showPageNumbers: Bool = true
     var hidePageNumberOnFirstPage: Bool = true
     var centerPageNumbers: Bool = false
@@ -5572,16 +5572,15 @@ class EditorViewController: NSViewController {
                     ?? NSParagraphStyle.default
                 extraSpacing += style.paragraphSpacingBefore
 
-                // 25pt buffer is safer to prevent rounding errors from pushing the spacer to the next page.
-                // If the spacer is just 1px too tall, AppKit moves the whole thing to the next page,
-                // causing a massive gap. Being slightly shorter (larger buffer) is harmless.
-                let safetyBuffer: CGFloat = 25.0
+                // 40pt buffer is safer to prevent rounding errors from pushing the spacer to the next page.
+                // We've seen issues where 25pt wasn't enough when double-spacing or heavy styles were involved.
+                // Being slightly shorter (larger buffer) is harmless as the gap is at the bottom of the page.
+                let safetyBuffer: CGFloat = 40.0
 
                 // If we insert a leading newline, the spacer starts one line lower.
                 // Warning: The leading newline ALSO inherits baseAttrs, so it might inject ANOTHER paragraph spacing?
                 // If needsLeadingNewline is true, we are finishing the previous paragraph (applying its spacing)
                 // AND creating a blank line (height) AND potentially its own spacing if we aren't careful.
-                // But for now, let's assume simple line height + previous paragraph spacing.
 
                 let lineHeight = (rect.height > 0) ? rect.height : 14.0
 
@@ -5593,57 +5592,56 @@ class EditorViewController: NSViewController {
                 }
 
                 if needsLeadingNewline {
+                     // 1. Add height of the blank line
                      startY += lineHeight
-                     // The blank line inserted also has paragraph spacing?
-                     // Usually yes. So we might need to add it again.
+
+                     // 2. Add the spacing AFTER the blank line (gap between BlankLine and Spacer)
+                     // Since the blank line uses 'style', it has 'style.paragraphSpacing'.
+                     // The spacer also uses 'style', so it has 'style.paragraphSpacingBefore'.
+                     // The gap is Max(BlankLine.After, Spacer.Before).
+                     // For safety (to avoid underestimating startY), we SUM them, or just reuse 'extraSpacing'
+                     // which contains both components.
                      startY += extraSpacing
                 }
 
                 DebugLog.log("📄 PageBreakCalc: rectMaxY=\(rect.maxY) extraSpacing=\(extraSpacing) needsLeading=\(needsLeadingNewline) startY=\(startY)")
 
-                // 1. Look for explicit exclusion paths (headers, footers, gaps)
-                let sortedPaths = textContainer.exclusionPaths.map { $0.bounds }.sorted { $0.minY < $1.minY }
+                // Use the same page geometry constants as updatePageCentering().
+                let pHeight = pageHeight * editorZoom
+                let pGap: CGFloat = 20
+                let totalPageStride = pHeight + pGap
 
-                // Find the first exclusion that starts at or after our calculated start position.
-                // We typically look for something strictly > startY, but if startY is e.g. 799.9 and obstacle is 800, we want to find it.
-                // We use a small epsilon for float comparison.
-                if let nextObstacle = sortedPaths.first(where: { $0.minY > startY + 0.1 }) {
-                   let available = nextObstacle.minY - startY
+                // The text view is offset by textInsetBottom within the page view.
+                // In text container coordinates:
+                //   Page N text area starts at: N * totalPageStride
+                //   Page N footer exclusion starts at: N * totalPageStride + pHeight - textInsetBottom - textInsetTop
+                // where textInsetTop = standardMargin * editorZoom (top margin)
+                //       textInsetBottom = standardMargin * editorZoom (bottom margin)
+                let textInsetTop = standardMargin * editorZoom
+                let textInsetBottom = standardMargin * editorZoom
 
-                   // If available space is tiny (less than buffer), we make a minimal spacer (1pt).
-                   // A 1pt spacer usually fits. If it doesn't, it wraps, creating a 1pt gap on next page (negligible).
-                   // If available is large, we subtract buffer to be safe.
-                   if available < safetyBuffer {
-                       spacerHeight = 1.0
-                   } else {
-                       spacerHeight = available - safetyBuffer
-                   }
+                // Determine which page startY falls on.
+                let pageIndex = floor(startY / totalPageStride)
+                let pageStartY = pageIndex * totalPageStride
 
-                   DebugLog.log("📄 PageBreakCalc: Found obstacle at \(nextObstacle.minY). available=\(available) spacer=\(spacerHeight)")
+                // The footer exclusion for this page starts at:
+                // (same formula as updatePageCentering)
+                let footerY = pageStartY + pHeight - textInsetBottom - textInsetTop
+
+                DebugLog.log("📄 PageBreakCalc: pageIndex=\(pageIndex) pageStartY=\(pageStartY) footerY=\(footerY)")
+
+                if startY < footerY {
+                    let available = footerY - startY
+                    if available < safetyBuffer {
+                        spacerHeight = 1.0
+                    } else {
+                        spacerHeight = available - safetyBuffer
+                    }
+                    DebugLog.log("📄 PageBreakCalc: available=\(available) spacer=\(spacerHeight)")
                 } else {
-                   // 2. No exclusion path ahead? Likely last page.
-                   let pHeight = pageHeight * editorZoom
-                   let pGap: CGFloat = 20
-                   let totalPageStride = pHeight + pGap
-                   let pageIndex = floor(startY / totalPageStride)
-
-                   let pageStart = pageIndex * totalPageStride
-                   // Visual bottom text area
-                   let effectivePageBottom = pageStart + pHeight - (standardMargin * editorZoom)
-
-                   if startY < effectivePageBottom {
-                       let available = effectivePageBottom - startY
-                       if available < safetyBuffer {
-                           spacerHeight = 1.0
-                       } else {
-                           spacerHeight = available - safetyBuffer
-                       }
-                       DebugLog.log("📄 PageBreakCalc: No obstacle. LastPage logic. effectiveBottom=\(effectivePageBottom) spacer=\(spacerHeight)")
-                   } else {
-                       // We are already deep?
-                       spacerHeight = 1.0
-                       DebugLog.log("📄 PageBreakCalc: Deep in margin. Forced minimal spacer=\(spacerHeight)")
-                   }
+                    // We are already past the text area (in footer/gap). Minimal spacer.
+                    spacerHeight = 1.0
+                    DebugLog.log("📄 PageBreakCalc: Already in footer/gap. Forced minimal spacer=\(spacerHeight)")
                 }
             }
         }

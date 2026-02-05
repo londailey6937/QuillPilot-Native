@@ -923,8 +923,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         editMenu.addItem(.separator())
 
         // Cleanup actions (routed via responder chain to the active editor)
-        editMenu.addItem(NSMenuItem(title: "Remove Empty Lines", action: Selector(("qpRemoveExtraBlankLines:")), keyEquivalent: ""))
-        editMenu.addItem(NSMenuItem(title: "Remove Hidden Text", action: Selector(("qpRemoveHiddenText:")), keyEquivalent: ""))
+        editMenu.addItem(NSMenuItem(title: "Remove Empty Lines", action: NSSelectorFromString("qpRemoveExtraBlankLines:"), keyEquivalent: ""))
+        editMenu.addItem(NSMenuItem(title: "Remove Hidden Text", action: NSSelectorFromString("qpRemoveHiddenText:"), keyEquivalent: ""))
 
         // Insert Menu
         let insertMenuItem = NSMenuItem()
@@ -1017,7 +1017,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         // Route these through the responder chain (first responder is the editor text view).
         // Bullets
-        listsMenu.addItem(NSMenuItem(title: "Bulleted List", action: Selector(("qpToggleBulletedList:")), keyEquivalent: ""))
+        listsMenu.addItem(NSMenuItem(title: "Bulleted List", action: NSSelectorFromString("qpToggleBulletedList:"), keyEquivalent: ""))
 
         let bulletStyleItem = NSMenuItem(title: "Bulleted List Style", action: nil, keyEquivalent: "")
         let bulletStyleMenu = NSMenu(title: "Bulleted List Style")
@@ -1032,8 +1032,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         listsMenu.addItem(.separator())
 
         // Numbering
-        listsMenu.addItem(NSMenuItem(title: "Numbered List", action: Selector(("qpToggleNumberedList:")), keyEquivalent: ""))
-        listsMenu.addItem(NSMenuItem(title: "Restart Numbering at 1", action: Selector(("qpRestartNumbering:")), keyEquivalent: ""))
+        listsMenu.addItem(NSMenuItem(title: "Numbered List", action: NSSelectorFromString("qpToggleNumberedList:"), keyEquivalent: ""))
+        listsMenu.addItem(NSMenuItem(title: "Restart Numbering at 1", action: NSSelectorFromString("qpRestartNumbering:"), keyEquivalent: ""))
         let restartCustom = NSMenuItem(title: "Restart Numbering…", action: #selector(restartNumberingPrompt(_:)), keyEquivalent: "")
         restartCustom.target = self
         listsMenu.addItem(restartCustom)

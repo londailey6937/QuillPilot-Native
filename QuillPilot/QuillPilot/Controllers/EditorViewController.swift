@@ -5545,7 +5545,7 @@ class EditorViewController: NSViewController {
 
         // Calculate height to fill the remainder of the page
         var spacerHeight: CGFloat = 300 // Fallback
-        if let layoutManager = textView.layoutManager, let textContainer = textView.textContainer {
+        if let layoutManager = textView.layoutManager, let _ = textView.textContainer {
             let limitIndex = max(0, insertionLocation - 1)
             let glyphIndex = layoutManager.glyphIndexForCharacter(at: limitIndex)
             let rect = layoutManager.lineFragmentRect(forGlyphAt: glyphIndex, effectiveRange: nil)

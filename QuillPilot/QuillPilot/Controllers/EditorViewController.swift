@@ -5538,9 +5538,26 @@ class EditorViewController: NSViewController {
             return storage.attributes(at: i, effectiveRange: nil)
         }()
 
+        let spacerParagraphStyle: NSParagraphStyle = {
+            let style = (baseAttrs[.paragraphStyle] as? NSParagraphStyle)
+                ?? textView.defaultParagraphStyle
+                ?? NSParagraphStyle.default
+            let mutable = (style.mutableCopy() as? NSMutableParagraphStyle) ?? NSMutableParagraphStyle()
+            mutable.paragraphSpacing = 0
+            mutable.paragraphSpacingBefore = 0
+            mutable.lineSpacing = 0
+            mutable.lineHeightMultiple = 1
+            mutable.minimumLineHeight = 0
+            mutable.maximumLineHeight = 0
+            return mutable.copy() as! NSParagraphStyle
+        }()
+
+        var spacerAttrs = baseAttrs
+        spacerAttrs[.paragraphStyle] = spacerParagraphStyle
+
         let block = NSMutableAttributedString()
         if needsLeadingNewline {
-            block.append(NSAttributedString(string: "\n", attributes: baseAttrs))
+            block.append(NSAttributedString(string: "\n", attributes: spacerAttrs))
         }
 
         // Calculate height to fill the remainder of the page
@@ -5551,8 +5568,9 @@ class EditorViewController: NSViewController {
             let rect = layoutManager.lineFragmentRect(forGlyphAt: glyphIndex, effectiveRange: nil)
 
             if rect.height > 0 || insertionLocation == 0 {
-                let safetyBuffer: CGFloat = 16.0
+                let safetyBuffer: CGFloat = 8.0
                 let lineHeight = (rect.height > 0) ? rect.height : 14.0
+                let insets = currentTextInsetsForPagination()
 
                 var startY: CGFloat = insertionLocation == 0 ? 0 : rect.maxY
                 if needsLeadingNewline {
@@ -5564,35 +5582,33 @@ class EditorViewController: NSViewController {
                 let pHeight = pageHeight * editorZoom
                 let pGap: CGFloat = 20
                 let totalPageStride = pHeight + pGap
-
-                let textInsetTop = standardMargin * editorZoom
-                let textInsetBottom = standardMargin * editorZoom
+                let textAreaHeight = max(1.0, pHeight - insets.top - insets.bottom)
 
                 let pageIndex = floor(startY / totalPageStride)
                 let pageStartY = pageIndex * totalPageStride
-                let footerY = pageStartY + pHeight - textInsetBottom - textInsetTop
+                let offsetWithinPage = max(0, startY - pageStartY)
 
-                DebugLog.log("📄 PageBreakCalc: pageIndex=\(pageIndex) pageStartY=\(pageStartY) footerY=\(footerY)")
+                DebugLog.log("📄 PageBreakCalc: pageIndex=\(pageIndex) pageStartY=\(pageStartY) offset=\(offsetWithinPage)")
 
-                if startY < footerY {
-                    let available = footerY - startY
-                    spacerHeight = max(1.0, available - safetyBuffer)
+                if offsetWithinPage < textAreaHeight {
+                    let available = textAreaHeight - offsetWithinPage
+                    spacerHeight = max(1.0, min(textAreaHeight, available - safetyBuffer))
                     DebugLog.log("📄 PageBreakCalc: available=\(available) spacer=\(spacerHeight)")
                 } else {
                     spacerHeight = 1.0
-                    DebugLog.log("📄 PageBreakCalc: Already in footer/gap. Forced minimal spacer=\(spacerHeight)")
+                    DebugLog.log("📄 PageBreakCalc: Already past text area. Forced minimal spacer=\(spacerHeight)")
                 }
             }
         }
 
         let attachment = makePageBreakAttachment(initialHeight: spacerHeight)
         let marker = NSMutableAttributedString(attachment: attachment)
-        marker.addAttributes(baseAttrs, range: NSRange(location: 0, length: 1))
+        marker.addAttributes(spacerAttrs, range: NSRange(location: 0, length: 1))
         marker.addAttribute(.qpPageBreak, value: true, range: NSRange(location: 0, length: 1))
         block.append(marker)
 
         if needsTrailingNewline {
-            block.append(NSAttributedString(string: "\n", attributes: baseAttrs))
+            block.append(NSAttributedString(string: "\n", attributes: spacerAttrs))
         }
 
         debugLog("📄 InsertPageBreak: blockLength=\(block.length) needsLeading=\(needsLeadingNewline) needsTrailing=\(needsTrailingNewline)")

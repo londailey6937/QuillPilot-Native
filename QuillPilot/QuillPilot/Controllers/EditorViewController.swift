@@ -5550,96 +5550,35 @@ class EditorViewController: NSViewController {
             let glyphIndex = layoutManager.glyphIndexForCharacter(at: limitIndex)
             let rect = layoutManager.lineFragmentRect(forGlyphAt: glyphIndex, effectiveRange: nil)
 
-            // If the rect is valid
             if rect.height > 0 || insertionLocation == 0 {
-                // Determine the Y position where the spacer will start.
-                var extraSpacing: CGFloat = 0
-
-                // 1. Get paragraphSpacing from the PREVIOUS paragraph (if any)
-                // We must use the attributes of the text *before* the insertion point
-                // to correctly calculate the gap that precedes the spacer.
-                if insertionLocation > 0 {
-                    let prevIndex = min(insertionLocation - 1, storage.length - 1)
-                    let prevAttrs = storage.attributes(at: prevIndex, effectiveRange: nil)
-                    if let s = prevAttrs[.paragraphStyle] as? NSParagraphStyle {
-                        extraSpacing += s.paragraphSpacing
-                    }
-                }
-
-                // 2. Get paragraphSpacingBefore from the NEW paragraph (spacer inherits baseAttrs)
-                let style = (baseAttrs[.paragraphStyle] as? NSParagraphStyle)
-                    ?? textView.defaultParagraphStyle
-                    ?? NSParagraphStyle.default
-                extraSpacing += style.paragraphSpacingBefore
-
-                // 40pt buffer is safer to prevent rounding errors from pushing the spacer to the next page.
-                // We've seen issues where 25pt wasn't enough when double-spacing or heavy styles were involved.
-                // Being slightly shorter (larger buffer) is harmless as the gap is at the bottom of the page.
-                let safetyBuffer: CGFloat = 40.0
-
-                // If we insert a leading newline, the spacer starts one line lower.
-                // Warning: The leading newline ALSO inherits baseAttrs, so it might inject ANOTHER paragraph spacing?
-                // If needsLeadingNewline is true, we are finishing the previous paragraph (applying its spacing)
-                // AND creating a blank line (height) AND potentially its own spacing if we aren't careful.
-
+                let safetyBuffer: CGFloat = 16.0
                 let lineHeight = (rect.height > 0) ? rect.height : 14.0
 
-                var startY: CGFloat
-                if insertionLocation == 0 {
-                    startY = 0
-                } else {
-                    startY = rect.maxY + extraSpacing
-                }
-
+                var startY: CGFloat = insertionLocation == 0 ? 0 : rect.maxY
                 if needsLeadingNewline {
-                     // 1. Add height of the blank line
-                     startY += lineHeight
-
-                     // 2. Add the spacing AFTER the blank line (gap between BlankLine and Spacer)
-                     // Since the blank line uses 'style', it has 'style.paragraphSpacing'.
-                     // The spacer also uses 'style', so it has 'style.paragraphSpacingBefore'.
-                     // The gap is Max(BlankLine.After, Spacer.Before).
-                     // For safety (to avoid underestimating startY), we SUM them, or just reuse 'extraSpacing'
-                     // which contains both components.
-                     startY += extraSpacing
+                    startY += lineHeight
                 }
 
-                DebugLog.log("📄 PageBreakCalc: rectMaxY=\(rect.maxY) extraSpacing=\(extraSpacing) needsLeading=\(needsLeadingNewline) startY=\(startY)")
+                DebugLog.log("📄 PageBreakCalc: rectMaxY=\(rect.maxY) needsLeading=\(needsLeadingNewline) startY=\(startY)")
 
-                // Use the same page geometry constants as updatePageCentering().
                 let pHeight = pageHeight * editorZoom
                 let pGap: CGFloat = 20
                 let totalPageStride = pHeight + pGap
 
-                // The text view is offset by textInsetBottom within the page view.
-                // In text container coordinates:
-                //   Page N text area starts at: N * totalPageStride
-                //   Page N footer exclusion starts at: N * totalPageStride + pHeight - textInsetBottom - textInsetTop
-                // where textInsetTop = standardMargin * editorZoom (top margin)
-                //       textInsetBottom = standardMargin * editorZoom (bottom margin)
                 let textInsetTop = standardMargin * editorZoom
                 let textInsetBottom = standardMargin * editorZoom
 
-                // Determine which page startY falls on.
                 let pageIndex = floor(startY / totalPageStride)
                 let pageStartY = pageIndex * totalPageStride
-
-                // The footer exclusion for this page starts at:
-                // (same formula as updatePageCentering)
                 let footerY = pageStartY + pHeight - textInsetBottom - textInsetTop
 
                 DebugLog.log("📄 PageBreakCalc: pageIndex=\(pageIndex) pageStartY=\(pageStartY) footerY=\(footerY)")
 
                 if startY < footerY {
                     let available = footerY - startY
-                    if available < safetyBuffer {
-                        spacerHeight = 1.0
-                    } else {
-                        spacerHeight = available - safetyBuffer
-                    }
+                    spacerHeight = max(1.0, available - safetyBuffer)
                     DebugLog.log("📄 PageBreakCalc: available=\(available) spacer=\(spacerHeight)")
                 } else {
-                    // We are already past the text area (in footer/gap). Minimal spacer.
                     spacerHeight = 1.0
                     DebugLog.log("📄 PageBreakCalc: Already in footer/gap. Forced minimal spacer=\(spacerHeight)")
                 }

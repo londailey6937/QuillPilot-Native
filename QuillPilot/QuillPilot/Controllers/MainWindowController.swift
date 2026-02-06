@@ -90,6 +90,8 @@ class MainWindowController: NSWindowController {
     private var currentDocumentFormat: ExportFormat = .docx
     private var autoSaveTimer: Timer?
     private var hasUnsavedChanges = false
+    private var currentSecurityScopedURL: URL?
+    private var currentSecurityScopedAccessActive = false
 
     // Sheet field references
     private var columnsSheetField: NSTextField?
@@ -104,6 +106,30 @@ class MainWindowController: NSWindowController {
     /// Public accessor for the current document URL (nil for unsaved documents)
     func currentDocumentURLValue() -> URL? {
         currentDocumentURL
+    }
+
+    private func beginSecurityScopedAccess(for url: URL) {
+        let standardized = url.standardizedFileURL
+        if currentSecurityScopedAccessActive, currentSecurityScopedURL?.standardizedFileURL == standardized {
+            return
+        }
+        endSecurityScopedAccess()
+        let didAccess = url.startAccessingSecurityScopedResource()
+        currentSecurityScopedURL = url
+        currentSecurityScopedAccessActive = didAccess
+        if didAccess {
+            debugLog("🔐 Security-scoped access granted for \(standardized.lastPathComponent)")
+        } else {
+            debugLog("⚠️ Security-scoped access not granted for \(standardized.lastPathComponent)")
+        }
+    }
+
+    private func endSecurityScopedAccess() {
+        if currentSecurityScopedAccessActive, let url = currentSecurityScopedURL {
+            url.stopAccessingSecurityScopedResource()
+        }
+        currentSecurityScopedAccessActive = false
+        currentSecurityScopedURL = nil
     }
 
     convenience init() {
@@ -2143,6 +2169,7 @@ extension MainWindowController {
         // Reset the current file path and window title
         currentDocumentURL = nil
         hasUnsavedChanges = false
+        endSecurityScopedAccess()
         window?.title = "Quill Pilot"
         headerView.setDocumentTitle("")
         headerView.specsPanel.setAuthor("")
@@ -2274,6 +2301,7 @@ extension MainWindowController {
 
     private func importFile(url: URL) throws {
         debugLog("=== importFile called with: \(url.path) ===")
+        beginSecurityScopedAccess(for: url)
         let ext = url.pathExtension.lowercased()
         debugLog("File extension: \(ext)")
 

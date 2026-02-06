@@ -271,6 +271,19 @@ class CharacterLibrary {
                 characters = []
             }
         } catch {
+            let nsError = error as NSError
+            if nsError.domain == NSCocoaErrorDomain,
+               nsError.code == CocoaError.fileReadNoPermission.rawValue {
+                DebugLog.log("🚫 Permission denied reading characters sidecar: \(charactersFile.path)")
+                NotificationCenter.default.post(
+                    name: .characterLibraryAccessDenied,
+                    object: nil,
+                    userInfo: [
+                        "documentURL": documentURL,
+                        "sidecarURL": charactersFile
+                    ]
+                )
+            }
             // If no saved characters for this document, start with empty library
             DebugLog.log("📚 No existing characters file for document (\(charactersFile.lastPathComponent)); starting fresh")
             characters = []
@@ -473,4 +486,5 @@ class CharacterLibrary {
 
 extension Notification.Name {
     static let characterLibraryDidChange = Notification.Name("characterLibraryDidChange")
+    static let characterLibraryAccessDenied = Notification.Name("characterLibraryAccessDenied")
 }

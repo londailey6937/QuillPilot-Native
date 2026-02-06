@@ -92,6 +92,8 @@ class MainWindowController: NSWindowController {
     private var hasUnsavedChanges = false
     private var currentSecurityScopedURL: URL?
     private var currentSecurityScopedAccessActive = false
+    private var currentSecurityScopedFolderURL: URL?
+    private var currentSecurityScopedFolderAccessActive = false
 
     // Sheet field references
     private var columnsSheetField: NSTextField?
@@ -124,12 +126,39 @@ class MainWindowController: NSWindowController {
         }
     }
 
+    private func beginSecurityScopedFolderAccess(for folderURL: URL) {
+        let standardized = folderURL.standardizedFileURL
+        if currentSecurityScopedFolderAccessActive, currentSecurityScopedFolderURL?.standardizedFileURL == standardized {
+            return
+        }
+        if currentSecurityScopedFolderAccessActive {
+            endSecurityScopedFolderAccess()
+        }
+        let didAccess = folderURL.startAccessingSecurityScopedResource()
+        currentSecurityScopedFolderURL = folderURL
+        currentSecurityScopedFolderAccessActive = didAccess
+        if didAccess {
+            debugLog("📂 Security-scoped folder access granted for \(standardized.lastPathComponent)")
+        } else {
+            debugLog("⚠️ Security-scoped folder access not granted for \(standardized.lastPathComponent)")
+        }
+    }
+
+    private func endSecurityScopedFolderAccess() {
+        if currentSecurityScopedFolderAccessActive, let url = currentSecurityScopedFolderURL {
+            url.stopAccessingSecurityScopedResource()
+        }
+        currentSecurityScopedFolderAccessActive = false
+        currentSecurityScopedFolderURL = nil
+    }
+
     private func endSecurityScopedAccess() {
         if currentSecurityScopedAccessActive, let url = currentSecurityScopedURL {
             url.stopAccessingSecurityScopedResource()
         }
         currentSecurityScopedAccessActive = false
         currentSecurityScopedURL = nil
+        endSecurityScopedFolderAccess()
     }
 
     convenience init() {
@@ -214,6 +243,48 @@ class MainWindowController: NSWindowController {
         // clear analysis so graphs can't continue showing stale character series.
         characterLibraryObserver = NotificationCenter.default.addObserver(forName: .characterLibraryDidChange, object: nil, queue: .main) { [weak self] _ in
             self?.mainContentViewController?.clearAnalysis()
+        }
+
+        NotificationCenter.default.addObserver(forName: .characterLibraryAccessDenied, object: nil, queue: .main) { [weak self] note in
+            guard let self else { return }
+            guard let documentURL = note.userInfo?["documentURL"] as? URL else { return }
+            let folderURL = documentURL.deletingLastPathComponent()
+
+            let alert = NSAlert.themedConfirmation(
+                title: "Allow Folder Access",
+                message: "Quill Pilot needs access to the folder containing this document in order to read its character sidecar (.characters.json).",
+                confirmTitle: "Choose Folder",
+                cancelTitle: "Cancel"
+            )
+
+            guard let window = self.window else { return }
+            alert.runThemedSheet(for: window) { [weak self] response in
+                guard response == .alertFirstButtonReturn, let self else { return }
+
+                let panel = NSOpenPanel()
+                panel.canChooseDirectories = true
+                panel.canChooseFiles = false
+                panel.allowsMultipleSelection = false
+                panel.directoryURL = folderURL
+                panel.title = "Select the folder containing \(documentURL.lastPathComponent)"
+
+                panel.beginSheetModal(for: window) { result in
+                    guard result == .OK, let chosenFolder = panel.url else { return }
+
+                    let documentPath = documentURL.standardizedFileURL.path
+                    let folderPath = chosenFolder.standardizedFileURL.path
+                    guard documentPath.hasPrefix(folderPath) else {
+                        self.presentErrorAlert(
+                            message: "Folder mismatch",
+                            details: "Please select the folder that contains \(documentURL.lastPathComponent)."
+                        )
+                        return
+                    }
+
+                    self.beginSecurityScopedFolderAccess(for: chosenFolder)
+                    CharacterLibrary.shared.loadCharacters(for: documentURL)
+                }
+            }
         }
 
         // If the template changes (e.g. Screenplay → Poetry), cancel any in-flight analysis
@@ -2302,6 +2373,7 @@ extension MainWindowController {
     private func importFile(url: URL) throws {
         debugLog("=== importFile called with: \(url.path) ===")
         beginSecurityScopedAccess(for: url)
+        beginSecurityScopedFolderAccess(for: url.deletingLastPathComponent())
         let ext = url.pathExtension.lowercased()
         debugLog("File extension: \(ext)")
 

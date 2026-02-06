@@ -7,6 +7,8 @@
 //
 
 import Cocoa
+import Foundation
+import CryptoKit
 
 // MARK: - Character Model
 
@@ -244,8 +246,91 @@ class CharacterLibrary {
 
     /// Get the sidecar file URL for a document's characters
     /// Example: "MyStory.docx" -> "MyStory.docx.characters.json"
+    /// Application Support directory for per-document character libraries.
+    /// `~/Library/Application Support/Quill Pilot/StoryNotes/Characters/`
+    private static func charactersDirectoryURL() -> URL? {
+        guard let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first else {
+            return nil
+        }
+        return appSupport
+            .appendingPathComponent("Quill Pilot", isDirectory: true)
+            .appendingPathComponent("StoryNotes", isDirectory: true)
+            .appendingPathComponent("Characters", isDirectory: true)
+    }
+
+    /// Legacy sidecar file URL next to the manuscript.
+    /// Example: "MyStory.docx" -> "MyStory.docx.characters.json"
+    private func legacyCharactersURL(for documentURL: URL) -> URL {
+        documentURL.appendingPathExtension("characters.json")
+    }
+
+    private func ensureCharactersDirectoryExists() {
+        guard let dir = Self.charactersDirectoryURL() else { return }
+        do {
+            try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true, attributes: nil)
+        } catch {
+            // Best-effort.
+        }
+    }
+
+    private func stableDocumentIdentityString(for documentURL: URL) -> String {
+        if let values = try? documentURL.resourceValues(forKeys: [.fileResourceIdentifierKey]),
+           let id = values.fileResourceIdentifier {
+            return String(describing: id)
+        }
+        return documentURL.path
+    }
+
+    private func shortStableHash(_ input: String) -> String {
+        let digest = SHA256.hash(data: Data(input.utf8))
+        let hex = digest.compactMap { String(format: "%02x", $0) }.joined()
+        return String(hex.prefix(12))
+    }
+
+    private func sanitizedStem(for documentURL: URL) -> String {
+        let stem = documentURL.deletingPathExtension().lastPathComponent
+        let allowed = CharacterSet.alphanumerics.union(CharacterSet(charactersIn: " -_"))
+        let cleanedScalars = stem.unicodeScalars.map { allowed.contains($0) ? Character($0) : "_" }
+        let cleaned = String(cleanedScalars)
+            .replacingOccurrences(of: "__+", with: "_", options: .regularExpression)
+            .trimmingCharacters(in: CharacterSet(charactersIn: " _-"))
+        return cleaned.isEmpty ? "Document" : cleaned
+    }
+
+    /// Primary character library URL (Application Support). Falls back to legacy sidecar if needed.
     private func charactersURL(for documentURL: URL) -> URL {
-        return documentURL.appendingPathExtension("characters.json")
+        guard let dir = Self.charactersDirectoryURL() else {
+            return legacyCharactersURL(for: documentURL)
+        }
+
+        ensureCharactersDirectoryExists()
+
+        let identity = stableDocumentIdentityString(for: documentURL)
+        let hash = shortStableHash(identity)
+        let stem = sanitizedStem(for: documentURL)
+        let filename = "\(stem)-\(hash).characters.json"
+        return dir.appendingPathComponent(filename, isDirectory: false)
+    }
+
+    private func migrateLegacyCharactersIfNeeded(for documentURL: URL, destinationURL: URL) -> [CharacterProfile]? {
+        let legacyURL = legacyCharactersURL(for: documentURL)
+        guard FileManager.default.fileExists(atPath: legacyURL.path) else { return nil }
+
+        do {
+            let data = try Data(contentsOf: legacyURL)
+            if let decoded = decodeCharacterProfiles(from: data) {
+                characters = decoded
+                saveCharacters()
+
+                if FileManager.default.fileExists(atPath: destinationURL.path) {
+                    try? FileManager.default.removeItem(at: legacyURL)
+                }
+                return decoded
+            }
+        } catch {
+            // If we can't read legacy sidecar (sandbox), silently fall back.
+        }
+        return nil
     }
 
     /// Load characters for a specific document
@@ -271,22 +356,12 @@ class CharacterLibrary {
                 characters = []
             }
         } catch {
-            let nsError = error as NSError
-            if nsError.domain == NSCocoaErrorDomain,
-               nsError.code == CocoaError.fileReadNoPermission.rawValue {
-                DebugLog.log("🚫 Permission denied reading characters sidecar: \(charactersFile.path)")
-                NotificationCenter.default.post(
-                    name: .characterLibraryAccessDenied,
-                    object: nil,
-                    userInfo: [
-                        "documentURL": documentURL,
-                        "sidecarURL": charactersFile
-                    ]
-                )
+            if let migrated = migrateLegacyCharactersIfNeeded(for: documentURL, destinationURL: charactersFile) {
+                characters = migrated
+            } else {
+                DebugLog.log("📚 No existing characters file for document (\(charactersFile.lastPathComponent)); starting fresh")
+                characters = []
             }
-            // If no saved characters for this document, start with empty library
-            DebugLog.log("📚 No existing characters file for document (\(charactersFile.lastPathComponent)); starting fresh")
-            characters = []
         }
 
         NotificationCenter.default.post(name: .characterLibraryDidChange, object: nil)
@@ -353,7 +428,7 @@ class CharacterLibrary {
     }
 
     /// Seed the character library once when opening/importing a document.
-    ///
+            static let characterLibraryAccessDenied = Notification.Name("characterLibraryAccessDenied")
     /// This is primarily used for Screenplay imports where character cues are reliably styled
     /// but no sidecar `.characters.json` exists yet.
     func seedCharactersIfEmpty(_ names: [String]) {
@@ -486,5 +561,4 @@ class CharacterLibrary {
 
 extension Notification.Name {
     static let characterLibraryDidChange = Notification.Name("characterLibraryDidChange")
-    static let characterLibraryAccessDenied = Notification.Name("characterLibraryAccessDenied")
 }

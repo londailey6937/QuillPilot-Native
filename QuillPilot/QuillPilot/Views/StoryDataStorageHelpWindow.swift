@@ -174,7 +174,8 @@ final class StoryDataStorageHelpWindowController: NSWindowController, NSWindowDe
 Quill Pilot stores certain per-document data as JSON so it can preserve non-manuscript notes between sessions without modifying your .docx/.rtf text.
 
 • Story Notes (Theme, Locations, Outline, Directions) are stored in Application Support.
-• Character Library entries are stored per-document as a sidecar file next to your manuscript (e.g. MyStory.docx.characters.json).
+• Character Library entries are stored in Application Support (StoryNotes/Characters).
+• Legacy builds stored character sidecars next to the manuscript (e.g. MyStory.docx.characters.json).
 
 If you delete these files, Quill Pilot will treat that data as empty for the affected document.
 """

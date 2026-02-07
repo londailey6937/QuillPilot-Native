@@ -263,11 +263,11 @@ class AnalysisViewController: NSViewController, NSWindowDelegate {
     enum NavigatorCategory: String, CaseIterable {
         case basic = "Outline"
         case theme = "Theme"
-        case scenes = "Scenes"
         case storyOutline = "Story Outline"
         case locations = "Locations"
         case storyDirections = "Story Directions"
         case characters = "Characters"
+        case scenes = "Scenes"
 
         var icon: String {
             switch self {

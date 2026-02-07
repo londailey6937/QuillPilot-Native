@@ -95,6 +95,9 @@ class MainWindowController: NSWindowController {
 
     // Sheet field references
     private var columnsSheetField: NSTextField?
+    private var columnsSheetClickMonitor: Any?
+    private var columnsSheetLocalClickMonitor: Any?
+    private var columnsSheetCloseObserver: NSObjectProtocol?
     private var tableRowsSheetField: NSTextField?
     private var tableColsSheetField: NSTextField?
 
@@ -730,8 +733,8 @@ extension MainWindowController: FormattingToolbarDelegate {
             stackView.bottomAnchor.constraint(equalTo: containerView.bottomAnchor, constant: -60)
         ])
 
-        // Set columns section
-        let setLabel = NSTextField(labelWithString: "Set Number of Columns:")
+        // Columns section
+        let setLabel = NSTextField(labelWithString: "Columns:")
         setLabel.font = NSFont.boldSystemFont(ofSize: 12)
         setLabel.textColor = theme.textColor
         stackView.addArrangedSubview(setLabel)
@@ -748,12 +751,12 @@ extension MainWindowController: FormattingToolbarDelegate {
         columnsField.textColor = theme.textColor
         columnsField.backgroundColor = theme.pageBackground
 
-        let setBtn = NSButton(title: "Set Columns", target: nil, action: nil)
-        setBtn.bezelStyle = .rounded
-        setBtn.contentTintColor = theme.headerBackground
+        let insertBtn = NSButton(title: "Apply Columns", target: nil, action: nil)
+        insertBtn.bezelStyle = .rounded
+        insertBtn.contentTintColor = theme.headerBackground
 
         setStack.addArrangedSubview(columnsField)
-        setStack.addArrangedSubview(setBtn)
+        setStack.addArrangedSubview(insertBtn)
         stackView.addArrangedSubview(setStack)
 
         // Separator
@@ -762,10 +765,6 @@ extension MainWindowController: FormattingToolbarDelegate {
         stackView.addArrangedSubview(sep1)
 
         // Column operations
-        let insertBtn = NSButton(title: "Insert Column", target: nil, action: nil)
-        insertBtn.bezelStyle = .rounded
-        insertBtn.contentTintColor = theme.headerBackground
-        stackView.addArrangedSubview(insertBtn)
 
         let breakBtn = NSButton(title: "Insert Column Break", target: nil, action: nil)
         breakBtn.bezelStyle = .rounded
@@ -782,23 +781,7 @@ extension MainWindowController: FormattingToolbarDelegate {
         deleteBtn.contentTintColor = theme.headerBackground
         stackView.addArrangedSubview(deleteBtn)
 
-        // Cancel Button
-        let cancelBtn = NSButton(title: "Cancel", target: nil, action: nil)
-        cancelBtn.bezelStyle = .rounded
-        cancelBtn.contentTintColor = theme.headerBackground
-        cancelBtn.translatesAutoresizingMaskIntoConstraints = false
-        containerView.addSubview(cancelBtn)
-
-        NSLayoutConstraint.activate([
-            cancelBtn.bottomAnchor.constraint(equalTo: containerView.bottomAnchor, constant: -20),
-            cancelBtn.trailingAnchor.constraint(equalTo: containerView.trailingAnchor, constant: -20),
-            cancelBtn.widthAnchor.constraint(equalToConstant: 80)
-        ])
-
         // Hook up actions
-        setBtn.target = self
-        setBtn.action = #selector(handleSetColumnsFromSheet(_:))
-
         insertBtn.target = self
         insertBtn.action = #selector(handleInsertColumnFromSheet)
 
@@ -811,13 +794,68 @@ extension MainWindowController: FormattingToolbarDelegate {
         deleteBtn.target = self
         deleteBtn.action = #selector(handleDeleteColumnFromSheet(_:))
 
-        cancelBtn.target = self
-        cancelBtn.action = #selector(handleCloseColumnsSheet(_:))
-
         // Store field reference
         self.columnsSheetField = columnsField
 
         self.window?.beginSheet(sheetWindow, completionHandler: nil)
+
+        columnsSheetCloseObserver = NotificationCenter.default.addObserver(
+            forName: NSWindow.willCloseNotification,
+            object: sheetWindow,
+            queue: .main
+        ) { [weak self] _ in
+            guard let self else { return }
+            if let monitor = self.columnsSheetClickMonitor {
+                NSEvent.removeMonitor(monitor)
+                self.columnsSheetClickMonitor = nil
+            }
+            if let monitor = self.columnsSheetLocalClickMonitor {
+                NSEvent.removeMonitor(monitor)
+                self.columnsSheetLocalClickMonitor = nil
+            }
+            if let observer = self.columnsSheetCloseObserver {
+                NotificationCenter.default.removeObserver(observer)
+                self.columnsSheetCloseObserver = nil
+            }
+        }
+
+        let dismissSheet: () -> Void = { [weak self, weak sheetWindow] in
+            guard let self, let sheetWindow else { return }
+            self.window?.endSheet(sheetWindow)
+            self.columnsSheetField = nil
+            if let monitor = self.columnsSheetClickMonitor {
+                NSEvent.removeMonitor(monitor)
+                self.columnsSheetClickMonitor = nil
+            }
+            if let monitor = self.columnsSheetLocalClickMonitor {
+                NSEvent.removeMonitor(monitor)
+                self.columnsSheetLocalClickMonitor = nil
+            }
+            if let observer = self.columnsSheetCloseObserver {
+                NotificationCenter.default.removeObserver(observer)
+                self.columnsSheetCloseObserver = nil
+            }
+        }
+
+        // Close the sheet when the user clicks outside the app
+        columnsSheetClickMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { [weak sheetWindow] _ in
+            guard let sheetWindow else { return }
+            let mouseLocation = NSEvent.mouseLocation
+            if !sheetWindow.frame.contains(mouseLocation) {
+                dismissSheet()
+            }
+        }
+
+        // Close the sheet when the user clicks inside the app but outside the sheet
+        columnsSheetLocalClickMonitor = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { [weak sheetWindow] event in
+            guard let sheetWindow else { return event }
+            let mouseLocation = NSEvent.mouseLocation
+            if !sheetWindow.frame.contains(mouseLocation) {
+                dismissSheet()
+                return nil  // consume the event
+            }
+            return event
+        }
     }
 
     func formattingToolbar(_ toolbar: FormattingToolbar, didChangeFontFamily family: String) {
@@ -1123,6 +1161,18 @@ extension MainWindowController: FormattingToolbarDelegate {
         if let window = sender.window {
             self.window?.endSheet(window)
             self.columnsSheetField = nil
+            if let monitor = columnsSheetClickMonitor {
+                NSEvent.removeMonitor(monitor)
+                columnsSheetClickMonitor = nil
+            }
+            if let monitor = columnsSheetLocalClickMonitor {
+                NSEvent.removeMonitor(monitor)
+                columnsSheetLocalClickMonitor = nil
+            }
+            if let observer = columnsSheetCloseObserver {
+                NotificationCenter.default.removeObserver(observer)
+                columnsSheetCloseObserver = nil
+            }
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [weak self] in
                 self?.mainContentViewController.editorViewController.setColumnCount(clamped)
             }
@@ -1131,20 +1181,30 @@ extension MainWindowController: FormattingToolbarDelegate {
 
     @objc private func handleInsertColumnFromSheet() {
         let current = mainContentViewController.editorViewController.getColumnCount()
+        let desired = max(2, min(4, Int(columnsSheetField?.stringValue ?? "2") ?? 2))
 
-        // Close sheet first, then add column after window becomes key
+        // Close sheet first, then apply after window becomes key
         if let window = self.window?.attachedSheet {
             self.window?.endSheet(window)
             self.columnsSheetField = nil
+            if let monitor = columnsSheetClickMonitor {
+                NSEvent.removeMonitor(monitor)
+                columnsSheetClickMonitor = nil
+            }
+            if let monitor = columnsSheetLocalClickMonitor {
+                NSEvent.removeMonitor(monitor)
+                columnsSheetLocalClickMonitor = nil
+            }
+            if let observer = columnsSheetCloseObserver {
+                NotificationCenter.default.removeObserver(observer)
+                columnsSheetCloseObserver = nil
+            }
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [weak self] in
-                if current >= 2 && current < 4 {
-                    // Already in a column layout - add one more column
-                    self?.mainContentViewController.editorViewController.addColumnToExisting()
-                } else if current == 1 {
-                    // Not in columns yet - create 2 columns
-                    self?.mainContentViewController.editorViewController.setColumnCount(2)
+                if current >= 2 {
+                    self?.mainContentViewController.editorViewController.setColumnCountInExistingLayout(desired)
+                } else {
+                    self?.mainContentViewController.editorViewController.setColumnCount(desired)
                 }
-                // If current == 4, do nothing (already at max)
             }
         }
     }
@@ -1153,6 +1213,18 @@ extension MainWindowController: FormattingToolbarDelegate {
         if let window = sender.window {
             self.window?.endSheet(window)
             self.columnsSheetField = nil
+            if let monitor = columnsSheetClickMonitor {
+                NSEvent.removeMonitor(monitor)
+                columnsSheetClickMonitor = nil
+            }
+            if let monitor = columnsSheetLocalClickMonitor {
+                NSEvent.removeMonitor(monitor)
+                columnsSheetLocalClickMonitor = nil
+            }
+            if let observer = columnsSheetCloseObserver {
+                NotificationCenter.default.removeObserver(observer)
+                columnsSheetCloseObserver = nil
+            }
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [weak self] in
                 self?.mainContentViewController.editorViewController.deleteColumnAtCursor()
             }
@@ -1163,6 +1235,18 @@ extension MainWindowController: FormattingToolbarDelegate {
         guard let window = sender.window else { return }
         self.window?.endSheet(window)
         self.columnsSheetField = nil
+        if let monitor = columnsSheetClickMonitor {
+            NSEvent.removeMonitor(monitor)
+            columnsSheetClickMonitor = nil
+        }
+        if let monitor = columnsSheetLocalClickMonitor {
+            NSEvent.removeMonitor(monitor)
+            columnsSheetLocalClickMonitor = nil
+        }
+        if let observer = columnsSheetCloseObserver {
+            NotificationCenter.default.removeObserver(observer)
+            columnsSheetCloseObserver = nil
+        }
     }
 
     @objc private func handleInsertTableFromSheet(_ sender: NSButton) {

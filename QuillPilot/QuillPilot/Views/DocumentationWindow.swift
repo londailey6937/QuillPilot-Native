@@ -187,6 +187,7 @@ class DocumentationWindowController: NSWindowController, NSWindowDelegate, NSOut
             HelpTopic(id: "getting-started", title: "Getting Started", icon: "▸", children: [
                 HelpTopic(id: "about", title: "About", icon: "ℹ️", contentLoader: { self.makeAboutContent() }),
                 HelpTopic(id: "toolbar", title: "Toolbar", icon: "🧰", contentLoader: { self.makeToolbarContent() }),
+                HelpTopic(id: "columns-tables", title: "Columns & Tables", icon: "⫼", contentLoader: { self.makeColumnsTablesContent() }),
                 HelpTopic(id: "navigator", title: "Navigator", icon: "🧭", contentLoader: { self.makeNavigatorContent() })
             ]),
 
@@ -1230,9 +1231,76 @@ Balance columns
 • Use Balance Columns in the Column Operations sheet to reflow text evenly across columns.
 """, color: bodyColor))
 
+
         normalizeAppNameInDocumentation(content)
         return content
     }
+
+
+    private func makeColumnsTablesContent() -> NSAttributedString {
+        let theme = ThemeManager.shared.currentTheme
+        let titleColor = theme.textColor
+        let headingColor = theme.textColor
+        let bodyColor = theme.textColor
+
+        let content = NSMutableAttributedString()
+
+        content.append(makeTitle("\u{2afc} Columns & Tables", color: titleColor))
+        content.append(makeNewline())
+
+        content.append(makeHeading("Columns vs Tables", color: headingColor))
+        content.append(makeBody("""
+\u{2022} Columns are for flowing text across vertical lanes (like magazines or newsletters).
+\u{2022} Tables are for grid-based content with rows and columns (like schedules or data).
+""", color: bodyColor))
+        content.append(makeNewline())
+
+        content.append(makeHeading("Creating Columns", color: headingColor))
+        content.append(makeBody("""
+\u{2022} Click the Columns button in the toolbar (or use Format \u{2192} Columns).
+\u{2022} Choose 2\u{2013}4 columns from the sheet and click Apply Columns.
+\u{2022} Your text will reflow into evenly-spaced columns.
+""", color: bodyColor))
+        content.append(makeNewline())
+
+        content.append(makeHeading("Adding & Removing Columns", color: headingColor))
+        content.append(makeBody("""
+\u{2022} To add a column: place your cursor inside an existing column layout, open the Columns sheet, and increase the column count.
+\u{2022} To remove a column: place your cursor in the column you want to delete and use Edit \u{2192} Delete Column. The text from that column merges into the remaining columns.
+""", color: bodyColor))
+        content.append(makeNewline())
+
+        content.append(makeHeading("Column Breaks", color: headingColor))
+        content.append(makeBody("""
+\u{2022} Use Insert Column Break (toolbar button or Insert \u{2192} Insert Column Break) to force text into the next column.
+""", color: bodyColor))
+        content.append(makeNewline())
+
+        content.append(makeHeading("Balance Columns", color: headingColor))
+        content.append(makeBody("""
+\u{2022} Use Balance Columns in the Column Operations sheet to reflow text evenly across columns.
+\u{2022} The text in the column block is redistributed so each column is about the same height.
+\u{2022} It doesn\u{2019}t change your words \u{2014} it only reflows where the breaks occur.
+""", color: bodyColor))
+        content.append(makeNewline())
+
+        content.append(makeHeading("Creating Tables", color: headingColor))
+        content.append(makeBody("""
+\u{2022} Use Insert \u{2192} Table to create a table with rows and columns.
+\u{2022} Tables have visible borders and are suited for structured grid data.
+""", color: bodyColor))
+        content.append(makeNewline())
+
+        content.append(makeHeading("Tips", color: headingColor))
+        content.append(makeBody("""
+\u{2022} You can convert between column counts by re-opening the Columns sheet and choosing a new count.
+\u{2022} Columns and tables are separate features \u{2014} deleting a column will never accidentally create a table.
+""", color: bodyColor))
+
+        normalizeAppNameInDocumentation(content)
+        return content
+    }
+
 
     private func makeNavigatorContent() -> NSAttributedString {
         let theme = ThemeManager.shared.currentTheme
@@ -1243,6 +1311,22 @@ Balance columns
         let content = NSMutableAttributedString()
 
         content.append(makeTitle("🧭 Navigator", color: titleColor))
+        content.append(makeNewline())
+
+        content.append(makeBody("""
+    The Navigator is the vertical button strip used for story tools and quick access.
+
+    Buttons appear top-to-bottom in this order (prose templates):
+    • Document Outline
+    • Theme
+    • Story Outline
+    • Locations
+    • Story Directions
+    • Character Library
+    • Scenes
+    • Notes
+    • Submission Tracker
+    """, color: bodyColor))
         content.append(makeNewline())
 
         content.append(makeHeading("Document Outline", color: headingColor))
@@ -1261,59 +1345,85 @@ Best for:
 """, color: bodyColor))
         content.append(makeNewline())
 
-        content.append(makeHeading("Story Theme", color: headingColor))
+        content.append(makeHeading("Theme", color: headingColor))
         content.append(makeBody("""
-Describe the central idea, question, or insight the story explores.
-""", color: bodyColor))
-        content.append(makeNewline())
+    Access: Click Theme in the Navigator
 
-        content.append(makeHeading("Scenes", color: headingColor))
-        content.append(makeBody("""
-See the Scenes topic under Writing & Structure for the full breakdown of how Scenes work.
-""", color: bodyColor))
+    Use this for:
+    • The central idea, question, or insight your story explores
+    • Thematic throughlines you want to track while drafting
+    """, color: bodyColor))
         content.append(makeNewline())
 
         content.append(makeHeading("Story Outline", color: headingColor))
         content.append(makeBody("""
-Access: Click the Story Outline icon in the Navigator panel
+    Access: Click Story Outline in the Navigator
 
-Features:
-• Hierarchical outline based on your styles
-• Chapter, section, and scene organization
-• Click any entry to navigate to that section
-• Live updates as you write
-• Uses Chapter Title, Heading styles
-
-Perfect for:
-• Quick navigation in long manuscripts
-• Structural overview
-• Finding specific scenes
-• Reorganization planning
-""", color: bodyColor))
+    Features:
+    • Hierarchical outline based on your heading styles
+    • Click any entry to jump to that location
+    • Live updates as you write
+    """, color: bodyColor))
         content.append(makeNewline())
 
-        content.append(makeHeading("Locations & Directions", color: headingColor))
+        content.append(makeHeading("Locations", color: headingColor))
         content.append(makeBody("""
-Track settings and story progression.
+    Access: Click Locations in the Navigator
 
-Locations (map icon in Navigator):
-• Create location profiles
-• Add descriptions and details
-• Track scenes set in each location
-• Maintain setting consistency
-
-Story Directions (compass icon in Navigator):
-• Define story direction and goals
-• Track thematic elements
-• Document narrative throughlines
-• Plan story progression
-""", color: bodyColor))
+    Use this for:
+    • Location profiles and descriptions
+    • Maintaining setting consistency
+    • Tracking which scenes use a location
+    """, color: bodyColor))
         content.append(makeNewline())
 
-        content.append(makeHeading("General Notes", color: headingColor))
+        content.append(makeHeading("Story Directions", color: headingColor))
         content.append(makeBody("""
-Capture free-form ideas, reminders, or planning notes tied to your document.
-""", color: bodyColor))
+    Access: Click Story Directions in the Navigator
+
+    Use this for:
+    • Goals, throughlines, and “where the story is going”
+    • Planning and tracking narrative direction
+    """, color: bodyColor))
+        content.append(makeNewline())
+
+        content.append(makeHeading("Character Library", color: headingColor))
+        content.append(makeBody("""
+    Access: Click Characters in the Navigator
+
+    Use this for:
+    • Your canonical list of characters (names, roles, and notes)
+    • Improving character detection in analysis tools
+
+    See also: Help → Character Library
+    """, color: bodyColor))
+        content.append(makeNewline())
+
+        content.append(makeHeading("Scenes", color: headingColor))
+        content.append(makeBody("""
+    Access: Click Scenes in the Navigator
+
+    Scenes are optional story metadata (index cards) you create manually.
+    See also: Help → Scenes
+    """, color: bodyColor))
+        content.append(makeNewline())
+
+        content.append(makeHeading("Notes", color: headingColor))
+        content.append(makeBody("""
+    Capture free-form ideas, reminders, or planning notes tied to your document.
+    """, color: bodyColor))
+        content.append(makeNewline())
+
+        content.append(makeHeading("Submission Tracker", color: headingColor))
+        content.append(makeBody("""
+    Access: Click Submission Tracker in the Navigator (envelope icon).
+
+    Use this for:
+    • Logging poetry submissions and outcomes
+    • Tracking where you’ve sent work and when
+
+    See also: Help → Submission Tracker
+    """, color: bodyColor))
 
         normalizeAppNameInDocumentation(content)
         return content

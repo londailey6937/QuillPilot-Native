@@ -9909,6 +9909,137 @@ case "Book Subtitle":
         DebugLog.log("addColumnToExisting: expanded from \(currentColumns) to \(newColumnCount) columns")
     }
 
+    /// Set the column count for an existing column layout at the cursor.
+    /// If not in columns, falls back to inserting a new column layout.
+    func setColumnCountInExistingLayout(_ columns: Int) {
+        DebugLog.log("setColumnCountInExistingLayout called with \(columns)")
+        guard columns >= 2, columns <= 4 else {
+            DebugLog.log("setColumnCountInExistingLayout: columns out of range (must be 2-4)")
+            return
+        }
+        guard let textStorage = textView.textStorage else { return }
+        let cursorLocation = textView.selectedRange().location
+        guard cursorLocation < textStorage.length else { return }
+
+        let attrs = textStorage.attributes(at: cursorLocation, effectiveRange: nil)
+        guard let style = attrs[.paragraphStyle] as? NSParagraphStyle,
+              let blocks = style.textBlocks as? [NSTextTableBlock],
+              let block = blocks.first else {
+            setColumnCount(columns)
+            return
+        }
+
+        let existingTable = block.table
+        let currentColumns = existingTable.numberOfColumns
+        guard currentColumns != columns else { return }
+
+        let string = textStorage.string as NSString
+        var startLocation = cursorLocation
+        var endLocation = cursorLocation
+
+        // Scan backward to find start
+        while startLocation > 0 {
+            let prevLoc = startLocation - 1
+            let prevAttrs = textStorage.attributes(at: prevLoc, effectiveRange: nil)
+            if let prevStyle = prevAttrs[.paragraphStyle] as? NSParagraphStyle,
+               let prevBlocks = prevStyle.textBlocks as? [NSTextTableBlock],
+               let prevBlock = prevBlocks.first,
+               prevBlock.table === existingTable {
+                let paragraphRange = string.paragraphRange(for: NSRange(location: prevLoc, length: 0))
+                startLocation = paragraphRange.location
+            } else {
+                break
+            }
+        }
+
+        // Scan forward to find end
+        while endLocation < textStorage.length {
+            let nextAttrs = textStorage.attributes(at: endLocation, effectiveRange: nil)
+            if let nextStyle = nextAttrs[.paragraphStyle] as? NSParagraphStyle,
+               let nextBlocks = nextStyle.textBlocks as? [NSTextTableBlock],
+               let nextBlock = nextBlocks.first,
+               nextBlock.table === existingTable {
+                let paragraphRange = string.paragraphRange(for: NSRange(location: endLocation, length: 0))
+                endLocation = NSMaxRange(paragraphRange)
+            } else {
+                break
+            }
+        }
+
+        let columnRange = NSRange(location: startLocation, length: endLocation - startLocation)
+
+        // Collect content per existing column
+        let columnContents = Array(repeating: NSMutableAttributedString(), count: currentColumns)
+        var scanLocation = startLocation
+        while scanLocation < endLocation {
+            let paragraphRange = string.paragraphRange(for: NSRange(location: scanLocation, length: 0))
+            let attrs = textStorage.attributes(at: paragraphRange.location, effectiveRange: nil)
+            if let pStyle = attrs[.paragraphStyle] as? NSParagraphStyle,
+               let pBlocks = pStyle.textBlocks as? [NSTextTableBlock],
+               let pBlock = pBlocks.first,
+               pBlock.table === existingTable {
+                let columnIndex = min(max(pBlock.startingColumn, 0), currentColumns - 1)
+                let content = textStorage.attributedSubstring(from: paragraphRange)
+                columnContents[columnIndex].append(content)
+            }
+            scanLocation = NSMaxRange(paragraphRange)
+        }
+
+        // Create new table with the requested column count
+        let newTable = NSTextTable()
+        newTable.numberOfColumns = columns
+        newTable.layoutAlgorithm = .automaticLayoutAlgorithm
+        newTable.collapsesBorders = true
+
+        let result = NSMutableAttributedString()
+
+        for i in 0..<columns {
+            let textBlock = NSTextTableBlock(table: newTable, startingRow: 0, rowSpan: 1, startingColumn: i, columnSpan: 1)
+
+            textBlock.setBorderColor(.clear, for: .minX)
+            textBlock.setBorderColor(.clear, for: .maxX)
+            textBlock.setBorderColor(.clear, for: .minY)
+            textBlock.setBorderColor(.clear, for: .maxY)
+            textBlock.setWidth(0.0, type: .absoluteValueType, for: .border, edge: .minX)
+            textBlock.setWidth(0.0, type: .absoluteValueType, for: .border, edge: .maxX)
+            textBlock.setWidth(0.0, type: .absoluteValueType, for: .border, edge: .minY)
+            textBlock.setWidth(0.0, type: .absoluteValueType, for: .border, edge: .maxY)
+
+            textBlock.setWidth(12.0, type: .absoluteValueType, for: .padding, edge: .minX)
+            textBlock.setWidth(12.0, type: .absoluteValueType, for: .padding, edge: .maxX)
+            textBlock.setWidth(0.0, type: .absoluteValueType, for: .padding, edge: .minY)
+            textBlock.setWidth(0.0, type: .absoluteValueType, for: .padding, edge: .maxY)
+
+            if i < currentColumns, columnContents[i].length > 0 {
+                let mutableContent = NSMutableAttributedString(attributedString: columnContents[i])
+                mutableContent.enumerateAttribute(.paragraphStyle, in: NSRange(location: 0, length: mutableContent.length), options: []) { value, range, _ in
+                    let pStyle = (value as? NSParagraphStyle) ?? NSParagraphStyle.default
+                    let mutablePStyle = (pStyle.mutableCopy() as? NSMutableParagraphStyle) ?? NSMutableParagraphStyle()
+                    mutablePStyle.textBlocks = [textBlock]
+                    mutableContent.addAttribute(.paragraphStyle, value: mutablePStyle.copy() as! NSParagraphStyle, range: range)
+                }
+                result.append(mutableContent)
+            } else {
+                var colAttrs = textView.typingAttributes
+                let paragraphStyle = NSMutableParagraphStyle()
+                paragraphStyle.textBlocks = [textBlock]
+                colAttrs[.paragraphStyle] = paragraphStyle
+
+                let columnContent = NSAttributedString(string: " \n", attributes: colAttrs)
+                result.append(columnContent)
+            }
+        }
+
+        let finalNewline = NSAttributedString(string: "\n", attributes: textView.typingAttributes)
+        result.append(finalNewline)
+
+        let newColumnRange = NSRange(location: startLocation, length: result.length)
+        textStorage.replaceCharacters(in: columnRange, with: result)
+        textView.setSelectedRange(NSRange(location: startLocation + 1, length: 0))
+        showPersistentColumnOutline(for: newTable, in: newColumnRange)
+        DebugLog.log("setColumnCountInExistingLayout: updated from \(currentColumns) to \(columns) columns")
+    }
+
     // MARK: - Table System (separate from columns)
 
     func insertTable(rows: Int, columns: Int) {
@@ -10285,6 +10416,11 @@ case "Book Subtitle":
         let columnToDelete = currentBlock.startingColumn
         let totalColumns = table.numberOfColumns
 
+        if isColumnLayout(block: currentBlock) {
+            deleteColumnFromColumnLayout(table: table, columnToDelete: columnToDelete, totalColumns: totalColumns, cursorPosition: cursorPosition)
+            return
+        }
+
         DebugLog.log("Deleting column \(columnToDelete) from table with \(totalColumns) columns")
 
         // Find all paragraphs in the table first
@@ -10420,6 +10556,206 @@ case "Book Subtitle":
         // Replace the old table with the new one
         textStorage.replaceCharacters(in: fullTableRange, with: result)
         textView.setSelectedRange(NSRange(location: tableStart, length: 0))
+    }
+
+    private func isColumnLayout(block: NSTextTableBlock) -> Bool {
+        let borderMinX = block.width(for: .border, edge: .minX)
+        let borderMaxX = block.width(for: .border, edge: .maxX)
+        let borderMinY = block.width(for: .border, edge: .minY)
+        let borderMaxY = block.width(for: .border, edge: .maxY)
+
+        let paddingMinX = block.width(for: .padding, edge: .minX)
+        let paddingMaxX = block.width(for: .padding, edge: .maxX)
+        let paddingMinY = block.width(for: .padding, edge: .minY)
+        let paddingMaxY = block.width(for: .padding, edge: .maxY)
+
+        // Columns are implemented with a 1-row NSTextTable where vertical padding is 0.
+        // We also draw a *persistent outline* by temporarily setting a ~0.5pt border.
+        // Treat that outline as still being a column layout so delete operations don't fall
+        // back to the table code path (which rebuilds with table borders/padding).
+        let maxBorderWidth = max(borderMinX, max(borderMaxX, max(borderMinY, borderMaxY)))
+        let borderLooksLikeColumns = maxBorderWidth <= 0.6
+
+        let verticalPaddingIsClear = paddingMinY <= 0.1 && paddingMaxY <= 0.1
+        let horizontalPaddingLooksLikeColumns = paddingMinX >= 6.0 && paddingMaxX >= 6.0
+
+        return borderLooksLikeColumns && verticalPaddingIsClear && horizontalPaddingLooksLikeColumns
+    }
+
+    private func deleteColumnFromColumnLayout(table: NSTextTable,
+                                              columnToDelete: Int,
+                                              totalColumns: Int,
+                                              cursorPosition: Int) {
+        guard let textStorage = textView.textStorage else { return }
+
+        let fullString = textStorage.string as NSString
+        var startLocation = cursorPosition
+        var endLocation = cursorPosition
+
+        // Scan backward to find start
+        while startLocation > 0 {
+            let prevLoc = startLocation - 1
+            let prevAttrs = textStorage.attributes(at: prevLoc, effectiveRange: nil)
+            if let prevStyle = prevAttrs[.paragraphStyle] as? NSParagraphStyle,
+               let prevBlocks = prevStyle.textBlocks as? [NSTextTableBlock],
+               let prevBlock = prevBlocks.first,
+               prevBlock.table === table {
+                let paragraphRange = fullString.paragraphRange(for: NSRange(location: prevLoc, length: 0))
+                startLocation = paragraphRange.location
+            } else {
+                break
+            }
+        }
+
+        // Scan forward to find end
+        while endLocation < textStorage.length {
+            let attrs = textStorage.attributes(at: endLocation, effectiveRange: nil)
+            if let style = attrs[.paragraphStyle] as? NSParagraphStyle,
+               let blocks = style.textBlocks as? [NSTextTableBlock],
+               let block = blocks.first,
+               block.table === table {
+                let paragraphRange = fullString.paragraphRange(for: NSRange(location: endLocation, length: 0))
+                endLocation = NSMaxRange(paragraphRange)
+            } else {
+                break
+            }
+        }
+
+        let columnRange = NSRange(location: startLocation, length: endLocation - startLocation)
+
+        let columnContents = Array(repeating: NSMutableAttributedString(), count: totalColumns)
+        var scanLocation = startLocation
+        while scanLocation < endLocation {
+            let paragraphRange = fullString.paragraphRange(for: NSRange(location: scanLocation, length: 0))
+            let attrs = textStorage.attributes(at: paragraphRange.location, effectiveRange: nil)
+            if let pStyle = attrs[.paragraphStyle] as? NSParagraphStyle,
+               let pBlocks = pStyle.textBlocks as? [NSTextTableBlock],
+               let pBlock = pBlocks.first,
+               pBlock.table === table {
+                let columnIndex = min(max(pBlock.startingColumn, 0), totalColumns - 1)
+                let content = textStorage.attributedSubstring(from: paragraphRange)
+                columnContents[columnIndex].append(content)
+            }
+            scanLocation = NSMaxRange(paragraphRange)
+        }
+
+        let remainingColumns = totalColumns - 1
+        if remainingColumns <= 1 {
+            let bodyParagraphStyle = NSMutableParagraphStyle()
+            bodyParagraphStyle.alignment = .left
+            bodyParagraphStyle.lineHeightMultiple = 2.0
+            bodyParagraphStyle.paragraphSpacing = 0
+            bodyParagraphStyle.firstLineHeadIndent = 36
+
+            let bodyText = NSMutableAttributedString()
+            let bodyFont = NSFont(name: "Times New Roman", size: 12) ?? NSFont.systemFont(ofSize: 12)
+
+            for column in 0..<totalColumns where column != columnToDelete {
+                let mutableContent = NSMutableAttributedString(attributedString: columnContents[column])
+                mutableContent.removeAttribute(.paragraphStyle, range: NSRange(location: 0, length: mutableContent.length))
+                mutableContent.addAttribute(.paragraphStyle, value: bodyParagraphStyle, range: NSRange(location: 0, length: mutableContent.length))
+                mutableContent.enumerateAttribute(.font, in: NSRange(location: 0, length: mutableContent.length), options: []) { value, range, _ in
+                    if value == nil {
+                        mutableContent.addAttribute(.font, value: bodyFont, range: range)
+                    }
+                }
+                bodyText.append(mutableContent)
+            }
+
+            textStorage.replaceCharacters(in: columnRange, with: bodyText)
+            textView.setSelectedRange(NSRange(location: startLocation, length: 0))
+            return
+        }
+
+        let newTable = NSTextTable()
+        newTable.numberOfColumns = remainingColumns
+        newTable.layoutAlgorithm = .automaticLayoutAlgorithm
+        newTable.collapsesBorders = true
+
+        let result = NSMutableAttributedString()
+        var newColumnIndex = 0
+        for column in 0..<totalColumns {
+            if column == columnToDelete {
+                continue
+            }
+
+            let textBlock = NSTextTableBlock(table: newTable, startingRow: 0, rowSpan: 1, startingColumn: newColumnIndex, columnSpan: 1)
+            textBlock.setBorderColor(.clear, for: .minX)
+            textBlock.setBorderColor(.clear, for: .maxX)
+            textBlock.setBorderColor(.clear, for: .minY)
+            textBlock.setBorderColor(.clear, for: .maxY)
+            textBlock.setWidth(0.0, type: .absoluteValueType, for: .border, edge: .minX)
+            textBlock.setWidth(0.0, type: .absoluteValueType, for: .border, edge: .maxX)
+            textBlock.setWidth(0.0, type: .absoluteValueType, for: .border, edge: .minY)
+            textBlock.setWidth(0.0, type: .absoluteValueType, for: .border, edge: .maxY)
+
+            textBlock.setWidth(12.0, type: .absoluteValueType, for: .padding, edge: .minX)
+            textBlock.setWidth(12.0, type: .absoluteValueType, for: .padding, edge: .maxX)
+            textBlock.setWidth(0.0, type: .absoluteValueType, for: .padding, edge: .minY)
+            textBlock.setWidth(0.0, type: .absoluteValueType, for: .padding, edge: .maxY)
+
+            let columnContent = columnContents[column]
+            if columnContent.string.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                // For empty columns, generate a single clean paragraph like setColumnCount()
+                // so we don't accidentally accumulate extra empty paragraphs in the first column.
+                var attrs = textView.typingAttributes
+
+                if let bodyStyle = StyleCatalog.shared.style(named: "Body Text") {
+                    let pStyle = paragraphStyle(from: bodyStyle)
+                    if let mutablePStyle = pStyle.mutableCopy() as? NSMutableParagraphStyle {
+                        mutablePStyle.textBlocks = [textBlock]
+                        attrs[.paragraphStyle] = mutablePStyle
+                    }
+                    attrs[.font] = font(from: bodyStyle)
+                    attrs[.foregroundColor] = color(fromHex: bodyStyle.textColorHex, fallback: currentTheme.textColor)
+                } else {
+                    let paragraphStyle = NSMutableParagraphStyle()
+                    paragraphStyle.textBlocks = [textBlock]
+                    attrs[.paragraphStyle] = paragraphStyle
+                }
+
+                result.append(NSAttributedString(string: "\n", attributes: attrs))
+            } else {
+                let mutableContent = NSMutableAttributedString(attributedString: columnContent)
+                // Retarget paragraph styles *per paragraph* so each paragraph (including its trailing newline)
+                // is assigned to the correct column block.
+                let columnString = mutableContent.string as NSString
+                var paragraphLocation = 0
+                while paragraphLocation < columnString.length {
+                    let paragraphRange = columnString.paragraphRange(for: NSRange(location: paragraphLocation, length: 0))
+                    let attrs = mutableContent.attributes(at: paragraphRange.location, effectiveRange: nil)
+                    let pStyle = (attrs[.paragraphStyle] as? NSParagraphStyle) ?? NSParagraphStyle.default
+                    let mutablePStyle = (pStyle.mutableCopy() as? NSMutableParagraphStyle) ?? NSMutableParagraphStyle()
+                    mutablePStyle.textBlocks = [textBlock]
+                    mutableContent.addAttribute(.paragraphStyle, value: mutablePStyle.copy() as! NSParagraphStyle, range: paragraphRange)
+                    paragraphLocation = NSMaxRange(paragraphRange)
+                }
+                result.append(mutableContent)
+            }
+
+            newColumnIndex += 1
+        }
+
+        // Add a final newline *outside* the column layout. Do not use typingAttributes here,
+        // because they may still contain a table paragraph style and would keep the newline
+        // inside the column blocks (creating extra blank lines).
+        let cleanParagraphStyle = NSMutableParagraphStyle()
+        cleanParagraphStyle.alignment = .left
+        cleanParagraphStyle.lineHeightMultiple = 2.0
+        let cleanFont = NSFont(name: "Times New Roman", size: 12) ?? NSFont.systemFont(ofSize: 12)
+        let finalNewline = NSAttributedString(string: "\n", attributes: [
+            .font: cleanFont,
+            .paragraphStyle: cleanParagraphStyle,
+            .foregroundColor: currentTheme.textColor
+        ])
+        result.append(finalNewline)
+
+        let newColumnRange = NSRange(location: startLocation, length: result.length)
+        textStorage.replaceCharacters(in: columnRange, with: result)
+        // Place the caret just after the first column's paragraph terminator so typing
+        // inherits the first column's block attributes.
+        textView.setSelectedRange(NSRange(location: min(startLocation + 1, startLocation + max(0, result.length - 1)), length: 0))
+        showPersistentColumnOutline(for: newTable, in: newColumnRange)
     }
 
     func removeTableAtCursor() {

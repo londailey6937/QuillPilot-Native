@@ -101,6 +101,10 @@ class MainWindowController: NSWindowController {
     private var tableRowsSheetField: NSTextField?
     private var tableColsSheetField: NSTextField?
 
+    // Table operations panel (non-modal)
+    private var tableOperationsPanel: NSPanel?
+    private var tableOperationsCloseObserver: NSObjectProtocol?
+
     /// Public accessor for the current document title
     func currentDocumentTitle() -> String {
         return headerView.documentTitle().trimmingCharacters(in: .whitespacesAndNewlines)
@@ -964,6 +968,14 @@ extension MainWindowController: FormattingToolbarDelegate {
         formattingToolbarDidInsertHyperlink(toolbarView)
     }
 
+    @objc func openColumnOperationsFromMenu(_ sender: Any?) {
+        formattingToolbarDidColumns(toolbarView)
+    }
+
+    @objc func openTableOperationsFromMenu(_ sender: Any?) {
+        formattingToolbarDidInsertTable(toolbarView)
+    }
+
     @objc func openStyleEditorFromMenu(_ sender: Any?) {
         formattingToolbarDidOpenStyleEditor(toolbarView)
     }
@@ -981,17 +993,29 @@ extension MainWindowController: FormattingToolbarDelegate {
     }
 
     func formattingToolbarDidInsertTable(_ toolbar: FormattingToolbar) {
+        if let panel = tableOperationsPanel {
+            panel.makeKeyAndOrderFront(nil)
+            panel.orderFrontRegardless()
+            return
+        }
+
         let theme = ThemeManager.shared.currentTheme
 
-        // Create a custom window for the sheet
-        let sheetWindow = NSWindow(
+        // Create a movable, non-modal panel so the table can be edited while it's open.
+        let sheetWindow = NSPanel(
             contentRect: NSRect(x: 0, y: 0, width: 400, height: 450),
-            styleMask: [.titled, .closable],
+            styleMask: [.titled, .closable, .utilityWindow],
             backing: .buffered,
             defer: false
         )
         sheetWindow.title = "Table Operations"
         sheetWindow.backgroundColor = theme.toolbarBackground
+        sheetWindow.isFloatingPanel = true
+        sheetWindow.level = .floating
+        sheetWindow.hidesOnDeactivate = false
+        sheetWindow.isMovableByWindowBackground = true
+        sheetWindow.titlebarAppearsTransparent = true
+        sheetWindow.isReleasedWhenClosed = false
 
         let containerView = NSView()
         containerView.wantsLayer = true
@@ -1063,11 +1087,11 @@ extension MainWindowController: FormattingToolbarDelegate {
         editLabel.textColor = theme.textColor
         stackView.addArrangedSubview(editLabel)
 
-        let addRowBtn = NSButton(title: "Insert Row", target: nil, action: nil)
+        let addRowBtn = NSButton(title: "Add Row", target: nil, action: nil)
         addRowBtn.bezelStyle = .rounded
         addRowBtn.contentTintColor = theme.headerBackground
 
-        let addColBtn = NSButton(title: "Insert Column", target: nil, action: nil)
+        let addColBtn = NSButton(title: "Add Column", target: nil, action: nil)
         addColBtn.bezelStyle = .rounded
         addColBtn.contentTintColor = theme.headerBackground
 
@@ -1128,7 +1152,23 @@ extension MainWindowController: FormattingToolbarDelegate {
         self.tableRowsSheetField = rowsField
         self.tableColsSheetField = colsField
 
-        self.window?.beginSheet(sheetWindow, completionHandler: nil)
+        // Track panel for reuse and cleanup.
+        self.tableOperationsPanel = sheetWindow
+        if let obs = tableOperationsCloseObserver {
+            NotificationCenter.default.removeObserver(obs)
+        }
+        tableOperationsCloseObserver = NotificationCenter.default.addObserver(
+            forName: NSWindow.willCloseNotification,
+            object: sheetWindow,
+            queue: .main
+        ) { [weak self] _ in
+            self?.tableOperationsPanel = nil
+            self?.tableRowsSheetField = nil
+            self?.tableColsSheetField = nil
+        }
+
+        sheetWindow.center()
+        sheetWindow.makeKeyAndOrderFront(nil)
     }
 
     @objc private func handleSetColumnsFromDialog(_ sender: NSButton) {
@@ -1257,44 +1297,52 @@ extension MainWindowController: FormattingToolbarDelegate {
         let cols = max(1, min(6, Int(colsField.stringValue) ?? 3))
         debugLog("handleInsertTableFromSheet: rows='\(rowsField.stringValue)'->\(rows) cols='\(colsField.stringValue)'->\(cols)")
 
-        // Close sheet first, then insert after window becomes key
-        if let window = sender.window {
-            self.window?.endSheet(window)
-            self.tableRowsSheetField = nil
-            self.tableColsSheetField = nil
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [weak self] in
-                self?.mainContentViewController.editorViewController.insertTable(rows: rows, columns: cols)
-            }
-        }
+        mainContentViewController.editorViewController.insertTable(rows: rows, columns: cols)
+
+        // After inserting a new table, dismiss the panel.
+        sender.window?.close()
+
+        refocusEditorAfterTool()
     }
 
     @objc private func handleCloseTableSheet(_ sender: NSButton) {
         guard let window = sender.window else { return }
-        debugLog("handleCloseTableSheet: closing table sheet without insert")
-        self.window?.endSheet(window)
-        self.tableRowsSheetField = nil
-        self.tableColsSheetField = nil
+        debugLog("handleCloseTableSheet: closing table panel")
+        window.close()
     }
 
     @objc private func handleAddTableRow() {
         mainContentViewController.editorViewController.addTableRow()
+        refocusEditorAfterTool()
     }
 
     @objc private func handleAddTableColumn() {
         mainContentViewController.editorViewController.addTableColumn()
+        refocusEditorAfterTool()
     }
 
     @objc private func handleDeleteTableRow() {
         debugLog("handleDeleteTableRow: invoked")
         mainContentViewController.editorViewController.deleteTableRow()
+        refocusEditorAfterTool()
     }
 
     @objc private func handleDeleteTableColumn() {
         mainContentViewController.editorViewController.deleteTableColumn()
+        refocusEditorAfterTool()
     }
 
     @objc private func handleDeleteTable() {
         mainContentViewController.editorViewController.deleteTable()
+        refocusEditorAfterTool()
+    }
+
+    private func refocusEditorAfterTool() {
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            guard let tv = self.mainContentViewController.editorViewController.textView else { return }
+            tv.window?.makeFirstResponder(tv)
+        }
     }
 
     func formattingToolbarDidClearAll(_ toolbar: FormattingToolbar) {

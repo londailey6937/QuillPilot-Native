@@ -351,6 +351,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         mainWindowController?.mainContentViewController?.editorViewController.insertColumnBreak()
     }
 
+    @objc private func openColumnOperationsFromMenu(_ sender: Any?) {
+        mainWindowController?.openColumnOperationsFromMenu(sender)
+    }
+
+    @objc private func openTableOperationsFromMenu(_ sender: Any?) {
+        mainWindowController?.openTableOperationsFromMenu(sender)
+    }
+
     @objc private func insertPageBreak(_ sender: Any?) {
         if mainWindowController == nil {
             mainWindowController = MainWindowController()
@@ -975,6 +983,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         updateFieldsItem.keyEquivalentModifierMask = [.command, .shift]
         updateFieldsItem.target = self
         insertMenu.addItem(updateFieldsItem)
+
+        insertMenu.addItem(.separator())
+
+        let insertColumnsItem = NSMenuItem(title: "Columns…", action: #selector(openColumnOperationsFromMenu(_:)), keyEquivalent: "")
+        insertColumnsItem.target = self
+        insertMenu.addItem(insertColumnsItem)
+
+        let insertTableOperationsItem = NSMenuItem(title: "Table…", action: #selector(openTableOperationsFromMenu(_:)), keyEquivalent: "")
+        insertTableOperationsItem.target = self
+        insertMenu.addItem(insertTableOperationsItem)
 
         insertMenu.addItem(.separator())
 

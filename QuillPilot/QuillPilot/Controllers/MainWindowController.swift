@@ -4015,10 +4015,14 @@ class FormattingToolbar: NSView {
                 "— divider —",
                 // Core elements
                 "Scene Heading",
+                "Subheader",
                 "Action",
                 "Character",
+                "Extension",
                 "Parenthetical",
                 "Dialogue",
+                "Dual Character",
+                "Dual Dialogue",
                 "Transition",
                 "— divider —",
                 // Camera & special
@@ -4028,6 +4032,8 @@ class FormattingToolbar: NSView {
                 "Intercut",
                 "— divider —",
                 // Other
+                "Teaser",
+                "Tag",
                 "Act Break",
                 "Chyron",
                 "Insert",
@@ -4579,7 +4585,7 @@ class ContentViewController: NSViewController, NSSplitViewDelegate {
         outlineRevealButton.toolTip = "Show Outline"
         outlineRevealButton.translatesAutoresizingMaskIntoConstraints = false
         outlineRevealButton.isHidden = true
-        view.addSubview(outlineRevealButton)
+        view.addSubview(outlineRevealButton, positioned: .above, relativeTo: splitView)
 
         // Left: Mirrored analysis shell showing the outline (📝)
         outlineViewController = OutlineViewController()
@@ -4679,12 +4685,44 @@ class ContentViewController: NSViewController, NSSplitViewDelegate {
             splitView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
             splitView.bottomAnchor.constraint(equalTo: view.bottomAnchor),
 
-            outlineRevealButton.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 10),
-            outlineRevealButton.topAnchor.constraint(equalTo: view.topAnchor, constant: 14),
+            outlineRevealButton.leadingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.leadingAnchor, constant: 10),
+            outlineRevealButton.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 10),
 
             backToTopButton.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -20),
             backToTopButton.bottomAnchor.constraint(equalTo: view.bottomAnchor, constant: -20)
         ])
+    }
+
+    private func updateOutlineRevealButtonVisibility() {
+        guard let splitView, splitView.subviews.count >= 3 else {
+            outlineRevealButton?.isHidden = true
+            return
+        }
+
+        let outlineWidth = splitView.subviews[0].frame.width
+        let isEffectivelyHidden = outlinePanelController.view.isHidden || outlineWidth < 18
+        outlineRevealButton?.isHidden = !isEffectivelyHidden
+    }
+
+    private func showOutlinePanel() {
+        guard let splitView, splitView.subviews.count >= 3 else { return }
+
+        // Ensure the outline view is visible.
+        if outlinePanelController.view.isHidden {
+            isOutlinePanelHidden = false
+            outlinePanelController.view.isHidden = false
+            outlineMinWidthConstraint?.isActive = true
+            outlineMaxWidthConstraint?.isActive = true
+            equalSidebarWidthsConstraint?.isActive = true
+        }
+
+        // Restore to a reasonable width.
+        let restored = max(240, min(cachedOutlineWidth, 520))
+        splitView.setPosition(restored, ofDividerAt: 0)
+        outlineRevealButton?.isHidden = true
+
+        splitView.needsLayout = true
+        splitView.layoutSubtreeIfNeeded()
     }
 
     private func toggleAllSidebarsPanels() {
@@ -4751,11 +4789,13 @@ class ContentViewController: NSViewController, NSSplitViewDelegate {
             cachedOutlineWidth = splitView.subviews[0].frame.width
             cachedAnalysisWidth = splitView.subviews[2].frame.width
         }
+
+        updateOutlineRevealButtonVisibility()
     }
 
     @objc private func outlineRevealTapped(_ sender: Any?) {
-        // Reuse the same behavior as the header toggle.
-        toggleOutlinePanel()
+        // Always restore the outline panel (even if it was merely dragged nearly closed).
+        showOutlinePanel()
     }
 
     func toggleOutlinePanel() {
@@ -4771,7 +4811,7 @@ class ContentViewController: NSViewController, NSSplitViewDelegate {
             outlineMaxWidthConstraint?.isActive = false
             outlinePanelController.view.isHidden = true
             splitView.setPosition(0, ofDividerAt: 0)
-            outlineRevealButton?.isHidden = false
+            updateOutlineRevealButtonVisibility()
         } else {
             outlinePanelController.view.isHidden = false
             outlineMinWidthConstraint?.isActive = true
@@ -4779,7 +4819,7 @@ class ContentViewController: NSViewController, NSSplitViewDelegate {
             equalSidebarWidthsConstraint?.isActive = true
             let restored = max(240, min(cachedOutlineWidth, 520))
             splitView.setPosition(restored, ofDividerAt: 0)
-            outlineRevealButton?.isHidden = true
+            updateOutlineRevealButtonVisibility()
         }
 
         splitView.needsLayout = true
@@ -4947,20 +4987,17 @@ class ContentViewController: NSViewController, NSSplitViewDelegate {
         view.wantsLayer = true
         view.layer?.backgroundColor = theme.pageAround.cgColor
 
-        // Day theme: apply orange border to the persistent outline reveal icon.
+        // Make the outline reveal button visible in all themes.
         outlineRevealButton?.wantsLayer = true
         outlineRevealButton?.layer?.masksToBounds = true
         outlineRevealButton?.image?.isTemplate = true
         if #available(macOS 10.14, *) {
             outlineRevealButton?.contentTintColor = theme.textColor
         }
-        if theme == .day {
-            outlineRevealButton?.layer?.borderWidth = 1
-            outlineRevealButton?.layer?.borderColor = theme.pageBorder.cgColor
-            outlineRevealButton?.layer?.cornerRadius = 8
-        } else {
-            outlineRevealButton?.layer?.borderWidth = 0
-        }
+        outlineRevealButton?.layer?.borderWidth = 1
+        outlineRevealButton?.layer?.borderColor = theme.pageBorder.withAlphaComponent(0.9).cgColor
+        outlineRevealButton?.layer?.cornerRadius = 8
+        outlineRevealButton?.layer?.backgroundColor = theme.pageBackground.withAlphaComponent(0.75).cgColor
     }
 
     /// Notify both sidebars that the document has changed

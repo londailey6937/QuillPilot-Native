@@ -1334,7 +1334,8 @@ Balance columns
     You can resize the left Outline sidebar and right Analysis sidebar by dragging the thin divider lines between panels.
 
     Tip:
-    • If the Outline sidebar is hidden, use the small pencil icon at the far left edge to reveal it again.
+        • If you hide the Outline sidebar, a small square-and-pencil button appears near the top-left of the editor area. Click it to show the Outline again.
+            (You only see this button while the Outline is hidden.)
     """, color: bodyColor))
         content.append(makeNewline())
 

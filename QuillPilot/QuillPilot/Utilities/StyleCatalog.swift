@@ -1199,6 +1199,59 @@ final class StyleCatalog {
         styles["Email"] = styles["Insert"]
 
         // =====================================================================
+        // SUBHEADER
+        // Mini-slug within a scene, often ALL CAPS.
+        // e.g. KITCHEN
+        //      She opens the fridge.
+        // =====================================================================
+        styles["Subheader"] = baseDefinition(
+            font: font, size: fontSize, alignment: .left, lineHeight: 1.0,
+            before: 12, after: 6, headIndent: 0, firstLine: 0, tailIndent: 0
+        )
+
+        // =====================================================================
+        // EXTENSION
+        // Character-name extension tokens like (V.O.), (O.S.), (CONT'D).
+        // In practice, users typically type these on the same line as Character.
+        // This style is provided for workflows/importers that tag the extension as its own paragraph.
+        // =====================================================================
+        styles["Extension"] = baseDefinition(
+            font: font, size: fontSize, alignment: .left, lineHeight: 1.0,
+            before: 12, after: 0, headIndent: 158.4, firstLine: 0, tailIndent: -129.6
+        )
+
+        // =====================================================================
+        // DUAL DIALOGUE
+        // Two columns of dialogue for simultaneous speech.
+        // Implemented here as left/right variants (paragraph styles only).
+        // =====================================================================
+        // Column math notes:
+        // The screenplay text container width is ~432pt (8.5" - 1.5" - 1" margins).
+        // Keep dual columns centered with ~30pt inset on both sides:
+        // left column: 30..204 (174pt wide), gap: 24pt, right column: 228..402 (174pt wide).
+        styles["Dual Character (L)"] = baseDefinition(
+            font: font, size: fontSize, alignment: .left, lineHeight: 1.0,
+            before: 12, after: 0, headIndent: 84, firstLine: 0, tailIndent: -228
+        )
+        styles["Dual Dialogue (L)"] = baseDefinition(
+            font: font, size: fontSize, alignment: .left, lineHeight: 1.0,
+            before: 0, after: 12, headIndent: 30, firstLine: 0, tailIndent: -228
+        )
+        styles["Dual Character (R)"] = baseDefinition(
+            font: font, size: fontSize, alignment: .left, lineHeight: 1.0,
+            before: 12, after: 0, headIndent: 282, firstLine: 0, tailIndent: -30
+        )
+        styles["Dual Dialogue (R)"] = baseDefinition(
+            font: font, size: fontSize, alignment: .left, lineHeight: 1.0,
+            before: 0, after: 12, headIndent: 228, firstLine: 0, tailIndent: -30
+        )
+
+        // Convenience toggle entries (many apps expose Dual Dialogue as a single toggle).
+        // The editor treats these as toggles and chooses (L) vs (R) at apply-time.
+        styles["Dual Character"] = styles["Dual Character (L)"]
+        styles["Dual Dialogue"] = styles["Dual Dialogue (L)"]
+
+        // =====================================================================
         // LYRICS
         // Song lyrics within dialogue, often italicized
         // =====================================================================
@@ -1229,6 +1282,18 @@ final class StyleCatalog {
             font: font, size: fontSize, alignment: .left, lineHeight: 1.0,
             before: 0, after: 0, headIndent: 158, firstLine: 0, tailIndent: 0
         )
+
+        // =====================================================================
+        // TEASER / TAG
+        // Episodic TV sections that commonly appear before Act One (TEASER)
+        // or after the final act (TAG).
+        // =====================================================================
+        styles["Teaser"] = baseDefinition(
+            font: font, size: fontSize, bold: true, alignment: .center, lineHeight: 1.0,
+            before: 48, after: 24, headIndent: 0, firstLine: 0, tailIndent: 0
+        )
+        styles["Tag"] = styles["Teaser"]
+        styles["Teaser / Tag"] = styles["Teaser"]
 
         return styles
     }

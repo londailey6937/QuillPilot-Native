@@ -6942,6 +6942,33 @@ class EditorViewController: NSViewController {
     }
 
     func applyStyle(named styleName: String) {
+        // Screenplay: Dual Dialogue is fundamentally a formatting mode.
+        // Provide a convenient toggle entry that alternates Left/Right variants.
+        if StyleCatalog.shared.isScreenplayTemplate, styleName == "Dual Dialogue" || styleName == "Dual Character" {
+            guard let storage = textView.textStorage else { return }
+            guard storage.length > 0 || (textView.selectedRanges.first?.rangeValue.location ?? 0) == 0 else { return }
+
+            let location = min(textView.selectedRange().location, max(0, storage.length - 1))
+            let paragraphRange = (storage.string as NSString).paragraphRange(for: NSRange(location: location, length: 0))
+            let existing = (paragraphRange.location < storage.length)
+                ? (storage.attribute(styleAttributeKey, at: paragraphRange.location, effectiveRange: nil) as? String)
+                : nil
+
+            let left: String
+            let right: String
+            if styleName == "Dual Dialogue" {
+                left = "Dual Dialogue (L)"
+                right = "Dual Dialogue (R)"
+            } else {
+                left = "Dual Character (L)"
+                right = "Dual Character (R)"
+            }
+
+            let target = (existing == left) ? right : left
+            applyStyle(named: target)
+            return
+        }
+
         if StyleCatalog.shared.isPoetryTemplate && (styleName == "Stanza" || styleName == "Verse" || styleName == "Poetry — Stanza" || styleName == "Poetry — Verse") {
             guard let storage = textView.textStorage else { return }
             guard let selected = textView.selectedRanges.first?.rangeValue else { return }
@@ -7033,7 +7060,10 @@ class EditorViewController: NSViewController {
             "Series of Shots Header", "Series of Shots Item", "Series of Shots End",
             "Flashback", "Back To Present",
             "Intercut", "End Intercut",
-            "Act Break", "Chyron", "Lyrics",
+            "Act Break", "Teaser", "Tag", "Teaser / Tag", "Subheader", "Extension",
+            "Dual Character (L)", "Dual Dialogue (L)", "Dual Character (R)", "Dual Dialogue (R)",
+            "Dual Character", "Dual Dialogue",
+            "Chyron", "Lyrics",
             "Insert", "On Screen", "Text Message", "Email",
             "Note", "More", "Continued", "Title", "Author", "Contact", "Draft"
         ]
@@ -8918,8 +8948,25 @@ case "Book Subtitle":
                 if let fixed = normalizePrefix("EXT", replacement: "EXT.") { return fixed }
                 return trimmed
             })
-        case "Character":
+        case "Character", "Dual Character", "Dual Character (L)", "Dual Character (R)":
             normalizeSelectedParagraphText(transform: { $0.trimmingCharacters(in: .whitespacesAndNewlines).uppercased() })
+        case "Subheader", "Teaser", "Tag", "Teaser / Tag":
+            normalizeSelectedParagraphText(transform: { $0.trimmingCharacters(in: .whitespacesAndNewlines).uppercased() })
+        case "Extension":
+            normalizeSelectedParagraphText(transform: { raw in
+                let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !trimmed.isEmpty else { return trimmed }
+
+                // If the extension is its own token (no spaces), normalize to (EXT) form.
+                // If it's already attached to a character line (e.g. "BOB (V.O.)"), leave it alone.
+                let upper = trimmed.uppercased()
+                guard !upper.contains(" ") else { return upper }
+
+                var core = upper
+                if !core.hasPrefix("(") { core = "(" + core }
+                if !core.hasSuffix(")") { core = core + ")" }
+                return core
+            })
         case "Parenthetical":
             normalizeSelectedParagraphText(transform: { raw in
                 let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)

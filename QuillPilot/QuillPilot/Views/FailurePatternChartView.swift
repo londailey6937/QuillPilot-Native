@@ -262,8 +262,9 @@ class FailurePatternChartView: NSView {
                 isDarkMode: isDarkMode
             )
 
-            // Draw scene label below
-            let chapterLabel = "Sc \(failure.chapter)"
+            // Draw chapter/scene label below
+            let xTickPrefix = StyleCatalog.shared.isScreenplayTemplate ? "Sc" : "Ch"
+            let chapterLabel = "\(xTickPrefix) \(failure.chapter)"
             let labelAttr: [NSAttributedString.Key: Any] = [
                 .font: NSFont.systemFont(ofSize: 9),
                 .foregroundColor: textColor.withAlphaComponent(0.5)

@@ -5,6 +5,7 @@ import Cocoa
 /// IMPORTANT: This window only manages metadata - it NEVER accesses the editor.
 final class SceneInspectorWindowController: NSWindowController {
 
+    private var sluglineField: NSTextField!
     private var titleField: NSTextField!
     private var summaryField: NSTextField!
     private var notesView: NSTextView!
@@ -30,6 +31,7 @@ final class SceneInspectorWindowController: NSWindowController {
     private var saveWriterButton: NSButton?
 
     private var currentScene: Scene?
+    private var currentDocumentURL: URL?
     private var onSave: ((Scene) -> Void)?
     private var onPaste: ((String) -> Void)?
 
@@ -70,10 +72,15 @@ final class SceneInspectorWindowController: NSWindowController {
         fatalError("init(coder:) has not been implemented")
     }
 
-    func loadScene(_ scene: Scene, onSave: @escaping (Scene) -> Void, onPaste: ((String) -> Void)? = nil) {
+    func loadScene(_ scene: Scene, documentURL: URL?, onSave: @escaping (Scene) -> Void, onPaste: ((String) -> Void)? = nil) {
         self.currentScene = scene
+        self.currentDocumentURL = documentURL
         self.onSave = onSave
         self.onPaste = onPaste
+
+        let cachedSlugline = ScreenplaySluglineCache.shared.slugline(for: documentURL, sceneOrder: scene.order) ?? ""
+        sluglineField.stringValue = cachedSlugline
+        sluglineField.toolTip = cachedSlugline.isEmpty ? nil : cachedSlugline
 
         titleField.stringValue = scene.title
         summaryField.stringValue = scene.summary
@@ -143,6 +150,19 @@ final class SceneInspectorWindowController: NSWindowController {
         let fieldWidth: CGFloat = panel.bounds.width - fieldX - 20
         let rowHeight: CGFloat = 28
         let spacing: CGFloat = 8
+
+        // Slugline (read-only annotation)
+        addLabel("Slugline:", at: NSPoint(x: 10, y: y), in: panel)
+        sluglineField = NSTextField(frame: NSRect(x: fieldX, y: y, width: fieldWidth, height: 24))
+        sluglineField.autoresizingMask = [.width]
+        sluglineField.isEditable = false
+        sluglineField.isSelectable = true
+        sluglineField.isBezeled = true
+        sluglineField.bezelStyle = .roundedBezel
+        sluglineField.lineBreakMode = .byTruncatingTail
+        sluglineField.placeholderString = "(derived from screenplay text)"
+        panel.addSubview(sluglineField)
+        y -= rowHeight + spacing
 
         // Title
         addLabel("Title:", at: NSPoint(x: 10, y: y), in: panel)
@@ -453,6 +473,8 @@ final class SceneInspectorWindowController: NSWindowController {
 
         // Text fields
         let fieldColor = theme.popoutTextColor
+        sluglineField?.textColor = fieldColor
+        sluglineField?.backgroundColor = theme.popoutBackground
         titleField?.textColor = fieldColor
         titleField?.backgroundColor = theme.popoutBackground
         summaryField?.textColor = fieldColor

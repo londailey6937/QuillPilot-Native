@@ -8285,6 +8285,8 @@ case "Book Subtitle":
         let full = storage.string as NSString
         guard full.length > 0 else { return nil }
 
+        if entry.range.location == NSNotFound { return nil }
+
         let desiredTitle = entry.title.trimmingCharacters(in: .whitespacesAndNewlines)
 
         let clampedLocation = min(entry.range.location, max(0, full.length - 1))
@@ -9467,6 +9469,13 @@ case "Book Subtitle":
         for pageNum in 1...numPages {
             let pageY = CGFloat(pageNum - 1) * (scaledPageHeight + 20) // 20pt gap between pages
 
+            let footerY = pageY + scaledPageHeight - marginY / 2 - scaledFooterHeight
+            let section = sectionInfo(for: pageNum)
+            let isFirstPageOfSection = pageNum == section.startPage
+            let shouldHideFirst = hidePageNumberOnFirstPage && isFirstPageOfSection
+            let shouldShowPageNumber = showPageNumbers && !shouldHideFirst
+            let isEvenPage = pageNum % 2 == 0
+
             // Note: Page backgrounds are now drawn by PageContainerView.draw(_:)
             // This ensures proper page separation and performance
 
@@ -9531,16 +9540,8 @@ case "Book Subtitle":
 
             // Footer (bottom band)
             if showFooters {
-                let footerY = pageY + scaledPageHeight - marginY / 2 - scaledFooterHeight
-
                 let footerFont = NSFont(name: "Courier", size: 11) ?? NSFont.monospacedSystemFont(ofSize: 11, weight: .regular)
                 let footerColor = currentTheme.textColor.withAlphaComponent(0.5)
-
-                let section = sectionInfo(for: pageNum)
-                let isFirstPageOfSection = pageNum == section.startPage
-                let shouldHideFirst = hidePageNumberOnFirstPage && isFirstPageOfSection
-                let shouldShowPageNumber = showPageNumbers && !shouldHideFirst
-                let isEvenPage = pageNum % 2 == 0
                 let reserveLeft: CGFloat = (shouldShowPageNumber && !centerPageNumbers && facingPageNumbers && isEvenPage) ? 72 : 0
                 let reserveRight: CGFloat = (shouldShowPageNumber && !centerPageNumbers && (!facingPageNumbers || !isEvenPage)) ? 72 : 0
                 let reservedForPageNumber: CGFloat = reserveLeft + reserveRight
@@ -9598,33 +9599,6 @@ case "Book Subtitle":
                     footerViews.append(rightField)
                 }
 
-                // Page number (right or center), hidden on first page if configured
-                if shouldShowPageNumber {
-                    let displayNum = displayedPageNumber(for: pageNum)
-                    let pageField = NSTextField(labelWithString: displayNum)
-                    pageField.isEditable = false
-                    pageField.isSelectable = false
-                    pageField.isBordered = false
-                    pageField.backgroundColor = .clear
-                    pageField.font = footerFont
-                    pageField.textColor = footerColor
-                    if centerPageNumbers {
-                        pageField.alignment = .center
-                    } else if facingPageNumbers {
-                        pageField.alignment = isEvenPage ? .left : .right
-                    } else {
-                        pageField.alignment = .right
-                    }
-                    pageField.frame = NSRect(
-                        x: marginXLeft,
-                        y: footerY,
-                        width: contentWidth,
-                        height: scaledFooterHeight
-                    )
-                    pageContainer.addSubview(pageField)
-                    footerViews.append(pageField)
-                }
-
                 // Separator above footer
                 let footerLine = NSView(frame: NSRect(
                     x: marginXLeft,
@@ -9636,6 +9610,37 @@ case "Book Subtitle":
                 footerLine.layer?.backgroundColor = currentTheme.textColor.withAlphaComponent(0.2).cgColor
                 pageContainer.addSubview(footerLine)
                 headerFooterDecorationViews.append(footerLine)
+            }
+
+            // Page number (right or center), independent of footers.
+            // If footers are off, we still render page numbers without drawing the footer separator line.
+            if shouldShowPageNumber {
+                let footerFont = NSFont(name: "Courier", size: 11) ?? NSFont.monospacedSystemFont(ofSize: 11, weight: .regular)
+                let footerColor = currentTheme.textColor.withAlphaComponent(0.5)
+
+                let displayNum = displayedPageNumber(for: pageNum)
+                let pageField = NSTextField(labelWithString: displayNum)
+                pageField.isEditable = false
+                pageField.isSelectable = false
+                pageField.isBordered = false
+                pageField.backgroundColor = .clear
+                pageField.font = footerFont
+                pageField.textColor = footerColor
+                if centerPageNumbers {
+                    pageField.alignment = .center
+                } else if facingPageNumbers {
+                    pageField.alignment = isEvenPage ? .left : .right
+                } else {
+                    pageField.alignment = .right
+                }
+                pageField.frame = NSRect(
+                    x: marginXLeft,
+                    y: footerY,
+                    width: contentWidth,
+                    height: scaledFooterHeight
+                )
+                pageContainer.addSubview(pageField)
+                footerViews.append(pageField)
             }
         }
     }

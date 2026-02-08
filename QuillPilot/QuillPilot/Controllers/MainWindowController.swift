@@ -152,12 +152,17 @@ class MainWindowController: NSWindowController {
         window.isReleasedWhenClosed = false
         window.isRestorable = false
         if let screenFrame = NSScreen.main?.visibleFrame {
-            let targetSize = NSSize(width: 1200, height: 800)
+            // Open larger by default on big displays so sidebars/outline text are readable.
+            // Use most of the visible frame while leaving a small margin.
+            let targetSize = NSSize(
+                width: max(1200, floor(screenFrame.width * 0.92)),
+                height: max(800, floor(screenFrame.height * 0.90))
+            )
             let origin = NSPoint(
                 x: screenFrame.midX - targetSize.width / 2,
                 y: screenFrame.midY - targetSize.height / 2
             )
-            let targetFrame = NSRect(origin: origin, size: targetSize)
+            let targetFrame = NSRect(origin: origin, size: targetSize).intersection(screenFrame)
             window.setFrame(targetFrame, display: false)
         } else {
             window.center()
@@ -4362,7 +4367,7 @@ class FormattingToolbar: NSView {
 // MARK: - Ruler View
 
 // MARK: - Content View Controller (3-column layout)
-class ContentViewController: NSViewController {
+class ContentViewController: NSViewController, NSSplitViewDelegate {
     var onTitleChange: ((String) -> Void)?
     var onAuthorChange: ((String) -> Void)?
     var onStatsUpdate: ((String) -> Void)?
@@ -4384,14 +4389,38 @@ class ContentViewController: NSViewController {
     private var analysisMaxWidthConstraint: NSLayoutConstraint?
     private var equalSidebarWidthsConstraint: NSLayoutConstraint?
     private var isOutlinePanelHidden = false
-    private var cachedOutlineWidth: CGFloat = 280
+    private var cachedOutlineWidth: CGFloat = 520
 
     private var isAnalysisPanelHidden = false
-    private var cachedAnalysisWidth: CGFloat = 320
+    private var cachedAnalysisWidth: CGFloat = 520
+
+    private var lastLaidOutWidth: CGFloat = 0
+    private var sidebarWidthsUserLocked = false
+    private var isAdjustingSidebarsProgrammatically = false
+
+    private var didApplyInitialSidebarLayout = false
 
     // Analysis throttling during layout
     private var analysisSuspended = false
     private var analysisPending = false
+
+    // Current document URL for per-document metadata (Scenes dialog)
+    private var currentDocumentURL: URL?
+
+    private func hasAnalyzableText(_ text: String) -> Bool {
+        !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    /// For auto-run analysis only (on open / while typing). Keeps new/empty documents from immediately kicking off analysis.
+    private func shouldAutoAnalyzeText(_ text: String) -> Bool {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return false }
+
+        // Avoid auto-running analysis on extremely short content.
+        // Manual Analyze should still work for small snippets.
+        let words = trimmed.split(whereSeparator: { $0.isWhitespace || $0.isNewline })
+        return words.count >= 20 || trimmed.count >= 200
+    }
 
     private weak var rulerView: EnhancedRulerView?
     private var templateObserver: NSObjectProtocol?
@@ -4446,6 +4475,55 @@ class ContentViewController: NSViewController {
         applyTemplatePageDefaults()
     }
 
+    override func viewDidLayout() {
+        super.viewDidLayout()
+        applySidebarAutoExpansionIfNeeded()
+    }
+
+    private func applySidebarAutoExpansionIfNeeded() {
+        guard let splitView, splitView.subviews.count >= 3 else { return }
+        guard splitView.bounds.width > 0 else { return }
+
+        let width = splitView.bounds.width
+        let grew = width > lastLaidOutWidth + 4
+        lastLaidOutWidth = width
+
+        // Keep sidebars fully open as the UI expands on large displays,
+        // unless the user has manually adjusted the dividers.
+        guard grew else { return }
+        guard !sidebarWidthsUserLocked else { return }
+        guard !outlinePanelController.view.isHidden, !analysisViewController.view.isHidden else { return }
+
+        applySidebarLayout(onlyExpand: true)
+    }
+
+    private func applySidebarLayout(onlyExpand: Bool) {
+        guard let splitView, splitView.subviews.count >= 3 else { return }
+        let minOutline: CGFloat = 240
+        let minAnalysis: CGFloat = 250
+        let editorMin: CGFloat = 450
+
+        // Allow sidebars to grow much wider on big displays.
+        let maxSidebar: CGFloat = 900
+
+        let availableForSidebars = max(0, splitView.bounds.width - editorMin)
+        let ideal = min(maxSidebar, max(minOutline, minAnalysis, floor(availableForSidebars / 2)))
+
+        let currentOutline = splitView.subviews[0].frame.width
+        let currentAnalysis = splitView.subviews[2].frame.width
+        if onlyExpand {
+            if currentOutline >= ideal - 2, currentAnalysis >= ideal - 2 { return }
+        }
+
+        cachedOutlineWidth = ideal
+        cachedAnalysisWidth = ideal
+
+        isAdjustingSidebarsProgrammatically = true
+        splitView.setPosition(ideal, ofDividerAt: 0)
+        splitView.setPosition(max(ideal + editorMin, splitView.bounds.width - ideal), ofDividerAt: 1)
+        isAdjustingSidebarsProgrammatically = false
+    }
+
     deinit {
         if let templateObserver {
             NotificationCenter.default.removeObserver(templateObserver)
@@ -4476,6 +4554,7 @@ class ContentViewController: NSViewController {
         splitView.isVertical = true
         splitView.dividerStyle = .thin
         splitView.translatesAutoresizingMaskIntoConstraints = false
+        splitView.delegate = self
         self.splitView = splitView
         view.addSubview(splitView)
 
@@ -4518,7 +4597,7 @@ class ContentViewController: NSViewController {
         }
         splitView.addArrangedSubview(outlinePanelController.view)
         outlineMinWidthConstraint = outlinePanelController.view.widthAnchor.constraint(greaterThanOrEqualToConstant: 240)
-        outlineMaxWidthConstraint = outlinePanelController.view.widthAnchor.constraint(lessThanOrEqualToConstant: 360)
+        outlineMaxWidthConstraint = outlinePanelController.view.widthAnchor.constraint(lessThanOrEqualToConstant: 900)
         outlineMinWidthConstraint?.isActive = true
         outlineMaxWidthConstraint?.isActive = true
 
@@ -4568,9 +4647,14 @@ class ContentViewController: NSViewController {
         }
         splitView.addArrangedSubview(analysisViewController.view)
         analysisMinWidthConstraint = analysisViewController.view.widthAnchor.constraint(greaterThanOrEqualToConstant: 250)
-        analysisMaxWidthConstraint = analysisViewController.view.widthAnchor.constraint(lessThanOrEqualToConstant: 400)
+        analysisMaxWidthConstraint = analysisViewController.view.widthAnchor.constraint(lessThanOrEqualToConstant: 900)
         analysisMinWidthConstraint?.isActive = true
         analysisMaxWidthConstraint?.isActive = true
+
+        // Apply an initial expanded layout once geometry exists.
+        DispatchQueue.main.async { [weak self] in
+            self?.applySidebarLayout(onlyExpand: false)
+        }
 
         // Set up analysis callback
         analysisViewController.analyzeCallback = { [weak self] in
@@ -4640,8 +4724,8 @@ class ContentViewController: NSViewController {
             analysisMaxWidthConstraint?.isActive = true
             equalSidebarWidthsConstraint?.isActive = true
 
-            let restoredOutline = max(240, min(cachedOutlineWidth, 360))
-            let restoredAnalysis = max(250, min(cachedAnalysisWidth, 400))
+            let restoredOutline = max(240, min(cachedOutlineWidth, 520))
+            let restoredAnalysis = max(250, min(cachedAnalysisWidth, 520))
 
             isOutlinePanelHidden = false
             isAnalysisPanelHidden = false
@@ -4652,6 +4736,21 @@ class ContentViewController: NSViewController {
 
         splitView.needsLayout = true
         splitView.layoutSubtreeIfNeeded()
+    }
+
+    func splitViewDidResizeSubviews(_ notification: Notification) {
+        guard let splitView, notification.object as? NSSplitView === splitView else { return }
+        guard !isAdjustingSidebarsProgrammatically else { return }
+
+        // If the current event is a divider drag, respect it and stop auto-expanding.
+        if let eventType = NSApp.currentEvent?.type, eventType == .leftMouseDragged || eventType == .leftMouseUp {
+            sidebarWidthsUserLocked = true
+        }
+
+        if splitView.subviews.count >= 3 {
+            cachedOutlineWidth = splitView.subviews[0].frame.width
+            cachedAnalysisWidth = splitView.subviews[2].frame.width
+        }
     }
 
     @objc private func outlineRevealTapped(_ sender: Any?) {
@@ -4678,7 +4777,7 @@ class ContentViewController: NSViewController {
             outlineMinWidthConstraint?.isActive = true
             outlineMaxWidthConstraint?.isActive = true
             equalSidebarWidthsConstraint?.isActive = true
-            let restored = max(240, min(cachedOutlineWidth, 360))
+            let restored = max(240, min(cachedOutlineWidth, 520))
             splitView.setPosition(restored, ofDividerAt: 0)
             outlineRevealButton?.isHidden = true
         }
@@ -4688,8 +4787,148 @@ class ContentViewController: NSViewController {
     }
 
     private func refreshOutline() {
+        if StyleCatalog.shared.isScreenplayTemplate {
+            let scenes = loadSavedScenes(for: currentDocumentURL)
+            let entries = buildScreenplaySceneOutlineEntries(from: scenes)
+            outlineViewController.update(with: entries)
+            return
+        }
+
         let entries = editorViewController.buildOutlineEntries()
         outlineViewController.update(with: entries)
+    }
+
+    private func scenesStorageKey(for documentURL: URL?) -> String {
+        guard let url = documentURL else {
+            return "QuillPilot.Scenes.Untitled"
+        }
+        return "QuillPilot.Scenes.\(url.path)"
+    }
+
+    private func loadSavedScenes(for documentURL: URL?) -> [Scene] {
+        let defaults = UserDefaults.standard
+
+        func load(forKey key: String) -> [Scene] {
+            guard let data = defaults.data(forKey: key) else { return [] }
+            let manager = SceneManager()
+            do {
+                try manager.decode(from: data)
+                return manager.scenes.sorted { $0.order < $1.order }
+            } catch {
+                return []
+            }
+        }
+
+        let key = scenesStorageKey(for: documentURL)
+        let primary = load(forKey: key)
+        if !primary.isEmpty { return primary }
+
+        // If a new/unsaved document was just saved, allow falling back to the Untitled key.
+        if documentURL != nil {
+            let untitled = load(forKey: scenesStorageKey(for: nil))
+            if !untitled.isEmpty { return untitled }
+        }
+
+        return []
+    }
+
+    private func migrateScenesIfNeeded(from oldURL: URL?, to newURL: URL?) {
+        let oldKey = scenesStorageKey(for: oldURL)
+        let newKey = scenesStorageKey(for: newURL)
+        guard oldKey != newKey else { return }
+
+        let defaults = UserDefaults.standard
+        guard defaults.data(forKey: newKey) == nil else { return }
+        guard let oldData = defaults.data(forKey: oldKey) else { return }
+
+        defaults.set(oldData, forKey: newKey)
+
+        // Only remove the old data when migrating from the shared Untitled key.
+        if oldURL == nil {
+            defaults.removeObject(forKey: oldKey)
+        }
+    }
+
+    private func buildScreenplaySceneOutlineEntries(from scenes: [Scene]) -> [EditorViewController.OutlineEntry] {
+        guard !scenes.isEmpty else { return [] }
+
+        // Sluglines are secondary: we only use them to annotate the entry and to provide a navigation anchor.
+        let sluglines = extractScreenplaySluglinesInOrder()
+        ScreenplaySluglineCache.shared.setSluglines(sluglines.map { $0.text }, for: currentDocumentURL)
+
+        var results: [EditorViewController.OutlineEntry] = []
+        results.reserveCapacity(scenes.count)
+
+        for (index, scene) in scenes.sorted(by: { $0.order < $1.order }).enumerated() {
+            let number = max(1, scene.order + 1)
+            let baseTitle = "\(number) - \(scene.title.trimmingCharacters(in: .whitespacesAndNewlines))"
+
+            let slug = index < sluglines.count ? sluglines[index] : nil
+            let slugText = slug?.text.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            let displayTitle = slugText.isEmpty ? baseTitle : "\(baseTitle) - \(slugText)"
+
+            let anchorLocation = slug?.range.location ?? NSNotFound
+            let page = (anchorLocation == NSNotFound) ? nil : editorViewController.getPageNumber(forCharacterPosition: anchorLocation)
+
+            results.append(
+                EditorViewController.OutlineEntry(
+                    title: displayTitle,
+                    level: 1,
+                    range: NSRange(location: anchorLocation, length: 0),
+                    page: page,
+                    styleName: "Scene"
+                )
+            )
+        }
+
+        return results
+    }
+
+    private func extractScreenplaySluglinesInOrder(maxScanParagraphs: Int = 20000) -> [(text: String, range: NSRange)] {
+        guard let storage = editorViewController.textView.textStorage else { return [] }
+        let full = storage.string as NSString
+        guard full.length > 0 else { return [] }
+
+        func looksLikeSlugline(_ text: String) -> Bool {
+            let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !trimmed.isEmpty else { return false }
+            let upper = trimmed.uppercased()
+
+            // Common screenplay slugline prefixes.
+            let prefixes = [
+                "INT.", "EXT.", "INT/EXT.", "I/E.",
+                "INT ", "EXT ", "INT/EXT ", "I/E ",
+                "EST.", "INT.-", "EXT.-", "INT/EXT.-"
+            ]
+            if prefixes.contains(where: { upper.hasPrefix($0) }) {
+                return true
+            }
+
+            // A slightly more permissive check for lines like: "INT. HOUSE - NIGHT".
+            if upper.hasPrefix("INT") || upper.hasPrefix("EXT") {
+                return upper.contains("-") || upper.contains(".")
+            }
+
+            return false
+        }
+
+        var results: [(text: String, range: NSRange)] = []
+        var location = 0
+        var scanned = 0
+        while location < full.length, scanned < maxScanParagraphs {
+            let paragraphRange = full.paragraphRange(for: NSRange(location: location, length: 0))
+            scanned += 1
+            let raw = full.substring(with: paragraphRange)
+            let text = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+
+            if looksLikeSlugline(text) {
+                results.append((text: text, range: paragraphRange))
+            }
+
+            location = NSMaxRange(paragraphRange)
+        }
+
+        return results
     }
 
     @objc private func scrollToTop() {
@@ -4726,6 +4965,12 @@ class ContentViewController: NSViewController {
 
     /// Notify both sidebars that the document has changed
     func documentDidChange(url: URL?) {
+        currentDocumentURL = url
+
+        // Starting a brand-new, untitled document should not inherit previous untitled scenes.
+        if url == nil {
+            UserDefaults.standard.removeObject(forKey: scenesStorageKey(for: nil))
+        }
         outlinePanelController?.documentDidChange(url: url)
         analysisViewController?.documentDidChange(url: url)
 
@@ -4733,13 +4978,20 @@ class ContentViewController: NSViewController {
         editorViewController?.manuscriptTitle = "Untitled"
         editorViewController?.manuscriptAuthor = "Author Name"
         onAuthorChange?("")
+
+        refreshOutline()
     }
 
     /// Notify sidebars that the document now has a concrete URL (Save / Save As).
     /// Must not clear analysis results/UI.
     func documentURLDidUpdate(url: URL?) {
+        let oldURL = currentDocumentURL
+        currentDocumentURL = url
+        migrateScenesIfNeeded(from: oldURL, to: url)
         outlinePanelController?.documentURLDidUpdate(url: url)
         analysisViewController?.documentURLDidUpdate(url: url)
+
+        refreshOutline()
     }
 
     func setRuler(_ ruler: EnhancedRulerView) {
@@ -4888,7 +5140,7 @@ class ContentViewController: NSViewController {
             return
         }
 
-        guard let text = editorViewController.getTextContent(), !text.isEmpty else {
+        guard let text = editorViewController.getTextContent(), hasAnalyzableText(text) else {
             return
         }
 
@@ -7559,9 +7811,12 @@ extension ContentViewController: EditorViewControllerDelegate {
         perform(#selector(refreshOutlineDelayed), with: nil, afterDelay: outlineDelay)
 
         if QuillPilotSettings.autoAnalyzeWhileTyping {
-            // Trigger auto-analysis after a longer delay
             NSObject.cancelPreviousPerformRequests(withTarget: self, selector: #selector(performAnalysisDelayed), object: nil)
-            perform(#selector(performAnalysisDelayed), with: nil, afterDelay: analysisDelay)
+
+            // Trigger auto-analysis after a longer delay (only when there's meaningful content)
+            if let text = editorViewController?.textView?.string, shouldAutoAnalyzeText(text) {
+                perform(#selector(performAnalysisDelayed), with: nil, afterDelay: analysisDelay)
+            }
         }
     }
 

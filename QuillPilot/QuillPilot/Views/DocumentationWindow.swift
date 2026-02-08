@@ -1329,6 +1329,15 @@ Balance columns
     """, color: bodyColor))
         content.append(makeNewline())
 
+        content.append(makeHeading("Resizing Sidebars", color: headingColor))
+        content.append(makeBody("""
+    You can resize the left Outline sidebar and right Analysis sidebar by dragging the thin divider lines between panels.
+
+    Tip:
+    • If the Outline sidebar is hidden, use the small pencil icon at the far left edge to reveal it again.
+    """, color: bodyColor))
+        content.append(makeNewline())
+
         content.append(makeHeading("Document Outline", color: headingColor))
         content.append(makeBody("""
 Access: Click the Document Outline icon in the Navigator panel

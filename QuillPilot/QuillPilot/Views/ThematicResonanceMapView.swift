@@ -282,14 +282,15 @@ class ThematicResonanceMapView: NSView {
             }
         }
 
-        // Draw scene labels
+        // Draw chapter/scene labels
+        let xTickPrefix = StyleCatalog.shared.isScreenplayTemplate ? "Sc" : "Ch"
         for chapter in sortedChapters {
             let x = rect.minX + (CGFloat(chapter - minChapter) / CGFloat(chapterRange)) * rect.width
             let labelAttr: [NSAttributedString.Key: Any] = [
                 .font: NSFont.systemFont(ofSize: 9),
                 .foregroundColor: textColor.withAlphaComponent(0.5)
             ]
-            "Sc \(chapter)".draw(at: NSPoint(x: x - 10, y: rect.minY - 18), withAttributes: labelAttr)
+            "\(xTickPrefix) \(chapter)".draw(at: NSPoint(x: x - 10, y: rect.minY - 18), withAttributes: labelAttr)
         }
     }
 

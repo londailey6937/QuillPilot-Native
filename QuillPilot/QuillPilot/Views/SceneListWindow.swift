@@ -188,16 +188,15 @@ final class SceneListWindowController: NSWindowController {
         updateCountLabel()
     }
 
-    /// Load scenes for a specific document. If documentURL is nil, scenes won't persist.
+    /// Load scenes for a specific document. If documentURL is nil, uses the shared Untitled key.
     func loadScenes(for documentURL: URL?) {
         currentDocumentURL = documentURL
 
         // Clear existing scenes first
         sceneManager.clear()
 
-        // Load from UserDefaults if we have a document
-        if let url = documentURL,
-           let data = UserDefaults.standard.data(forKey: scenesStorageKey(for: url)) {
+        // Load from UserDefaults (supports nil URL via the Untitled key)
+        if let data = UserDefaults.standard.data(forKey: scenesStorageKey(for: documentURL)) {
             do {
                 try sceneManager.decode(from: data)
             } catch {
@@ -207,19 +206,18 @@ final class SceneListWindowController: NSWindowController {
         applyFilters()
         tableView.reloadData()
         updateCountLabel()
+
+        NotificationCenter.default.post(name: Notification.Name("QuillPilotOutlineRefresh"), object: nil)
     }
 
     private func saveScenes() {
-        // Only save if we have a document
-        guard currentDocumentURL != nil else {
-            return
-        }
-
         do {
             let data = try sceneManager.encode()
             UserDefaults.standard.set(data, forKey: scenesStorageKey(for: currentDocumentURL))
         } catch {
         }
+
+        NotificationCenter.default.post(name: Notification.Name("QuillPilotOutlineRefresh"), object: nil)
     }
 
     private func applyFilters() {
@@ -318,7 +316,7 @@ final class SceneListWindowController: NSWindowController {
             inspectorWindow = SceneInspectorWindowController()
         }
 
-        inspectorWindow?.loadScene(scene) { [weak self] updatedScene in
+        inspectorWindow?.loadScene(scene, documentURL: currentDocumentURL) { [weak self] updatedScene in
             self?.sceneManager.updateScene(updatedScene)
             self?.saveScenes()
             self?.applyFilters()

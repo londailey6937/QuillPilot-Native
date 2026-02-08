@@ -3197,12 +3197,12 @@ extension AnalysisViewController {
                     actualChapters = Array(1...min(level2Entries.count, 10))
                 } else {
                     // Fallback: estimate from document length
-                    actualChapters = Array(1...6)
+                    actualChapters = [1]
                 }
             }
         } else {
             // No outline available - use reasonable default
-            actualChapters = Array(1...6)
+            actualChapters = [1]
         }
 
         // Use actual chapters from outline (no arbitrary limit)
@@ -3384,12 +3384,12 @@ extension AnalysisViewController {
                     actualChapters = Array(1...min(level2Entries.count, 10))
                 } else {
                     // Fallback: estimate from document length
-                    actualChapters = Array(1...6)
+                    actualChapters = [1]
                 }
             }
         } else {
             // No outline available - use reasonable default
-            actualChapters = Array(1...6)
+            actualChapters = [1]
         }
 
         // Select evenly spaced chapters for thematic stance (max 7 points)

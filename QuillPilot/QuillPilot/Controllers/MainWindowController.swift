@@ -2858,7 +2858,15 @@ extension MainWindowController {
             toolbarView.selectTemplateProgrammatically(inferredTemplate)
         }
 
-        mainContentViewController.editorViewController.setAttributedContentDirect(attributed)
+        // Non-destructive open: preserve user formatting exactly.
+        // Retag/materialization/repairs can reassign styles after manual edits.
+        mainContentViewController.editorViewController.setAttributedContentDirect(
+            attributed,
+            retagStylesForOutline: false,
+            materializeCatalogStyles: false,
+            repairBodyIndent: false,
+            repairTOCIndexFormatting: false
+        )
         mainContentViewController.editorViewController.applyTheme(ThemeManager.shared.currentTheme)
 
         // Only auto-seed for Screenplay imports.
@@ -2869,11 +2877,7 @@ extension MainWindowController {
             CharacterLibrary.shared.seedCharactersIfEmpty(cues)
         }
 
-        // Ensure TOC/Index paragraphs keep right-tab alignment after DOCX/RTF imports.
-        // Some importers drop paragraph tab stops; we repair based on QuillStyleName.
-        DispatchQueue.main.async { [weak self] in
-            self?.mainContentViewController.editorViewController.repairTOCAndIndexFormattingAfterImport()
-        }
+        // Note: skip TOC/Index repair on open to avoid mutating user formatting.
 
         if let textStorage = mainContentViewController.editorViewController.textView?.textStorage {
             _ = TOCIndexManager.shared.generateIndexFromMarkers(in: textStorage)

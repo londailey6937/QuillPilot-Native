@@ -4099,6 +4099,53 @@ class EditorViewController: NSViewController {
         return pageIndex + 1
     }
 
+    /// Calculate the logical page number at a character position, honoring section breaks.
+    /// - Returns: (logical page number, display string)
+    func pageNumberInfo(forCharacterPosition characterPosition: Int) -> (number: Int, display: String) {
+        let physical = getPageNumber(forCharacterPosition: characterPosition)
+
+        guard let storage = textView.textStorage, storage.length > 0 else {
+            return (physical, String(physical))
+        }
+
+        let safePosition = max(0, min(characterPosition, storage.length - 1))
+        if let sectionEntry = sectionBreak(atOrBefore: safePosition, in: storage) {
+            let sectionStartPhysical = getPageNumber(forCharacterPosition: sectionEntry.range.location)
+            let offset = max(0, physical - sectionStartPhysical)
+            let logical = max(1, sectionEntry.section.startPageNumber + offset)
+            let display = formatPageNumber(logical, format: sectionEntry.section.numberFormat)
+            return (logical, display)
+        }
+
+        return (physical, String(physical))
+    }
+
+    private func formatPageNumber(_ number: Int, format: SectionPageNumberFormat) -> String {
+        switch format {
+        case .arabic:
+            return String(number)
+        case .romanLower:
+            return toRoman(number).lowercased()
+        case .romanUpper:
+            return toRoman(number)
+        }
+    }
+
+    private func toRoman(_ number: Int) -> String {
+        let values = [(1000, "M"), (900, "CM"), (500, "D"), (400, "CD"),
+                      (100, "C"), (90, "XC"), (50, "L"), (40, "XL"),
+                      (10, "X"), (9, "IX"), (5, "V"), (4, "IV"), (1, "I")]
+        var num = number
+        var result = ""
+        for (value, numeral) in values {
+            while num >= value {
+                result += numeral
+                num -= value
+            }
+        }
+        return result
+    }
+
     func totalPageCount() -> Int {
         if let pageContainerView = pageContainer as? PageContainerView {
             return max(1, pageContainerView.numPages)
@@ -4537,8 +4584,15 @@ class EditorViewController: NSViewController {
         delegate?.resumeAnalysisAfterLayout()
     }
 
-    /// Fast content setter for imported documents - runs style inference for outline detection
-    func setAttributedContentDirect(_ attributed: NSAttributedString) {
+    /// Fast content setter for imported/opened documents.
+    /// Use non-destructive flags for reopening files so user formatting is preserved exactly.
+    func setAttributedContentDirect(
+        _ attributed: NSAttributedString,
+        retagStylesForOutline: Bool = true,
+        materializeCatalogStyles: Bool = true,
+        repairBodyIndent: Bool = true,
+        repairTOCIndexFormatting: Bool = true
+    ) {
         delegate?.suspendAnalysisForLayout()
 
         lastTOCRightTab = nil
@@ -4557,14 +4611,19 @@ class EditorViewController: NSViewController {
             textView.layoutManager?.backgroundLayoutEnabled = false
         }
 
-        // Restore QuillPilot internal markers (e.g. section breaks) from safe, cross-format attributes
-        // before retagging so they don't interfere with style inference.
+        // Restore QuillPilot internal markers (e.g. section breaks) from safe, cross-format attributes.
         let restoredSectionBreaks = restoreSectionBreaksFromPersistenceLinks(in: attributed)
         let restored = restorePageBreakMarkersFromFormFeed(in: restoredSectionBreaks)
 
-        // Run style detection to ensure TOC Title, Index Title, etc. appear in document outline
-        let retagged = detectAndRetagStyles(in: restored)
-        textView.textStorage?.setAttributedString(retagged)
+        let contentToSet: NSAttributedString
+        if retagStylesForOutline {
+            // Retagging helps outline/navigation, but mutates styles. Keep it opt-in.
+            contentToSet = detectAndRetagStyles(in: restored)
+        } else {
+            contentToSet = restored
+        }
+
+        textView.textStorage?.setAttributedString(contentToSet)
         textView.setSelectedRange(NSRange(location: 0, length: 0))
 
         // Sync title/author from the first paragraph if tagged.
@@ -4572,12 +4631,16 @@ class EditorViewController: NSViewController {
 
         clampImportedImageAttachmentsToSafeBounds()
 
-        repairBodyTextIndentAfterLoadIfNeeded()
+        if repairBodyIndent {
+            repairBodyTextIndentAfterLoadIfNeeded()
+        }
 
         // Some importers preserve style identity via QuillStyleName but can lose visible formatting
         // when AppKit normalizes attributed strings. Re-apply catalog formatting for any tagged
         // paragraphs so Screenplay/Fiction/Poetry styles actually render on the page.
-        materializeCatalogStylesFromTags()
+        if materializeCatalogStyles {
+            materializeCatalogStylesFromTags()
+        }
 
         // Don't reset typing attributes - let them inherit from document content
         // This preserves the Body Text style and other attributes when typing
@@ -4592,7 +4655,9 @@ class EditorViewController: NSViewController {
                 self?.updatePageLayout()
                 self?.updatePageCentering(ensureSelectionVisible: false)
                 self?.scrollToTop()
-                self?.repairTOCAndIndexFormattingAfterImport()
+                if repairTOCIndexFormatting {
+                    self?.repairTOCAndIndexFormattingAfterImport()
+                }
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.12) { [weak self] in
                     self?.updatePageCentering(ensureSelectionVisible: false)
                 }
@@ -4606,7 +4671,9 @@ class EditorViewController: NSViewController {
             updatePageLayout()
             updatePageCentering(ensureSelectionVisible: false)
             scrollToTop()
-            repairTOCAndIndexFormattingAfterImport()
+            if repairTOCIndexFormatting {
+                repairTOCAndIndexFormattingAfterImport()
+            }
             // For rich imports (RTF/RTFD/HTML/ODT), AppKit may continue layout asynchronously.
             // Recompute pagination after a short delay so page backgrounds match the final flow.
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) { [weak self] in
@@ -7931,12 +7998,46 @@ case "Book Subtitle":
         let paragraphRange = (textView.string as NSString).paragraphRange(for: selected)
         guard paragraphRange.location < storage.length else { return nil }
 
-        // Try to get the stored style name attribute
+        // Prefer the stored style name attribute when present.
         if let styleName = storage.attribute(styleAttributeKey, at: paragraphRange.location, effectiveRange: nil) as? String {
             return styleName
         }
 
-        return nil
+        // Otherwise, infer a style for UI display WITHOUT mutating the document.
+        let paragraphStyle = (storage.attribute(.paragraphStyle, at: paragraphRange.location, effectiveRange: nil) as? NSParagraphStyle)
+            ?? (textView.typingAttributes[.paragraphStyle] as? NSParagraphStyle)
+            ?? textView.defaultParagraphStyle
+            ?? NSParagraphStyle.default
+
+        let font = (storage.attribute(.font, at: paragraphRange.location, effectiveRange: nil) as? NSFont)
+            ?? (textView.typingAttributes[.font] as? NSFont)
+            ?? textView.font
+            ?? NSFont.systemFont(ofSize: 12)
+
+        let paragraphText = (textView.string as NSString).substring(with: paragraphRange)
+
+        var inferred = inferStyle(font: font, paragraphStyle: paragraphStyle, text: paragraphText)
+
+        // Avoid mislabeling body text as title-page styles when the cursor is deep in the document.
+        let titlePageStyles: Set<String> = ["Title", "Author", "Contact", "Draft"]
+        if titlePageStyles.contains(inferred), !isLikelyTitlePageParagraph(paragraphRange: paragraphRange, storage: storage) {
+            inferred = paragraphStyle.firstLineHeadIndent > 0.5 ? "Body Text" : "Body Text – No Indent"
+        }
+
+        return inferred
+    }
+
+    private func isLikelyTitlePageParagraph(paragraphRange: NSRange, storage: NSTextStorage) -> Bool {
+        let full = storage.string as NSString
+        var location = 0
+        var paragraphIndex = 0
+        while location < min(paragraphRange.location, full.length) {
+            let range = full.paragraphRange(for: NSRange(location: location, length: 0))
+            location = NSMaxRange(range)
+            paragraphIndex += 1
+            if paragraphIndex > 6 { break }
+        }
+        return paragraphIndex <= 6
     }
 
     private func applyCatalogStyle(named styleName: String) -> Bool {
@@ -8609,7 +8710,7 @@ case "Book Subtitle":
                 if let level = levels[styleName] {
                     let rawTitle = fullString.substring(with: paragraphRange).trimmingCharacters(in: .whitespacesAndNewlines)
                     if !rawTitle.isEmpty {
-                        let pageIndex = getPageNumber(forCharacterPosition: paragraphRange.location)
+                        let pageIndex = pageNumberInfo(forCharacterPosition: paragraphRange.location).number
                         results.append(OutlineEntry(title: rawTitle, level: level, range: paragraphRange, page: pageIndex, styleName: styleName))
                         if results.count <= 3 {
                             DebugLog.log("📋✅ Found: '\(rawTitle)' style='\(styleName)' level=\(level)")
@@ -8619,11 +8720,18 @@ case "Book Subtitle":
             } else if isScreenplayTemplate {
                 let rawTitle = fullString.substring(with: paragraphRange).trimmingCharacters(in: .whitespacesAndNewlines)
                 if looksLikeScreenplaySlugline(rawTitle) {
-                    let pageIndex = getPageNumber(forCharacterPosition: paragraphRange.location)
+                    let pageIndex = pageNumberInfo(forCharacterPosition: paragraphRange.location).number
                     results.append(OutlineEntry(title: rawTitle, level: 1, range: paragraphRange, page: pageIndex, styleName: "Scene Heading"))
                 } else if looksLikeScreenplayActHeading(rawTitle) {
-                    let pageIndex = getPageNumber(forCharacterPosition: paragraphRange.location)
+                    let pageIndex = pageNumberInfo(forCharacterPosition: paragraphRange.location).number
                     results.append(OutlineEntry(title: rawTitle, level: 0, range: paragraphRange, page: pageIndex, styleName: "Scene Heading"))
+                }
+            } else {
+                // Fallback: include Index title even if style tags are missing.
+                let rawTitle = fullString.substring(with: paragraphRange).trimmingCharacters(in: .whitespacesAndNewlines)
+                if rawTitle.lowercased() == "index" {
+                    let pageIndex = pageNumberInfo(forCharacterPosition: paragraphRange.location).number
+                    results.append(OutlineEntry(title: rawTitle, level: 1, range: paragraphRange, page: pageIndex, styleName: "Index Title"))
                 }
             }
 

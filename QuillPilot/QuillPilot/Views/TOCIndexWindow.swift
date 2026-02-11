@@ -20,6 +20,7 @@ struct TOCEntry: Identifiable {
     var title: String
     var level: Int  // 1 = Chapter, 2 = Section, 3 = Subsection
     var pageNumber: Int
+    var pageNumberDisplay: String
     var range: NSRange
     var styleName: String
 
@@ -86,6 +87,7 @@ class TOCIndexManager {
                                 title: text,
                                 level: level,
                                 pageNumber: pageNumber,
+                                pageNumberDisplay: String(pageNumber),
                                 range: range,
                                 styleName: styleName
                             ))
@@ -114,6 +116,7 @@ class TOCIndexManager {
                                 title: text,
                                 level: level,
                                 pageNumber: pageNumber,
+                                pageNumberDisplay: String(pageNumber),
                                 range: range,
                                 styleName: "Heading"
                             ))
@@ -1049,10 +1052,12 @@ class TOCIndexWindowController: NSWindowController, NSWindowDelegate, NSOutlineV
             let isExcluded = excludedTitles.contains(where: { lowercasedTitle == $0 })
 
             if !isExcluded {
+                let pageInfo = editorVC.pageNumberInfo(forCharacterPosition: entry.range.location)
                 tocEntries.append(TOCEntry(
                     title: entry.title,
                     level: entry.level,
-                    pageNumber: entry.page ?? 1,
+                    pageNumber: pageInfo.number,
+                    pageNumberDisplay: pageInfo.display,
                     range: entry.range,
                     styleName: ""
                 ))
@@ -1139,8 +1144,8 @@ class TOCIndexWindowController: NSWindowController, NSWindowDelegate, NSOutlineV
             let rightPadding: CGFloat = 10
             let rightTab = pageTextWidth - rightPadding
 
-            // Format page number according to selected format
-            let pageNumStr = currentPageFormat.format(entry.pageNumber)
+            // Use the per-entry formatted page number (section-aware)
+            let pageNumStr = entry.pageNumberDisplay
 
             // Create paragraph style - use a right tab stop for the page number column
             let paragraphStyle = NSMutableParagraphStyle()
@@ -1249,7 +1254,7 @@ class TOCIndexWindowController: NSWindowController, NSWindowDelegate, NSOutlineV
         let entries = TOCIndexManager.shared.generateIndexFromMarkers(
             in: textStorage,
             pageNumberForLocation: { [weak self] location in
-                self?.editorViewController?.getPageNumber(forCharacterPosition: location)
+                self?.editorViewController?.pageNumberInfo(forCharacterPosition: location).number
                     ?? TOCIndexManager.shared.estimatePageNumberPublic(for: location, in: textStorage)
             }
         )
@@ -1289,7 +1294,7 @@ class TOCIndexWindowController: NSWindowController, NSWindowDelegate, NSOutlineV
         _ = TOCIndexManager.shared.generateIndexFromMarkers(
             in: textStorage,
             pageNumberForLocation: { [weak self] location in
-                self?.editorViewController?.getPageNumber(forCharacterPosition: location)
+                self?.editorViewController?.pageNumberInfo(forCharacterPosition: location).number
                     ?? TOCIndexManager.shared.estimatePageNumberPublic(for: location, in: textStorage)
             }
         )
@@ -1303,7 +1308,7 @@ class TOCIndexWindowController: NSWindowController, NSWindowDelegate, NSOutlineV
         let entries = TOCIndexManager.shared.generateIndexFromMarkers(
             in: textStorage,
             pageNumberForLocation: { [weak self] location in
-                self?.editorViewController?.getPageNumber(forCharacterPosition: location)
+                self?.editorViewController?.pageNumberInfo(forCharacterPosition: location).number
                     ?? TOCIndexManager.shared.estimatePageNumberPublic(for: location, in: textStorage)
             }
         )
@@ -1492,7 +1497,7 @@ class TOCIndexWindowController: NSWindowController, NSWindowDelegate, NSOutlineV
         let weight: NSFont.Weight = entry.level == 1 ? .semibold : .regular
 
         let indent = String(repeating: "  ", count: entry.level - 1)
-        cell?.stringValue = "\(indent)\(entry.title)  —  p.\(entry.pageNumber)"
+        cell?.stringValue = "\(indent)\(entry.title)  —  p.\(entry.pageNumberDisplay)"
         cell?.font = NSFont.systemFont(ofSize: fontSize, weight: weight)
         cell?.textColor = theme.textColor
 

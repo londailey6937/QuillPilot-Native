@@ -18,6 +18,9 @@ extension NSAttributedString.Key {
     /// Marks a page break. Value is `true`.
     /// Internally represented as a spacer attachment that expands to fill the remainder of the current page.
     static let qpPageBreak = NSAttributedString.Key("QPPageBreak")
+
+    /// Stores the spacer height (CGFloat) of a page break so it survives DOCX round-trip.
+    static let qpBreakHeight = NSAttributedString.Key("QPBreakHeight")
 }
 
 struct SectionBreakInfo: Identifiable, Equatable {
@@ -4460,12 +4463,22 @@ class EditorViewController: NSViewController {
         let fullRange = NSRange(location: 0, length: attributed.length)
 
         // Replace internal marker attachments with a form-feed character for broad exporter compatibility.
+        // Preserve the spacer height as .qpBreakHeight so DOCX export can encode it in the XML,
+        // allowing QuillPilot to restore the exact break placement on reimport.
         attributed.enumerateAttribute(.qpPageBreak, in: fullRange, options: [.reverse]) { value, range, _ in
             guard value != nil, range.length > 0 else { return }
             let attrs = attributed.attributes(at: range.location, effectiveRange: nil)
+
+            // Capture the spacer height before we discard the attachment
+            var breakHeight: CGFloat = 200
+            if let attachment = attrs[.attachment] as? NSTextAttachment {
+                breakHeight = attachment.bounds.height
+            }
+
             var cleaned = attrs
             cleaned[.attachment] = nil
             cleaned[.qpPageBreak] = nil
+            cleaned[.qpBreakHeight] = breakHeight   // carry height through to DOCX builder
             let replacement = NSAttributedString(string: "\u{000C}", attributes: cleaned)
             attributed.replaceCharacters(in: range, with: replacement)
         }
@@ -4563,6 +4576,7 @@ class EditorViewController: NSViewController {
         repairBodyTextIndentAfterLoadIfNeeded()
 
         applyDefaultTypingAttributes()
+        neutralizePageBreakParagraphStyles()
         updatePageLayout()
         // On reopen/import, the scroll view may not have its final width during the first layout pass.
         // Center immediately, then once more on the next runloop so the page doesn't appear left-justified
@@ -4646,6 +4660,10 @@ class EditorViewController: NSViewController {
         // This preserves the Body Text style and other attributes when typing
         updateTypingAttributesFromContent()
 
+        // Re-neutralize page-break paragraph styles after all style passes
+        // (detectAndRetagStyles / materializeCatalogStylesFromTags may have overwritten them).
+        neutralizePageBreakParagraphStyles()
+
         if isLargeDocument {
             // Re-enable and do layout in chunks
             textView.layoutManager?.backgroundLayoutEnabled = true
@@ -4722,6 +4740,18 @@ class EditorViewController: NSViewController {
             }
 
             let attrs = storage.attributes(at: safeParagraphRange.location, effectiveRange: nil)
+
+            // Page-break spacers must keep their neutral paragraph metrics.
+            // If any character in this paragraph carries .qpPageBreak, skip it entirely.
+            var hasPageBreak = false
+            storage.enumerateAttribute(.qpPageBreak, in: safeParagraphRange, options: []) { value, _, stop in
+                if value != nil { hasPageBreak = true; stop.pointee = true }
+            }
+            if hasPageBreak {
+                location = NSMaxRange(paragraphRange)
+                continue
+            }
+
             guard let styleName = attrs[styleAttributeKey] as? String,
                   !preserveFormattingStyles.contains(styleName),
                   let definition = StyleCatalog.shared.style(named: styleName) else {
@@ -5879,6 +5909,9 @@ class EditorViewController: NSViewController {
 
         let mutable = NSMutableAttributedString(attributedString: attributed)
         var searchLocation = 0
+        let isLineBreakChar: (unichar) -> Bool = { ch in
+            ch == 0x0A || ch == 0x0D || ch == 0x2029 || ch == 0x2028
+        }
 
         while searchLocation < mutable.length {
             let current = mutable.string as NSString
@@ -5890,17 +5923,88 @@ class EditorViewController: NSViewController {
             if r.location == NSNotFound { break }
 
             let attrs = mutable.attributes(at: r.location, effectiveRange: nil)
-            // Use a moderate default height for imported breaks since we can't measure layout yet
-            let attachment = makePageBreakAttachment(initialHeight: 200)
+
+            // Use neutral paragraph metrics for break markers/newlines so imported heading/title
+            // styles don't create runaway pagination or hide following content.
+            var spacerAttrs = attrs
+            let baseStyle = (attrs[.paragraphStyle] as? NSParagraphStyle) ?? NSParagraphStyle.default
+            let spacerParagraphStyle: NSParagraphStyle = {
+                let mutableStyle = (baseStyle.mutableCopy() as? NSMutableParagraphStyle) ?? NSMutableParagraphStyle()
+                mutableStyle.paragraphSpacing = 0
+                mutableStyle.paragraphSpacingBefore = 0
+                mutableStyle.lineSpacing = 0
+                mutableStyle.lineHeightMultiple = 1
+                mutableStyle.minimumLineHeight = 0
+                mutableStyle.maximumLineHeight = 0
+                return mutableStyle.copy() as! NSParagraphStyle
+            }()
+            spacerAttrs[.paragraphStyle] = spacerParagraphStyle
+            spacerAttrs[.attachment] = nil
+            spacerAttrs[.qpPageBreak] = nil
+            spacerAttrs[.qpBreakHeight] = nil  // consumed below; don't carry into attributed string
+
+            // Keep page break markers on paragraph boundaries so reopened breaks don't drift
+            // into neighboring title/chapter paragraphs.
+            let needsLeadingNewline: Bool = {
+                guard r.location > 0 else { return false }
+                return !isLineBreakChar(current.character(at: r.location - 1))
+            }()
+
+            let needsTrailingNewline: Bool = {
+                let nextIndex = r.location + r.length
+                guard nextIndex < current.length else { return false }
+                return !isLineBreakChar(current.character(at: nextIndex))
+            }()
+
+            // Use the stored height from DOCX round-trip if available; otherwise fall back to 200pt.
+            let storedHeight = attrs[.qpBreakHeight] as? CGFloat
+            let initialHeight = storedHeight ?? 200
+            let attachment = makePageBreakAttachment(initialHeight: initialHeight)
             let marker = NSMutableAttributedString(attachment: attachment)
-            marker.addAttributes(attrs, range: NSRange(location: 0, length: 1))
+            marker.addAttributes(spacerAttrs, range: NSRange(location: 0, length: 1))
             marker.addAttribute(.qpPageBreak, value: true, range: NSRange(location: 0, length: 1))
 
-            mutable.replaceCharacters(in: r, with: marker)
-            searchLocation = r.location + 1
+            let replacement = NSMutableAttributedString()
+            if needsLeadingNewline {
+                replacement.append(NSAttributedString(string: "\n", attributes: spacerAttrs))
+            }
+            replacement.append(marker)
+            if needsTrailingNewline {
+                replacement.append(NSAttributedString(string: "\n", attributes: spacerAttrs))
+            }
+
+            mutable.replaceCharacters(in: r, with: replacement)
+            searchLocation = r.location + replacement.length
         }
 
         return mutable
+    }
+
+    /// Re-apply neutral paragraph metrics to every page-break spacer so catalog styles
+    /// (Body Text, Heading, etc.) can't distort the break placement.
+    private func neutralizePageBreakParagraphStyles() {
+        guard let storage = textView.textStorage, storage.length > 0 else { return }
+        let fullRange = NSRange(location: 0, length: storage.length)
+        let fullString = storage.string as NSString
+
+        storage.beginEditing()
+        defer { storage.endEditing() }
+
+        storage.enumerateAttribute(.qpPageBreak, in: fullRange, options: []) { value, range, _ in
+            guard value != nil else { return }
+            let paragraphRange = fullString.paragraphRange(for: range)
+
+            let existingStyle = (storage.attribute(.paragraphStyle, at: range.location, effectiveRange: nil) as? NSParagraphStyle)
+                ?? NSParagraphStyle.default
+            let neutral = (existingStyle.mutableCopy() as? NSMutableParagraphStyle) ?? NSMutableParagraphStyle()
+            neutral.paragraphSpacing = 0
+            neutral.paragraphSpacingBefore = 0
+            neutral.lineSpacing = 0
+            neutral.lineHeightMultiple = 1
+            neutral.minimumLineHeight = 0
+            neutral.maximumLineHeight = 0
+            storage.addAttribute(.paragraphStyle, value: neutral.copy() as! NSParagraphStyle, range: paragraphRange)
+        }
     }
 
     private func makePageBreakAttachment(initialHeight: CGFloat) -> NSTextAttachment {

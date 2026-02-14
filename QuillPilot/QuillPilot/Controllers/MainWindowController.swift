@@ -6556,26 +6556,48 @@ private enum DocxBuilder {
         </w:rPr>
         """
 
-                // WordprocessingML represents tabs as a dedicated element (<w:tab/>).
-                // Leaving raw '\t' inside <w:t> is unreliable and can break TOC/Index leader tab formatting.
-                let parts = text.split(separator: "\t", omittingEmptySubsequences: false).map(String.init)
-                var children: [String] = []
-
-                for (idx, part) in parts.enumerated() {
-                        if !part.isEmpty {
-                                children.append("<w:t xml:space=\"preserve\">\(xmlEscape(part))</w:t>")
-                        } else {
-                                // Preserve consecutive tabs by emitting an empty text node between them.
-                                children.append("<w:t xml:space=\"preserve\"></w:t>")
-                        }
-
-                        if idx < parts.count - 1 {
-                                children.append("<w:tab/>")
-                        }
+                // If this run is solely a page break with a stored height, emit a hidden marker run
+                // followed by the break run so QuillPilot can restore exact placement on reimport.
+                // Word ignores vanished text, so this is transparent to other editors.
+                if let breakHeight = attributes[.qpBreakHeight] as? CGFloat, text == "\u{000C}" {
+                    let heightStr = "\(Int(round(breakHeight)))"
+                    return """
+                    <w:r><w:rPr><w:vanish/><w:sz w:val="2"/></w:rPr><w:t xml:space="preserve">QPH:\(heightStr)</w:t></w:r>
+                    <w:r>
+                        \(rPrXml)<w:br w:type="page"/>
+                    </w:r>
+                    """
                 }
 
+                // WordprocessingML uses dedicated elements for control characters:
+                // - Tab: <w:tab/>
+                // - Hard page break: <w:br w:type="page"/>
+                // Export page-break form-feed (U+000C) as a real DOCX page break instead of raw text.
+                var children: [String] = []
+                var buffer = ""
+
+                func flushBuffer() {
+                    guard !buffer.isEmpty else { return }
+                    children.append("<w:t xml:space=\"preserve\">\(xmlEscape(buffer))</w:t>")
+                    buffer.removeAll(keepingCapacity: true)
+                }
+
+                for scalar in text.unicodeScalars {
+                    switch scalar.value {
+                    case 0x0009: // tab
+                        flushBuffer()
+                        children.append("<w:tab/>")
+                    case 0x000C: // form feed => page break
+                        flushBuffer()
+                        children.append("<w:br w:type=\"page\"/>")
+                    default:
+                        buffer.unicodeScalars.append(scalar)
+                    }
+                }
+                flushBuffer()
+
                 if children.isEmpty {
-                        children = ["<w:t/>"]
+                    children = ["<w:t/>"]
                 }
 
                 return """
@@ -6833,6 +6855,9 @@ private enum DocxTextExtractor {
         private var relationships: [String: String] = [:]
         private var hyperlinkURLStack: [URL] = []
 
+        // Page break height restoration from QPH markers
+        private var pendingBreakHeight: CGFloat? = nil
+
         // Table tracking
         private var currentTable: NSTextTable? = nil
         private var currentTableRow = 0
@@ -6845,6 +6870,7 @@ private enum DocxTextExtractor {
             var fontSize: CGFloat? = nil
             var isBold: Bool = false
             var isItalic: Bool = false
+            var isVanished: Bool = false
             var foregroundColor: NSColor? = nil
             var backgroundColor: NSColor? = nil
             var themeColorName: String? = nil
@@ -7209,6 +7235,9 @@ private enum DocxTextExtractor {
             case "w:i", "i":
                 runAttributes.isItalic = true
 
+            case "w:vanish", "vanish":
+                runAttributes.isVanished = true
+
             case "w:color", "color":
                 if let val = attributeDict["w:val"] ?? attributeDict["val"], let color = RunAttributes.color(fromHex: val) {
                     runAttributes.foregroundColor = color
@@ -7260,7 +7289,25 @@ private enum DocxTextExtractor {
                 }
 
             case "w:br", "br":
-                currentText.append("\n")
+                let type = (attributeDict["w:type"] ?? attributeDict["type"])?.lowercased()
+                if type == "page" {
+                    if let height = pendingBreakHeight {
+                        // We have a stored height from a QPH marker. Flush any preceding text,
+                        // then emit the form-feed with .qpBreakHeight so the spacer restores exactly.
+                        finalizeRun()
+                        var breakAttrs: [NSAttributedString.Key: Any] = [:]
+                        let bFont = NSFont(name: runAttributes.fontName ?? "Times New Roman",
+                                           size: runAttributes.fontSize ?? 12) ?? NSFont.systemFont(ofSize: 12)
+                        breakAttrs[.font] = bFont
+                        breakAttrs[.qpBreakHeight] = height
+                        paragraphBuffer.append(NSAttributedString(string: "\u{000C}", attributes: breakAttrs))
+                        pendingBreakHeight = nil
+                    } else {
+                        currentText.append("\u{000C}")
+                    }
+                } else {
+                    currentText.append("\n")
+                }
 
             case "w:drawing", "drawing", "wp:inline", "inline":
                 inDrawing = true
@@ -7342,6 +7389,17 @@ private enum DocxTextExtractor {
 
         private func finalizeRun() {
             guard !currentText.isEmpty else { return }
+
+            // Detect QuillPilot page-break height markers (vanished QPH:NNN text).
+            // Store the height so the next <w:br type="page"/> can restore exact placement.
+            if runAttributes.isVanished, currentText.hasPrefix("QPH:") {
+                let heightStr = currentText.dropFirst(4)
+                if let height = Double(heightStr) {
+                    pendingBreakHeight = CGFloat(height)
+                }
+                currentText = ""
+                return
+            }
 
             var attrs: [NSAttributedString.Key: Any] = [:]
             let size = runAttributes.fontSize ?? 12

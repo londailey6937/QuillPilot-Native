@@ -5836,10 +5836,12 @@ class EditorViewController: NSViewController {
                 guard let self else { return }
                 if didRemove {
                     self.removeSectionBreak(in: storage, range: found.range)
+                    self.refreshPageNumbersAfterSectionChange()
                     return
                 }
                 guard let updated else { return }
                 self.updateSectionBreak(in: storage, range: found.range, with: updated)
+                self.refreshPageNumbersAfterSectionChange()
             }
             return
         }
@@ -5854,6 +5856,7 @@ class EditorViewController: NSViewController {
 
             textView.setSelectedRange(NSRange(location: insertLocation + 1, length: 0))
             delegate?.textDidChange()
+            self.refreshPageNumbersAfterSectionChange()
         }
     }
 
@@ -5875,6 +5878,7 @@ class EditorViewController: NSViewController {
         guard let storage = textView.textStorage else { return false }
         guard let found = sectionBreaks(in: storage).first(where: { $0.section.id == id }) else { return false }
         removeSectionBreak(in: storage, range: found.range)
+        refreshPageNumbersAfterSectionChange()
         return true
     }
 
@@ -6124,11 +6128,21 @@ class EditorViewController: NSViewController {
             guard let self else { return }
             if didRemove {
                 self.removeSectionBreak(in: storage, range: found.range)
+                self.refreshPageNumbersAfterSectionChange()
                 return
             }
             guard let updated else { return }
             self.updateSectionBreak(in: storage, range: found.range, with: updated)
+            self.refreshPageNumbersAfterSectionChange()
         }
+    }
+
+    /// Force layout and refresh headers/footers so page numbers reflect the current section map.
+    private func refreshPageNumbersAfterSectionChange() {
+        // Force immediate layout so getPageNumber returns accurate values,
+        // then update headers/footers to show the correct section numbering.
+        updatePageLayout()
+        updatePageCentering(ensureSelectionVisible: false)
     }
 
     private func sectionBreaks(in storage: NSTextStorage) -> [(range: NSRange, section: SectionBreak)] {
@@ -9749,6 +9763,17 @@ case "Book Subtitle":
         let marginXLeft = leftPageMargin * editorZoom
         let marginXRight = rightPageMargin * editorZoom
         let contentWidth = max(36, scaledPageWidth - marginXLeft - marginXRight)
+
+        // Force layout so getPageNumber returns correct page indices for section breaks.
+        // Without this, glyph positions may be stale when section breaks are added or edited,
+        // causing the section map to place breaks on wrong pages.
+        if let lm = textView.layoutManager, let tc = textView.textContainer {
+            if let storage = textView.textStorage, storage.length > 0, storage.length <= 250_000 {
+                lm.ensureLayout(forCharacterRange: NSRange(location: 0, length: storage.length))
+            } else {
+                lm.ensureLayout(for: tc)
+            }
+        }
 
         // Build section map for page numbering
         let sectionMap: [(startPage: Int, startNumber: Int, format: SectionPageNumberFormat, explicit: Bool)] = {

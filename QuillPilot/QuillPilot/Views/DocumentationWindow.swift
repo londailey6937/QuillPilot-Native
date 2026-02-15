@@ -963,7 +963,7 @@ class DocumentationWindowController: NSWindowController, NSWindowDelegate, NSOut
 2. Choose a template from the toolbar dropdown (Baskerville, Garamond, etc.)
 3. Start writing — what you see is what you'll submit
 4. Use the Navigator (left sidebar) for outline, scenes, and characters
-5. Use the Analysis panel (right sidebar) for writing insights
+5. Use the Analysis panel (right sidebar) for writing insights. Wait for analysis to complete (see spinner below the analysis panel). You will be notified when analysis is ready to view.
 """, color: bodyColor))
         content.append(makeNewline())
 
@@ -988,15 +988,6 @@ class DocumentationWindowController: NSWindowController, NSWindowDelegate, NSOut
 • Right panel → 📊 Analysis for writing metrics
 • Right panel → 📈 Character tools for arc visualization
 • Right panel → 📖 Plot Structure for story beats
-""", color: bodyColor))
-        content.append(makeNewline())
-
-        content.append(makeHeading("Troubleshooting", color: headingColor))
-        content.append(makeBody("""
-• Analysis not appearing? Click the 📊 button to run analysis
-• Styles not applying? Check the template dropdown
-• Lost your place? Use Navigator → Document Outline
-• Need keyboard shortcuts? See Productivity → Keyboard Shortcuts
 """, color: bodyColor))
         content.append(makeNewline())
 
@@ -2336,37 +2327,62 @@ Access: These buttons appear automatically when you select the Poetry template.
 
         content.append(makeHeading("Poetry Tools Panel Details", color: headingColor))
         content.append(makeBody("""
-The Poetry Tools window (accessible via the 🔬 button or Tools → Poetry Tools → Poetry Analysis Tools) provides:
+The Poetry Tools window (accessible via the 🔬 button or Tools → Poetry Tools → Poetry Analysis Tools) provides six tabs. Each tab opens inside the Poetry Tools window; use the tab bar at the top of the window to switch between them.
 
-Syllables Tab:
-• Counts syllables per line
-• Shows total, average, and line count statistics
-• Detects meter patterns (Haiku, Iambic Pentameter, etc.)
+Syllables Tab (textformat.123 icon):
+Counts syllables per line and shows a per-line breakdown with clickable rows.
+• Summary bar: Total syllables, Average per line, and Line count
+• Meter detection badge: Identifies patterns such as Haiku (5-7-5), Iambic Pentameter, Alexandrine, or Free Verse
+• Click any line to expand word-by-word syllable details
+• Color-coded counts: green (1-4), blue (5-7), orange (8-10), red (11+)
+• Use this to verify syllable counts for metered forms (sonnets, haiku, tanka, etc.)
 
-Scansion Tab:
-• Marks stressed (/) and unstressed (u) syllables
-• Shows secondary stress marks (\\)
-• Navigate line by line to examine stress patterns
+Scansion Tab (waveform icon):
+Marks stressed and unstressed syllables for rhythmic analysis.
+• Displays stress marks per line: / (stressed), u (unstressed), \\ (secondary stress)
+• Navigate line by line with Previous/Next buttons
+• Identifies dominant foot patterns (iamb, trochee, dactyl, anapest, spondee)
+• Useful for checking meter consistency, finding unintentional rhythmic breaks, and discovering natural speech patterns
+• Tip: Compare scansion results with the Syllables tab to see where stress and count interact
 
-Sound Devices Tab:
-• Detects alliteration, assonance, consonance
-• Identifies sibilance and internal rhyme
-• Finds onomatopoeia
+Sound Devices Tab (speaker icon):
+Detects sonic techniques used in your poem.
+• Alliteration — Repeated initial consonant sounds in nearby words
+• Assonance — Repeated vowel sounds within words
+• Consonance — Repeated consonant sounds within or at the end of words
+• Sibilance — Concentration of s, sh, z sounds
+• Internal Rhyme — Rhyming within a single line (not at line ends)
+• Onomatopoeia — Words that imitate sounds (buzz, hiss, murmur)
+• Each device shows matched words and their line locations
+• Use this to strengthen sonic texture or identify unintentional sound patterns
 
-Word Cloud Tab:
-• Visual display of word frequency
-• Excludes common stop words
-• Larger words appear more frequently
+Word Cloud Tab (cloud icon):
+Visual word-frequency display showing which words dominate your poem.
+• Common stop words (the, a, and, is, etc.) are excluded automatically
+• Word size corresponds to frequency — larger words appear more often
+• Computed in the background with a progress indicator for longer poems
+• Use this to spot overused words, identify unconscious thematic keywords, and verify that your most important words have sufficient presence
 
-Line Length Tab:
-• Bar graph showing syllable/word/character counts per line
-• Statistics: average, min, max, and standard deviation
-• Helps identify rhythm patterns and variations
+Line Length Tab (chart.bar icon):
+Bar graph visualizing the length of each line by syllables, words, or characters.
+• Statistics panel: Average, Minimum, Maximum, and Standard Deviation
+• Switch between syllable count, word count, and character count views
+• Computed in the background with a progress indicator
+• Bars are color-coded by relative length
+• Use this to see rhythm at a glance — uniform bar heights suggest regularity; varied heights suggest free-form energy
+• Tip: High standard deviation may indicate intentional variation or places where lines could be tightened
 
-Form Templates Tab:
-• 10 classic poetry forms with structures and examples
-• Sonnet, Villanelle, Haiku, Tanka, Ghazal, Pantoum, Sestina, Limerick, Free Verse, Blank Verse
-• Insert template structures directly into your document
+Form Templates Tab (book icon):
+Browse, preview, and insert classic poetry form structures into your document.
+• 10 built-in forms: Sonnet, Villanelle, Haiku, Tanka, Ghazal, Pantoum, Sestina, Limerick, Free Verse, Blank Verse
+• Picker dropdown to select a form
+• Two views for each form:
+  — Structure: Shows the form's skeleton (line/stanza layout, rhyme positions)
+  — Example: A sample poem written in that form
+• Rules panel: Lists the formal rules (line count, rhyme scheme, syllable requirements, etc.)
+• Insert Template button: Places the form structure directly into your document as a writing scaffold
+• Use this when starting a poem in a specific form — the template gives you guide lines to fill in
+• Tip: After inserting a template, use the Syllables tab to verify your counts and the Scansion tab to check your meter
 """, color: bodyColor))
         content.append(makeNewline())
 
@@ -2618,6 +2634,70 @@ How to switch templates:
 Notes:
 • Switching templates changes which style definitions are available; it doesn't automatically rewrite existing paragraphs unless you apply styles.
 • When you open a document, Quill Pilot applies the currently selected template.
+""", color: bodyColor))
+        content.append(makeNewline())
+
+        content.append(makeHeading("Screenplay Styles", color: headingColor))
+        content.append(makeBody("""
+When the Screenplay template is active, Quill Pilot provides industry-standard formatting styles. Apply any style from the Style Catalog dropdown in the toolbar.
+
+Title Page Styles:
+• Title — Centered, bold, 18pt. Used for the screenplay title on the cover page.
+• Author — Centered, 14pt. Author name below the title.
+• Contact — Left-aligned, 12pt. Contact information at the bottom of the title page.
+• Draft — Left-aligned, 12pt. Draft number or date.
+
+Core Screenplay Elements:
+• Scene Heading (Slug Line) — ALL CAPS, bold, left-aligned. Describes the location and time (e.g., INT. OFFICE - DAY).
+• Action — Left-aligned, full width. Describes what the audience sees and hears.
+• Character — Centered (indented to 2.2\"), ALL CAPS. The name of the speaking character.
+• Parenthetical — Indented (1.6\"), in parentheses. Brief acting directions (e.g., (whispering)).
+• Dialogue — Indented (1\"), narrower margins. The character's spoken words.
+• Transition — Right-aligned (indented to 4\"), ALL CAPS. Editing transitions (e.g., CUT TO:, FADE OUT.).
+
+Camera & Structure:
+• Shot — ALL CAPS, bold. Camera directions (e.g., CLOSE ON, ANGLE ON).
+• Montage Header — ALL CAPS, bold. Begins a montage sequence.
+• Montage Item — Indented, with dash prefix. Individual montage elements.
+• Montage End — ALL CAPS, bold. Ends the montage (END MONTAGE).
+• Series of Shots Header / Item / End — Same structure as Montage for shot sequences.
+• Flashback — ALL CAPS, bold. Marks a flashback transition.
+• Back To Present — ALL CAPS, bold. Returns from flashback.
+• Intercut — ALL CAPS, bold. Begins intercutting between locations.
+• End Intercut — ALL CAPS, bold. Ends intercutting.
+
+TV Format Styles:
+• Act Break — Centered, bold, ALL CAPS. Marks act breaks in episodic scripts.
+• Teaser — Centered, bold, ALL CAPS. Cold open / teaser section header.
+• Tag — Centered, bold, ALL CAPS. Tag / epilogue section header.
+
+Specialty Styles:
+• Extension — Appended to a Character name (e.g., (V.O.), (O.S.), (CONT'D)).
+• Subheader — Bold, left-aligned. Secondary heading within a scene.
+• Chyron — ALL CAPS, centered. On-screen text for the audience (titles, locations).
+• Insert — ALL CAPS, bold. Close-up inserts (INSERT: text on the letter).
+• On Screen / On-Screen Text / Text Message / Email — ALL CAPS. Displayed text within the narrative.
+• Lyrics — Italic. Song lyrics within a scene.
+• Note — Italic. Writer notes (not part of the produced script).
+• More — Centered (2.2\"). Used at bottom of page when dialogue continues (MORE).
+• Continued — Centered (2.2\"). Used at top of next page (CONT'D).
+
+Dual Dialogue:
+Dual dialogue places two characters speaking simultaneously side by side on the page.
+
+• Dual Character (L) — Left-column character name (indented 1.17\", right margin at 3.17\").
+• Dual Dialogue (L) — Left-column dialogue (indented 0.42\", right margin at 3.17\").
+• Dual Character (R) — Right-column character name (indented 3.92\", right margin at 0.42\").
+• Dual Dialogue (R) — Right-column dialogue (indented 3.17\", right margin at 0.42\").
+
+How to format dual dialogue:
+1. Type the first character name and apply Dual Character (L)
+2. Type the first character's dialogue and apply Dual Dialogue (L)
+3. Type the second character name and apply Dual Character (R)
+4. Type the second character's dialogue and apply Dual Dialogue (R)
+5. The left and right columns will appear side by side on the page
+
+Tip: "Dual Character" and "Dual Dialogue" (without L/R) default to the left column.
 """, color: bodyColor))
 
         normalizeAppNameInDocumentation(content)

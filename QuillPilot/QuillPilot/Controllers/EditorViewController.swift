@@ -5744,6 +5744,9 @@ class EditorViewController: NSViewController {
 
         var spacerAttrs = baseAttrs
         spacerAttrs[.paragraphStyle] = spacerParagraphStyle
+        // Strip heading/style name so the page-break paragraph doesn't appear
+        // in the document outline as a blank entry.
+        spacerAttrs.removeValue(forKey: NSAttributedString.Key("QuillStyleName"))
 
         let block = NSMutableAttributedString()
         if needsLeadingNewline {
@@ -8915,11 +8918,22 @@ case "Book Subtitle":
             guard paragraphRange.length > 0 else { break }
             paragraphCount += 1
 
+            // Skip page-break paragraphs — they carry an attachment character
+            // (\u{FFFC}) that would show as a blank outline entry.
+            if storage.attribute(.qpPageBreak, at: paragraphRange.location, effectiveRange: nil) != nil {
+                location = NSMaxRange(paragraphRange)
+                continue
+            }
+
             let styleName = storage.attribute(styleAttributeKey, at: paragraphRange.location, effectiveRange: nil) as? String
             if let styleName {
                 stylesFound.insert(styleName)
                 if let level = levels[styleName] {
-                    let rawTitle = fullString.substring(with: paragraphRange).trimmingCharacters(in: .whitespacesAndNewlines)
+                    // Strip object-replacement characters (attachments) so page breaks
+                    // or other embedded objects don't produce blank outline entries.
+                    let rawTitle = fullString.substring(with: paragraphRange)
+                        .replacingOccurrences(of: "\u{FFFC}", with: "")
+                        .trimmingCharacters(in: .whitespacesAndNewlines)
                     if !rawTitle.isEmpty {
                         let pageIndex = pageNumberInfo(forCharacterPosition: paragraphRange.location).number
                         results.append(OutlineEntry(title: rawTitle, level: level, range: paragraphRange, page: pageIndex, styleName: styleName))

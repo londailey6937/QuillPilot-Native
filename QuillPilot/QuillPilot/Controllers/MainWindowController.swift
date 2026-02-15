@@ -4403,7 +4403,6 @@ class ContentViewController: NSViewController, NSSplitViewDelegate {
     var editorViewController: EditorViewController!
     private var analysisViewController: AnalysisViewController!
     private var backToTopButton: NSButton!
-    private var outlineRevealButton: NSButton!
 
     private var splitView: NSSplitView!
     private var outlineMinWidthConstraint: NSLayoutConstraint?
@@ -4581,29 +4580,6 @@ class ContentViewController: NSViewController, NSSplitViewDelegate {
         self.splitView = splitView
         view.addSubview(splitView)
 
-        // When the outline panel is hidden, the header toggle disappears with it.
-        // Provide a persistent reveal control so the outline can always be restored.
-        let revealImage: NSImage
-        if #available(macOS 11.0, *) {
-            let base = NSImage(systemSymbolName: "square.and.pencil", accessibilityDescription: "Toggle Outline") ?? NSImage()
-            let config = NSImage.SymbolConfiguration(pointSize: 16, weight: .regular)
-            revealImage = base.withSymbolConfiguration(config) ?? base
-        } else {
-            revealImage = NSImage(size: NSSize(width: 18, height: 18))
-            revealImage.lockFocus()
-            NSString(string: "✎").draw(at: NSPoint(x: 2, y: 1), withAttributes: [.font: NSFont.systemFont(ofSize: 14)])
-            revealImage.unlockFocus()
-        }
-
-        outlineRevealButton = NSButton(image: revealImage, target: self, action: #selector(outlineRevealTapped(_:)))
-        outlineRevealButton.bezelStyle = .inline
-        outlineRevealButton.isBordered = false
-        outlineRevealButton.imagePosition = .imageOnly
-        outlineRevealButton.toolTip = "Show Outline"
-        outlineRevealButton.translatesAutoresizingMaskIntoConstraints = false
-        outlineRevealButton.isHidden = true
-        view.addSubview(outlineRevealButton, positioned: .above, relativeTo: splitView)
-
         // Left: Mirrored analysis shell showing the outline (📝)
         outlineViewController = OutlineViewController()
         outlineViewController.onSelect = { [weak self] entry in
@@ -4702,23 +4678,13 @@ class ContentViewController: NSViewController, NSSplitViewDelegate {
             splitView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
             splitView.bottomAnchor.constraint(equalTo: view.bottomAnchor),
 
-            outlineRevealButton.leadingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.leadingAnchor, constant: 10),
-            outlineRevealButton.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 10),
-
             backToTopButton.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -20),
             backToTopButton.bottomAnchor.constraint(equalTo: view.bottomAnchor, constant: -20)
         ])
     }
 
     private func updateOutlineRevealButtonVisibility() {
-        guard let splitView, splitView.subviews.count >= 3 else {
-            outlineRevealButton?.isHidden = true
-            return
-        }
-
-        let outlineWidth = splitView.subviews[0].frame.width
-        let isEffectivelyHidden = outlinePanelController.view.isHidden || outlineWidth < 18
-        outlineRevealButton?.isHidden = !isEffectivelyHidden
+        // No-op: reveal button removed.
     }
 
     private func showOutlinePanel() {
@@ -4736,7 +4702,6 @@ class ContentViewController: NSViewController, NSSplitViewDelegate {
         // Restore to a reasonable width.
         let restored = max(240, min(cachedOutlineWidth, 520))
         splitView.setPosition(restored, ofDividerAt: 0)
-        outlineRevealButton?.isHidden = true
 
         splitView.needsLayout = true
         splitView.layoutSubtreeIfNeeded()
@@ -4762,7 +4727,6 @@ class ContentViewController: NSViewController, NSSplitViewDelegate {
 
             outlinePanelController.view.isHidden = true
             analysisViewController.view.isHidden = true
-            outlineRevealButton?.isHidden = true
 
             isOutlinePanelHidden = true
             isAnalysisPanelHidden = true
@@ -4808,11 +4772,6 @@ class ContentViewController: NSViewController, NSSplitViewDelegate {
         }
 
         updateOutlineRevealButtonVisibility()
-    }
-
-    @objc private func outlineRevealTapped(_ sender: Any?) {
-        // Always restore the outline panel (even if it was merely dragged nearly closed).
-        showOutlinePanel()
     }
 
     func toggleOutlinePanel() {
@@ -5004,17 +4963,6 @@ class ContentViewController: NSViewController, NSSplitViewDelegate {
         view.wantsLayer = true
         view.layer?.backgroundColor = theme.pageAround.cgColor
 
-        // Make the outline reveal button visible in all themes.
-        outlineRevealButton?.wantsLayer = true
-        outlineRevealButton?.layer?.masksToBounds = true
-        outlineRevealButton?.image?.isTemplate = true
-        if #available(macOS 10.14, *) {
-            outlineRevealButton?.contentTintColor = theme.textColor
-        }
-        outlineRevealButton?.layer?.borderWidth = 1
-        outlineRevealButton?.layer?.borderColor = theme.pageBorder.withAlphaComponent(0.9).cgColor
-        outlineRevealButton?.layer?.cornerRadius = 8
-        outlineRevealButton?.layer?.backgroundColor = theme.pageBackground.withAlphaComponent(0.75).cgColor
     }
 
     /// Notify both sidebars that the document has changed

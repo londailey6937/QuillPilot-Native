@@ -2009,6 +2009,84 @@ class EditorViewController: NSViewController {
         // This function is kept as a no-op stub to avoid breaking callers.
     }
 
+    /// One-shot recalculation of page-break spacer heights after import.
+    /// Called once after layout is stable so imported page breaks land at the correct position
+    /// regardless of the stored QPH height (which may have been computed under a different layout).
+    private func recalculatePageBreakSpacerHeightsOnce() {
+        guard let storage = textView.textStorage, storage.length > 0 else { return }
+        guard let layoutManager = textView.layoutManager, textView.textContainer != nil else { return }
+
+        // Ensure full layout so glyph geometry is available.
+        layoutManager.ensureLayout(forCharacterRange: NSRange(location: 0, length: storage.length))
+
+        let fullString = storage.string as NSString
+        let insets = currentTextInsetsForPagination()
+        let pHeight = pageHeight * editorZoom
+        let pGap: CGFloat = 20
+        let totalPageStride = pHeight + pGap
+        let textAreaHeight = max(1.0, pHeight - insets.top - insets.bottom)
+        let safetyBuffer: CGFloat = 8.0
+
+        var breakLocations: [Int] = []
+        storage.enumerateAttribute(.qpPageBreak, in: NSRange(location: 0, length: storage.length), options: []) { value, range, _ in
+            guard value != nil else { return }
+            breakLocations.append(range.location)
+        }
+
+        guard !breakLocations.isEmpty else { return }
+
+        // NOTE: We intentionally do NOT wrap this in storage.beginEditing()/endEditing().
+        // We only modify attachment objects in-place (reference types) and invalidate layout
+        // via the layout manager.  Calling endEditing() would trigger processEditing() which
+        // can cause AppKit to re-process attributes and strip Body Text paragraph indents.
+
+        for loc in breakLocations {
+            guard loc < storage.length else { continue }
+            let attrs = storage.attributes(at: loc, effectiveRange: nil)
+            guard let attachment = attrs[.attachment] as? NSTextAttachment else { continue }
+
+            // Find the glyph position of the character just before the break marker.
+            // We need a leading newline before the marker, so check location - 1.
+            let charBefore = max(0, loc - 1)
+            let glyphIndex = layoutManager.glyphIndexForCharacter(at: charBefore)
+            let rect = layoutManager.lineFragmentRect(forGlyphAt: glyphIndex, effectiveRange: nil)
+            guard rect.height > 0 else { continue }
+
+            let lineHeight = rect.height
+            var startY = rect.maxY
+
+            // If the char before the break is a newline (leading separator), add one line
+            if loc > 0 {
+                let ch = fullString.character(at: loc - 1)
+                let isNL = (ch == 0x0A || ch == 0x0D || ch == 0x2029 || ch == 0x2028)
+                if !isNL {
+                    startY += lineHeight
+                }
+            }
+
+            let pageIndex = floor(startY / totalPageStride)
+            let pageStartY = pageIndex * totalPageStride
+            let offsetWithinPage = max(0, startY - pageStartY)
+
+            var newHeight: CGFloat = 1.0
+            if offsetWithinPage < textAreaHeight {
+                let available = textAreaHeight - offsetWithinPage
+                newHeight = max(1.0, min(textAreaHeight, available - safetyBuffer))
+            }
+
+            let oldHeight = attachment.bounds.height
+            if abs(newHeight - oldHeight) > 1.0 {
+                debugLog("📄 Recalc break at \(loc): old=\(oldHeight.rounded()) new=\(newHeight.rounded())")
+                let cell = SpacerAttachmentCell(height: newHeight)
+                attachment.attachmentCell = cell
+                attachment.bounds = NSRect(x: 0, y: 0, width: 0.1, height: newHeight)
+                // Invalidate the layout for this character so the new height takes effect.
+                let charRange = NSRange(location: loc, length: 1)
+                layoutManager.invalidateLayout(forCharacterRange: charRange, actualCharacterRange: nil)
+            }
+        }
+    }
+
     private func ensurePageCountForCharacterLocation(_ location: Int) {
         guard let layoutManager = textView.layoutManager,
               let textContainer = textView.textContainer,
@@ -4573,11 +4651,13 @@ class EditorViewController: NSViewController {
 
         clampImportedImageAttachmentsToSafeBounds()
 
-        repairBodyTextIndentAfterLoadIfNeeded()
-
         applyDefaultTypingAttributes()
         neutralizePageBreakParagraphStyles()
         updatePageLayout()
+        recalculatePageBreakSpacerHeightsOnce()
+        updatePageLayout()
+        // Repair body-text indent AFTER all page-break processing.
+        repairBodyTextIndentAfterLoadIfNeeded()
         // On reopen/import, the scroll view may not have its final width during the first layout pass.
         // Center immediately, then once more on the next runloop so the page doesn't appear left-justified
         // until the user triggers another layout change (e.g., by clicking a style).
@@ -4671,6 +4751,14 @@ class EditorViewController: NSViewController {
             DispatchQueue.main.async { [weak self] in
                 debugLog("📥 Import: running deferred updatePageLayout (large doc)")
                 self?.updatePageLayout()
+                self?.recalculatePageBreakSpacerHeightsOnce()
+                self?.updatePageLayout()
+                // Repair body-text indent AFTER all page-break processing.
+                // Page-break recalculation can trigger AppKit text system
+                // side-effects that strip paragraph indents.
+                self?.repairBodyTextIndentAfterLoadIfNeeded()
+
+
                 self?.updatePageCentering(ensureSelectionVisible: false)
                 self?.scrollToTop()
                 if repairTOCIndexFormatting {
@@ -4683,10 +4771,15 @@ class EditorViewController: NSViewController {
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
                     self?.delegate?.resumeAnalysisAfterLayout()
                 }
+
             }
         } else {
             debugLog("📥 Import: running immediate updatePageLayout")
             updatePageLayout()
+            recalculatePageBreakSpacerHeightsOnce()
+            updatePageLayout()
+            // Repair body-text indent AFTER all page-break processing.
+            repairBodyTextIndentAfterLoadIfNeeded()
             updatePageCentering(ensureSelectionVisible: false)
             scrollToTop()
             if repairTOCIndexFormatting {
@@ -11976,6 +12069,7 @@ extension EditorViewController: NSTextViewDelegate {
         pendingListIndentTargetLevel = nil
 
         showImageControlsIfNeeded()
+
 
         // If format painter is active and user makes a selection, apply the formatting
         if formatPainterActive,

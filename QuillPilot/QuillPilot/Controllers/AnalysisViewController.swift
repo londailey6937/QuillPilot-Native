@@ -1423,7 +1423,7 @@ class AnalysisViewController: NSViewController, NSWindowDelegate {
         // Simple background, no layer manipulation
         contentStack.wantsLayer = true
         if let layer = contentStack.layer {
-            layer.backgroundColor = currentTheme.toolbarBackground.cgColor
+            layer.backgroundColor = currentTheme.outlineBackground.cgColor
             layer.cornerRadius = 12
             layer.masksToBounds = true
         }
@@ -2067,17 +2067,19 @@ class AnalysisViewController: NSViewController, NSWindowDelegate {
 
     func applyTheme(_ theme: AppTheme) {
         currentTheme = theme
-        let panelBackground = isOutlinePanel ? theme.outlineBackground : theme.toolbarBackground
+        // Both sidebar panels (outline on left, analysis on right) share the same
+        // background so they look balanced in every theme.
+        let panelBackground = theme.outlineBackground
 
         // Ensure all views are layer-backed and apply backgrounds
         view.wantsLayer = true
         view.layer?.backgroundColor = panelBackground.cgColor
 
         menuSidebar?.wantsLayer = true
-        menuSidebar?.layer?.backgroundColor = theme.toolbarBackground.cgColor
+        menuSidebar?.layer?.backgroundColor = panelBackground.cgColor
 
         menuSeparator?.wantsLayer = true
-        menuSeparator?.layer?.backgroundColor = theme.toolbarBackground.withAlphaComponent(0.3).cgColor
+        menuSeparator?.layer?.backgroundColor = panelBackground.withAlphaComponent(0.3).cgColor
 
         scrollContainer?.wantsLayer = true
         scrollContainer?.layer?.backgroundColor = panelBackground.cgColor

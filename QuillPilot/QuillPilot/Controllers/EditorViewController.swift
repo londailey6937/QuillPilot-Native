@@ -9021,21 +9021,26 @@ case "Book Subtitle":
                 return
             }
 
-            // Only treat a stanza as outline-worthy if it is exactly four lines (quatrain).
-            guard stanzaLineCount == 4 else {
-                stanzaStart = nil
-                stanzaEnd = nil
-                stanzaFirstParagraphRange = nil
-                stanzaSawVerseLine = false
-                stanzaLineCount = 0
-                return
-            }
-
             stanzaIndex += 1
             let range = NSRange(location: start, length: max(0, end - start))
             let pageIndex = pageIndexForParagraph(firstPara)
 
-            let title = "Stanza \(stanzaIndex) — Quatrain"
+            let stanzaType: String?
+            switch stanzaLineCount {
+            case 2: stanzaType = "Couplet"
+            case 3: stanzaType = "Tercet"
+            case 4: stanzaType = "Quatrain"
+            default: stanzaType = nil
+            }
+
+            let title: String
+            if let stanzaType {
+                title = "Stanza \(stanzaIndex) — \(stanzaType)"
+            } else if stanzaLineCount > 0 {
+                title = "Stanza \(stanzaIndex) — \(stanzaLineCount) lines"
+            } else {
+                title = "Stanza \(stanzaIndex)"
+            }
 
             results.append(OutlineEntry(title: title, level: 1, range: range, page: pageIndex, styleName: "Poetry — Stanza"))
 

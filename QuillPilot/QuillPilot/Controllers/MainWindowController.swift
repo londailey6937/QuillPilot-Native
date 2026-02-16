@@ -7110,7 +7110,7 @@ private enum DocxTextExtractor {
                     case "Dialogue": mappedName = "Dialogue"
                     // Poetry styles (map stripped-space IDs back to canonical names)
                     case "Verse": mappedName = "Verse"
-                    case "Stanza", "Poem", "PoetryVerse", "PoetryStanza": mappedName = "Verse"
+                    case "Poem", "PoetryVerse", "PoetryStanza": mappedName = "Verse"
                     case "PoemTitle": mappedName = "Poem Title"
                     case "PoetName": mappedName = "Poet Name"
                     case "PoetryTitle": mappedName = "Poetry — Title"

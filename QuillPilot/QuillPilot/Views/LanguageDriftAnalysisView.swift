@@ -326,14 +326,14 @@ class LanguageDriftAnalysisView: NSView {
             )
         }
 
-        // Draw scene labels
+        // Draw chapter labels
         for metric in metrics {
             let x = rect.minX + (CGFloat(metric.chapter - minChapter) / CGFloat(chapterRange)) * rect.width
             let labelAttr: [NSAttributedString.Key: Any] = [
                 .font: NSFont.systemFont(ofSize: 9),
                 .foregroundColor: textColor.withAlphaComponent(0.5)
             ]
-            "Sc \(metric.chapter)".draw(at: NSPoint(x: x - 10, y: rect.minY - 18), withAttributes: labelAttr)
+            "Ch \(metric.chapter)".draw(at: NSPoint(x: x - 10, y: rect.minY - 18), withAttributes: labelAttr)
         }
     }
 

@@ -129,7 +129,7 @@ struct BeliefShiftMatrixView: View {
         VStack(spacing: 0) {
             // Table header
             HStack(spacing: 0) {
-                tableHeaderCell("Scene", width: 80)
+                tableHeaderCell("Chapter", width: 80)
                 tableHeaderCell("Core Belief", width: nil)
                 tableHeaderCell("Evidence", width: nil)
                 tableHeaderCell("Counterpressure", width: nil)
@@ -141,7 +141,7 @@ struct BeliefShiftMatrixView: View {
                 HStack(spacing: 0) {
                     tableCell(
                         VStack(alignment: .leading, spacing: 4) {
-                            Text("Sc \(entry.chapter)")
+                            Text("Ch \(entry.chapter)")
                                 .font(.system(.body, design: .rounded))
                                 .fontWeight(.semibold)
                                 .foregroundColor(.primary)

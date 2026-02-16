@@ -233,7 +233,7 @@ class InternalExternalAlignmentView: NSView {
             let outerPt = outerPoints[index]
 
             // Inner point
-            drawDataPoint(at: innerPt, color: innerColor, label: "Sc \(point.chapter)", detail: point.innerLabel, textColor: textColor, isDarkMode: isDarkMode, isInner: true)
+            drawDataPoint(at: innerPt, color: innerColor, label: "Ch \(point.chapter)", detail: point.innerLabel, textColor: textColor, isDarkMode: isDarkMode, isInner: true)
 
             // Outer point
             drawDataPoint(at: outerPt, color: outerColor, label: nil, detail: point.outerLabel, textColor: textColor, isDarkMode: isDarkMode, isInner: false)

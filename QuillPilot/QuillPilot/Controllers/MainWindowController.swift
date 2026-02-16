@@ -1377,11 +1377,12 @@ extension MainWindowController: FormattingToolbarDelegate {
     }
 
     func formattingToolbarDidOpenStyleEditor(_ toolbar: FormattingToolbar) {
-        if styleEditorWindow == nil {
-            styleEditorWindow = StyleEditorWindowController(editor: self)
-        }
+        // Always create a fresh Style Editor so it reflects the current template and style overrides.
+        styleEditorWindow = StyleEditorWindowController(editor: self)
         guard let sheet = styleEditorWindow?.window, let host = window else { return }
-        host.beginSheet(sheet, completionHandler: nil)
+        host.beginSheet(sheet) { [weak self] _ in
+            self?.styleEditorWindow = nil
+        }
     }
 }
 
@@ -5312,13 +5313,13 @@ class OutlineViewController: NSViewController {
 
         let toggleImage: NSImage
         if #available(macOS 11.0, *) {
-            let base = NSImage(systemSymbolName: "square.and.pencil", accessibilityDescription: "Toggle Outline") ?? NSImage()
+            let base = NSImage(systemSymbolName: "square", accessibilityDescription: "Toggle Outline") ?? NSImage()
             let config = NSImage.SymbolConfiguration(pointSize: 16, weight: .regular)
             toggleImage = base.withSymbolConfiguration(config) ?? base
         } else {
             toggleImage = NSImage(size: NSSize(width: 18, height: 18))
             toggleImage.lockFocus()
-            NSString(string: "✎").draw(at: NSPoint(x: 2, y: 1), withAttributes: [.font: NSFont.systemFont(ofSize: 14)])
+            NSString(string: "□").draw(at: NSPoint(x: 2, y: 1), withAttributes: [.font: NSFont.systemFont(ofSize: 14)])
             toggleImage.unlockFocus()
         }
 

@@ -325,7 +325,15 @@ final class StyleEditorViewController: NSViewController {
         let styleNames = StyleCatalog.shared.styleNames(for: templateName)
         stylePopup.removeAllItems()
         stylePopup.addItems(withTitles: styleNames)
-        if stylePopup.itemTitles.contains("Body Text") {
+
+        let isPoetry = templateName.lowercased().contains("poetry")
+        let isScreenplay = templateName.lowercased().contains("screenplay")
+
+        if isPoetry, stylePopup.itemTitles.contains("Verse") {
+            stylePopup.selectItem(withTitle: "Verse")
+        } else if isScreenplay, stylePopup.itemTitles.contains("Action") {
+            stylePopup.selectItem(withTitle: "Action")
+        } else if stylePopup.itemTitles.contains("Body Text") {
             stylePopup.selectItem(withTitle: "Body Text")
         } else if let first = stylePopup.itemTitles.first {
             stylePopup.selectItem(withTitle: first)

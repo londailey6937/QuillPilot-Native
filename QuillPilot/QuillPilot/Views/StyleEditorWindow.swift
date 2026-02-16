@@ -479,7 +479,9 @@ final class StyleEditorViewController: NSViewController {
     }
 
     @objc private func applyTapped() {
-        guard let name = stylePopup.titleOfSelectedItem, let def = buildDefinition() else { return }
+        guard let name = stylePopup.titleOfSelectedItem, let def = buildDefinition() else {
+            return
+        }
         StyleCatalog.shared.saveOverride(def, for: name)
         updatePreview(with: def)
         editor?.applyStyleFromEditor(named: name)

@@ -317,17 +317,19 @@ final class StyleCatalog {
     private func loadOverrides(for template: String) -> [String: StyleDefinition] {
         let key = overridesKey(for: template)
         guard let data = defaults.data(forKey: key) else { return [:] }
-        if let decoded = try? PropertyListDecoder().decode([String: StyleDefinition].self, from: data) {
-            return decoded
+        do {
+            return try PropertyListDecoder().decode([String: StyleDefinition].self, from: data)
+        } catch {
+            return [:]
         }
-        return [:]
     }
 
     private func persist(overrides: [String: StyleDefinition], for template: String) {
         let key = overridesKey(for: template)
-        if let data = try? PropertyListEncoder().encode(overrides) {
+        do {
+            let data = try PropertyListEncoder().encode(overrides)
             defaults.set(data, forKey: key)
-        }
+        } catch { }
     }
 
     private static func buildTemplates() -> [StyleTemplate] {

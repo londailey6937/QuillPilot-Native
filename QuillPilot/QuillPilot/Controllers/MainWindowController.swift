@@ -4661,6 +4661,13 @@ class ContentViewController: NSViewController, NSSplitViewDelegate {
             self?.performAnalysis()
         }
 
+        // Provide outline entries so chapter-aware visualizations
+        // (Failure Pattern Charts, Thematic Resonance Map, etc.)
+        // can discover the actual chapter count.
+        analysisViewController.getOutlineEntriesCallback = { [weak self] in
+            self?.editorViewController.buildOutlineEntries() ?? []
+        }
+
         // Encourage symmetric sidebars so the editor column (and page) stays centered in the window.
         let equalSidebarWidths = outlinePanelController.view.widthAnchor.constraint(equalTo: analysisViewController.view.widthAnchor)
         equalSidebarWidths.priority = .defaultHigh

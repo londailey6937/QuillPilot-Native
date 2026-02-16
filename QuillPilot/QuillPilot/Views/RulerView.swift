@@ -102,9 +102,12 @@ class EnhancedRulerView: NSView {
             height: 10
         )
 
-        // First-line indent handle at top
+        // First-line indent handle at top.
+        // The paragraph style's firstLineHeadIndent operates in screen pixels
+        // (inside the text container, which is already frame-scaled by zoom),
+        // so we only zoom the margin offset, not the indent itself.
         firstLineIndentHandle.frame = NSRect(
-            x: centerOffset + ((leftMargin + firstLineIndent) * rulerZoom) - 6,
+            x: centerOffset + (leftMargin * rulerZoom) + firstLineIndent - 6,
             y: 2,
             width: 12,
             height: 10
@@ -287,8 +290,10 @@ class MarginHandle: NSView {
             ruler.delegate?.rulerView(ruler, didChangeRightMargin: newMargin)
 
         case .firstLineIndent:
+            // firstLineIndent is in screen pixels (not zoom-scaled), so use
+            // raw deltaX instead of deltaPoints for consistent alignment.
             let maxIndent = ruler.pageWidth - ruler.leftMargin - ruler.rightMargin - 36
-            let newIndent = max(-ruler.leftMargin, min(maxIndent, dragStartMargin + deltaPoints))
+            let newIndent = max(-ruler.leftMargin, min(maxIndent, dragStartMargin + deltaX))
             ruler.firstLineIndent = newIndent
             ruler.delegate?.rulerView(ruler, didChangeFirstLineIndent: newIndent)
         }

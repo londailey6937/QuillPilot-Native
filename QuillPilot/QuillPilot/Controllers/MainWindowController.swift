@@ -5178,9 +5178,14 @@ class ContentViewController: NSViewController, NSSplitViewDelegate {
             let analysisEngine = AnalysisEngine()
 
             // Convert outline entries for AnalysisEngine. Always pass an array (empty means no outline yet).
-            let analysisOutlineEntries: [DecisionBeliefLoopAnalyzer.OutlineEntry] = editorOutlines.map {
-                DecisionBeliefLoopAnalyzer.OutlineEntry(title: $0.title, level: $0.level, range: $0.range, page: $0.page)
-            }
+            // Exclude structural entries (TOC, Index, Glossary, Appendix) that are level 1
+            // but are not actual chapters — otherwise they inflate the chapter count.
+            let nonChapterStyles: Set<String> = ["TOC Title", "Index Title", "Glossary Title", "Appendix Title"]
+            let analysisOutlineEntries: [DecisionBeliefLoopAnalyzer.OutlineEntry] = editorOutlines
+                .filter { !nonChapterStyles.contains($0.styleName ?? "") }
+                .map {
+                    DecisionBeliefLoopAnalyzer.OutlineEntry(title: $0.title, level: $0.level, range: $0.range, page: $0.page)
+                }
 
             let results = analysisEngine.analyzeText(
                 text,

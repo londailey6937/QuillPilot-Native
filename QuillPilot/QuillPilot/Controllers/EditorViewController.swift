@@ -8999,7 +8999,6 @@ case "Book Subtitle":
 
         var results: [OutlineEntry] = []
         var stanzaIndex = 0
-        var sawExplicitStanzaBreak = false
 
         var stanzaStart: Int?
         var stanzaEnd: Int?
@@ -9072,13 +9071,14 @@ case "Book Subtitle":
             }
 
             if isStanzaBreak {
-                sawExplicitStanzaBreak = true
                 finalizeStanzaIfNeeded()
                 location = NSMaxRange(paragraphRange)
                 continue
             }
 
             if isBlank {
+                // Blank line separates stanzas — finalize the current one.
+                finalizeStanzaIfNeeded()
                 location = NSMaxRange(paragraphRange)
                 continue
             }
@@ -9099,7 +9099,6 @@ case "Book Subtitle":
         }
 
         finalizeStanzaIfNeeded()
-        guard sawExplicitStanzaBreak else { return [] }
         return results
     }
 

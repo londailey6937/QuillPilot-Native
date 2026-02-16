@@ -2959,7 +2959,8 @@ extension AnalysisViewController {
             // Derive chapter count from existing data or outline, fall back to 6
             let existingChapterCount = characterDrifts.first?.metrics.count
             let outlineEntries = getOutlineEntriesCallback?()
-            let outlineChapters = outlineEntries?.filter { $0.level == 1 }.count
+            let nonChapterStyles: Set<String> = ["TOC Title", "Index Title", "Glossary Title", "Appendix Title"]
+            let outlineChapters = outlineEntries?.filter { $0.level == 1 && !nonChapterStyles.contains($0.styleName ?? "") }.count
             let chapterCount = existingChapterCount ?? (outlineChapters ?? 6)
 
             for name in missingNames {
@@ -3183,8 +3184,10 @@ extension AnalysisViewController {
         let outlineEntries = getOutlineEntriesCallback?()
         let actualChapters: [Int]
         if let entries = outlineEntries, !entries.isEmpty {
-            // Look for level 1 entries (chapters)
-            let chapterEntries = entries.filter { $0.level == 1 }
+            // Look for level 1 entries that are actual chapters/headings,
+            // excluding structural entries (TOC, Index, Glossary, Appendix).
+            let nonChapterStyles: Set<String> = ["TOC Title", "Index Title", "Glossary Title", "Appendix Title"]
+            let chapterEntries = entries.filter { $0.level == 1 && !nonChapterStyles.contains($0.styleName ?? "") }
             if !chapterEntries.isEmpty {
                 actualChapters = Array(1...chapterEntries.count)
             } else {
@@ -3370,8 +3373,10 @@ extension AnalysisViewController {
         let outlineEntries = getOutlineEntriesCallback?()
         let actualChapters: [Int]
         if let entries = outlineEntries, !entries.isEmpty {
-            // Look for level 1 entries (chapters)
-            let chapterEntries = entries.filter { $0.level == 1 }
+            // Look for level 1 entries that are actual chapters/headings,
+            // excluding structural entries (TOC, Index, Glossary, Appendix).
+            let nonChapterStyles: Set<String> = ["TOC Title", "Index Title", "Glossary Title", "Appendix Title"]
+            let chapterEntries = entries.filter { $0.level == 1 && !nonChapterStyles.contains($0.styleName ?? "") }
             if !chapterEntries.isEmpty {
                 actualChapters = Array(1...chapterEntries.count)
             } else {

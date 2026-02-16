@@ -6,9 +6,20 @@
 	objectVersion = 77;
 	objects = {
 
+/* Begin PBXContainerItemProxy section */
+		AA0001092F12345600000009 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 95F564FD2EED0D890079E9C2 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 95F565042EED0D890079E9C2;
+			remoteInfo = QuillPilot;
+		};
+/* End PBXContainerItemProxy section */
+
 /* Begin PBXFileReference section */
 		95D4E7942EED15A300D9FD96 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		95F565052EED0D890079E9C2 /* Quill Pilot.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "Quill Pilot.app"; sourceTree = BUILT_PRODUCTS_DIR; };
+		AA0001012F12345600000001 /* QuillPilotTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = QuillPilotTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -17,10 +28,22 @@
 			path = QuillPilot;
 			sourceTree = "<group>";
 		};
+		AA0001022F12345600000002 /* QuillPilotTests */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = QuillPilotTests;
+			sourceTree = "<group>";
+		};
 /* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXFrameworksBuildPhase section */
 		95F565022EED0D890079E9C2 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		AA0001032F12345600000003 /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -35,6 +58,7 @@
 			children = (
 				95D4E7942EED15A300D9FD96 /* Info.plist */,
 				95F565072EED0D890079E9C2 /* QuillPilot */,
+				AA0001022F12345600000002 /* QuillPilotTests */,
 				95F565062EED0D890079E9C2 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -43,6 +67,7 @@
 			isa = PBXGroup;
 			children = (
 				95F565052EED0D890079E9C2 /* Quill Pilot.app */,
+				AA0001012F12345600000001 /* QuillPilotTests.xctest */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -73,6 +98,28 @@
 			productReference = 95F565052EED0D890079E9C2 /* Quill Pilot.app */;
 			productType = "com.apple.product-type.application";
 		};
+		AA0001052F12345600000005 /* QuillPilotTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = AA0001082F12345600000008 /* Build configuration list for PBXNativeTarget "QuillPilotTests" */;
+			buildPhases = (
+				AA0001042F12345600000004 /* Sources */,
+				AA0001032F12345600000003 /* Frameworks */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				AA00010A2F1234560000000A /* PBXTargetDependency */,
+			);
+			fileSystemSynchronizedGroups = (
+				AA0001022F12345600000002 /* QuillPilotTests */,
+			);
+			name = QuillPilotTests;
+			packageProductDependencies = (
+			);
+			productName = QuillPilotTests;
+			productReference = AA0001012F12345600000001 /* QuillPilotTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
@@ -85,6 +132,10 @@
 				TargetAttributes = {
 					95F565042EED0D890079E9C2 = {
 						CreatedOnToolsVersion = 26.1.1;
+					};
+					AA0001052F12345600000005 = {
+						CreatedOnToolsVersion = 26.2;
+						TestTargetID = 95F565042EED0D890079E9C2;
 					};
 				};
 			};
@@ -103,6 +154,7 @@
 			projectRoot = "";
 			targets = (
 				95F565042EED0D890079E9C2 /* QuillPilot */,
+				AA0001052F12345600000005 /* QuillPilotTests */,
 			);
 		};
 /* End PBXProject section */
@@ -149,7 +201,22 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		AA0001042F12345600000004 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		AA00010A2F1234560000000A /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 95F565042EED0D890079E9C2 /* QuillPilot */;
+			targetProxy = AA0001092F12345600000009 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
 
 /* Begin XCBuildConfiguration section */
 		95F565112EED0D8B0079E9C2 /* Debug */ = {
@@ -357,6 +424,48 @@
 			};
 			name = Release;
 		};
+		AA0001062F12345600000006 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEAD_CODE_STRIPPING = YES;
+				DEVELOPMENT_TEAM = 7YD53MV78N;
+				GENERATE_INFOPLIST_FILE = YES;
+				MACOSX_DEPLOYMENT_TARGET = 13.5;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = ai.quillpilot.QuillPilotTests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_VERSION = 5.0;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Quill Pilot.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/Quill Pilot";
+			};
+			name = Debug;
+		};
+		AA0001072F12345600000007 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEAD_CODE_STRIPPING = YES;
+				DEVELOPMENT_TEAM = 7YD53MV78N;
+				GENERATE_INFOPLIST_FILE = YES;
+				MACOSX_DEPLOYMENT_TARGET = 13.5;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = ai.quillpilot.QuillPilotTests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_VERSION = 5.0;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Quill Pilot.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/Quill Pilot";
+			};
+			name = Release;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -374,6 +483,15 @@
 			buildConfigurations = (
 				95F565142EED0D8B0079E9C2 /* Debug */,
 				95F565152EED0D8B0079E9C2 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		AA0001082F12345600000008 /* Build configuration list for PBXNativeTarget "QuillPilotTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				AA0001062F12345600000006 /* Debug */,
+				AA0001072F12345600000007 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;

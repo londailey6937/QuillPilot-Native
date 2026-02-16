@@ -36,6 +36,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var windowMenu: NSMenu?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        // When running under XCTest, skip full UI initialization to prevent
+        // the test host from crashing during unit tests.
+        let isRunningTests = NSClassFromString("XCTestCase") != nil
+            || ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil
+            || ProcessInfo.processInfo.environment["XCTestBundlePath"] != nil
+        if isRunningTests {
+            return
+        }
+
         setupMenuBar()
         NSApp.setActivationPolicy(.regular)
 

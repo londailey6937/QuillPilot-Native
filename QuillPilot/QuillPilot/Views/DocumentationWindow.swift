@@ -979,7 +979,7 @@ class DocumentationWindowController: NSWindowController, NSWindowDelegate, NSOut
         content.append(makeSubheading("Organization", color: headingColor))
         content.append(makeBody("""
 • Navigator → 📖 Story Outline for chapter navigation
-• Navigator → 🎬 Scenes for scene metadata
+• Navigator → 🎬 Scenes for scene metadata (Screenplay templates only)
 • Navigator → 👥 Characters for character profiles
 """, color: bodyColor))
 
@@ -1399,9 +1399,9 @@ Best for:
     """, color: bodyColor))
         content.append(makeNewline())
 
-        content.append(makeHeading("Scenes", color: headingColor))
+        content.append(makeHeading("Scenes (Screenplay Only)", color: headingColor))
         content.append(makeBody("""
-    Access: Click Scenes in the Navigator
+    Access: Click Scenes in the Navigator (visible in Screenplay templates only)
 
     Scenes are optional story metadata (index cards) you create manually.
     See also: Help → Scenes

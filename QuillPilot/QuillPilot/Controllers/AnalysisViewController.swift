@@ -442,7 +442,9 @@ class AnalysisViewController: NSViewController, NSWindowDelegate {
 
         var buttonCount = 0
         if isOutlinePanel {
-            let categories: [NavigatorCategory] = isPoetry ? [] : NavigatorCategory.allCases
+            let categories: [NavigatorCategory] = isPoetry ? [] : NavigatorCategory.allCases.filter {
+                $0 != .scenes || StyleCatalog.shared.isScreenplayTemplate
+            }
             buttonCount += categories.count
             if !isPoetry { buttonCount += 2 } // Notes + Submission Tracker
         } else {
@@ -471,7 +473,10 @@ class AnalysisViewController: NSViewController, NSWindowDelegate {
 
         if isOutlinePanel {
             // Poetry: hide the navigator chrome entirely (more writing/outline space)
-            let categories: [NavigatorCategory] = isPoetry ? [] : NavigatorCategory.allCases
+            // Scenes button is screenplay-only; hide it for prose templates.
+            let categories: [NavigatorCategory] = isPoetry ? [] : NavigatorCategory.allCases.filter {
+                $0 != .scenes || StyleCatalog.shared.isScreenplayTemplate
+            }
             for category in categories {
                 let button = SidebarButton(frame: NSRect(x: 0, y: 0, width: buttonSize, height: buttonSize))
 

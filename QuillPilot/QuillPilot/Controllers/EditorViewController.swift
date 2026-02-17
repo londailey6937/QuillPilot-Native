@@ -395,6 +395,7 @@ private final class AttachmentClickableTextView: NSTextView {
             storage.endEditing()
             didChangeText()
             undoManager?.setActionName("Delete Section Break")
+            NotificationCenter.default.post(name: Notification.Name("QuillPilotSectionBreaksDidChange"), object: nil)
             return true
         }
         return false
@@ -6254,6 +6255,7 @@ class EditorViewController: NSViewController {
 
         textView.setSelectedRange(NSRange(location: location + 1, length: 0))
         delegate?.textDidChange()
+        NotificationCenter.default.post(name: Notification.Name("QuillPilotSectionBreaksDidChange"), object: nil)
     }
 
     private func updateSectionBreak(in storage: NSTextStorage, range: NSRange, with section: SectionBreak) {
@@ -6271,6 +6273,7 @@ class EditorViewController: NSViewController {
         storage.replaceCharacters(in: range, with: marker)
         storage.endEditing()
         delegate?.textDidChange()
+        NotificationCenter.default.post(name: Notification.Name("QuillPilotSectionBreaksDidChange"), object: nil)
     }
 
     private func removeSectionBreak(in storage: NSTextStorage, range: NSRange) {
@@ -6278,6 +6281,7 @@ class EditorViewController: NSViewController {
         storage.deleteCharacters(in: range)
         storage.endEditing()
         delegate?.textDidChange()
+        NotificationCenter.default.post(name: Notification.Name("QuillPilotSectionBreaksDidChange"), object: nil)
     }
 
     private func sectionBreak(atOrBefore location: Int, in storage: NSTextStorage) -> (range: NSRange, section: SectionBreak)? {

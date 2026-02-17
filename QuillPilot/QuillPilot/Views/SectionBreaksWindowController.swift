@@ -14,6 +14,7 @@ final class SectionBreaksWindowController: NSWindowController, NSTableViewDataSo
     private var closeButton: NSButton!
 
     private var themeObserver: NSObjectProtocol?
+    private var sectionBreakObserver: NSObjectProtocol?
 
     private final class ThemedTableRowView: NSTableRowView {
         override func drawSelection(in dirtyRect: NSRect) {
@@ -56,7 +57,7 @@ final class SectionBreaksWindowController: NSWindowController, NSTableViewDataSo
             backing: .buffered,
             defer: false
         )
-        window.title = "Section Breaks"
+        window.title = "Section Break Manager"
         window.isReleasedWhenClosed = false
 
         super.init(window: window)
@@ -74,6 +75,16 @@ final class SectionBreaksWindowController: NSWindowController, NSTableViewDataSo
                 self?.applyTheme()
             }
         }
+
+        sectionBreakObserver = NotificationCenter.default.addObserver(
+            forName: Notification.Name("QuillPilotSectionBreaksDidChange"),
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                self?.reload()
+            }
+        }
     }
 
     required init?(coder: NSCoder) {
@@ -83,6 +94,9 @@ final class SectionBreaksWindowController: NSWindowController, NSTableViewDataSo
     deinit {
         if let themeObserver {
             NotificationCenter.default.removeObserver(themeObserver)
+        }
+        if let sectionBreakObserver {
+            NotificationCenter.default.removeObserver(sectionBreakObserver)
         }
     }
 
@@ -120,7 +134,7 @@ final class SectionBreaksWindowController: NSWindowController, NSTableViewDataSo
         tableView.usesAlternatingRowBackgroundColors = false
         tableView.allowsEmptySelection = true
         tableView.allowsMultipleSelection = false
-        tableView.selectionHighlightStyle = .none
+        tableView.selectionHighlightStyle = .regular
         tableView.columnAutoresizingStyle = .lastColumnOnlyAutoresizingStyle
         tableView.intercellSpacing = NSSize(width: 10, height: 6)
         tableView.delegate = self

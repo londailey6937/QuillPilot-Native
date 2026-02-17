@@ -96,8 +96,16 @@ final class StyleEditorViewController: NSViewController {
             "Helvetica",
             "Georgia",
             "Courier New",
-            "SF Pro"
+            "SF Pro",
+            "Palatino",
+            "Baskerville",
+            "Garamond",
+            "Hoefler Text",
+            "Bradley Hand",
+            "Snell Roundhand"
         ])
+        fontPopup.target = self
+        fontPopup.action = #selector(fontChanged)
         fontPopup.qpApplyDropdownBorder(theme: theme)
         fontPopup.focusRingType = .none
 
@@ -446,6 +454,14 @@ final class StyleEditorViewController: NSViewController {
     }
 
     @objc private func styleChanged() {
+        loadCurrentStyle()
+    }
+
+    @objc private func fontChanged() {
+        guard let selectedFont = fontPopup.titleOfSelectedItem else { return }
+        // Propagate the selected font family to every style in the current template.
+        StyleCatalog.shared.setFontFamilyForAllStyles(selectedFont)
+        // Reload the current style so the preview and fields reflect the change.
         loadCurrentStyle()
     }
 

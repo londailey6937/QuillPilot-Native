@@ -2255,71 +2255,113 @@ class EditorViewController: NSViewController {
     ///   - caseSensitive: Whether the search should be case sensitive
     ///   - wholeWords: Whether to match whole words only
     /// - Returns: true if a match was found, false otherwise
+    /// Tracks the character position where the last successful find ended, so
+    /// successive Find Next / Find Previous calls advance reliably even when
+    /// layout or pagination restores a stale selection between clicks.
+    private var lastFindEnd: Int?
+    /// Remembers the last search term so we can reset the anchor when the user
+    /// types a new query.
+    private var lastFindTerm: String?
+
+    /// Resets the tracked find position (call when closing the search panel).
+    func resetFindState() {
+        lastFindEnd = nil
+        lastFindTerm = nil
+    }
+
     @discardableResult
     func findNext(_ searchText: String, forward: Bool = true, caseSensitive: Bool = false, wholeWords: Bool = false) -> Bool {
         guard !searchText.isEmpty else { return false }
 
-        let nsText = textView.string as NSString
-        let textLength = nsText.length
-        let currentRange = textView.selectedRange()
-        var options: String.CompareOptions = forward ? [] : .backwards
-
-        if !caseSensitive {
-            options.insert(.caseInsensitive)
+        // Reset anchor when the search term changes so a new query starts
+        // from the current cursor position.
+        if searchText != lastFindTerm {
+            lastFindEnd = nil
+            lastFindTerm = searchText
         }
 
+        let nsText = textView.string as NSString
+        let textLength = nsText.length
+        guard textLength > 0 else { return false }
+
+        var options: String.CompareOptions = forward ? [] : .backwards
+        if !caseSensitive { options.insert(.caseInsensitive) }
+
+        // Determine the anchor from which to begin this search.
+        // Prefer the tracked lastFindEnd so layout-driven selection restoration
+        // cannot reset our position.
+        let currentRange = textView.selectedRange()
+        let anchor: Int
+        if let saved = lastFindEnd {
+            anchor = min(saved, textLength)
+        } else if forward {
+            anchor = min(currentRange.location + currentRange.length, textLength)
+        } else {
+            anchor = min(currentRange.location, textLength)
+        }
+
+        /// Search within `range`, advancing past non-whole-word hits while
+        /// staying inside the original bounds.
         func findMatch(in range: NSRange) -> NSRange? {
+            let rangeEnd = NSMaxRange(range)
             var searchRange = range
             while searchRange.length > 0 {
-                let foundRange = nsText.range(of: searchText, options: options, range: searchRange)
-                if foundRange.location == NSNotFound {
-                    return nil
-                }
+                let found = nsText.range(of: searchText, options: options, range: searchRange)
+                guard found.location != NSNotFound else { return nil }
 
-                if !wholeWords || isWholeWordMatch(foundRange, in: nsText) {
-                    return foundRange
+                if !wholeWords || isWholeWordMatch(found, in: nsText) {
+                    return found
                 }
-
+                // Advance past non-whole-word hit, clamped to the original range.
                 if options.contains(.backwards) {
-                    let newLength = foundRange.location
-                    searchRange = NSRange(location: 0, length: max(0, newLength))
+                    let newLen = found.location - range.location
+                    searchRange = NSRange(location: range.location, length: max(0, newLen))
                 } else {
-                    let nextLocation = foundRange.location + foundRange.length
-                    searchRange = NSRange(location: nextLocation, length: max(0, textLength - nextLocation))
+                    let next = found.location + found.length
+                    searchRange = NSRange(location: next, length: max(0, rangeEnd - next))
                 }
             }
             return nil
         }
 
-        let searchStart = forward ? (currentRange.location + currentRange.length) : 0
-        let searchLength = forward ? max(0, textLength - searchStart) : currentRange.location
-        let primaryRange = NSRange(location: searchStart, length: searchLength)
-
-        if let foundRange = findMatch(in: primaryRange) {
-            textView.setSelectedRange(foundRange)
-            textView.scrollRangeToVisible(foundRange)
-            return true
+        func selectAndScroll(_ range: NSRange) {
+            lastFindEnd = forward ? NSMaxRange(range) : range.location
+            textView.setSelectedRange(range)
+            textView.scrollRangeToVisible(range)
         }
 
-        // Wrap around if nothing found
-        if forward && searchStart > 0 {
-            let wrapRange = NSRange(location: 0, length: min(textLength, currentRange.location))
-            if let wrappedRange = findMatch(in: wrapRange) {
-                textView.setSelectedRange(wrappedRange)
-                textView.scrollRangeToVisible(wrappedRange)
+        // --- Primary search from anchor toward the end (forward) or beginning (backward) ---
+        if forward {
+            let primaryRange = NSRange(location: anchor, length: max(0, textLength - anchor))
+            if let found = findMatch(in: primaryRange) {
+                selectAndScroll(found)
                 return true
             }
-        } else if !forward {
-            let wrapStart = currentRange.location + currentRange.length
-            let wrapLength = max(0, textLength - wrapStart)
-            let wrapRange = NSRange(location: wrapStart, length: wrapLength)
-            if let wrappedRange = findMatch(in: wrapRange) {
-                textView.setSelectedRange(wrappedRange)
-                textView.scrollRangeToVisible(wrappedRange)
+            // Wrap: search from beginning up to the anchor.
+            if anchor > 0 {
+                let wrapRange = NSRange(location: 0, length: anchor)
+                if let found = findMatch(in: wrapRange) {
+                    selectAndScroll(found)
+                    return true
+                }
+            }
+        } else {
+            let primaryRange = NSRange(location: 0, length: anchor)
+            if let found = findMatch(in: primaryRange) {
+                selectAndScroll(found)
                 return true
+            }
+            // Wrap: search from anchor to the end.
+            if anchor < textLength {
+                let wrapRange = NSRange(location: anchor, length: textLength - anchor)
+                if let found = findMatch(in: wrapRange) {
+                    selectAndScroll(found)
+                    return true
+                }
             }
         }
 
+        lastFindEnd = nil
         return false
     }
 
@@ -4804,7 +4846,7 @@ class EditorViewController: NSViewController {
         }
     }
 
-    private func materializeCatalogStylesFromTags(in range: NSRange? = nil) {
+    func materializeCatalogStylesFromTags(in range: NSRange? = nil) {
         guard let storage = textView.textStorage, storage.length > 0 else { return }
 
         let fullString = storage.string as NSString
@@ -8535,7 +8577,9 @@ case "Book Subtitle":
     private func mergedFont(existing existingFont: NSFont?, style styleFont: NSFont) -> NSFont {
         guard let existing = existingFont else { return styleFont }
 
-        // Check if the existing font has been intentionally modified (different size or traits)
+        // Check if the existing font has inline bold/italic or size overrides relative to the style.
+        // Always adopt the style's font family so template-level font changes propagate,
+        // but preserve any per-run bold/italic or size differences.
         let existingTraits = NSFontManager.shared.traits(of: existing)
         let styleTraits = NSFontManager.shared.traits(of: styleFont)
 
@@ -8544,17 +8588,20 @@ case "Book Subtitle":
         let styleBold = styleTraits.contains(.boldFontMask)
         let styleItalic = styleTraits.contains(.italicFontMask)
 
-        // Check for font family difference (e.g. user changed to Helvetica)
-        let familyChanged = existing.familyName != styleFont.familyName
+        let hasInlineBold = existingBold != styleBold
+        let hasInlineItalic = existingItalic != styleItalic
+        let hasInlineSize = abs(existing.pointSize - styleFont.pointSize) > 0.1
 
-        // If size differs or bold/italic traits differ, this is an inline change - preserve it
-        // Use a very small epsilon for size comparison to catch even minor differences
-        if abs(existing.pointSize - styleFont.pointSize) > 0.1 ||
-           existingBold != styleBold ||
-           existingItalic != styleItalic ||
-           familyChanged {
-            // NSLog("mergedFont: Preserving existing \(existing.fontName) \(existing.pointSize)pt (Style: \(styleFont.fontName) \(styleFont.pointSize)pt)")
-            return existing  // Preserve inline formatting change
+        if hasInlineBold || hasInlineItalic || hasInlineSize {
+            // Re-derive from the style font family, preserving inline trait/size overrides.
+            var font = NSFontManager.shared.convert(styleFont, toSize: existing.pointSize)
+            if existingBold {
+                font = NSFontManager.shared.convert(font, toHaveTrait: .boldFontMask)
+            }
+            if existingItalic {
+                font = NSFontManager.shared.convert(font, toHaveTrait: .italicFontMask)
+            }
+            return font
         }
 
         // No inline changes detected, use style font (to pick up style-level updates)

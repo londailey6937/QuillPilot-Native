@@ -232,6 +232,9 @@ class MainWindowController: NSWindowController {
         // and clear results so analysis restarts with the new template's settings.
         NotificationCenter.default.addObserver(forName: .styleTemplateDidChange, object: nil, queue: .main) { [weak self] _ in
             self?.mainContentViewController?.cancelAndClearAnalysis()
+            // Re-apply catalog styles so the document text reflects the new/reset template.
+            self?.mainContentViewController?.editorViewController.materializeCatalogStylesFromTags()
+            self?.mainContentViewController?.editorViewController.updatePageLayout()
         }
 
         mainContentViewController.onNotesTapped = { [weak self] in
@@ -8684,6 +8687,12 @@ class SearchPanelController: NSWindowController {
         searchField.stringValue = ""
         replaceField.stringValue = ""
         statusLabel.stringValue = ""
+        editorViewController?.resetFindState()
+    }
+
+    override func close() {
+        clearFields()
+        super.close()
     }
 
     override func showWindow(_ sender: Any?) {

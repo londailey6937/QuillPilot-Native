@@ -1187,12 +1187,15 @@ Tips
 Use the style editor button to open the Style Editor and customize the current template.
 
 What it does
-• Edit font, size, spacing, and indents for each style.
-• Save changes to your active template.
+• Edits font, size, spacing, and indents for each style.
+• Changing the Font dropdown updates every style in the template to use that font family, keeping each style's size, weight, and spacing intact.
+• Saves changes to your active template.
+• Once applied to a selection and the document is saved, the styled text retains its formatting until the style is re-applied.
 
 Tips
 • Start with Body Text, then adjust headings and chapter styles to match.
 • Use small, consistent changes to preserve layout across the manuscript.
+• To change the font for the entire template at once, select a new font from the Font dropdown — all styles will update immediately.
 • To remove overrides and return to defaults, use Tools → Reset Template Overrides.
 """, color: bodyColor))
         content.append(makeNewline())

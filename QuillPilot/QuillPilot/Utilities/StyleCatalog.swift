@@ -282,6 +282,30 @@ final class StyleCatalog {
         persist(overrides: overrides, for: currentTemplateName)
     }
 
+    /// Update the font family for every style in the current template.
+    /// Saves an override for each style with the new font and posts a
+    /// template-change notification so the document text is refreshed.
+    func setFontFamilyForAllStyles(_ fontFamily: String) {
+        let templateName = currentTemplateName
+        let allKeys = allStyleKeys(for: templateName)
+        var overrides = loadOverrides(for: templateName)
+        for key in allKeys {
+            // Start from the existing override, fall back to the built-in definition.
+            var def: StyleDefinition
+            if let existing = overrides[key] {
+                def = existing
+            } else if let builtIn = templates[templateName]?.styles[key] {
+                def = builtIn
+            } else {
+                continue
+            }
+            def.fontName = fontFamily
+            overrides[key] = def
+        }
+        persist(overrides: overrides, for: templateName)
+        NotificationCenter.default.post(name: .styleTemplateDidChange, object: templateName)
+    }
+
     func resetStyle(_ styleName: String) {
         var overrides = loadOverrides(for: currentTemplateName)
         overrides.removeValue(forKey: styleName)

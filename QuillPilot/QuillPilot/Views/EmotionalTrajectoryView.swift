@@ -88,18 +88,35 @@ class EmotionalTrajectoryView: NSView {
         let legendRect: NSRect
 
         if useRightLegend {
-            let legendWidth = min(280, maxLegendWidth)
+            // Measure the widest character name to size the legend dynamically
+            let labelFont = NSFont.systemFont(ofSize: 11)
+            let labelAttrs: [NSAttributedString.Key: Any] = [.font: labelFont]
+            var maxNameWidth: CGFloat = 0
+            for trajectory in trajectories {
+                var name = trajectory.characterName
+                if name.count > 25 {
+                    let idx = name.index(name.startIndex, offsetBy: 22)
+                    name = String(name[..<idx]) + "..."
+                }
+                let nameWidth = name.size(withAttributes: labelAttrs).width
+                if nameWidth > maxNameWidth { maxNameWidth = nameWidth }
+            }
+            // 25px line sample + 7px gap + name + padding on each side
+            let measuredWidth = 32 + maxNameWidth + 16
+            let legendWidth = min(max(measuredWidth, 120), maxLegendWidth)
             chartRect = NSRect(
                 x: bounds.minX + padding,
                 y: bounds.minY + padding,
                 width: max(60, bounds.width - padding * 2 - legendWidth - legendGap),
                 height: max(60, bounds.height - padding * 2)
             )
+            // Size legend height to fit content
+            let legendContentHeight = CGFloat(trajectories.count) * 18 + 16
             legendRect = NSRect(
                 x: chartRect.maxX + legendGap,
-                y: bounds.minY + padding,
+                y: chartRect.maxY - legendContentHeight,
                 width: legendWidth,
-                height: max(60, bounds.height - padding * 2)
+                height: legendContentHeight
             )
         } else {
             let legendHeight = min(140, max(80, bounds.height * 0.25))
@@ -134,7 +151,7 @@ class EmotionalTrajectoryView: NSView {
         let theme = ThemeManager.shared.currentTheme
         let text = "No emotional trajectory data available.\nAnalyze your document to see character emotional arcs."
         let attributes: [NSAttributedString.Key: Any] = [
-            .font: NSFont.systemFont(ofSize: 14),
+            .font: NSFont.systemFont(ofSize: 15),
             .foregroundColor: theme.textColor.withAlphaComponent(0.7)
         ]
 
@@ -323,7 +340,7 @@ class EmotionalTrajectoryView: NSView {
 
             // Label - truncate if needed
             let labelAttributes: [NSAttributedString.Key: Any] = [
-                .font: NSFont.systemFont(ofSize: 10),
+                .font: NSFont.systemFont(ofSize: 11),
                 .foregroundColor: theme.textColor
             ]
 

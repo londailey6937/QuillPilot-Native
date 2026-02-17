@@ -126,7 +126,7 @@ class FailurePatternChartView: NSView {
 
         // Draw title
         let titleAttributes: [NSAttributedString.Key: Any] = [
-            .font: NSFont.boldSystemFont(ofSize: 18),
+            .font: NSFont.boldSystemFont(ofSize: 20),
             .foregroundColor: textColor
         ]
         let title = "Failure Pattern Charts"
@@ -135,7 +135,7 @@ class FailurePatternChartView: NSView {
 
         // Draw subtitle
         let subtitleAttributes: [NSAttributedString.Key: Any] = [
-            .font: NSFont.systemFont(ofSize: 10, weight: .medium),
+            .font: NSFont.systemFont(ofSize: 12, weight: .medium),
             .foregroundColor: NSColor.systemPurple.withAlphaComponent(0.8)
         ]
         let subtitle = "Progress isn't success—it's better failure"
@@ -171,7 +171,7 @@ class FailurePatternChartView: NSView {
 
     private func drawCharacterHeader(pattern: CharacterFailurePattern, textColor: NSColor, y: CGFloat) {
         let nameAttributes: [NSAttributedString.Key: Any] = [
-            .font: NSFont.boldSystemFont(ofSize: 14),
+            .font: NSFont.boldSystemFont(ofSize: 15),
             .foregroundColor: textColor
         ]
         pattern.characterName.draw(at: NSPoint(x: 200, y: y), withAttributes: nameAttributes)
@@ -190,7 +190,7 @@ class FailurePatternChartView: NSView {
 
     private func drawBadge(text: String, at point: NSPoint, color: NSColor) {
         let attributes: [NSAttributedString.Key: Any] = [
-            .font: NSFont.systemFont(ofSize: 9, weight: .medium),
+            .font: NSFont.systemFont(ofSize: 11, weight: .medium),
             .foregroundColor: color
         ]
         let size = text.size(withAttributes: attributes)
@@ -214,7 +214,7 @@ class FailurePatternChartView: NSView {
 
         // Label zones
         let zoneAttr: [NSAttributedString.Key: Any] = [
-            .font: NSFont.systemFont(ofSize: 9, weight: .medium),
+            .font: NSFont.systemFont(ofSize: 11, weight: .medium),
             .foregroundColor: textColor.withAlphaComponent(0.5)
         ]
 
@@ -266,7 +266,7 @@ class FailurePatternChartView: NSView {
             let xTickPrefix = StyleCatalog.shared.isScreenplayTemplate ? "Sc" : "Ch"
             let chapterLabel = "\(xTickPrefix) \(failure.chapter)"
             let labelAttr: [NSAttributedString.Key: Any] = [
-                .font: NSFont.systemFont(ofSize: 9),
+                .font: NSFont.systemFont(ofSize: 11),
                 .foregroundColor: textColor.withAlphaComponent(0.5)
             ]
             let labelSize = chapterLabel.size(withAttributes: labelAttr)
@@ -311,26 +311,26 @@ class FailurePatternChartView: NSView {
         let legendY: CGFloat = bounds.height / 2 + 80
 
         let titleAttr: [NSAttributedString.Key: Any] = [
-            .font: NSFont.boldSystemFont(ofSize: 10),
+            .font: NSFont.boldSystemFont(ofSize: 12),
             .foregroundColor: textColor.withAlphaComponent(0.7)
         ]
         "Failure Types:".draw(at: NSPoint(x: legendX, y: legendY), withAttributes: titleAttr)
 
-        var currentY = legendY - 16
+        var currentY = legendY - 18
 
         // Early failures
         let earlyTitle = "Early Failures:"
         let earlyAttr: [NSAttributedString.Key: Any] = [
-            .font: NSFont.systemFont(ofSize: 9, weight: .medium),
+            .font: NSFont.systemFont(ofSize: 11, weight: .medium),
             .foregroundColor: textColor.withAlphaComponent(0.6)
         ]
         earlyTitle.draw(at: NSPoint(x: legendX, y: currentY), withAttributes: earlyAttr)
-        currentY -= 14
+        currentY -= 16
 
         let earlyTypes: [FailureType] = [.naive, .reactive, .misinformed]
         for type in earlyTypes {
             drawLegendItem(type: type, at: NSPoint(x: legendX, y: currentY), textColor: textColor)
-            currentY -= 14
+            currentY -= 16
         }
 
         currentY -= 8
@@ -338,12 +338,12 @@ class FailurePatternChartView: NSView {
         // Later failures
         let laterTitle = "Better Failures:"
         laterTitle.draw(at: NSPoint(x: legendX, y: currentY), withAttributes: earlyAttr)
-        currentY -= 14
+        currentY -= 16
 
         let laterTypes: [FailureType] = [.strategic, .principled, .costlyChosen]
         for type in laterTypes {
             drawLegendItem(type: type, at: NSPoint(x: legendX, y: currentY), textColor: textColor)
-            currentY -= 14
+            currentY -= 16
         }
     }
 
@@ -356,7 +356,7 @@ class FailurePatternChartView: NSView {
 
         // Draw label
         let labelAttr: [NSAttributedString.Key: Any] = [
-            .font: NSFont.systemFont(ofSize: 9),
+            .font: NSFont.systemFont(ofSize: 11),
             .foregroundColor: textColor.withAlphaComponent(0.6)
         ]
         type.rawValue.draw(at: NSPoint(x: point.x + swatchSize + 6, y: point.y), withAttributes: labelAttr)
@@ -372,7 +372,7 @@ class FailurePatternChartView: NSView {
         let rowSpacing: CGFloat = 6
 
         let labelAttr: [NSAttributedString.Key: Any] = [
-            .font: NSFont.systemFont(ofSize: 10),
+            .font: NSFont.systemFont(ofSize: 12),
             .foregroundColor: textColor.withAlphaComponent(0.6)
         ]
         "Character:".draw(at: NSPoint(x: startX, y: baseY), withAttributes: labelAttr)
@@ -382,7 +382,7 @@ class FailurePatternChartView: NSView {
         for (index, pattern) in patterns.enumerated() {
             let isSelected = index == selectedCharacterIndex
             let buttonAttr: [NSAttributedString.Key: Any] = [
-                .font: isSelected ? NSFont.boldSystemFont(ofSize: 10) : NSFont.systemFont(ofSize: 10),
+                .font: isSelected ? NSFont.boldSystemFont(ofSize: 12) : NSFont.systemFont(ofSize: 12),
                 .foregroundColor: isSelected ? NSColor.systemBlue : textColor.withAlphaComponent(0.7)
             ]
             let name = pattern.characterName
@@ -413,7 +413,7 @@ class FailurePatternChartView: NSView {
         let guideY: CGFloat = bounds.height / 2 + 80
 
         let titleAttr: [NSAttributedString.Key: Any] = [
-            .font: NSFont.boldSystemFont(ofSize: 10),
+            .font: NSFont.boldSystemFont(ofSize: 12),
             .foregroundColor: textColor.withAlphaComponent(0.7)
         ]
         "Evolution of Failure:".draw(at: NSPoint(x: guideX, y: guideY), withAttributes: titleAttr)
@@ -429,27 +429,27 @@ class FailurePatternChartView: NSView {
         ]
 
         let itemAttr: [NSAttributedString.Key: Any] = [
-            .font: NSFont.systemFont(ofSize: 9),
+            .font: NSFont.systemFont(ofSize: 11),
             .foregroundColor: textColor.withAlphaComponent(0.6)
         ]
 
-        var currentY = guideY - 16
+        var currentY = guideY - 18
         for item in items {
             if item.isEmpty {
                 currentY -= 8
             } else {
                 item.draw(at: NSPoint(x: guideX, y: currentY), withAttributes: itemAttr)
-                currentY -= 14
+                currentY -= 16
             }
         }
     }
 
     private func drawInsights(textColor: NSColor) {
         let insightX: CGFloat = 20
-        let insightY: CGFloat = 70
+        let insightY: CGFloat = 100
 
         let titleAttr: [NSAttributedString.Key: Any] = [
-            .font: NSFont.boldSystemFont(ofSize: 10),
+            .font: NSFont.boldSystemFont(ofSize: 12),
             .foregroundColor: textColor.withAlphaComponent(0.7)
         ]
         "Key Insight:".draw(at: NSPoint(x: insightX, y: insightY), withAttributes: titleAttr)
@@ -459,12 +459,12 @@ class FailurePatternChartView: NSView {
         paragraphStyle.lineSpacing = 2
 
         let insightAttr: [NSAttributedString.Key: Any] = [
-            .font: NSFont.systemFont(ofSize: 9, weight: .medium),
+            .font: NSFont.systemFont(ofSize: 11, weight: .medium),
             .foregroundColor: NSColor.systemPurple.withAlphaComponent(0.8),
             .paragraphStyle: paragraphStyle
         ]
-        // Raise the block slightly to leave bottom padding
-        insightText.draw(at: NSPoint(x: insightX, y: insightY - 50), withAttributes: insightAttr)
+        // Position text well below the title to avoid overlap with multi-line block
+        insightText.draw(at: NSPoint(x: insightX, y: insightY - 80), withAttributes: insightAttr)
     }
 
     private func drawEmptyState() {
@@ -478,7 +478,7 @@ class FailurePatternChartView: NSView {
         paragraphStyle.lineSpacing = 4
 
         let attributes: [NSAttributedString.Key: Any] = [
-            .font: NSFont.systemFont(ofSize: 14),
+            .font: NSFont.systemFont(ofSize: 15),
             .foregroundColor: theme.textColor.withAlphaComponent(0.5),
             .paragraphStyle: paragraphStyle
         ]

@@ -103,7 +103,7 @@ class InternalExternalAlignmentView: NSView {
 
         // Draw title
         let titleAttributes: [NSAttributedString.Key: Any] = [
-            .font: NSFont.boldSystemFont(ofSize: 18),
+            .font: NSFont.boldSystemFont(ofSize: 20),
             .foregroundColor: textColor
         ]
         let title = "Internal vs External Alignment"
@@ -112,7 +112,7 @@ class InternalExternalAlignmentView: NSView {
 
         // Draw subtitle
         let subtitleAttributes: [NSAttributedString.Key: Any] = [
-            .font: NSFont.systemFont(ofSize: 10),
+            .font: NSFont.systemFont(ofSize: 12),
             .foregroundColor: textColor.withAlphaComponent(0.6)
         ]
         let subtitle = "Track the gap between inner truth and outer behavior"
@@ -124,7 +124,7 @@ class InternalExternalAlignmentView: NSView {
 
         // Draw character name and trend
         let nameAttributes: [NSAttributedString.Key: Any] = [
-            .font: NSFont.boldSystemFont(ofSize: 14),
+            .font: NSFont.boldSystemFont(ofSize: 15),
             .foregroundColor: textColor
         ]
         let nameStr = "\(currentAlignment.characterName) — \(currentAlignment.gapTrend.rawValue)"
@@ -155,7 +155,7 @@ class InternalExternalAlignmentView: NSView {
     private func drawChartBackground(in rect: NSRect, gridColor: NSColor, textColor: NSColor) {
         // Draw horizontal grid lines and labels (0%, 25%, 50%, 75%, 100%)
         let labelAttributes: [NSAttributedString.Key: Any] = [
-            .font: NSFont.systemFont(ofSize: 9),
+            .font: NSFont.systemFont(ofSize: 11),
             .foregroundColor: textColor.withAlphaComponent(0.5)
         ]
 
@@ -176,7 +176,7 @@ class InternalExternalAlignmentView: NSView {
         // Place axis description at bottom
         let axisDesc = "Y-Axis: Alignment level (0% = opposite of true self, 100% = fully authentic)"
         let axisDescAttr: [NSAttributedString.Key: Any] = [
-            .font: NSFont.systemFont(ofSize: 9),
+            .font: NSFont.systemFont(ofSize: 11),
             .foregroundColor: textColor.withAlphaComponent(0.5)
         ]
         axisDesc.draw(at: NSPoint(x: rect.minX, y: rect.minY - 20), withAttributes: axisDescAttr)
@@ -265,7 +265,7 @@ class InternalExternalAlignmentView: NSView {
         // Draw chapter label (only for inner points to avoid clutter)
         if let label = label {
             let labelAttributes: [NSAttributedString.Key: Any] = [
-                .font: NSFont.boldSystemFont(ofSize: 9),
+                .font: NSFont.boldSystemFont(ofSize: 11),
                 .foregroundColor: textColor
             ]
             let labelSize = label.size(withAttributes: labelAttributes)
@@ -351,23 +351,23 @@ class InternalExternalAlignmentView: NSView {
 
             // Label
             let labelAttributes: [NSAttributedString.Key: Any] = [
-                .font: NSFont.systemFont(ofSize: 10),
+                .font: NSFont.systemFont(ofSize: 11),
                 .foregroundColor: textColor
             ]
             label.draw(at: NSPoint(x: legendX + 28, y: currentY - 5), withAttributes: labelAttributes)
-            currentY -= 18
+            currentY -= 20
         }
 
         // Gap trend indicator
         currentY -= 10
         let trendTitle = "Gap Trend Colors:"
         let trendTitleAttr: [NSAttributedString.Key: Any] = [
-            .font: NSFont.boldSystemFont(ofSize: 9),
+            .font: NSFont.boldSystemFont(ofSize: 12),
             .foregroundColor: textColor.withAlphaComponent(0.7)
         ]
         trendTitle.draw(at: NSPoint(x: legendX, y: currentY), withAttributes: trendTitleAttr)
 
-        currentY -= 14
+        currentY -= 16
         let trendItems: [(NSColor, String)] = [
             (NSColor.systemRed, "Widening"),
             (NSColor.systemYellow, "Stabilizing"),
@@ -381,11 +381,11 @@ class InternalExternalAlignmentView: NSView {
             NSBezierPath(rect: swatchRect).fill()
 
             let labelAttr: [NSAttributedString.Key: Any] = [
-                .font: NSFont.systemFont(ofSize: 9),
+                .font: NSFont.systemFont(ofSize: 11),
                 .foregroundColor: textColor.withAlphaComponent(0.7)
             ]
             label.draw(at: NSPoint(x: legendX + 15, y: currentY), withAttributes: labelAttr)
-            currentY -= 14
+            currentY -= 16
         }
     }
 
@@ -399,7 +399,7 @@ class InternalExternalAlignmentView: NSView {
         let rowSpacing: CGFloat = 6
 
         let labelAttr: [NSAttributedString.Key: Any] = [
-            .font: NSFont.systemFont(ofSize: 10),
+            .font: NSFont.systemFont(ofSize: 12),
             .foregroundColor: textColor.withAlphaComponent(0.6)
         ]
         "Character:".draw(at: NSPoint(x: startX, y: baseY), withAttributes: labelAttr)
@@ -409,7 +409,7 @@ class InternalExternalAlignmentView: NSView {
         for (index, alignment) in alignments.enumerated() {
             let isSelected = index == selectedCharacterIndex
             let buttonAttr: [NSAttributedString.Key: Any] = [
-                .font: isSelected ? NSFont.boldSystemFont(ofSize: 10) : NSFont.systemFont(ofSize: 10),
+                .font: isSelected ? NSFont.boldSystemFont(ofSize: 12) : NSFont.systemFont(ofSize: 12),
                 .foregroundColor: isSelected ? NSColor.systemBlue : textColor.withAlphaComponent(0.7)
             ]
             let name = alignment.characterName
@@ -437,12 +437,12 @@ class InternalExternalAlignmentView: NSView {
     }
 
     private func drawUseCases(textColor: NSColor) {
-        // Position at bottom-right of the window
-        let useCaseX: CGFloat = bounds.width - 200
-        let useCaseY: CGFloat = 90
+        // Position at bottom-right of the window, with padding from edges
+        let useCaseX: CGFloat = bounds.width - 230
+        let useCaseY: CGFloat = 130
 
         let titleAttr: [NSAttributedString.Key: Any] = [
-            .font: NSFont.boldSystemFont(ofSize: 9),
+            .font: NSFont.boldSystemFont(ofSize: 12),
             .foregroundColor: textColor.withAlphaComponent(0.6)
         ]
         "Great for:".draw(at: NSPoint(x: useCaseX, y: useCaseY), withAttributes: titleAttr)
@@ -455,21 +455,21 @@ class InternalExternalAlignmentView: NSView {
         ]
 
         let itemAttr: [NSAttributedString.Key: Any] = [
-            .font: NSFont.systemFont(ofSize: 9),
+            .font: NSFont.systemFont(ofSize: 11),
             .foregroundColor: textColor.withAlphaComponent(0.5)
         ]
 
-        var currentY = useCaseY - 14
+        var currentY = useCaseY - 16
         for item in items {
             item.draw(at: NSPoint(x: useCaseX, y: currentY), withAttributes: itemAttr)
-            currentY -= 12
+            currentY -= 16
         }
 
         // Insight
         currentY -= 8
         let insight = "💡 The gap reveals character depth"
         let insightAttr: [NSAttributedString.Key: Any] = [
-            .font: NSFont.systemFont(ofSize: 9, weight: .medium),
+            .font: NSFont.systemFont(ofSize: 11, weight: .medium),
             .foregroundColor: NSColor.systemPurple.withAlphaComponent(0.8)
         ]
         insight.draw(at: NSPoint(x: useCaseX, y: currentY), withAttributes: insightAttr)
@@ -486,7 +486,7 @@ class InternalExternalAlignmentView: NSView {
         paragraphStyle.lineSpacing = 4
 
         let attributes: [NSAttributedString.Key: Any] = [
-            .font: NSFont.systemFont(ofSize: 14),
+            .font: NSFont.systemFont(ofSize: 15),
             .foregroundColor: theme.textColor.withAlphaComponent(0.5),
             .paragraphStyle: paragraphStyle
         ]

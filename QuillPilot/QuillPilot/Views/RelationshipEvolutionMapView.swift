@@ -433,39 +433,14 @@ class RelationshipEvolutionMapView: NSView {
             currentY += 16
         }
 
-        // Draw "Great for" section
-        currentY += 10
-        let greatForTitle = "Great for:"
-        let titleAttributes: [NSAttributedString.Key: Any] = [
-            .font: NSFont.boldSystemFont(ofSize: 10),
-            .foregroundColor: textColor.withAlphaComponent(0.8)
-        ]
-        greatForTitle.draw(at: NSPoint(x: legendX, y: currentY), withAttributes: titleAttributes)
-        currentY += 16
-
-        let greatForItems = [
-            "• Ensemble casts",
-            "• Romance arcs",
-            "• Mentor/rival dynamics"
-        ]
-
-        for item in greatForItems {
-            let itemAttributes: [NSAttributedString.Key: Any] = [
-                .font: NSFont.systemFont(ofSize: 9),
-                .foregroundColor: textColor.withAlphaComponent(0.6)
-            ]
-            item.draw(at: NSPoint(x: legendX + 5, y: currentY), withAttributes: itemAttributes)
-            currentY += 14
-        }
-
         // Draw insight
-        currentY += 10
+        currentY += 14
         let insight = "💡 Character growth is\nrelationship reconfiguration"
         let insightAttributes: [NSAttributedString.Key: Any] = [
-            .font: NSFont.systemFont(ofSize: 9, weight: .medium),
+            .font: NSFont.systemFont(ofSize: 11, weight: .medium),
             .foregroundColor: textColor.withAlphaComponent(0.8)
         ]
-        let insightRect = NSRect(x: legendX, y: currentY, width: 180, height: 30)
+        let insightRect = NSRect(x: legendX, y: currentY, width: 200, height: 36)
         insight.draw(in: insightRect, withAttributes: insightAttributes)
     }
 

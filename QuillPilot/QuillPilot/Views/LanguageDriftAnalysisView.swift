@@ -120,30 +120,30 @@ class LanguageDriftAnalysisView: NSView {
 
         // Draw title
         let titleAttributes: [NSAttributedString.Key: Any] = [
-            .font: NSFont.boldSystemFont(ofSize: 18),
+            .font: NSFont.boldSystemFont(ofSize: 20),
             .foregroundColor: textColor
         ]
         let title = "Language Drift Analysis"
         let titleSize = title.size(withAttributes: titleAttributes)
-        title.draw(at: NSPoint(x: (bounds.width - titleSize.width) / 2, y: bounds.height - 25), withAttributes: titleAttributes)
+        title.draw(at: NSPoint(x: (bounds.width - titleSize.width) / 2, y: bounds.height - 28), withAttributes: titleAttributes)
 
         // Draw subtitle
         let subtitleAttributes: [NSAttributedString.Key: Any] = [
-            .font: NSFont.systemFont(ofSize: 10),
+            .font: NSFont.systemFont(ofSize: 12),
             .foregroundColor: textColor.withAlphaComponent(0.6)
         ]
         let subtitle = "Track how character language evolves — reveals growth you didn't consciously plan"
         let subtitleSize = subtitle.size(withAttributes: subtitleAttributes)
-        subtitle.draw(at: NSPoint(x: (bounds.width - subtitleSize.width) / 2, y: bounds.height - 42), withAttributes: subtitleAttributes)
+        subtitle.draw(at: NSPoint(x: (bounds.width - subtitleSize.width) / 2, y: bounds.height - 48), withAttributes: subtitleAttributes)
 
         // Get current character
         let currentDrift = driftData[selectedCharacterIndex]
 
         // Draw character name and drift summary
-        drawCharacterHeader(drift: currentDrift, textColor: textColor, y: bounds.height - 65)
+        drawCharacterHeader(drift: currentDrift, textColor: textColor, y: bounds.height - 72)
 
         // Draw metric selector
-        drawMetricSelector(textColor: textColor, y: bounds.height - 90)
+        drawMetricSelector(textColor: textColor, y: bounds.height - 100)
 
         // Draw chart background
         drawChartBackground(in: chartRect, textColor: textColor)
@@ -165,7 +165,7 @@ class LanguageDriftAnalysisView: NSView {
 
     private func drawCharacterHeader(drift: CharacterLanguageDrift, textColor: NSColor, y: CGFloat) {
         let nameAttributes: [NSAttributedString.Key: Any] = [
-            .font: NSFont.boldSystemFont(ofSize: 14),
+            .font: NSFont.boldSystemFont(ofSize: 15),
             .foregroundColor: textColor
         ]
         drift.characterName.draw(at: NSPoint(x: 220, y: y), withAttributes: nameAttributes)
@@ -182,13 +182,13 @@ class LanguageDriftAnalysisView: NSView {
 
         for (text, color) in badges where !text.isEmpty && text != "Stable" {
             drawBadge(text: text, at: NSPoint(x: badgeX, y: badgeY), color: color)
-            badgeX += text.size(withAttributes: [.font: NSFont.systemFont(ofSize: 9)]).width + 20
+            badgeX += text.size(withAttributes: [.font: NSFont.systemFont(ofSize: 11)]).width + 20
         }
     }
 
     private func drawBadge(text: String, at point: NSPoint, color: NSColor) {
         let attributes: [NSAttributedString.Key: Any] = [
-            .font: NSFont.systemFont(ofSize: 9, weight: .medium),
+            .font: NSFont.systemFont(ofSize: 11, weight: .medium),
             .foregroundColor: color
         ]
         let size = text.size(withAttributes: attributes)
@@ -206,7 +206,7 @@ class LanguageDriftAnalysisView: NSView {
         for metric in MetricType.allCases {
             let isSelected = metric == selectedMetric
             let attributes: [NSAttributedString.Key: Any] = [
-                .font: isSelected ? NSFont.boldSystemFont(ofSize: 10) : NSFont.systemFont(ofSize: 10),
+                .font: isSelected ? NSFont.boldSystemFont(ofSize: 12) : NSFont.systemFont(ofSize: 12),
                 .foregroundColor: isSelected ? NSColor.systemBlue : textColor.withAlphaComponent(0.6)
             ]
             let size = metric.rawValue.size(withAttributes: attributes)
@@ -238,10 +238,10 @@ class LanguageDriftAnalysisView: NSView {
             // Labels
             let label = "\(i * 25)%"
             let labelAttr: [NSAttributedString.Key: Any] = [
-                .font: NSFont.systemFont(ofSize: 9),
+                .font: NSFont.systemFont(ofSize: 11),
                 .foregroundColor: textColor.withAlphaComponent(0.5)
             ]
-            label.draw(at: NSPoint(x: rect.minX - 30, y: y - 5), withAttributes: labelAttr)
+            label.draw(at: NSPoint(x: rect.minX - 35, y: y - 6), withAttributes: labelAttr)
         }
     }
 
@@ -330,10 +330,10 @@ class LanguageDriftAnalysisView: NSView {
         for metric in metrics {
             let x = rect.minX + (CGFloat(metric.chapter - minChapter) / CGFloat(chapterRange)) * rect.width
             let labelAttr: [NSAttributedString.Key: Any] = [
-                .font: NSFont.systemFont(ofSize: 9),
+                .font: NSFont.systemFont(ofSize: 11),
                 .foregroundColor: textColor.withAlphaComponent(0.5)
             ]
-            "Ch \(metric.chapter)".draw(at: NSPoint(x: x - 10, y: rect.minY - 18), withAttributes: labelAttr)
+            "Ch \(metric.chapter)".draw(at: NSPoint(x: x - 12, y: rect.minY - 20), withAttributes: labelAttr)
         }
     }
 
@@ -373,6 +373,28 @@ class LanguageDriftAnalysisView: NSView {
             }
         }
 
+        // Draw filled area under line 1
+        if !points1.isEmpty {
+            let fill1 = NSBezierPath()
+            fill1.move(to: NSPoint(x: points1.first!.x, y: rect.minY))
+            for pt in points1 { fill1.line(to: pt) }
+            fill1.line(to: NSPoint(x: points1.last!.x, y: rect.minY))
+            fill1.close()
+            color1.withAlphaComponent(0.10).setFill()
+            fill1.fill()
+        }
+
+        // Draw filled area under line 2
+        if !points2.isEmpty {
+            let fill2 = NSBezierPath()
+            fill2.move(to: NSPoint(x: points2.first!.x, y: rect.minY))
+            for pt in points2 { fill2.line(to: pt) }
+            fill2.line(to: NSPoint(x: points2.last!.x, y: rect.minY))
+            fill2.close()
+            color2.withAlphaComponent(0.10).setFill()
+            fill2.fill()
+        }
+
         // Draw lines
         color1.setStroke()
         path1.lineWidth = 2.5
@@ -389,6 +411,12 @@ class LanguageDriftAnalysisView: NSView {
         for point in points2 {
             drawDataPoint(at: point, color: color2, isDarkMode: isDarkMode)
         }
+
+        // Draw inline legend for the two series
+        let legendY = rect.maxY + 6
+        drawInlineLegendItem(label: label1, color: color1, at: NSPoint(x: rect.minX, y: legendY), textColor: textColor)
+        let label1Width = label1.size(withAttributes: [.font: NSFont.systemFont(ofSize: 11)]).width
+        drawInlineLegendItem(label: label2, color: color2, at: NSPoint(x: rect.minX + label1Width + 40, y: legendY), textColor: textColor)
     }
 
     private func drawSingleLineChart(
@@ -452,15 +480,15 @@ class LanguageDriftAnalysisView: NSView {
     }
 
     private func drawInlineLegendItem(label: String, color: NSColor, at point: NSPoint, textColor: NSColor) {
-        let swatchRect = NSRect(x: point.x, y: point.y + 3, width: 15, height: 3)
+        let swatchRect = NSRect(x: point.x, y: point.y + 5, width: 18, height: 3)
         color.setFill()
         NSBezierPath(rect: swatchRect).fill()
 
         let labelAttr: [NSAttributedString.Key: Any] = [
-            .font: NSFont.systemFont(ofSize: 9),
+            .font: NSFont.systemFont(ofSize: 11),
             .foregroundColor: textColor.withAlphaComponent(0.7)
         ]
-        label.draw(at: NSPoint(x: point.x + 20, y: point.y), withAttributes: labelAttr)
+        label.draw(at: NSPoint(x: point.x + 22, y: point.y), withAttributes: labelAttr)
     }
 
     private func drawLegend(textColor: NSColor, isDarkMode: Bool) {
@@ -468,7 +496,7 @@ class LanguageDriftAnalysisView: NSView {
         let legendY: CGFloat = bounds.height / 2 + 60
 
         let titleAttr: [NSAttributedString.Key: Any] = [
-            .font: NSFont.boldSystemFont(ofSize: 10),
+            .font: NSFont.boldSystemFont(ofSize: 12),
             .foregroundColor: textColor.withAlphaComponent(0.7)
         ]
         "What to Look For:".draw(at: NSPoint(x: legendX, y: legendY), withAttributes: titleAttr)
@@ -481,14 +509,14 @@ class LanguageDriftAnalysisView: NSView {
         ]
 
         let itemAttr: [NSAttributedString.Key: Any] = [
-            .font: NSFont.systemFont(ofSize: 9),
+            .font: NSFont.systemFont(ofSize: 11),
             .foregroundColor: textColor.withAlphaComponent(0.6)
         ]
 
-        var currentY = legendY - 16
+        var currentY = legendY - 18
         for item in items {
             item.draw(at: NSPoint(x: legendX, y: currentY), withAttributes: itemAttr)
-            currentY -= 14
+            currentY -= 16
         }
     }
 
@@ -502,17 +530,17 @@ class LanguageDriftAnalysisView: NSView {
         let rowSpacing: CGFloat = 6
 
         let labelAttr: [NSAttributedString.Key: Any] = [
-            .font: NSFont.systemFont(ofSize: 10),
+            .font: NSFont.systemFont(ofSize: 12),
             .foregroundColor: textColor.withAlphaComponent(0.6)
         ]
         "Character:".draw(at: NSPoint(x: startX, y: baseY), withAttributes: labelAttr)
 
-        var currentX = startX + 70
+        var currentX = startX + 80
         var currentY = baseY
         for (index, drift) in driftData.enumerated() {
             let isSelected = index == selectedCharacterIndex
             let buttonAttr: [NSAttributedString.Key: Any] = [
-                .font: isSelected ? NSFont.boldSystemFont(ofSize: 10) : NSFont.systemFont(ofSize: 10),
+                .font: isSelected ? NSFont.boldSystemFont(ofSize: 12) : NSFont.systemFont(ofSize: 12),
                 .foregroundColor: isSelected ? NSColor.systemBlue : textColor.withAlphaComponent(0.7)
             ]
             let name = drift.characterName
@@ -520,7 +548,7 @@ class LanguageDriftAnalysisView: NSView {
 
             // Wrap to the next row if this label would overflow.
             if currentX + size.width + 8 > maxX {
-                currentX = startX + 70
+                currentX = startX + 80
                 currentY += rowHeight + rowSpacing
             }
 
@@ -540,10 +568,11 @@ class LanguageDriftAnalysisView: NSView {
 
     private func drawUseCases(textColor: NSColor) {
         let useCaseX: CGFloat = 20
-        let useCaseY: CGFloat = bounds.height / 2 + 60
+        // Position above the chart area, anchored near the top
+        let useCaseY: CGFloat = bounds.height - 160
 
         let titleAttr: [NSAttributedString.Key: Any] = [
-            .font: NSFont.boldSystemFont(ofSize: 10),
+            .font: NSFont.boldSystemFont(ofSize: 12),
             .foregroundColor: textColor.withAlphaComponent(0.7)
         ]
         "Reveals:".draw(at: NSPoint(x: useCaseX, y: useCaseY), withAttributes: titleAttr)
@@ -556,22 +585,22 @@ class LanguageDriftAnalysisView: NSView {
         ]
 
         let itemAttr: [NSAttributedString.Key: Any] = [
-            .font: NSFont.systemFont(ofSize: 9),
+            .font: NSFont.systemFont(ofSize: 11),
             .foregroundColor: textColor.withAlphaComponent(0.6)
         ]
 
-        var currentY = useCaseY - 16
+        var currentY = useCaseY - 18
         for item in items {
             item.draw(at: NSPoint(x: useCaseX, y: currentY), withAttributes: itemAttr)
-            currentY -= 14
+            currentY -= 16
         }
 
-        currentY -= 10
+        currentY -= 20
         let insight = "💡 Language reveals what\ncharacters won't say directly"
         let paragraphStyle = NSMutableParagraphStyle()
         paragraphStyle.lineSpacing = 2
         let insightAttr: [NSAttributedString.Key: Any] = [
-            .font: NSFont.systemFont(ofSize: 9, weight: .medium),
+            .font: NSFont.systemFont(ofSize: 11, weight: .medium),
             .foregroundColor: NSColor.systemPurple.withAlphaComponent(0.8),
             .paragraphStyle: paragraphStyle
         ]
@@ -589,7 +618,7 @@ class LanguageDriftAnalysisView: NSView {
         paragraphStyle.lineSpacing = 4
 
         let attributes: [NSAttributedString.Key: Any] = [
-            .font: NSFont.systemFont(ofSize: 14),
+            .font: NSFont.systemFont(ofSize: 15),
             .foregroundColor: theme.textColor.withAlphaComponent(0.5),
             .paragraphStyle: paragraphStyle
         ]
@@ -609,11 +638,11 @@ class LanguageDriftAnalysisView: NSView {
         let location = convert(event.locationInWindow, from: nil)
 
         // Check metric selector clicks
-        let metricY = bounds.height - 88
-        if location.y >= metricY - 5 && location.y <= metricY + 20 {
+        let metricY = bounds.height - 98
+        if location.y >= metricY - 5 && location.y <= metricY + 22 {
             var currentX: CGFloat = 220
             for metric in MetricType.allCases {
-                let size = metric.rawValue.size(withAttributes: [.font: NSFont.systemFont(ofSize: 10)])
+                let size = metric.rawValue.size(withAttributes: [.font: NSFont.systemFont(ofSize: 12)])
                 let buttonRect = NSRect(x: currentX - 4, y: metricY - 5, width: size.width + 8, height: 20)
                 if buttonRect.contains(location) {
                     selectedMetric = metric

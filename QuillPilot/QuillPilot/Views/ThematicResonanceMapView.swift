@@ -89,7 +89,7 @@ class ThematicResonanceMapView: NSView {
         let leftPadding: CGFloat = 200
         let rightPadding: CGFloat = 240
         let topPadding: CGFloat = 160
-        let bottomPadding: CGFloat = 120
+        let bottomPadding: CGFloat = 160
         let chartWidth = bounds.width - leftPadding - rightPadding
         let chartHeight = bounds.height - topPadding - bottomPadding
         let chartRect = NSRect(x: leftPadding, y: bottomPadding, width: chartWidth, height: chartHeight)
@@ -430,10 +430,10 @@ class ThematicResonanceMapView: NSView {
 
     private func drawInsights(textColor: NSColor) {
         let insightX: CGFloat = 20
-        let insightY: CGFloat = 60
+        let insightY: CGFloat = 100
 
         let titleAttr: [NSAttributedString.Key: Any] = [
-            .font: NSFont.boldSystemFont(ofSize: 10),
+            .font: NSFont.boldSystemFont(ofSize: 12),
             .foregroundColor: textColor.withAlphaComponent(0.7)
         ]
         "Key Insight:".draw(at: NSPoint(x: insightX, y: insightY), withAttributes: titleAttr)
@@ -443,11 +443,11 @@ class ThematicResonanceMapView: NSView {
         paragraphStyle.lineSpacing = 2
 
         let insightAttr: [NSAttributedString.Key: Any] = [
-            .font: NSFont.systemFont(ofSize: 9, weight: .medium),
+            .font: NSFont.systemFont(ofSize: 11, weight: .medium),
             .foregroundColor: NSColor.systemPurple.withAlphaComponent(0.8),
             .paragraphStyle: paragraphStyle
         ]
-        insightText.draw(at: NSPoint(x: insightX, y: insightY - 55), withAttributes: insightAttr)
+        insightText.draw(at: NSPoint(x: insightX, y: insightY - 80), withAttributes: insightAttr)
     }
 
     private func drawEmptyState() {

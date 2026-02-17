@@ -5184,7 +5184,7 @@ extension AnalysisViewController {
         let toolbar = NSView(frame: NSRect(x: 0, y: window.contentView!.bounds.height - 50, width: window.contentView!.bounds.width, height: 50))
         toolbar.autoresizingMask = [.width, .minYMargin]
         toolbar.wantsLayer = true
-        toolbar.layer?.backgroundColor = currentTheme.headerBackground.cgColor
+        toolbar.layer?.backgroundColor = currentTheme.toolbarBackground.cgColor
 
         let titleLabel = NSTextField(labelWithString: "Emotional Trajectory Curves")
         titleLabel.font = NSFont.boldSystemFont(ofSize: 16)
@@ -5205,6 +5205,7 @@ extension AnalysisViewController {
         }
         metricPopup.target = self
         metricPopup.action = #selector(metricChanged(_:))
+        metricPopup.qpApplyDropdownBorder(theme: currentTheme)
         toolbar.addSubview(metricPopup)
 
         containerView.addSubview(toolbar)

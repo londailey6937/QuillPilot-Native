@@ -180,7 +180,28 @@ class DocumentFieldsManager {
             let paragraphRange = fullString.paragraphRange(for: NSRange(location: location, length: 0))
             guard paragraphRange.length > 0 else { break }
 
-            let styleName = storage.attribute(NSAttributedString.Key("QuillStyleName"), at: paragraphRange.location, effectiveRange: nil) as? String
+            var styleName = storage.attribute(NSAttributedString.Key("QuillStyleName"), at: paragraphRange.location, effectiveRange: nil) as? String
+
+            // If no explicit style tag, try to infer headings from font formatting.
+            // This ensures documents without QuillStyleName attributes (e.g. freshly
+            // pasted text or imports that didn't tag styles) still show headings.
+            if styleName == nil {
+                let text = fullString.substring(with: paragraphRange).trimmingCharacters(in: .whitespacesAndNewlines)
+                if !text.isEmpty {
+                    if let font = storage.attribute(.font, at: paragraphRange.location, effectiveRange: nil) as? NSFont {
+                        let traits = NSFontManager.shared.traits(of: font)
+                        let isBold = traits.contains(.boldFontMask)
+                        // Detect headings by font size and bold trait
+                        if isBold && font.pointSize >= 16 {
+                            styleName = "Heading 1"
+                        } else if isBold && font.pointSize >= 14 {
+                            styleName = "Heading 2"
+                        } else if isBold && font.pointSize >= 13 {
+                            styleName = "Heading 3"
+                        }
+                    }
+                }
+            }
 
             if let style = styleName {
                 let text = fullString.substring(with: paragraphRange).trimmingCharacters(in: .whitespacesAndNewlines)

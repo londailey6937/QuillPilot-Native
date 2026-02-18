@@ -395,10 +395,33 @@ class InsertNoteWindowController: NSWindowController {
 
 // MARK: - NSTableViewDataSource & NSTableViewDelegate
 
+/// Themed row view for footnote/endnote table views.
+/// Replaces system-blue selection highlight with the current theme's page border color.
+private final class NoteThemedRowView: NSTableRowView {
+    override func drawSelection(in dirtyRect: NSRect) {
+        guard isSelected else { return }
+        let theme = ThemeManager.shared.currentTheme
+        let fill: NSColor = {
+            switch theme {
+            case .night:
+                return theme.pageBorder.withAlphaComponent(0.35)
+            case .day, .cream:
+                return theme.pageBorder.withAlphaComponent(0.22)
+            }
+        }()
+        fill.setFill()
+        NSBezierPath(rect: bounds).fill()
+    }
+}
+
 extension InsertNoteWindowController: NSTableViewDataSource, NSTableViewDelegate {
 
     func numberOfRows(in tableView: NSTableView) -> Int {
         return notes.count
+    }
+
+    func tableView(_ tableView: NSTableView, rowViewForRow row: Int) -> NSTableRowView? {
+        NoteThemedRowView()
     }
 
     func tableView(_ tableView: NSTableView, viewFor tableColumn: NSTableColumn?, row: Int) -> NSView? {

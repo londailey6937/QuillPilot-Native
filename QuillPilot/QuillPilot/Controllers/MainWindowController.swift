@@ -2302,8 +2302,8 @@ extension MainWindowController {
         debugLog("🆕 NEW DOCUMENT: Clearing editor content")
         mainContentViewController.editorViewController.clearAll()
 
-        debugLog("🆕 NEW DOCUMENT: Clearing analysis")
-        mainContentViewController.clearAnalysis()
+        debugLog("🆕 NEW DOCUMENT: Cancelling and clearing analysis")
+        mainContentViewController.cancelAndClearAnalysis()
 
         // Clear TOC and Index entries for new document
         debugLog("🆕 NEW DOCUMENT: Clearing TOC and Index")
@@ -2470,8 +2470,8 @@ extension MainWindowController {
         debugLog("📂 OPENING DOCUMENT: Loading characters for document")
         CharacterLibrary.shared.loadCharacters(for: url)
 
-        debugLog("📂 OPENING DOCUMENT: Clearing analysis")
-        mainContentViewController.clearAnalysis()
+        debugLog("📂 OPENING DOCUMENT: Cancelling and clearing analysis")
+        mainContentViewController.cancelAndClearAnalysis()
 
         // Support multiple formats
         switch ext {

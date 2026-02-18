@@ -175,7 +175,6 @@ Quill Pilot stores certain per-document data as JSON so it can preserve non-manu
 
 • Story Notes (Theme, Locations, Outline, Directions) are stored in Application Support.
 • Character Library entries are stored in Application Support (StoryNotes/Characters).
-• Legacy builds stored character sidecars next to the manuscript (e.g. MyStory.docx.characters.json).
 
 If you delete these files, Quill Pilot will treat that data as empty for the affected document.
 """

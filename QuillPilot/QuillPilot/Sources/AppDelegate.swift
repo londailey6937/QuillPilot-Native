@@ -298,13 +298,84 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         _ = NSApp.sendAction(#selector(NSTextView.showGuessPanel(_:)), to: nil, from: sender)
 
         // Best-effort theming of the system spelling panel to match other utility windows.
-        DispatchQueue.main.async {
+        DispatchQueue.main.async { [weak self] in
             let isDarkMode = ThemeManager.shared.isDarkMode
             let theme = ThemeManager.shared.currentTheme
             let panel = NSSpellChecker.shared.spellingPanel
             panel.appearance = NSAppearance(named: isDarkMode ? .darkAqua : .aqua)
             panel.backgroundColor = theme.pageAround
             panel.collectionBehavior = [.moveToActiveSpace, .fullScreenAuxiliary]
+
+            // Walk the subview tree and replace system-blue accents with theme colours.
+            self?.themeSpellingPanelSubviews(panel.contentView, theme: theme)
+        }
+    }
+
+    /// Recursively theme the subviews inside the system Spelling & Grammar panel.
+    private func themeSpellingPanelSubviews(_ view: NSView?, theme: AppTheme) {
+        guard let view = view else { return }
+
+        let selectionColor = theme.pageBorder.withAlphaComponent(ThemeManager.shared.isDarkMode ? 0.35 : 0.22)
+
+        for sub in view.subviews {
+            // --- Text fields: remove blue focus ring, apply theme border ---
+            if let textField = sub as? NSTextField {
+                textField.focusRingType = .none
+                textField.textColor = theme.textColor
+                if textField.isEditable {
+                    textField.backgroundColor = theme.pageBackground
+                    textField.wantsLayer = true
+                    textField.layer?.borderWidth = 1
+                    textField.layer?.borderColor = theme.pageBorder.cgColor
+                    textField.layer?.cornerRadius = 4
+                }
+                // Theme the field editor (NSTextView) if it is active.
+                if let fieldEditor = textField.currentEditor() as? NSTextView {
+                    fieldEditor.insertionPointColor = theme.insertionPointColor
+                    fieldEditor.selectedTextAttributes = [
+                        .backgroundColor: selectionColor,
+                        .foregroundColor: theme.textColor
+                    ]
+                }
+            }
+
+            // --- Buttons: theme push-style buttons ---
+            if let button = sub as? NSButton, !(sub is NSPopUpButton) {
+                button.wantsLayer = true
+                button.layer?.borderWidth = 1
+                button.layer?.borderColor = theme.pageBorder.cgColor
+                button.layer?.cornerRadius = 5
+                button.contentTintColor = theme.textColor
+            }
+
+            // --- Scroll views / table views: match page colours ---
+            if let scrollView = sub as? NSScrollView {
+                scrollView.backgroundColor = theme.pageBackground
+                scrollView.drawsBackground = true
+                scrollView.wantsLayer = true
+                scrollView.layer?.borderWidth = 1
+                scrollView.layer?.borderColor = theme.pageBorder.cgColor
+                scrollView.layer?.cornerRadius = 4
+                if let tableView = scrollView.documentView as? NSTableView {
+                    tableView.backgroundColor = theme.pageBackground
+                }
+            }
+
+            // --- Pop-up buttons ---
+            if let popup = sub as? NSPopUpButton {
+                popup.wantsLayer = true
+                popup.layer?.borderWidth = 1
+                popup.layer?.borderColor = theme.pageBorder.cgColor
+                popup.layer?.cornerRadius = 5
+            }
+
+            // --- Checkboxes ---
+            if let button = sub as? NSButton, button.image != nil {
+                button.contentTintColor = theme.pageBorder
+            }
+
+            // Recurse into child views.
+            themeSpellingPanelSubviews(sub, theme: theme)
         }
     }
 

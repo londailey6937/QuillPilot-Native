@@ -216,6 +216,7 @@ class DocumentationWindowController: NSWindowController, NSWindowDelegate, NSOut
             ]),
 
             HelpTopic(id: "productivity", title: "Productivity", icon: "▸", children: [
+                HelpTopic(id: "spelling-grammar", title: "Spelling & Grammar", icon: "✏️", contentLoader: { self.makeSpellingGrammarContent() }),
                 HelpTopic(id: "shortcuts", title: "Keyboard Shortcuts", icon: "⌨️", contentLoader: { self.makeShortcutsContent() })
             ])
         ]
@@ -2967,6 +2968,82 @@ You can set different styles for footnotes and endnotes.
 
 • Footnotes appear at the bottom of each page
 • Endnotes collect at the end of the document
+""", color: bodyColor))
+
+        normalizeAppNameInDocumentation(content)
+        return content
+    }
+
+    private func makeSpellingGrammarContent() -> NSAttributedString {
+        let theme = ThemeManager.shared.currentTheme
+        let titleColor = theme.textColor
+        let headingColor = theme.textColor
+        let bodyColor = theme.textColor
+
+        let content = NSMutableAttributedString()
+
+        content.append(makeTitle("✏️ Spelling & Grammar", color: titleColor))
+        content.append(makeNewline())
+
+        content.append(makeHeading("Opening the Panel", color: headingColor))
+        content.append(makeBody("""
+To check spelling and grammar choose Tools ▸ Spelling and Grammar… from the menu bar, or press ⌘; (Command-Semicolon). \
+The Spelling and Grammar panel will appear alongside your document.
+""", color: bodyColor))
+        content.append(makeNewline())
+
+        content.append(makeHeading("How It Works", color: headingColor))
+        content.append(makeBody("""
+Quill Pilot uses the built-in macOS spell checker. When the panel is open it highlights the next misspelled or \
+grammatically questionable word in your text and shows it at the top of the panel. Suggested corrections appear \
+in the list below.
+
+• Change – replaces the highlighted word with whatever text is in the correction field (you may edit it by hand).
+• Find Next – skips the current word and moves to the next issue.
+• Ignore – tells the spell checker to skip this word for the rest of the session.
+• Learn – permanently adds the word to your personal dictionary so it is never flagged again.
+• Define – opens the macOS Dictionary for the highlighted word.
+• Guess – asks the spell checker to regenerate suggestions.
+""", color: bodyColor))
+        content.append(makeNewline())
+
+        content.append(makeHeading("Automatic by Language", color: headingColor))
+        content.append(makeBody("""
+The popup at the bottom of the panel is set to "Automatic by Language" by default. This means macOS detects \
+which language you are writing in and loads the appropriate spelling dictionary automatically – even within \
+the same document. If your manuscript includes passages in more than one language, the checker will adapt \
+as it encounters each language.
+
+You can also force a specific language by choosing it from the popup. This is useful when Automatic detection \
+misidentifies short phrases or proper nouns.
+
+Quill Pilot does not ship its own spelling dictionaries – it relies on the dictionaries built into macOS. \
+To add or manage languages, open System Settings ▸ Keyboard ▸ Text Input ▸ Edit… ▸ Spelling. From there \
+you can enable additional languages so they appear in the popup and are recognized by Automatic detection.
+""", color: bodyColor))
+        content.append(makeNewline())
+
+        content.append(makeHeading("Check Grammar", color: headingColor))
+        content.append(makeBody("""
+When the "Check grammar" checkbox at the bottom right of the panel is enabled, the checker will also flag \
+grammatical issues such as subject-verb disagreement, incorrect articles, and other common mistakes. \
+Grammar checking works alongside spelling and uses the same Automatic by Language detection.
+""", color: bodyColor))
+        content.append(makeNewline())
+
+        content.append(makeHeading("Inline Checking", color: headingColor))
+        content.append(makeBody("""
+Even without the panel open, Quill Pilot continuously spell-checks as you type. Misspelled words are \
+underlined with a red dotted line. Right-click (or Control-click) the word to see suggestions, learn it, \
+or ignore it directly from the context menu.
+""", color: bodyColor))
+        content.append(makeNewline())
+
+        content.append(makeHeading("Tips", color: headingColor))
+        content.append(makeBody("""
+• If you write fiction with invented names or places, use Learn to add them so they are not flagged repeatedly.
+• The language popup remembers your choice per-document when set to a specific language.
+• Grammar checking may slow the checker slightly on very long documents; uncheck it if you prefer speed.
 """, color: bodyColor))
 
         normalizeAppNameInDocumentation(content)

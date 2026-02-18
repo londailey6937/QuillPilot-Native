@@ -4158,12 +4158,19 @@ class EditorViewController: NSViewController {
         let totalPages = pageContainerView.numPages
         guard pageNumber >= 1 && pageNumber <= totalPages else { return false }
 
-        let scaledPageHeight = pageHeight * editorZoom
-        let pageGap: CGFloat = 20
+        // Use the page container's actual values to match visual layout exactly
+        let scaledPageHeight = pageContainerView.pageHeight
+        let pageGap = pageContainerView.pageGap
 
         // Calculate Y position for the target page (0-indexed internally)
         let pageIndex = pageNumber - 1
-        let targetY = CGFloat(pageIndex) * (scaledPageHeight + pageGap)
+        // Add a small offset (+1pt) to ensure we land clearly within the target page
+        // and avoid floating-point precision issues at page boundaries
+        let targetY = CGFloat(pageIndex) * (scaledPageHeight + pageGap) + 1.0
+
+        // Prevent updatePageCentering from restoring the old scroll position
+        pendingNavigationScroll = true
+        navigationScrollSuppressionUntil = CFAbsoluteTimeGetCurrent() + 2.0
 
         // Scroll to the target page
         let targetPoint = NSPoint(x: 0, y: targetY)
@@ -4179,15 +4186,18 @@ class EditorViewController: NSViewController {
         guard let pageContainerView = pageContainer as? PageContainerView else { return (1, 1) }
 
         let totalPages = pageContainerView.numPages
-        let scaledPageHeight = pageHeight * editorZoom
-        let pageGap: CGFloat = 20
+        // Use the page container's actual values to match visual layout exactly
+        let scaledPageHeight = pageContainerView.pageHeight
+        let pageGap = pageContainerView.pageGap
 
         // Get current scroll position
         let visibleRect = scrollView.documentVisibleRect
         let currentY = visibleRect.origin.y
 
         // Calculate which page is at the top of the visible area
-        let currentPageIndex = max(0, Int(currentY / (scaledPageHeight + pageGap)))
+        // Add a small tolerance to avoid off-by-one from floating-point precision
+        let stride = scaledPageHeight + pageGap
+        let currentPageIndex = max(0, Int((currentY + 2.0) / stride))
         let currentPage = min(currentPageIndex + 1, totalPages)
 
         return (currentPage, totalPages)
@@ -6547,10 +6557,11 @@ class EditorViewController: NSViewController {
         presentUtilityWindow(controller.window)
     }
 
-    /// Insert a cross-reference field at the current cursor position.
+    /// Insert a cross-reference field at the current cursor position (or replace the selection).
     private func insertCrossReferenceField(_ field: CrossReferenceField, target: BookmarkTarget) {
         guard let storage = textView.textStorage else { return }
-        let insertLocation = textView.selectedRange().location
+        let selectedRange = textView.selectedRange()
+        let insertLocation = selectedRange.location
 
         // Resolve the initial display text
         let displayText = fieldsManager.resolveField(field, referenceLocation: insertLocation) { [weak self] charPos in
@@ -6587,7 +6598,8 @@ class EditorViewController: NSViewController {
         let fieldString = NSAttributedString(string: displayText, attributes: attrs)
 
         storage.beginEditing()
-        storage.insert(fieldString, at: insertLocation)
+        // Replace the selected range (or insert at cursor if no selection)
+        storage.replaceCharacters(in: selectedRange, with: fieldString)
         storage.endEditing()
 
         textView.setSelectedRange(NSRange(location: insertLocation + displayText.count, length: 0))
@@ -11837,6 +11849,24 @@ case "Book Subtitle":
 
         let allPrefixed = paragraphs.allSatisfy { isPrefixed($0.text) || $0.text.isEmpty }
 
+        // Capture the style name for each paragraph BEFORE any modifications.
+        // This prevents inferStyle() from re-matching after indentation changes
+        // (which can incorrectly match styles like "Glossary Entry").
+        var savedStyleNames: [Int: String] = [:]
+        for (idx, para) in paragraphs.enumerated() {
+            guard !para.text.isEmpty, para.range.location < textStorage.length else { continue }
+            if let styleName = textStorage.attribute(styleAttributeKey, at: para.range.location, effectiveRange: nil) as? String {
+                savedStyleNames[idx] = styleName
+            } else {
+                // Infer the style before we change formatting so we can preserve it.
+                let font = (textStorage.attribute(.font, at: para.range.location, effectiveRange: nil) as? NSFont)
+                    ?? textView.font ?? NSFont.systemFont(ofSize: 12)
+                let ps = (textStorage.attribute(.paragraphStyle, at: para.range.location, effectiveRange: nil) as? NSParagraphStyle)
+                    ?? textView.defaultParagraphStyle ?? NSParagraphStyle.default
+                savedStyleNames[idx] = inferStyle(font: font, paragraphStyle: ps, text: para.text)
+            }
+        }
+
         textStorage.beginEditing()
         for (idx, para) in paragraphs.enumerated().reversed() {
             guard !para.text.isEmpty else { continue }
@@ -11868,6 +11898,10 @@ case "Book Subtitle":
                             mutable.firstLineHeadIndent = standardIndentStep
                             textStorage.addAttribute(.paragraphStyle, value: mutable.copy() as! NSParagraphStyle, range: range)
                         }
+                        // Restore the style name so the dropdown doesn't re-infer incorrectly
+                        if let styleName = savedStyleNames[idx] {
+                            textStorage.addAttribute(styleAttributeKey, value: styleName, range: adjustedRange)
+                        }
                     }
                 }
             } else {
@@ -11897,6 +11931,12 @@ case "Book Subtitle":
                     mutable.headIndent = tabLocation
 
                     textStorage.addAttribute(.paragraphStyle, value: mutable.copy() as! NSParagraphStyle, range: range)
+                }
+
+                // Restore the style name to prevent the dropdown from misidentifying the style
+                // after indentation changes (e.g. matching "Glossary Entry" instead of "Body Text")
+                if let styleName = savedStyleNames[idx] {
+                    textStorage.addAttribute(styleAttributeKey, value: styleName, range: adjustedRange)
                 }
             }
         }

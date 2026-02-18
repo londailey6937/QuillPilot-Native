@@ -7,6 +7,27 @@
 
 import Cocoa
 
+// MARK: - Themed Table Row View
+
+/// Shared themed row view for bookmark and cross-reference table views.
+/// Replaces system-blue selection highlight with the current theme's page border color.
+private final class BookmarkThemedRowView: NSTableRowView {
+    override func drawSelection(in dirtyRect: NSRect) {
+        guard isSelected else { return }
+        let theme = ThemeManager.shared.currentTheme
+        let fill: NSColor = {
+            switch theme {
+            case .night:
+                return theme.pageBorder.withAlphaComponent(0.35)
+            case .day, .cream:
+                return theme.pageBorder.withAlphaComponent(0.22)
+            }
+        }()
+        fill.setFill()
+        NSBezierPath(rect: bounds).fill()
+    }
+}
+
 // MARK: - Insert Bookmark Dialog
 
 @MainActor
@@ -280,6 +301,10 @@ class InsertBookmarkWindowController: NSWindowController {
 extension InsertBookmarkWindowController: NSTableViewDelegate, NSTableViewDataSource {
     func numberOfRows(in tableView: NSTableView) -> Int {
         bookmarks.count
+    }
+
+    func tableView(_ tableView: NSTableView, rowViewForRow row: Int) -> NSTableRowView? {
+        BookmarkThemedRowView()
     }
 
     func tableView(_ tableView: NSTableView, viewFor tableColumn: NSTableColumn?, row: Int) -> NSView? {
@@ -604,6 +629,10 @@ class InsertCrossReferenceWindowController: NSWindowController {
 extension InsertCrossReferenceWindowController: NSTableViewDelegate, NSTableViewDataSource {
     func numberOfRows(in tableView: NSTableView) -> Int {
         filteredTargets.count
+    }
+
+    func tableView(_ tableView: NSTableView, rowViewForRow row: Int) -> NSTableRowView? {
+        BookmarkThemedRowView()
     }
 
     func tableView(_ tableView: NSTableView, viewFor tableColumn: NSTableColumn?, row: Int) -> NSView? {

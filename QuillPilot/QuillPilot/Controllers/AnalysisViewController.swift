@@ -4803,7 +4803,7 @@ extension AnalysisViewController {
     private func showMissingCharactersAlert() {
         let alert = NSAlert.themedWarning(
             title: "No Characters Detected",
-            message: "Run Character Analysis or add characters before opening these popouts."
+            message: "Add characters before opening these popouts."
         )
         if let window = view.window {
             alert.runThemedSheet(for: window)

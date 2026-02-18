@@ -5,6 +5,7 @@
 ## 🗂️ Document, Export, and Editing Tools
 
 - **Auto-save (saved documents)**: QuillPilot auto-saves periodically when changes are detected (default ~30 seconds; configurable in Preferences). New/unsaved documents won’t auto-save until you choose File → Save / Save As.
+- **Import formats (File → Open…)**: DOCX, ODT, Pages, RTF, RTFD, TXT, Markdown, HTML, ePub, Mobi (Kindle), Fade In.
 - **Export formats (File → Save As…)**: DOCX, RTF, RTFD, ODT, TXT, Markdown, HTML, PDF, ePub, Mobi.
 - **Sections & page numbering (Insert → Section Break… / View → Section Breaks)**: Create sections with independent page numbering, show/hide § markers, and manage all section breaks from a single list (View → Section Breaks → Manage Section Breaks…).
 - **Table of Contents & Index (View → Table of Contents & Index… / ⌘⇧T)**: Insert/manage TOC entries and index markers.

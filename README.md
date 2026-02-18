@@ -10,7 +10,8 @@ A powerful native macOS writing application with advanced story analysis, plot v
 - **Rich Text Formatting**: Bold, italic, fonts, colors
 - **Document Management**: New, open, save, save as
 - **Auto-save (saved documents)**: Saves periodically when changes are detected (default ~30 seconds; configurable in Preferences)
-- **Export Formats (via Save As…)**: DOCX, RTF, RTFD, ODT, TXT, Markdown, HTML, PDF, ePub, Mobi
+- **Import Formats (File → Open…)**: DOCX, ODT, Pages, RTF, RTFD, TXT, Markdown, HTML, ePub, Mobi (Kindle), Fade In
+- **Export Formats (File → Save As…)**: DOCX, RTF, RTFD, ODT, TXT, Markdown, HTML, PDF, ePub, Mobi
 - **Split View Interface**: Editor + analysis sidebar
 
 ### 🎭 Templates (Screenplay + Poetry)
@@ -64,31 +65,26 @@ Based on professional writing tips:
 Three powerful visualization modes:
 
 1. **Emotional Journey Charts**:
-
    - Line graphs showing sentiment over time
    - Track positive/negative emotional states
    - Arc type detection (Positive/Negative/Flat/Transformational)
    - Arc strength scoring (0-100%)
 
 2. **Character Network Graph**:
-
    - Bar charts of character co-appearances
    - Relationship strength calculation
    - Identify under-developed relationships
 
    Notes:
-
    - Character visualizations are kept in sync with the Character Library and focus on major characters.
 
 3. **Presence Heatmap**:
-
    - Grid showing character mentions per section
    - Color-coded intensity
    - Spot characters who disappear
    - Balance protagonist screen time
 
    Notes:
-
    - For screenplays, presence is organized by scene with an optional act view.
 
 ### 🎨 Story Construction Tools

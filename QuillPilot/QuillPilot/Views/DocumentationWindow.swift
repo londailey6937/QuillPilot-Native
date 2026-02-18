@@ -1086,12 +1086,20 @@ This separation keeps your manuscript clean while preserving deep contextual kno
 📦 RTFD (Recommended)
 RTFD is a macOS-native rich-text format stored as a package (a folder that appears as a single file). It reliably preserves text styling and embedded images and is generally the best format while drafting in Quill Pilot.
 
+Quill Pilot can open:
+• Word (.docx) • OpenDocument (.odt) • Apple Pages (.pages)
+• RTF (.rtf) • RTFD (.rtfd) • Plain text (.txt) • Markdown (.md)
+• HTML (.html) • ePub (.epub) • Kindle (.mobi) • Fade In (.fadein)
+
 For sharing, collaboration, or cross-platform editing, exporting is preferred. Quill Pilot supports export to:
 • Word (.docx)
 • OpenDocument (.odt)
+• ePub (.epub)
+• Kindle (.mobi)
 • PDF
 • HTML
-• Plain text
+• RTF / RTFD
+• Plain text / Markdown
 """, color: bodyColor))
         content.append(makeNewline())
 

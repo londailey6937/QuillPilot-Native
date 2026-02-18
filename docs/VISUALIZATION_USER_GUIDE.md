@@ -13,6 +13,7 @@ QuillPilot now includes powerful visualization tools to help you understand your
 Notes:
 
 - **Auto-save** runs periodically for saved documents when changes are detected (default ~30 seconds; configurable in Preferences).
+- **Open…** supports importing DOCX, ODT, Pages, RTF, RTFD, TXT, Markdown, HTML, ePub, Mobi (Kindle), and Fade In.
 - **Save As…** supports exporting to DOCX, RTF, RTFD, ODT, TXT, Markdown, HTML, PDF, ePub, and Mobi.
 
 ## Plot Point Visualization

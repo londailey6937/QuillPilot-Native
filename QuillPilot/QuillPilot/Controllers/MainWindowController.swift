@@ -3359,7 +3359,12 @@ class FormattingToolbar: NSView {
         decreaseSizeBtn.setAccessibilityLabel("Decrease Font Size")
         sizePopup = registerControl(NSPopUpButton(frame: .zero, pullsDown: false))
         sizePopup.addItems(withTitles: ["8", "9", "10", "11", "12", "14", "16", "18", "20", "24", "28", "32"])
-        sizePopup.selectItem(withTitle: "20")
+        // Default to the current template's body style font size instead of a hard-coded value.
+        let defaultStyleName = StyleCatalog.shared.isScreenplayTemplate ? "Action"
+            : StyleCatalog.shared.isPoetryTemplate ? "Verse" : "Body Text"
+        let defaultSizeTitle = StyleCatalog.shared.style(named: defaultStyleName)
+            .map { String(Int($0.fontSize)) } ?? "14"
+        sizePopup.selectItem(withTitle: defaultSizeTitle)
         sizePopup.target = self
         sizePopup.action = #selector(fontSizeChanged(_:))
         sizePopup.toolTip = "Font Size"
@@ -4330,6 +4335,19 @@ class FormattingToolbar: NSView {
         if let index = (0..<stylePopup.numberOfItems).first(where: { stylePopup.item(at: $0)?.representedObject as? String == styleName || stylePopup.item(at: $0)?.title == displayStyle }) {
             stylePopup.selectItem(at: index)
             reapplyPopupTheme(stylePopup)
+        }
+
+        // Update font size popup to reflect the style definition's font size.
+        // Use the catalog style name (before display normalization) so the lookup
+        // matches exactly. Fall back to the display name for legacy/alias styles.
+        let sizeStyle = StyleCatalog.shared.style(named: styleName)
+            ?? StyleCatalog.shared.style(named: displayStyle)
+        if let def = sizeStyle {
+            let sizeStr = String(Int(def.fontSize))
+            if sizePopup.titleOfSelectedItem != sizeStr {
+                sizePopup.selectItem(withTitle: sizeStr)
+                reapplyPopupTheme(sizePopup)
+            }
         }
     }
 
@@ -6514,10 +6532,13 @@ private enum DocxBuilder {
         let color = (attributes[.foregroundColor] as? NSColor) ?? .black
         let background = (attributes[.backgroundColor] as? NSColor)?.usingColorSpace(.sRGB)
 
-        DebugLog.log("📝 Export run: fontName='\(font.fontName)', displayName='\(font.displayName ?? "nil")', size=\(font.pointSize)")
+        DebugLog.log("📝 Export run: fontName='\(font.fontName)', familyName='\(font.familyName ?? "nil")', displayName='\(font.displayName ?? "nil")', size=\(font.pointSize)")
 
         var rPr: [String] = []
-        let escapedFont = xmlEscape(font.fontName)
+        // Use the font family name (e.g. "Times New Roman") rather than the PostScript
+        // name (e.g. "TimesNewRomanPSMT") so Word and other editors recognise the font.
+        let familyName = font.familyName ?? font.fontName
+        let escapedFont = xmlEscape(familyName)
         rPr.append("<w:rFonts w:ascii=\"\(escapedFont)\" w:hAnsi=\"\(escapedFont)\" w:cs=\"\(escapedFont)\"/>")
 
         let halfPoints = Int(round(font.pointSize * 2))

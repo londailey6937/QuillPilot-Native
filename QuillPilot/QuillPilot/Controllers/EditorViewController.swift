@@ -4464,11 +4464,12 @@ class EditorViewController: NSViewController {
                 // Apply paragraph style at paragraph level
                 normalized.addAttribute(.paragraphStyle, value: finalParagraph, range: paragraphRange)
 
-                // Apply font and colors per run to preserve inline formatting (bold, italic, size changes)
+                // Apply font and colors per run to preserve inline formatting (bold, italic)
+                // Use mergedFontForExport so the *style definition* font size is authoritative;
+                // only inline bold/italic overrides are preserved.
                 normalized.enumerateAttributes(in: paragraphRange, options: []) { attrs, runRange, _ in
-                    // Merge style font with existing font to preserve inline changes
                     let existingFont = attrs[.font] as? NSFont
-                    let finalFont = mergedFont(existing: existingFont, style: font)
+                    let finalFont = mergedFontForExport(existing: existingFont, style: font)
 
                     normalized.addAttribute(.font, value: finalFont, range: runRange)
 
@@ -4504,10 +4505,10 @@ class EditorViewController: NSViewController {
                     normalized.addAttribute(.paragraphStyle, value: finalParagraph, range: paragraphRange)
 
                     // Apply font and colors per run to preserve inline formatting
+                    // Use mergedFontForExport so the style definition font size is authoritative.
                     normalized.enumerateAttributes(in: paragraphRange, options: []) { attrs, runRange, _ in
-                        // Merge style font with existing font to preserve inline changes
                         let existingFont = attrs[.font] as? NSFont
-                        let finalFont = mergedFont(existing: existingFont, style: styleFont)
+                        let finalFont = mergedFontForExport(existing: existingFont, style: styleFont)
                         normalized.addAttribute(.font, value: finalFont, range: runRange)
 
                         if attrs[.foregroundColor] == nil {
@@ -8609,6 +8610,37 @@ case "Book Subtitle":
         }
 
         // No inline changes detected, use style font (to pick up style-level updates)
+        return styleFont
+    }
+
+    /// Export-specific font merge: always uses the style's font size so exports match the
+    /// style definition, while preserving inline bold/italic overrides.
+    private func mergedFontForExport(existing existingFont: NSFont?, style styleFont: NSFont) -> NSFont {
+        guard let existing = existingFont else { return styleFont }
+
+        let existingTraits = NSFontManager.shared.traits(of: existing)
+        let styleTraits = NSFontManager.shared.traits(of: styleFont)
+
+        let existingBold = existingTraits.contains(.boldFontMask)
+        let existingItalic = existingTraits.contains(.italicFontMask)
+        let styleBold = styleTraits.contains(.boldFontMask)
+        let styleItalic = styleTraits.contains(.italicFontMask)
+
+        let hasInlineBold = existingBold != styleBold
+        let hasInlineItalic = existingItalic != styleItalic
+
+        if hasInlineBold || hasInlineItalic {
+            // Use the style font (including its size), preserving only inline bold/italic.
+            var font = styleFont
+            if existingBold {
+                font = NSFontManager.shared.convert(font, toHaveTrait: .boldFontMask)
+            }
+            if existingItalic {
+                font = NSFontManager.shared.convert(font, toHaveTrait: .italicFontMask)
+            }
+            return font
+        }
+
         return styleFont
     }
 

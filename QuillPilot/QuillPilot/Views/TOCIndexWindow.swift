@@ -1044,12 +1044,16 @@ class TOCIndexWindowController: NSWindowController, NSWindowDelegate, NSOutlineV
 
         // Filter to only include chapter-level entries (level 1) and convert to TOCEntry format
         // Also exclude TOC/Index/Glossary titles from the TOC itself
-        let excludedTitles = ["table of contents", "index", "glossary", "appendix"]
+        // Exclude only auto-generated TOC/Glossary/Appendix headings from the TOC.
+        // Index is kept so back-matter appears in the table of contents.
+        let excludedStyles: Set<String> = ["TOC Title"]
+        let excludedTitles = ["table of contents", "glossary", "appendix"]
         var tocEntries: [TOCEntry] = []
 
         for entry in outlineEntries {
             let lowercasedTitle = entry.title.lowercased()
-            let isExcluded = excludedTitles.contains(where: { lowercasedTitle == $0 })
+            let isExcludedByStyle = excludedStyles.contains(entry.styleName ?? "")
+            let isExcluded = isExcludedByStyle || excludedTitles.contains(where: { lowercasedTitle == $0 })
 
             if !isExcluded {
                 let pageInfo = editorVC.pageNumberInfo(forCharacterPosition: entry.range.location)

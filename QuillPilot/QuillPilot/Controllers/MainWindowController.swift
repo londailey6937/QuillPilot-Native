@@ -4913,7 +4913,16 @@ class ContentViewController: NSViewController, NSSplitViewDelegate {
             let displayTitle = slugText.isEmpty ? baseTitle : "\(baseTitle) - \(slugText)"
 
             let anchorLocation = slug?.range.location ?? NSNotFound
-            let page = (anchorLocation == NSNotFound) ? nil : editorViewController.getPageNumber(forCharacterPosition: anchorLocation)
+            let page: Int?
+            let pageDisplay: String?
+            if anchorLocation != NSNotFound {
+                let info = editorViewController.pageNumberInfo(forCharacterPosition: anchorLocation)
+                page = info.number
+                pageDisplay = info.display
+            } else {
+                page = nil
+                pageDisplay = nil
+            }
 
             results.append(
                 EditorViewController.OutlineEntry(
@@ -4921,6 +4930,7 @@ class ContentViewController: NSViewController, NSSplitViewDelegate {
                     level: 1,
                     range: NSRange(location: anchorLocation, length: 0),
                     page: page,
+                    pageDisplay: pageDisplay,
                     styleName: "Scene"
                 )
             )
@@ -5274,6 +5284,7 @@ class OutlineViewController: NSViewController {
         var title: String { entry.title }
         var level: Int { entry.level }
         var page: Int? { entry.page }
+        var pageDisplay: String? { entry.pageDisplay }
         var range: NSRange { entry.range }
 
         init(entry: EditorViewController.OutlineEntry, children: [Node] = []) {
@@ -5629,7 +5640,7 @@ extension OutlineViewController: NSOutlineViewDataSource, NSOutlineViewDelegate 
         titleField.stringValue = node.title
 
         if let page = node.page {
-            pageField?.stringValue = "p. \(page)"
+            pageField?.stringValue = "p. \(node.pageDisplay ?? String(page))"
             pageField?.textColor = pageColor()
         } else {
             pageField?.stringValue = ""

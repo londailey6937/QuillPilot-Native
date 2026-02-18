@@ -8705,6 +8705,7 @@ case "Book Subtitle":
         let level: Int
         let range: NSRange
         let page: Int?
+        let pageDisplay: String?
         let styleName: String?
     }
 
@@ -9018,8 +9019,8 @@ case "Book Subtitle":
                         .replacingOccurrences(of: "\u{FFFC}", with: "")
                         .trimmingCharacters(in: .whitespacesAndNewlines)
                     if !rawTitle.isEmpty {
-                        let pageIndex = pageNumberInfo(forCharacterPosition: paragraphRange.location).number
-                        results.append(OutlineEntry(title: rawTitle, level: level, range: paragraphRange, page: pageIndex, styleName: styleName))
+                        let pageInfo = pageNumberInfo(forCharacterPosition: paragraphRange.location)
+                        results.append(OutlineEntry(title: rawTitle, level: level, range: paragraphRange, page: pageInfo.number, pageDisplay: pageInfo.display, styleName: styleName))
                         if results.count <= 3 {
                             DebugLog.log("📋✅ Found: '\(rawTitle)' style='\(styleName)' level=\(level)")
                         }
@@ -9028,18 +9029,18 @@ case "Book Subtitle":
             } else if isScreenplayTemplate {
                 let rawTitle = fullString.substring(with: paragraphRange).trimmingCharacters(in: .whitespacesAndNewlines)
                 if looksLikeScreenplaySlugline(rawTitle) {
-                    let pageIndex = pageNumberInfo(forCharacterPosition: paragraphRange.location).number
-                    results.append(OutlineEntry(title: rawTitle, level: 1, range: paragraphRange, page: pageIndex, styleName: "Scene Heading"))
+                    let pageInfo = pageNumberInfo(forCharacterPosition: paragraphRange.location)
+                    results.append(OutlineEntry(title: rawTitle, level: 1, range: paragraphRange, page: pageInfo.number, pageDisplay: pageInfo.display, styleName: "Scene Heading"))
                 } else if looksLikeScreenplayActHeading(rawTitle) {
-                    let pageIndex = pageNumberInfo(forCharacterPosition: paragraphRange.location).number
-                    results.append(OutlineEntry(title: rawTitle, level: 0, range: paragraphRange, page: pageIndex, styleName: "Scene Heading"))
+                    let pageInfo = pageNumberInfo(forCharacterPosition: paragraphRange.location)
+                    results.append(OutlineEntry(title: rawTitle, level: 0, range: paragraphRange, page: pageInfo.number, pageDisplay: pageInfo.display, styleName: "Scene Heading"))
                 }
             } else {
                 // Fallback: include Index title even if style tags are missing.
                 let rawTitle = fullString.substring(with: paragraphRange).trimmingCharacters(in: .whitespacesAndNewlines)
                 if rawTitle.lowercased() == "index" {
-                    let pageIndex = pageNumberInfo(forCharacterPosition: paragraphRange.location).number
-                    results.append(OutlineEntry(title: rawTitle, level: 1, range: paragraphRange, page: pageIndex, styleName: "Index Title"))
+                    let pageInfo = pageNumberInfo(forCharacterPosition: paragraphRange.location)
+                    results.append(OutlineEntry(title: rawTitle, level: 1, range: paragraphRange, page: pageInfo.number, pageDisplay: pageInfo.display, styleName: "Index Title"))
                 }
             }
 
@@ -9124,7 +9125,7 @@ case "Book Subtitle":
                 title = "Stanza \(stanzaIndex)"
             }
 
-            results.append(OutlineEntry(title: title, level: 1, range: range, page: pageIndex, styleName: "Poetry — Stanza"))
+            results.append(OutlineEntry(title: title, level: 1, range: range, page: pageIndex, pageDisplay: String(pageIndex), styleName: "Poetry — Stanza"))
 
             stanzaStart = nil
             stanzaEnd = nil

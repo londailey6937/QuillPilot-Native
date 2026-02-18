@@ -368,6 +368,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         mainWindowController?.openTableOperationsFromMenu(sender)
     }
 
+    @objc private func insertImageFromMenu(_ sender: Any?) {
+        mainWindowController?.mainContentViewController?.editorViewController.insertImageFromDisk()
+    }
+
     @objc private func insertPageBreak(_ sender: Any?) {
         if mainWindowController == nil {
             mainWindowController = MainWindowController()
@@ -1002,6 +1006,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let insertTableOperationsItem = NSMenuItem(title: "Table…", action: #selector(openTableOperationsFromMenu(_:)), keyEquivalent: "")
         insertTableOperationsItem.target = self
         insertMenu.addItem(insertTableOperationsItem)
+
+        let insertImageItem = NSMenuItem(title: "Image…", action: #selector(insertImageFromMenu(_:)), keyEquivalent: "")
+        insertImageItem.target = self
+        insertMenu.addItem(insertImageItem)
 
         insertMenu.addItem(.separator())
 

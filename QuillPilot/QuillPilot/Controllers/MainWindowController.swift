@@ -2233,6 +2233,18 @@ extension MainWindowController {
             allowedTypes.append(fadeInType)
         }
 
+        // ePub (.epub) — ZIP-based e-book container (OEBPS/XHTML inside).
+        if let epubType = UTType("org.idpf.epub-container") {
+            allowedTypes.append(epubType)
+        } else if let epubType = UTType(filenameExtension: "epub", conformingTo: .data) {
+            allowedTypes.append(epubType)
+        }
+
+        // Kindle (.mobi) — PDB-based e-book with HTML text records.
+        if let mobiType = UTType(filenameExtension: "mobi", conformingTo: .data) {
+            allowedTypes.append(mobiType)
+        }
+
         // Safety: include `.data` so legacy/mis-typed files (e.g. old flat .rtfd) still appear in the Open panel
         // even if their UTType isn't recognized correctly.
         if !allowedTypes.isEmpty {
@@ -2783,10 +2795,220 @@ extension MainWindowController {
                 }
             }
 
+        case "epub":
+            // Import ePub document. ePub is a ZIP containing XHTML content.
+            // We can't save back to ePub natively, so treat as an imported document.
+            let filename = url.deletingPathExtension().lastPathComponent
+            headerView.setDocumentTitle(filename)
+            currentDocumentURL = nil
+            currentDocumentFormat = .docx
+            hasUnsavedChanges = false
+            mainContentViewController.editorViewController.headerText = ""
+            mainContentViewController.editorViewController.headerTextRight = ""
+            mainContentViewController.editorViewController.footerText = ""
+            mainContentViewController.editorViewController.footerTextRight = ""
+
+            mainContentViewController.documentDidChange(url: url)
+            mainContentViewController.editorViewController.textView?.string = "Loading ePub…"
+
+            DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+                do {
+                    // ePub is a ZIP archive. Extract to a temp directory.
+                    let tempDir = FileManager.default.temporaryDirectory
+                        .appendingPathComponent("QuillPilot-EPubImport-\(UUID().uuidString)", isDirectory: true)
+                    try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+                    defer { try? FileManager.default.removeItem(at: tempDir) }
+
+                    let unzipProcess = Process()
+                    unzipProcess.executableURL = URL(fileURLWithPath: "/usr/bin/unzip")
+                    unzipProcess.arguments = ["-o", "-q", url.path, "-d", tempDir.path]
+                    unzipProcess.standardOutput = FileHandle.nullDevice
+                    unzipProcess.standardError = FileHandle.nullDevice
+                    try unzipProcess.run()
+                    unzipProcess.waitUntilExit()
+
+                    // 1. Find the rootfile from META-INF/container.xml
+                    let containerURL = tempDir.appendingPathComponent("META-INF/container.xml")
+                    guard FileManager.default.fileExists(atPath: containerURL.path) else {
+                        throw NSError(domain: "QuillPilot", code: 1,
+                                      userInfo: [NSLocalizedDescriptionKey: "Invalid ePub: missing META-INF/container.xml"])
+                    }
+                    let containerData = try Data(contentsOf: containerURL)
+                    let rootfilePath = self?.epubParseContainerXML(containerData) ?? "OEBPS/content.opf"
+
+                    // 2. Parse the OPF to get spine-ordered content files
+                    let opfURL = tempDir.appendingPathComponent(rootfilePath)
+                    let opfDir = opfURL.deletingLastPathComponent()
+                    let opfData = try Data(contentsOf: opfURL)
+                    let contentFiles = self?.epubParseOPF(opfData) ?? []
+
+                    // 3. Read and concatenate all XHTML/HTML content in spine order
+                    var combinedHTML = "<html><head><meta charset='UTF-8'></head><body>\n"
+                    for contentFile in contentFiles {
+                        let fileURL = opfDir.appendingPathComponent(contentFile)
+                        guard FileManager.default.fileExists(atPath: fileURL.path) else { continue }
+                        if let rawHTML = try? String(contentsOf: fileURL, encoding: .utf8) {
+                            let bodyContent = self?.epubExtractHTMLBody(rawHTML) ?? rawHTML
+                            combinedHTML += bodyContent + "\n"
+                        }
+                    }
+                    combinedHTML += "</body></html>"
+
+                    guard let htmlData = combinedHTML.data(using: .utf8) else {
+                        throw NSError(domain: "QuillPilot", code: 2,
+                                      userInfo: [NSLocalizedDescriptionKey: "Failed to process ePub content."])
+                    }
+
+                    let attributed = try NSAttributedString(
+                        data: htmlData,
+                        options: [
+                            .documentType: NSAttributedString.DocumentType.html,
+                            .characterEncoding: String.Encoding.utf8.rawValue
+                        ],
+                        documentAttributes: nil
+                    )
+
+                    DispatchQueue.main.async {
+                        self?.applyImportedContent(attributed, url: url)
+                        self?.currentDocumentFormat = .docx
+                    }
+                } catch {
+                    DispatchQueue.main.async {
+                        self?.presentErrorAlert(message: "Failed to open ePub",
+                                                details: error.localizedDescription)
+                    }
+                }
+            }
+            return
+
+        case "mobi":
+            // Import Kindle MOBI document. MOBI is a PDB container holding HTML text records.
+            // We can't save back to MOBI natively, so treat as an imported document.
+            let filename = url.deletingPathExtension().lastPathComponent
+            headerView.setDocumentTitle(filename)
+            currentDocumentURL = nil
+            currentDocumentFormat = .docx
+            hasUnsavedChanges = false
+            mainContentViewController.editorViewController.headerText = ""
+            mainContentViewController.editorViewController.headerTextRight = ""
+            mainContentViewController.editorViewController.footerText = ""
+            mainContentViewController.editorViewController.footerTextRight = ""
+
+            mainContentViewController.documentDidChange(url: url)
+            mainContentViewController.editorViewController.textView?.string = "Loading Kindle file…"
+
+            DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+                do {
+                    let data = try Data(contentsOf: url)
+                    guard data.count >= 78 else {
+                        throw NSError(domain: "QuillPilot", code: 1,
+                                      userInfo: [NSLocalizedDescriptionKey: "Invalid MOBI file: too small."])
+                    }
+
+                    // PDB header: number of records at offset 76 (big-endian)
+                    let numRecords = Int(data.readUInt16BE(at: 76))
+                    guard numRecords >= 2 else {
+                        throw NSError(domain: "QuillPilot", code: 2,
+                                      userInfo: [NSLocalizedDescriptionKey: "Invalid MOBI file: no text records."])
+                    }
+
+                    let recordListEnd = 78 + numRecords * 8
+                    guard data.count >= recordListEnd + 2 else {
+                        throw NSError(domain: "QuillPilot", code: 3,
+                                      userInfo: [NSLocalizedDescriptionKey: "Invalid MOBI file: truncated record list."])
+                    }
+
+                    // Read record offsets (each entry: 4-byte offset + 4-byte attrs/id)
+                    var recordOffsets: [Int] = []
+                    for i in 0..<numRecords {
+                        recordOffsets.append(Int(data.readUInt32BE(at: 78 + i * 8)))
+                    }
+
+                    // Record 0 contains PalmDoc header (first 16 bytes)
+                    let rec0Offset = recordOffsets[0]
+                    guard data.count > rec0Offset + 16 else {
+                        throw NSError(domain: "QuillPilot", code: 4,
+                                      userInfo: [NSLocalizedDescriptionKey: "Invalid MOBI file: record 0 too small."])
+                    }
+
+                    let compression = data.readUInt16BE(at: rec0Offset)      // 1=none, 2=PalmDoc, 17480=HUFF/CDIC
+                    let textLength = Int(data.readUInt32BE(at: rec0Offset + 4))
+                    let textRecordCount = Int(data.readUInt16BE(at: rec0Offset + 8))
+
+                    // Concatenate text records (records 1 through textRecordCount)
+                    var textData = Data()
+                    textData.reserveCapacity(textLength)
+                    for i in 1...min(textRecordCount, numRecords - 1) {
+                        let recStart = recordOffsets[i]
+                        let recEnd: Int
+                        if i + 1 < numRecords {
+                            recEnd = recordOffsets[i + 1]
+                        } else {
+                            recEnd = data.count
+                        }
+                        guard recStart < data.count, recEnd <= data.count, recStart < recEnd else { continue }
+
+                        var recordData = data.subdata(in: recStart..<recEnd)
+
+                        if compression == 2 {
+                            // PalmDoc LZ77-variant decompression
+                            recordData = self?.mobiDecompressPalmDoc(recordData) ?? recordData
+                        }
+                        // compression == 1: uncompressed; 17480: HUFF/CDIC (unsupported, use raw)
+
+                        textData.append(recordData)
+                    }
+
+                    // Trim to declared text length
+                    if textLength > 0 && textData.count > textLength {
+                        textData = textData.prefix(textLength)
+                    }
+
+                    // Text data is HTML. Convert to NSAttributedString.
+                    guard let htmlString = String(data: textData, encoding: .utf8)
+                            ?? String(data: textData, encoding: .windowsCP1252) else {
+                        throw NSError(domain: "QuillPilot", code: 5,
+                                      userInfo: [NSLocalizedDescriptionKey: "Failed to decode MOBI text content."])
+                    }
+
+                    let fullHTML: String
+                    if htmlString.lowercased().contains("<html") {
+                        fullHTML = htmlString
+                    } else {
+                        fullHTML = "<html><head><meta charset='UTF-8'></head><body>\(htmlString)</body></html>"
+                    }
+
+                    guard let htmlData = fullHTML.data(using: .utf8) else {
+                        throw NSError(domain: "QuillPilot", code: 6,
+                                      userInfo: [NSLocalizedDescriptionKey: "Failed to process MOBI content."])
+                    }
+
+                    let attributed = try NSAttributedString(
+                        data: htmlData,
+                        options: [
+                            .documentType: NSAttributedString.DocumentType.html,
+                            .characterEncoding: String.Encoding.utf8.rawValue
+                        ],
+                        documentAttributes: nil
+                    )
+
+                    DispatchQueue.main.async {
+                        self?.applyImportedContent(attributed, url: url)
+                        self?.currentDocumentFormat = .docx
+                    }
+                } catch {
+                    DispatchQueue.main.async {
+                        self?.presentErrorAlert(message: "Failed to open Kindle file",
+                                                details: error.localizedDescription)
+                    }
+                }
+            }
+            return
+
         default:
             presentErrorAlert(
                 message: "Unsupported format",
-                details: "Quill Pilot opens .docx, .odt, .pages, .rtf, .rtfd, .txt, .md, .html, and .fadein documents.\n\nUse Export to save as Word (.docx), OpenDocument (.odt), RTF/RTFD, PDF, ePub, Kindle, HTML, or Text."
+                details: "Quill Pilot opens .docx, .odt, .pages, .rtf, .rtfd, .txt, .md, .html, .epub, .mobi, and .fadein documents.\n\nUse Export to save as Word (.docx), OpenDocument (.odt), RTF/RTFD, PDF, ePub, Kindle, HTML, or Text."
             )
             return
         }
@@ -5738,8 +5960,8 @@ enum ExportFormat: String, CaseIterable {
     /// Whether this format can be opened (not just exported)
     var canOpen: Bool {
         switch self {
-        case .docx, .odt, .rtf, .rtfd, .txt, .markdown, .html: return true
-        case .pdf, .epub, .mobi: return false
+        case .docx, .odt, .rtf, .rtfd, .txt, .markdown, .html, .epub, .mobi: return true
+        case .pdf: return false
         }
     }
 }
@@ -8061,6 +8283,20 @@ private extension Data {
         return b0 | (b1 << 8) | (b2 << 16) | (b3 << 24)
     }
 
+    func readUInt16BE(at offset: Int) -> UInt16 {
+        let b0 = UInt16(self[offset])
+        let b1 = UInt16(self[offset + 1])
+        return (b0 << 8) | b1
+    }
+
+    func readUInt32BE(at offset: Int) -> UInt32 {
+        let b0 = UInt32(self[offset])
+        let b1 = UInt32(self[offset + 1])
+        let b2 = UInt32(self[offset + 2])
+        let b3 = UInt32(self[offset + 3])
+        return (b0 << 24) | (b1 << 16) | (b2 << 8) | b3
+    }
+
     mutating func appendUInt16(_ v: UInt16) {
         var le = v.littleEndian
         Swift.withUnsafeBytes(of: &le) { append($0.bindMemory(to: UInt8.self)) }
@@ -8331,41 +8567,306 @@ extension MainWindowController {
     // MARK: - Mobi Export
 
     private func generateMobi(from content: NSAttributedString, url: URL) throws -> Data {
-        // Mobi format is complex - we'll generate an HTML file and note that
-        // users need KindleGen or Calibre to convert ePub to Mobi
+        // Big-endian helpers
+        func u16(_ data: inout Data, _ v: UInt16) {
+            data.append(UInt8(v >> 8)); data.append(UInt8(v & 0xFF))
+        }
+        func u32(_ data: inout Data, _ v: UInt32) {
+            data.append(UInt8((v >> 24) & 0xFF)); data.append(UInt8((v >> 16) & 0xFF))
+            data.append(UInt8((v >> 8) & 0xFF));  data.append(UInt8(v & 0xFF))
+        }
 
-        // For now, create a basic HTML that can be read by Kindle
         let title = url.deletingPathExtension().lastPathComponent
-        let htmlContent = try convertToHTML(content)
+        let htmlBody = try convertToHTML(content)
 
-        let mobiHTML = """
+        let escapedTitle = title
+            .replacingOccurrences(of: "&", with: "&amp;")
+            .replacingOccurrences(of: "<", with: "&lt;")
+            .replacingOccurrences(of: ">", with: "&gt;")
+
+        let fullHTML = """
         <!DOCTYPE html>
         <html>
         <head>
-          <meta charset="UTF-8">
-          <title>\(title)</title>
-          <style>
-            body { font-family: serif; line-height: 1.5; margin: 1em; }
-            h1 { page-break-before: always; }
-            p { text-indent: 1.5em; margin: 0.5em 0; }
-          </style>
+        <meta charset="UTF-8">
+        <title>\(escapedTitle)</title>
+        <style>
+        body { font-family: serif; line-height: 1.5; margin: 1em; }
+        h1 { page-break-before: always; }
+        p { text-indent: 1.5em; margin: 0.5em 0; }
+        </style>
         </head>
         <body>
-          <h1>\(title)</h1>
-          \(htmlContent)
+        \(htmlBody)
         </body>
         </html>
         """
 
-        // Note: True .mobi generation requires KindleGen tool
-        // This creates an HTML file that can be sent to Kindle via email or converted
-        guard let data = mobiHTML.data(using: .utf8) else {
+        guard let textData = fullHTML.data(using: .utf8) else {
             throw NSError(domain: "QuillPilot", code: -1, userInfo: [
-                NSLocalizedDescriptionKey: "Failed to generate Mobi HTML"
+                NSLocalizedDescriptionKey: "Failed to encode MOBI content"
             ])
         }
 
-        return data
+        // Split HTML into 4096-byte text records (uncompressed)
+        let maxRecSize = 4096
+        var textRecords: [Data] = []
+        var pos = 0
+        while pos < textData.count {
+            let end = min(pos + maxRecSize, textData.count)
+            textRecords.append(textData[pos..<end])
+            pos = end
+        }
+        if textRecords.isEmpty { textRecords.append(Data()) }
+
+        let titleUTF8 = Array(title.utf8)
+
+        // ── Record 0: PalmDoc header (16 B) + MOBI header (232 B) + title ──
+        let mobiHeaderLen: UInt32 = 232
+        let fullNameOffset: UInt32 = 16 + mobiHeaderLen
+
+        var rec0 = Data()
+
+        // PalmDoc header (16 bytes)
+        u16(&rec0, 1)                                       // compression: none
+        u16(&rec0, 0)                                       // unused
+        u32(&rec0, UInt32(textData.count))                   // uncompressed text length
+        u16(&rec0, UInt16(textRecords.count))                // text record count
+        u16(&rec0, UInt16(maxRecSize))                       // max record size
+        u16(&rec0, 0)                                       // encryption: none
+        u16(&rec0, 0)                                       // unused
+
+        // MOBI header (232 bytes starting from "MOBI")
+        let mobiStart = rec0.count
+        rec0.append(contentsOf: [0x4D, 0x4F, 0x42, 0x49])   // "MOBI"
+        u32(&rec0, mobiHeaderLen)                            // header length
+        u32(&rec0, 2)                                        // mobi type: Mobipocket Book
+        u32(&rec0, 65001)                                    // encoding: UTF-8
+        u32(&rec0, UInt32.random(in: 1000...999999))         // unique ID
+        u32(&rec0, 6)                                        // generator version
+        for _ in 0..<10 { u32(&rec0, 0xFFFFFFFF) }          // reserved/index fields
+        u32(&rec0, UInt32(textRecords.count + 1))            // first non-book record
+        u32(&rec0, fullNameOffset)                           // full name offset
+        u32(&rec0, UInt32(titleUTF8.count))                  // full name length
+        u32(&rec0, 0x09)                                     // locale: English
+        u32(&rec0, 0)                                        // input language
+        u32(&rec0, 0)                                        // output language
+        u32(&rec0, 6)                                        // min version
+        u32(&rec0, 0xFFFFFFFF)                               // first image record (none)
+        for _ in 0..<4 { u32(&rec0, 0) }                    // huffman fields
+        u32(&rec0, 0)                                        // EXTH flags: none
+
+        // Pad MOBI header to exactly mobiHeaderLen bytes
+        let mobiWritten = rec0.count - mobiStart
+        let mobiPad = Int(mobiHeaderLen) - mobiWritten
+        if mobiPad > 0 { rec0.append(contentsOf: [UInt8](repeating: 0, count: mobiPad)) }
+
+        // Append full name after MOBI header
+        rec0.append(contentsOf: titleUTF8)
+        let namePad = (4 - (titleUTF8.count % 4)) % 4
+        if namePad > 0 { rec0.append(contentsOf: [UInt8](repeating: 0, count: namePad)) }
+
+        // ── Assemble PDB file ──
+        let totalRecords = 1 + textRecords.count
+        let dataStart = 78 + totalRecords * 8 + 2           // header + record list + gap
+
+        // Compute record data offsets
+        var offsets = [Int]()
+        var cur = dataStart
+        offsets.append(cur); cur += rec0.count
+        for tr in textRecords { offsets.append(cur); cur += tr.count }
+
+        var pdb = Data()
+
+        // PDB header (78 bytes)
+        var nameField = Array(title.prefix(31).utf8)
+        while nameField.count < 32 { nameField.append(0) }
+        pdb.append(contentsOf: nameField)                    // 0: name (32 B)
+        u16(&pdb, 0)                                         // 32: attributes
+        u16(&pdb, 0)                                         // 34: version
+        let palmEpoch: TimeInterval = 2082844800
+        let now = UInt32(Date().timeIntervalSince1970 + palmEpoch)
+        u32(&pdb, now)                                       // 36: creation date
+        u32(&pdb, now)                                       // 40: modification date
+        u32(&pdb, 0)                                         // 44: last backup
+        u32(&pdb, 0)                                         // 48: modification number
+        u32(&pdb, 0)                                         // 52: app info
+        u32(&pdb, 0)                                         // 56: sort info
+        pdb.append(contentsOf: [0x42, 0x4F, 0x4F, 0x4B])    // 60: type "BOOK"
+        pdb.append(contentsOf: [0x4D, 0x4F, 0x42, 0x49])    // 64: creator "MOBI"
+        u32(&pdb, UInt32.random(in: 1...999999))             // 68: unique ID seed
+        u32(&pdb, 0)                                         // 72: next record list ID
+        u16(&pdb, UInt16(totalRecords))                      // 76: number of records
+
+        // Record info list (8 bytes per record)
+        for i in 0..<totalRecords {
+            u32(&pdb, UInt32(offsets[i]))                     // offset
+            pdb.append(0)                                    // attributes
+            pdb.append(UInt8((i >> 16) & 0xFF))              // unique ID (3 bytes)
+            pdb.append(UInt8((i >> 8) & 0xFF))
+            pdb.append(UInt8(i & 0xFF))
+        }
+
+        u16(&pdb, 0)                                         // gap padding
+
+        // Append record data
+        pdb.append(rec0)
+        for tr in textRecords { pdb.append(tr) }
+
+        return pdb
+    }
+
+    // MARK: - ePub Import Helpers
+
+    /// Parse META-INF/container.xml to find the rootfile path (typically OEBPS/content.opf).
+    private func epubParseContainerXML(_ data: Data) -> String? {
+        guard let xml = String(data: data, encoding: .utf8) else { return nil }
+        // Look for: <rootfile full-path="OEBPS/content.opf" .../>
+        let pattern = try? NSRegularExpression(pattern: #"full-path\s*=\s*"([^"]+)""#, options: [])
+        let range = NSRange(xml.startIndex..., in: xml)
+        if let match = pattern?.firstMatch(in: xml, range: range),
+           let pathRange = Range(match.range(at: 1), in: xml) {
+            return String(xml[pathRange])
+        }
+        return nil
+    }
+
+    /// Parse OPF (content.opf) to get spine-ordered content file paths.
+    private func epubParseOPF(_ data: Data) -> [String] {
+        guard let xml = String(data: data, encoding: .utf8) else { return [] }
+
+        // 1. Build manifest: id → href mapping
+        var manifest: [String: String] = [:]
+        let itemPattern = try? NSRegularExpression(
+            pattern: #"<item[^>]+id\s*=\s*"([^"]+)"[^>]+href\s*=\s*"([^"]+)"[^>]*/?\s*>"#,
+            options: [.dotMatchesLineSeparators]
+        )
+        let fullRange = NSRange(xml.startIndex..., in: xml)
+        itemPattern?.enumerateMatches(in: xml, range: fullRange) { match, _, _ in
+            guard let match else { return }
+            if let idRange = Range(match.range(at: 1), in: xml),
+               let hrefRange = Range(match.range(at: 2), in: xml) {
+                manifest[String(xml[idRange])] = String(xml[hrefRange])
+            }
+        }
+
+        // Also handle <item href="..." id="..."> (reversed attribute order)
+        let itemPatternAlt = try? NSRegularExpression(
+            pattern: #"<item[^>]+href\s*=\s*"([^"]+)"[^>]+id\s*=\s*"([^"]+)"[^>]*/?\s*>"#,
+            options: [.dotMatchesLineSeparators]
+        )
+        itemPatternAlt?.enumerateMatches(in: xml, range: fullRange) { match, _, _ in
+            guard let match else { return }
+            if let hrefRange = Range(match.range(at: 1), in: xml),
+               let idRange = Range(match.range(at: 2), in: xml) {
+                let id = String(xml[idRange])
+                if manifest[id] == nil {
+                    manifest[id] = String(xml[hrefRange])
+                }
+            }
+        }
+
+        // 2. Parse spine for ordered itemref idref values
+        let itemrefPattern = try? NSRegularExpression(
+            pattern: #"<itemref[^>]+idref\s*=\s*"([^"]+)""#,
+            options: []
+        )
+        var orderedFiles: [String] = []
+        itemrefPattern?.enumerateMatches(in: xml, range: fullRange) { match, _, _ in
+            guard let match else { return }
+            if let idrefRange = Range(match.range(at: 1), in: xml) {
+                let idref = String(xml[idrefRange])
+                if let href = manifest[idref] {
+                    // URL-decode percent-encoded paths
+                    let decoded = href.removingPercentEncoding ?? href
+                    orderedFiles.append(decoded)
+                }
+            }
+        }
+
+        // Fallback: if no spine found, use all manifest items that look like HTML/XHTML
+        if orderedFiles.isEmpty {
+            for (_, href) in manifest.sorted(by: { $0.key < $1.key }) {
+                let lower = href.lowercased()
+                if lower.hasSuffix(".xhtml") || lower.hasSuffix(".html") || lower.hasSuffix(".htm") {
+                    let decoded = href.removingPercentEncoding ?? href
+                    orderedFiles.append(decoded)
+                }
+            }
+        }
+
+        return orderedFiles
+    }
+
+    /// Extract the inner content of <body>…</body> from an HTML/XHTML string.
+    private func epubExtractHTMLBody(_ html: String) -> String {
+        // Find <body...> opening tag
+        guard let bodyOpenRange = html.range(of: "<body", options: .caseInsensitive) else { return html }
+        // Find the closing > of the <body...> tag
+        guard let bodyTagEnd = html[bodyOpenRange.upperBound...].range(of: ">") else { return html }
+        let contentStart = bodyTagEnd.upperBound
+        // Find </body>
+        guard let bodyCloseRange = html.range(of: "</body>", options: .caseInsensitive) else {
+            return String(html[contentStart...])
+        }
+        return String(html[contentStart..<bodyCloseRange.lowerBound])
+    }
+
+    // MARK: - MOBI Import Helpers
+
+    /// Decompress PalmDoc (LZ77-variant) compressed data.
+    ///
+    /// PalmDoc compression encodes data as:
+    /// - 0x00: literal null byte
+    /// - 0x01–0x08: copy next N bytes literally
+    /// - 0x09–0x7F: literal byte
+    /// - 0x80–0xBF: LZ77 back-reference (2-byte pair → distance + length)
+    /// - 0xC0–0xFF: space + (byte XOR 0x80)
+    private func mobiDecompressPalmDoc(_ input: Data) -> Data {
+        var output = Data()
+        output.reserveCapacity(input.count * 2)
+        var i = 0
+
+        while i < input.count {
+            let byte = input[i]
+            i += 1
+
+            if byte == 0x00 {
+                output.append(byte)
+            } else if byte <= 0x08 {
+                // Copy next `byte` bytes literally
+                let count = Int(byte)
+                let end = min(i + count, input.count)
+                output.append(contentsOf: input[i..<end])
+                i = end
+            } else if byte <= 0x7F {
+                // Literal byte
+                output.append(byte)
+            } else if byte <= 0xBF {
+                // LZ77 back-reference: two-byte encoding
+                guard i < input.count else { break }
+                let next = input[i]
+                i += 1
+
+                let pair = (UInt16(byte) << 8) | UInt16(next)
+                let distance = Int((pair >> 3) & 0x7FF)
+                let length = Int(pair & 0x07) + 3
+
+                guard distance > 0 else { continue }
+                for _ in 0..<length {
+                    let srcIndex = output.count - distance
+                    if srcIndex >= 0 && srcIndex < output.count {
+                        output.append(output[srcIndex])
+                    }
+                }
+            } else {
+                // 0xC0–0xFF: space + (byte XOR 0x80)
+                output.append(0x20) // space
+                output.append(byte ^ 0x80)
+            }
+        }
+
+        return output
     }
 }
 

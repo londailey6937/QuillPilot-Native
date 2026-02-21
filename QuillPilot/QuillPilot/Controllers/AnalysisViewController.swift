@@ -5172,12 +5172,19 @@ extension AnalysisViewController {
             window.isReleasedWhenClosed = false
             window.delegate = autoCloseDelegate
 
+            let isDarkMode = ThemeManager.shared.isDarkMode
+            window.appearance = NSAppearance(named: isDarkMode ? .darkAqua : .aqua)
+
             window.center()
 
             emotionalTrajectoryPopoutWindow = window
         }
 
         guard let window = emotionalTrajectoryPopoutWindow else { return }
+
+        // Keep appearance in sync with current theme (handles theme changes after window creation)
+        let isDark = ThemeManager.shared.isDarkMode
+        window.appearance = NSAppearance(named: isDark ? .darkAqua : .aqua)
 
         // Create content view
         let containerView = NSView(frame: window.contentView!.bounds)
